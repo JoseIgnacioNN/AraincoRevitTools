@@ -6017,11 +6017,11 @@
     {
       "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
       "NodeType": "CodeBlockNode",
-      "Code": "empalme_list = [570, 710, 860, 1140, 1290, 1960, 2230, 2500, 2850, 3210];\n\nrebar_curve_list = DSCore.List.Flatten([rebar_inicio, rebar_mid, rebar_final]);\npulled_curve = Autodesk.Curve.PullOntoPlane(rebar_curve_list, plane);\nintersecciones = DSCore.List.Flatten(Autodesk.Geometry.Intersect(pulled_curve@L1<1L>, pulled_curve@L2<1L>));\nintersecciones_length = Autodesk.Curve.Length(intersecciones);\nintersecciones_mask = Orchid.List.AnyTrue(intersecciones_length@L1<1L> == empalme_list@L2<1L>);\nempalmes = DSCore.List.FilterByBoolMask(intersecciones, intersecciones_mask)[\"in\"];",
+      "Code": "empalme_list = [570, 710, 860, 1140, 1290, 1960, 2230, 2500, 2850, 3210];\n\nrebar_curve_list = DSCore.List.Flatten([rebar_inicio, rebar_mid, rebar_final]);\npulled_curve = Autodesk.Curve.PullOntoPlane(rebar_curve_list, plane);\nintersecciones = DSCore.List.Flatten(Autodesk.Geometry.Intersect(pulled_curve@L1<1L>, pulled_curve@L2<1L>));\nintersecciones_length = Autodesk.Curve.Length(intersecciones);\nintersecciones_mask = DSCore.List.AllTrue(intersecciones_length@L1<1L> == empalme_list@L2<1L>);\nempalmes = DSCore.List.FilterByBoolMask(intersecciones, intersecciones_mask)[\"in\"];",
       "Id": "fc1a73cc4dd343b4aba7762860934420",
       "Inputs": [
         {
-          "Id": "2f233a36cf6647d1b9901ed502329d3a",
+          "Id": "70e157de42404106b21591ec1d915a6d",
           "Name": "rebar_inicio",
           "Description": "rebar_inicio",
           "UsingDefaultValue": false,
@@ -6030,7 +6030,7 @@
           "KeepListStructure": false
         },
         {
-          "Id": "611e203b72e04fcaa26a73c12bae30c2",
+          "Id": "0839539a63524959974eef8879ef02fa",
           "Name": "rebar_mid",
           "Description": "rebar_mid",
           "UsingDefaultValue": false,
@@ -6039,7 +6039,7 @@
           "KeepListStructure": false
         },
         {
-          "Id": "3733b37c7e7c48f3ad4167b3ad9c43d0",
+          "Id": "758481770816445a9132914b596e8823",
           "Name": "rebar_final",
           "Description": "rebar_final",
           "UsingDefaultValue": false,
@@ -6048,7 +6048,7 @@
           "KeepListStructure": false
         },
         {
-          "Id": "6d31c3e52ba44284a084f8a72d4e04ba",
+          "Id": "6ce1561c1c5748a6a440c8e3b6ef334b",
           "Name": "plane",
           "Description": "plane",
           "UsingDefaultValue": false,
@@ -6059,7 +6059,7 @@
       ],
       "Outputs": [
         {
-          "Id": "3e39a6a038cc4efb8530f4b5e9c6f830",
+          "Id": "94e2095d185a41428bfd6c3a000977c7",
           "Name": "",
           "Description": "empalme_list",
           "UsingDefaultValue": false,
@@ -6068,7 +6068,7 @@
           "KeepListStructure": false
         },
         {
-          "Id": "4dc4e6070ca3458a84f7eb9131d4e2b0",
+          "Id": "7c88f3236c5f4eb8b1f621103dbabaab",
           "Name": "",
           "Description": "rebar_curve_list",
           "UsingDefaultValue": false,
@@ -6077,7 +6077,7 @@
           "KeepListStructure": false
         },
         {
-          "Id": "6895d51cc4264b17a44bce6af5c06c5e",
+          "Id": "9d7590428b284864a62662ee97072bb9",
           "Name": "",
           "Description": "pulled_curve",
           "UsingDefaultValue": false,
@@ -6086,7 +6086,7 @@
           "KeepListStructure": false
         },
         {
-          "Id": "0dcd0c22b1b649e5890ed7bfd0636d6f",
+          "Id": "d1283058c4054a239c4902bba2b8459a",
           "Name": "",
           "Description": "intersecciones",
           "UsingDefaultValue": false,
@@ -6095,7 +6095,7 @@
           "KeepListStructure": false
         },
         {
-          "Id": "c1a8d03a02634e42941d241c10a3660b",
+          "Id": "5974a4d88b014cf385f8471ac853ed62",
           "Name": "",
           "Description": "intersecciones_length",
           "UsingDefaultValue": false,
@@ -6104,7 +6104,7 @@
           "KeepListStructure": false
         },
         {
-          "Id": "380682e8d0f0408db18b434fafd4129f",
+          "Id": "3b192e5251db4ea390110ab1468b757f",
           "Name": "",
           "Description": "intersecciones_mask",
           "UsingDefaultValue": false,
@@ -6113,7 +6113,7 @@
           "KeepListStructure": false
         },
         {
-          "Id": "61c3419115ec4da7a5abf6d1e0170ba5",
+          "Id": "eb5e5a912d974c30abbec2dd06ddfdf7",
           "Name": "",
           "Description": "empalmes",
           "UsingDefaultValue": false,
@@ -7304,13 +7304,13 @@
     },
     {
       "Start": "a09a8d0b8c2d42f58ff02f240ec2ae17",
-      "End": "2f233a36cf6647d1b9901ed502329d3a",
-      "Id": "bff5c96707aa4a53b06297e8d3f1fa3e"
+      "End": "3df1ce3226c749a4ae811038120ede00",
+      "Id": "06373eba8a9249eda65c15541e8eb9e2"
     },
     {
       "Start": "a09a8d0b8c2d42f58ff02f240ec2ae17",
-      "End": "3df1ce3226c749a4ae811038120ede00",
-      "Id": "06373eba8a9249eda65c15541e8eb9e2"
+      "End": "70e157de42404106b21591ec1d915a6d",
+      "Id": "14c7d978b12d4b38a504ec42753478e6"
     },
     {
       "Start": "68d4a20a6b5640bf998628f2721d8784",
@@ -7609,13 +7609,13 @@
     },
     {
       "Start": "8d8021890ce842d780ff952e261b092f",
-      "End": "611e203b72e04fcaa26a73c12bae30c2",
-      "Id": "14709c64bc1e440aa1287b2794d8fccd"
+      "End": "25fa8b1b9a6947d481712f10071250b9",
+      "Id": "205c39fd57ca4f2ab7c3609f1aad85c5"
     },
     {
       "Start": "8d8021890ce842d780ff952e261b092f",
-      "End": "25fa8b1b9a6947d481712f10071250b9",
-      "Id": "205c39fd57ca4f2ab7c3609f1aad85c5"
+      "End": "0839539a63524959974eef8879ef02fa",
+      "Id": "8099a2bece6c43a3b86c1679da2e1d92"
     },
     {
       "Start": "981376f3ef1f4c7c920cbdeb5e66e601",
@@ -7694,13 +7694,13 @@
     },
     {
       "Start": "f9c2571629b04d228caa044565441820",
-      "End": "3733b37c7e7c48f3ad4167b3ad9c43d0",
-      "Id": "a3db3c17312f4928a2a4f0fb2c382b89"
+      "End": "ac7df9c4cb1a4117994726bf106a5c0e",
+      "Id": "d9e7237dd3de4bcab5fa707b06b64b7b"
     },
     {
       "Start": "f9c2571629b04d228caa044565441820",
-      "End": "ac7df9c4cb1a4117994726bf106a5c0e",
-      "Id": "d9e7237dd3de4bcab5fa707b06b64b7b"
+      "End": "758481770816445a9132914b596e8823",
+      "Id": "2e9a548c61cc4e5799556f75b1a433aa"
     },
     {
       "Start": "e432dbe68442429e8f792eebfa89df08",
@@ -7803,9 +7803,9 @@
       "Id": "a689836e00bf44e8be27fee6ff4c6880"
     },
     {
-      "Start": "61c3419115ec4da7a5abf6d1e0170ba5",
+      "Start": "eb5e5a912d974c30abbec2dd06ddfdf7",
       "End": "57caa7048e304185aa19c425f47cf212",
-      "Id": "6da258736c7d4138b782cd25e486421d"
+      "Id": "a6756f0e533345fc8268f0e475ce175a"
     },
     {
       "Start": "27b2f30070e645e1a1db198215f4f558",
@@ -7814,8 +7814,8 @@
     },
     {
       "Start": "27b2f30070e645e1a1db198215f4f558",
-      "End": "6d31c3e52ba44284a084f8a72d4e04ba",
-      "Id": "efa85c7c4fb3456a915c845e84df2a60"
+      "End": "6ce1561c1c5748a6a440c8e3b6ef334b",
+      "Id": "b791bbf263ee4dc28d882342f098adcc"
     },
     {
       "Start": "a403a4f087b840d181d9b55c209e036d",
@@ -8983,8 +8983,8 @@
       }
     ],
     "Annotations": [],
-    "X": -5867.2865127916739,
-    "Y": -607.9415901037255,
-    "Zoom": 0.49167761439965035
+    "X": -10144.036846523828,
+    "Y": -963.07892596493252,
+    "Zoom": 0.64115210642078324
   }
 }
