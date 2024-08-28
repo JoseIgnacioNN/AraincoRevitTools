@@ -1039,36 +1039,6 @@
       "Description": "Allows for DesignScript code to be authored directly"
     },
     {
-      "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
-      "NodeType": "FunctionNode",
-      "FunctionSignature": "Orchid.RevitProject.Common.Document.ActiveView@Orchid.RevitProject.Common.Document",
-      "Id": "8b3f7cf7a994450db25bfbebb26c7b07",
-      "Inputs": [
-        {
-          "Id": "37660a7683f9464e88c2f59682ea07f3",
-          "Name": "document",
-          "Description": "Document (rvt) as Orchid document.\n\nDocument\nDefault value : null",
-          "UsingDefaultValue": true,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        }
-      ],
-      "Outputs": [
-        {
-          "Id": "565df2acfa4d4eabb9e90bd22312b4cf",
-          "Name": "View",
-          "Description": "The active view as Dynamo type.",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        }
-      ],
-      "Replication": "Auto",
-      "Description": "Get the active view in document.\n\nDocument.ActiveView (document: Document = null): Element\n\nNamespace:\nOrchid.RevitProject.Common"
-    },
-    {
       "ConcreteType": "Dynamo.Graph.Nodes.CustomNodes.Function, DynamoCore",
       "FunctionSignature": "d6dbde59-f3f7-47b5-9e1e-f30991f58ac1",
       "FunctionType": "Graph",
@@ -3289,36 +3259,6 @@
       "Description": "Works only in Revit 2018 and later.\r\nCreates a tag at a given location, of given type and in a supplied view. \r\nThe node also works with Linked Elements (except space and area), Multi Category tag and Material Tag.\r\nBased on an archilab node"
     },
     {
-      "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
-      "NodeType": "FunctionNode",
-      "FunctionSignature": "Orchid.RevitProject.Common.Document.ActiveView@Orchid.RevitProject.Common.Document",
-      "Id": "eaed1200d0eb4bfbbb1d5ca93e14fb0a",
-      "Inputs": [
-        {
-          "Id": "8c00e45419824a0e8fb945c4c13567ea",
-          "Name": "document",
-          "Description": "Document (rvt) as Orchid document.\n\nDocument\nDefault value : null",
-          "UsingDefaultValue": true,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        }
-      ],
-      "Outputs": [
-        {
-          "Id": "4552d0677196470f908048621a76de22",
-          "Name": "View",
-          "Description": "The active view as Dynamo type.",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        }
-      ],
-      "Replication": "Auto",
-      "Description": "Get the active view in document.\n\nDocument.ActiveView (document: Document = null): Element\n\nNamespace:\nOrchid.RevitProject.Common"
-    },
-    {
       "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
       "NodeType": "CodeBlockNode",
       "Code": "tag = x[0];\n//Activa Leader Line\nRevit.Elements.Element.SetParameterByName(tag, \"Leader Line\", 1);\n//Leader Line Free End\nRevit.Elements.Element.SetParameterByName(tag, \"Leader Type\", 1);\n//Posicion Tag\nRhythm.Tags.SetHeadPosition(tag, p1);\n//Leader End Position\nRhythm.Tags.SetLeaderEndPosition(tag, p2);\n//Leader Elbow\nRhythm.Tags.SetLeaderElbowPosition(tag, p3);",
@@ -4032,6 +3972,106 @@
       ],
       "Replication": "Disabled",
       "Description": "Allows for DesignScript code to be authored directly"
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
+      "NodeType": "FunctionNode",
+      "FunctionSignature": "Revit.Application.Document.ActiveView",
+      "Id": "be166d4778da4d89a11cd99e6ca573ad",
+      "Inputs": [
+        {
+          "Id": "9b454109fd744c07af515b8c0e6c59b4",
+          "Name": "document",
+          "Description": "Revit.Application.Document",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "87ff706d2a4f49e29e258fb996a30f92",
+          "Name": "View",
+          "Description": "View",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Auto",
+      "Description": "Get the active view for the document\n\nDocument.ActiveView: View"
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
+      "NodeType": "FunctionNode",
+      "FunctionSignature": "Revit.Application.Document.Current",
+      "Id": "aa350b3963134dfe85675fd3ee9f1d61",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "3e9b4d8d7f8141af97f5ee6bfbcdc3a4",
+          "Name": "Document",
+          "Description": "Document",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Auto",
+      "Description": "Get the current document\n\nDocument.Current: Document"
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
+      "NodeType": "FunctionNode",
+      "FunctionSignature": "Revit.Application.Document.ActiveView",
+      "Id": "065daefc5aa94892adfd763402508a89",
+      "Inputs": [
+        {
+          "Id": "ca0283bf266a4dc681ee063faea86499",
+          "Name": "document",
+          "Description": "Revit.Application.Document",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "4e9c9de7c9ae4a6b994315cd3d5a032b",
+          "Name": "View",
+          "Description": "View",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Auto",
+      "Description": "Get the active view for the document\n\nDocument.ActiveView: View"
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
+      "NodeType": "FunctionNode",
+      "FunctionSignature": "Revit.Application.Document.Current",
+      "Id": "be33823fd2c647ebb4738ae9d5aac996",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "45a091f068b2435bbc498d5ced9216bb",
+          "Name": "Document",
+          "Description": "Document",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Auto",
+      "Description": "Get the current document\n\nDocument.Current: Document"
     }
   ],
   "Connectors": [
@@ -4179,11 +4219,6 @@
       "Start": "fd0768344a3346da9f4f5a91c87c1d7c",
       "End": "8390192063554ff4945133753e279bf8",
       "Id": "06dcf78806fe4c669add89fa8f10e74e"
-    },
-    {
-      "Start": "565df2acfa4d4eabb9e90bd22312b4cf",
-      "End": "731427dbd25b41d096f7d6c3cda0249f",
-      "Id": "a93484dd78f3458e87d346089171a508"
     },
     {
       "Start": "6efec17c2c4446a1b65c2003bc14924e",
@@ -4386,11 +4421,6 @@
       "Id": "35c5211187ad4c1c99a0cfa11a3cddb8"
     },
     {
-      "Start": "4552d0677196470f908048621a76de22",
-      "End": "c229782b4611440ca6292adf6a9ac3b4",
-      "Id": "0c257f8537e0444e8f48e51a1c3bbbe1"
-    },
-    {
       "Start": "ea999b512c0f45939a509a6d076c7bf1",
       "End": "d36593b41c75477282a3b21ae9c728c4",
       "Id": "725d2916eb8041c183a06438597be6c0"
@@ -4529,6 +4559,26 @@
       "Start": "58d0cdfad37b4fbca0c53f0e14d3d904",
       "End": "4824179271a64f69b03252dbbb61e21c",
       "Id": "0ff7b2a1bbc5441bb6df214bf4bf57f6"
+    },
+    {
+      "Start": "87ff706d2a4f49e29e258fb996a30f92",
+      "End": "731427dbd25b41d096f7d6c3cda0249f",
+      "Id": "e95c878148b84713993c5b2584565652"
+    },
+    {
+      "Start": "3e9b4d8d7f8141af97f5ee6bfbcdc3a4",
+      "End": "9b454109fd744c07af515b8c0e6c59b4",
+      "Id": "4d0f91c1f0f8452ba1c0918848a69e76"
+    },
+    {
+      "Start": "4e9c9de7c9ae4a6b994315cd3d5a032b",
+      "End": "c229782b4611440ca6292adf6a9ac3b4",
+      "Id": "3c7af64012804e76a87070b1141acd1d"
+    },
+    {
+      "Start": "45a091f068b2435bbc498d5ced9216bb",
+      "End": "ca0283bf266a4dc681ee063faea86499",
+      "Id": "428866ece8134d328e185b19848fadd9"
     }
   ],
   "Dependencies": [
@@ -4558,15 +4608,6 @@
         "14cc4f49e2634b46afbaadd63b44a4e6",
         "8b59b6b972af4cbfa22ef1ef40a8af2a",
         "4cd9b38302cd4367b6b5eea4cf0bb0f7"
-      ]
-    },
-    {
-      "Name": "Orchid",
-      "Version": "206.3.0.8161",
-      "ReferenceType": "Package",
-      "Nodes": [
-        "8b3f7cf7a994450db25bfbebb26c7b07",
-        "eaed1200d0eb4bfbbb1d5ca93e14fb0a"
       ]
     },
     {
@@ -4791,16 +4832,6 @@
       },
       {
         "ShowGeometry": true,
-        "Name": "o|Document.ActiveView",
-        "Id": "8b3f7cf7a994450db25bfbebb26c7b07",
-        "IsSetAsInput": false,
-        "IsSetAsOutput": false,
-        "Excluded": false,
-        "X": 5917.02302821259,
-        "Y": 1208.18423110935
-      },
-      {
-        "ShowGeometry": true,
         "Name": "View.Plane",
         "Id": "0c41de3883914645915592ce9e26d535",
         "IsSetAsInput": false,
@@ -4938,16 +4969,6 @@
         "Excluded": false,
         "X": 12007.524174626209,
         "Y": 4928.0906258948489
-      },
-      {
-        "ShowGeometry": false,
-        "Name": "o|Document.ActiveView",
-        "Id": "eaed1200d0eb4bfbbb1d5ca93e14fb0a",
-        "IsSetAsInput": false,
-        "IsSetAsOutput": false,
-        "Excluded": false,
-        "X": 12012.524174626209,
-        "Y": 5198.2547840798889
       },
       {
         "ShowGeometry": false,
@@ -5108,11 +5129,51 @@
         "Excluded": false,
         "X": 3387.6408592426014,
         "Y": 97.866805020743527
+      },
+      {
+        "ShowGeometry": true,
+        "Name": "Document.ActiveView",
+        "Id": "be166d4778da4d89a11cd99e6ca573ad",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 5667.4701261024065,
+        "Y": 1179.7599169873859
+      },
+      {
+        "ShowGeometry": true,
+        "Name": "Document.Current",
+        "Id": "aa350b3963134dfe85675fd3ee9f1d61",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 5411.7790865789866,
+        "Y": 1179.7599169873859
+      },
+      {
+        "ShowGeometry": true,
+        "Name": "Document.ActiveView",
+        "Id": "065daefc5aa94892adfd763402508a89",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 11920.144839106159,
+        "Y": 5379.9277306957119
+      },
+      {
+        "ShowGeometry": true,
+        "Name": "Document.Current",
+        "Id": "be33823fd2c647ebb4738ae9d5aac996",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 11664.453799582738,
+        "Y": 5379.9277306957119
       }
     ],
     "Annotations": [],
-    "X": -87.922334606757175,
-    "Y": 170.28600862333226,
-    "Zoom": 0.17503296060762127
+    "X": -5991.9044269812848,
+    "Y": -2730.0473658662627,
+    "Zoom": 0.60447789053213186
   }
 }
