@@ -212,6 +212,7 @@
       "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
       "NodeType": "PythonScriptNode",
       "Code": "import clr\r\n\r\nclr.AddReference('RevitAPI')\r\nfrom Autodesk.Revit.DB import *\r\n\r\nclr.AddReference(\"RevitServices\")\r\nimport RevitServices\r\nfrom RevitServices.Persistence import DocumentManager\r\n\r\nfrom System.Collections.Generic import *\r\n\r\nuidoc = DocumentManager.Instance.CurrentUIApplication.ActiveUIDocument\r\n\r\ndef select(items):\r\n    if isinstance(items, type(None)): # Select none\r\n        items = []\r\n    elif not hasattr(items, \"__iter__\"): # Check if single element\r\n        items = [items]\r\n        \r\n    ids = List[ElementId](i.Id for i in items)\r\n    uidoc.Selection.SetElementIds(ids)\r\n    return \"Success\"\r\n    \r\n    \r\nOUT = select(UnwrapElement(IN[0]))",
+      "Engine": "IronPython2",
       "VariableInputPorts": true,
       "Id": "3aed102d037348098f8742c0a63553be",
       "Inputs": [
@@ -237,7 +238,7 @@
         }
       ],
       "Replication": "Disabled",
-      "Description": "Runs an embedded IronPython script."
+      "Description": "Runs an embedded Python script."
     },
     {
       "ConcreteType": "Dynamo.Graph.Nodes.CustomNodes.Function, DynamoCore",
@@ -454,7 +455,7 @@
         {
           "Id": "d9ea23d3e6534652abd0e890aeb8c977",
           "Name": "x",
-          "Description": "x value.\n\nvar[]..[]",
+          "Description": "Basic type object to compare (e.g. bool, int, double, string, etc.)\n\nvar[]..[]",
           "UsingDefaultValue": false,
           "Level": 2,
           "UseLevels": false,
@@ -463,7 +464,7 @@
         {
           "Id": "2d1dec3e5beb4df693e52e64f21ead4d",
           "Name": "y",
-          "Description": "y value.\n\nvar[]..[]",
+          "Description": "Basic type object to compare (e.g. bool, int, double, string, etc.)\n\nvar[]..[]",
           "UsingDefaultValue": false,
           "Level": 2,
           "UseLevels": false,
@@ -473,8 +474,8 @@
       "Outputs": [
         {
           "Id": "7fd11436c9524bb299396488d3eafb61",
-          "Name": "var[]..[]",
-          "Description": "var[]..[]",
+          "Name": "bool",
+          "Description": "Result of equality check",
           "UsingDefaultValue": false,
           "Level": 2,
           "UseLevels": false,
@@ -482,7 +483,7 @@
         }
       ],
       "Replication": "Longest",
-      "Description": "Equal x to y?\n\n== (x: var[]..[], y: var[]..[]): var[]..[]"
+      "Description": "Compares if x and y are equal\n\n== (x: var[]..[], y: var[]..[]): var[]..[]"
     },
     {
       "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
@@ -1191,6 +1192,7 @@
       "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
       "NodeType": "PythonScriptNode",
       "Code": "validacion = IN[0][0]\r\ninputs = IN[1]\r\n\r\nif validacion == True:\r\n\tres = inputs\r\nelse:\r\n\tres = []\r\n\r\nOUT = res",
+      "Engine": "IronPython2",
       "VariableInputPorts": true,
       "Id": "7151fd93ebfc4c668aba9e213280ba81",
       "Inputs": [
@@ -1225,7 +1227,7 @@
         }
       ],
       "Replication": "Disabled",
-      "Description": "Runs an embedded IronPython script."
+      "Description": "Runs an embedded Python script."
     },
     {
       "ConcreteType": "Dynamo.Graph.Nodes.CustomNodes.Function, DynamoCore",
@@ -1403,7 +1405,7 @@
         },
         {
           "Id": "a6676689a9c24d389ebb72d39449a22a",
-          "Name": "unique keys",
+          "Name": "uniqueKeys",
           "Description": "key value corresponding to each group",
           "UsingDefaultValue": false,
           "Level": 2,
@@ -1433,7 +1435,7 @@
       "Outputs": [
         {
           "Id": "35006bb33f4a41d182dea7ee42996f1e",
-          "Name": "count",
+          "Name": "int",
           "Description": "List length.",
           "UsingDefaultValue": false,
           "Level": 2,
@@ -1540,6 +1542,113 @@
       ],
       "Replication": "Auto",
       "Description": "Sorts a specified list in natural order in either ascending or descending order."
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
+      "NodeType": "FunctionNode",
+      "FunctionSignature": "==@var[]..[],var[]..[]",
+      "Id": "b8cb33b21c2849c2a28b647abd2b42e6",
+      "Inputs": [
+        {
+          "Id": "821e2f9ac7904eec8e88a5f0d1b37fd3",
+          "Name": "x",
+          "Description": "Basic type object to compare (e.g. bool, int, double, string, etc.)\n\nvar[]..[]",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "492f6b1de9364e029e3e532e3e58ab06",
+          "Name": "y",
+          "Description": "Basic type object to compare (e.g. bool, int, double, string, etc.)\n\nvar[]..[]",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "062ba898074345509d35367a560e4041",
+          "Name": "bool",
+          "Description": "Result of equality check",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Auto",
+      "Description": "Compares if x and y are equal\n\n== (x: var[]..[], y: var[]..[]): var[]..[]"
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
+      "NodeType": "CodeBlockNode",
+      "Code": "\"\";",
+      "Id": "3a198599bfb64846b4ec6bef742357b0",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "633a84f0b2d54c2694f97bfd4e82ad26",
+          "Name": "",
+          "Description": "Value of expression at line 1",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Allows for DesignScript code to be authored directly"
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
+      "NodeType": "FunctionNode",
+      "FunctionSignature": "DSCore.List.FilterByBoolMask@var[]..[],var[]..[]",
+      "Id": "5c78afb091ab49cfaaf824cc41eff272",
+      "Inputs": [
+        {
+          "Id": "9f255eef69684e169806f8589e04e23f",
+          "Name": "list",
+          "Description": "List to filter.\n\nvar[]..[]",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "c2a20d596ba74ccca462d49eb05a2cfd",
+          "Name": "mask",
+          "Description": "List of booleans representing a mask.\n\nvar[]..[]",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "950e04cd750c49068e669797993f7639",
+          "Name": "in",
+          "Description": "Items whose mask index is true.",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "c87f9115e98949abb535ca2de7f9a113",
+          "Name": "out",
+          "Description": "Items whose mask index is false.",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Auto",
+      "Description": "Filters a sequence by looking up corresponding indices in a separate list of booleans.\n\nList.FilterByBoolMask (list: var[]..[], mask: var[]..[]): var[]..[]"
     }
   ],
   "Connectors": [
@@ -1615,13 +1724,13 @@
     },
     {
       "Start": "11962c5f7be04d76a96bddfa026aedfa",
-      "End": "cc0a02c429b14954af8eb786d29b8aa3",
-      "Id": "ee8e37f01fd84c11b85bc51209e85484"
+      "End": "821e2f9ac7904eec8e88a5f0d1b37fd3",
+      "Id": "509b7cd4344447ff96e030821e8a944d"
     },
     {
       "Start": "11962c5f7be04d76a96bddfa026aedfa",
-      "End": "03524f07da1e4f6cbe3bbeadeaeff80a",
-      "Id": "4f4df08505c24971aef70addbf3d96e5"
+      "End": "9f255eef69684e169806f8589e04e23f",
+      "Id": "f985a92e60b345b48d095712048e8d9a"
     },
     {
       "Start": "50449c4f2ca64f1d9f745a292337ff5f",
@@ -1812,6 +1921,26 @@
       "Start": "cd509320fd9a4409803fe9dcc2b0d74c",
       "End": "4addd9ed4b324d5e99614b4ca19b3e28",
       "Id": "4fd1af8f408a41c390d39ce72e4314f4"
+    },
+    {
+      "Start": "062ba898074345509d35367a560e4041",
+      "End": "c2a20d596ba74ccca462d49eb05a2cfd",
+      "Id": "7a1710537ec34aa8913ba2c6f757016b"
+    },
+    {
+      "Start": "633a84f0b2d54c2694f97bfd4e82ad26",
+      "End": "492f6b1de9364e029e3e532e3e58ab06",
+      "Id": "eb64407d84154238aaaed5e02ebdfa69"
+    },
+    {
+      "Start": "c87f9115e98949abb535ca2de7f9a113",
+      "End": "cc0a02c429b14954af8eb786d29b8aa3",
+      "Id": "99ecd2a8b6fe44d1940533435d0395ac"
+    },
+    {
+      "Start": "c87f9115e98949abb535ca2de7f9a113",
+      "End": "03524f07da1e4f6cbe3bbeadeaeff80a",
+      "Id": "d9b7a3bab1f24d8a87a54b4ead19842b"
     }
   ],
   "Dependencies": [
@@ -1868,13 +1997,36 @@
       ]
     }
   ],
+  "Thumbnail": null,
+  "GraphDocumentationURL": null,
+  "ExtensionWorkspaceData": [
+    {
+      "ExtensionGuid": "28992e1d-abb9-417f-8b1b-05e053bee670",
+      "Name": "Properties",
+      "Version": "2.12",
+      "Data": {}
+    },
+    {
+      "ExtensionGuid": "DFBD9CC0-DB40-457A-939E-8C8555555A9D",
+      "Name": "Generative Design",
+      "Version": "1.10",
+      "Data": {}
+    }
+  ],
+  "Author": "None provided",
+  "Linting": {
+    "activeLinter": "None",
+    "activeLinterId": "7b75fb44-43fd-4631-a878-29f4d5d8399a",
+    "warningCount": 0,
+    "errorCount": 0
+  },
   "Bindings": [],
   "View": {
     "Dynamo": {
       "ScaleFactor": 1.0,
       "HasRunWithoutCrash": true,
       "IsVisibleInDynamoLibrary": true,
-      "Version": "2.6.2.15705",
+      "Version": "2.12.1.8246",
       "RunType": "Manual",
       "RunPeriod": "1000"
     },
@@ -2300,11 +2452,41 @@
         "Excluded": false,
         "X": -2408.4710917476377,
         "Y": 328.40602033766237
+      },
+      {
+        "ShowGeometry": true,
+        "Name": "==",
+        "Id": "b8cb33b21c2849c2a28b647abd2b42e6",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": -4042.1102243380637,
+        "Y": -35.166632809094182
+      },
+      {
+        "ShowGeometry": true,
+        "Name": "Code Block",
+        "Id": "3a198599bfb64846b4ec6bef742357b0",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": -4299.0,
+        "Y": 37.0
+      },
+      {
+        "ShowGeometry": true,
+        "Name": "List.FilterByBoolMask",
+        "Id": "5c78afb091ab49cfaaf824cc41eff272",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": -3799.0743864602382,
+        "Y": -64.899740634572822
       }
     ],
     "Annotations": [],
-    "X": 843.92908223364748,
-    "Y": 451.93104522073418,
-    "Zoom": 0.14474659047828464
+    "X": 3629.768170534453,
+    "Y": 137.20309492558556,
+    "Zoom": 0.77354846775522879
   }
 }
