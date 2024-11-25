@@ -469,26 +469,6 @@
       "Description": "Returns an item from the given list that's located at the specified index.\n\nList.GetItemAtIndex (list: var[]..[], index: int): var[]..[]"
     },
     {
-      "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
-      "NodeType": "CodeBlockNode",
-      "Code": "2;",
-      "Id": "80e117a42593434eae5556e4024e2197",
-      "Inputs": [],
-      "Outputs": [
-        {
-          "Id": "93200ffc3dad41d9ac1470fd92df893e",
-          "Name": "",
-          "Description": "Value of expression at line 1",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        }
-      ],
-      "Replication": "Disabled",
-      "Description": "Allows for DesignScript code to be authored directly"
-    },
-    {
       "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
       "NodeType": "FunctionNode",
       "FunctionSignature": "Autodesk.DesignScript.Geometry.Solid.Centroid",
@@ -10757,6 +10737,94 @@
       ],
       "Replication": "Disabled",
       "Description": "Allows for DesignScript code to be authored directly"
+    },
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "NodeType": "PythonScriptNode",
+      "Code": "input = IN[0]\r\n\r\nif input == 2024:\r\n    input = 1\r\nelse:\r\n    input = 2\r\n\r\nOUT = input",
+      "VariableInputPorts": true,
+      "Id": "6cc71236fd0c49cbbe5f6da2b5a55a33",
+      "Inputs": [
+        {
+          "Id": "954f7bf25f274cf18c0a6cba3489471d",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "ea524f660c5f49d594a4670c46062ff7",
+          "Name": "OUT",
+          "Description": "Result of the python script",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Runs an embedded IronPython script."
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.CustomNodes.Function, DynamoCore",
+      "FunctionSignature": "3df0961d-9d46-464f-9175-0a74eeb61bc1",
+      "FunctionType": "Graph",
+      "NodeType": "FunctionNode",
+      "Id": "d1ce1a1c34bb44ae887f0f40149d0e6a",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "f92c691b86d84bec9ccc6dea877fe363",
+          "Name": "Name",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "fb355677a5984ddea55c8abe9260d38a",
+          "Name": "Version",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "6116c909552c43d1ae55d75560084068",
+          "Name": "Build",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "dcc70b36363c47e58e3dc9427ac2f171",
+          "Name": "Language",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "30e02d9b7b1e4470bb3ef91bfb3b8284",
+          "Name": "fullVersion",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Auto",
+      "Description": "Retrieves the name, version and build of the current Revit application."
     }
   ],
   "Connectors": [
@@ -10829,11 +10897,6 @@
       "Start": "fddb91534bd04f998b56d89605b36748",
       "End": "a9b77797153b45b3a0c86e80378a320e",
       "Id": "622d762c06254c1cb432de2803e68f4b"
-    },
-    {
-      "Start": "93200ffc3dad41d9ac1470fd92df893e",
-      "End": "b24b3970a36f4d0e8c76a77ad3556702",
-      "Id": "24accbc92c144afc8a48efdce6677823"
     },
     {
       "Start": "cf84d13ddce54707824c431ed7d90792",
@@ -12634,6 +12697,16 @@
       "Start": "01945dd77d594a9287140c2e1327b561",
       "End": "6e8c9399ba9c49a8938f47cd25547fe0",
       "Id": "3b4dddc37e6e4298b76c21cf8106dd7d"
+    },
+    {
+      "Start": "ea524f660c5f49d594a4670c46062ff7",
+      "End": "b24b3970a36f4d0e8c76a77ad3556702",
+      "Id": "640bd7e07f01474aa039cb5b327b2af5"
+    },
+    {
+      "Start": "fb355677a5984ddea55c8abe9260d38a",
+      "End": "954f7bf25f274cf18c0a6cba3489471d",
+      "Id": "d7e2b793df0343628bde6a5376983cae"
     }
   ],
   "Dependencies": [
@@ -12643,7 +12716,8 @@
     "8a41d7e6-40a2-4d28-81cd-55dbe94af4ef",
     "e47339c8-2025-4f4d-a3d0-749f8ad6194b",
     "928e40a7-91ac-45c3-8d59-4d899fc49b83",
-    "b409775c-5d88-4d47-96a3-5135c775d26a"
+    "b409775c-5d88-4d47-96a3-5135c775d26a",
+    "3df0961d-9d46-464f-9175-0a74eeb61bc1"
   ],
   "NodeLibraryDependencies": [
     {
@@ -12701,6 +12775,14 @@
         "f66d9e641c6344998b03c3242228da6b",
         "d9de5a6b92eb4bf7810005906ef2b4ee"
       ]
+    },
+    {
+      "Name": "Clockwork for Dynamo 2.x",
+      "Version": "2.4.0",
+      "ReferenceType": "Package",
+      "Nodes": [
+        "d1ce1a1c34bb44ae887f0f40149d0e6a"
+      ]
     }
   ],
   "Bindings": [],
@@ -12715,12 +12797,12 @@
     },
     "Camera": {
       "Name": "Background Preview",
-      "EyeX": -43138.060199703104,
-      "EyeY": 21966.935095777582,
-      "EyeZ": 7656.1825752889281,
-      "LookX": 5008.0348090781044,
-      "LookY": -10296.935095777582,
-      "LookZ": -7656.1794014608031,
+      "EyeX": -27555.496195692394,
+      "EyeY": 15816.099296435917,
+      "EyeZ": 1132.2730371646985,
+      "LookX": 3942.4961956923944,
+      "LookY": -8106.0992964359184,
+      "LookZ": -6027.2061426334485,
       "UpX": 0.32175832493421519,
       "UpY": 0.80901699437496055,
       "UpZ": -0.4918974315322911
@@ -12831,20 +12913,10 @@
         "IsSetAsInput": false,
         "IsSetAsOutput": false,
         "Name": "List.GetItemAtIndex",
-        "ShowGeometry": false,
+        "ShowGeometry": true,
         "Excluded": false,
         "X": 7304.4270707718861,
         "Y": -4673.9318967089466
-      },
-      {
-        "Id": "80e117a42593434eae5556e4024e2197",
-        "IsSetAsInput": false,
-        "IsSetAsOutput": false,
-        "Name": "Code Block",
-        "ShowGeometry": false,
-        "Excluded": false,
-        "X": 7304.4270707718861,
-        "Y": -4560.9815677434763
       },
       {
         "Id": "c9f4720888d14ec1ad3a50f6970f7323",
@@ -13212,7 +13284,7 @@
         "IsSetAsOutput": false,
         "Name": "Code Block",
         "ShowGeometry": false,
-        "Excluded": false,
+        "Excluded": true,
         "X": 778.99780437182562,
         "Y": 4154.7364062902616
       },
@@ -15405,11 +15477,31 @@
         "Excluded": false,
         "X": -8268.5224055676772,
         "Y": 1336.2988870685012
+      },
+      {
+        "Id": "6cc71236fd0c49cbbe5f6da2b5a55a33",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Name": "Python Script",
+        "ShowGeometry": true,
+        "Excluded": false,
+        "X": 7011.4052104408829,
+        "Y": -4573.8502082295845
+      },
+      {
+        "Id": "d1ce1a1c34bb44ae887f0f40149d0e6a",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Name": "Application.Version",
+        "ShowGeometry": true,
+        "Excluded": false,
+        "X": 6729.0712660143827,
+        "Y": -4599.5177999959942
       }
     ],
     "Annotations": [],
-    "X": -630.86216887499131,
-    "Y": -1130.7258707254757,
-    "Zoom": 0.29532675490237337
+    "X": -8127.4171888116953,
+    "Y": 6453.864743928486,
+    "Zoom": 1.2859749654482557
   }
 }
