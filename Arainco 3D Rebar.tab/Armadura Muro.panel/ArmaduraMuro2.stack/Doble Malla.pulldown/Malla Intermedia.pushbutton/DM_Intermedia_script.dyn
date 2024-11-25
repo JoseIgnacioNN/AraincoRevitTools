@@ -10825,6 +10825,94 @@
       ],
       "Replication": "Auto",
       "Description": "Retrieves the name, version and build of the current Revit application."
+    },
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "NodeType": "PythonScriptNode",
+      "Code": "input = IN[0]\r\n\r\nif input == 2024:\r\n    input = 3\r\nelse:\r\n    input = 0\r\n\r\nOUT = input",
+      "VariableInputPorts": true,
+      "Id": "cb9c6d763a9d4ae3918bcf2b5cca69cd",
+      "Inputs": [
+        {
+          "Id": "e39c65815fb74015b05cd79a9ea8a30c",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "70b9f6d04f3a4feca7a92a7cb1a976e4",
+          "Name": "OUT",
+          "Description": "Result of the python script",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Runs an embedded IronPython script."
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.CustomNodes.Function, DynamoCore",
+      "FunctionSignature": "3df0961d-9d46-464f-9175-0a74eeb61bc1",
+      "FunctionType": "Graph",
+      "NodeType": "FunctionNode",
+      "Id": "34bd5e1ab25541da9f16a73247d1c018",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "9e5f6039b7254c37b09c1415df3b9523",
+          "Name": "Name",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "7e1af48dbe19499a92de19003196c794",
+          "Name": "Version",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "634693a1e79244d9be7c149c73ef80d2",
+          "Name": "Build",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "6180ce9955884ca5baad5c9882e1045c",
+          "Name": "Language",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "b7fd3124c03c44a38b69c329f3ce67ab",
+          "Name": "fullVersion",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Auto",
+      "Description": "Retrieves the name, version and build of the current Revit application."
     }
   ],
   "Connectors": [
@@ -11292,11 +11380,6 @@
       "Start": "48b2e0aad4f747ff8076090658fe8652",
       "End": "bc5eb7113f6d47e9a89f6b3c9ae68a7e",
       "Id": "e1f8ba969a0c4603b6556e3cf9daf71d"
-    },
-    {
-      "Start": "13410d6b79b344d58972db1657990cd7",
-      "End": "7ca44b48ac874c838e482c3281465545",
-      "Id": "83a198de7cf643f1bb4e1715cb2eea50"
     },
     {
       "Start": "d21a8e307c834aacadabfe9cbaf0dec5",
@@ -12707,6 +12790,16 @@
       "Start": "fb355677a5984ddea55c8abe9260d38a",
       "End": "954f7bf25f274cf18c0a6cba3489471d",
       "Id": "d7e2b793df0343628bde6a5376983cae"
+    },
+    {
+      "Start": "70b9f6d04f3a4feca7a92a7cb1a976e4",
+      "End": "7ca44b48ac874c838e482c3281465545",
+      "Id": "0119df27fef941a5bc86dbcc6d1a6812"
+    },
+    {
+      "Start": "7e1af48dbe19499a92de19003196c794",
+      "End": "e39c65815fb74015b05cd79a9ea8a30c",
+      "Id": "5e8830fa62c3464c8005ceda3f7c47bb"
     }
   ],
   "Dependencies": [
@@ -12781,7 +12874,8 @@
       "Version": "2.4.0",
       "ReferenceType": "Package",
       "Nodes": [
-        "d1ce1a1c34bb44ae887f0f40149d0e6a"
+        "d1ce1a1c34bb44ae887f0f40149d0e6a",
+        "34bd5e1ab25541da9f16a73247d1c018"
       ]
     }
   ],
@@ -15497,11 +15591,31 @@
         "Excluded": false,
         "X": 6729.0712660143827,
         "Y": -4599.5177999959942
+      },
+      {
+        "Id": "cb9c6d763a9d4ae3918bcf2b5cca69cd",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Name": "Python Script",
+        "ShowGeometry": true,
+        "Excluded": false,
+        "X": 7044.9989970840761,
+        "Y": -2704.8498512752531
+      },
+      {
+        "Id": "34bd5e1ab25541da9f16a73247d1c018",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Name": "Application.Version",
+        "ShowGeometry": true,
+        "Excluded": false,
+        "X": 6762.6650526575759,
+        "Y": -2730.5174430416628
       }
     ],
     "Annotations": [],
-    "X": -8127.4171888116953,
-    "Y": 6453.864743928486,
-    "Zoom": 1.2859749654482557
+    "X": -12496.60896859636,
+    "Y": 5769.3020669307589,
+    "Zoom": 1.9023950229897508
   }
 }
