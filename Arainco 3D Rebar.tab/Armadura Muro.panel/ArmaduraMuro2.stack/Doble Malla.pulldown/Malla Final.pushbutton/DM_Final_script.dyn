@@ -6746,26 +6746,6 @@
       "Description": "Returns an item from the given list that's located at the specified index.\n\nList.GetItemAtIndex (list: var[]..[], index: int): var[]..[]"
     },
     {
-      "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
-      "NodeType": "CodeBlockNode",
-      "Code": "[0,1];",
-      "Id": "203878e770084f47af7dc8d46bdf1313",
-      "Inputs": [],
-      "Outputs": [
-        {
-          "Id": "bea2d142e8084104bd4f84acf5317fb4",
-          "Name": "",
-          "Description": "Value of expression at line 1",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        }
-      ],
-      "Replication": "Disabled",
-      "Description": "Allows for DesignScript code to be authored directly"
-    },
-    {
       "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
       "NodeType": "FunctionNode",
       "FunctionSignature": "Autodesk.DesignScript.Geometry.Curve.ExtendStart@double",
@@ -7826,65 +7806,6 @@
       ],
       "Replication": "Auto",
       "Description": "Returns an item from the given list that's located at the specified index.\n\nList.GetItemAtIndex (list: var[]..[], index: int): var[]..[]"
-    },
-    {
-      "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
-      "NodeType": "CodeBlockNode",
-      "Code": "[0,3];",
-      "Id": "a12e96a0df204ee5b56ed3b9b143aac6",
-      "Inputs": [],
-      "Outputs": [
-        {
-          "Id": "8802c8f26ca1409980dbe4cde533b577",
-          "Name": "",
-          "Description": "Value of expression at line 1",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        }
-      ],
-      "Replication": "Disabled",
-      "Description": "Allows for DesignScript code to be authored directly"
-    },
-    {
-      "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
-      "NodeType": "CodeBlockNode",
-      "Code": "plane1 = Autodesk.Plane.XY();\nvector2 = Autodesk.Vector.Rotate(vector1, plane1, 90);",
-      "Id": "1041fcf304c944d2962217e83d740229",
-      "Inputs": [
-        {
-          "Id": "4dfe25347e8e48cfa7a14cdf757aa1e5",
-          "Name": "vector1",
-          "Description": "vector1",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        }
-      ],
-      "Outputs": [
-        {
-          "Id": "7cd5d120c6344e71918ec533c10ad110",
-          "Name": "",
-          "Description": "plane1",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        },
-        {
-          "Id": "4714ce54e22b4c1db67d479806629efb",
-          "Name": "",
-          "Description": "vector2",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        }
-      ],
-      "Replication": "Disabled",
-      "Description": "Allows for DesignScript code to be authored directly"
     },
     {
       "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
@@ -12887,7 +12808,7 @@
     {
       "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
       "NodeType": "PythonScriptNode",
-      "Code": "input = IN[0]\r\n\r\nif input == 2024:\r\n    res = [1, 2]\r\nelse:\r\n    res = [0, 1]\r\n\r\nOUT = res",
+      "Code": "input = IN[0]\r\n\r\nif input == 2024:\r\n    res = [3, 2]\r\nelse:\r\n    res = [0, 1]\r\n\r\nOUT = res",
       "VariableInputPorts": true,
       "Id": "f81763779b3149c7ba4e7f96b7c3c681",
       "Inputs": [
@@ -12961,6 +12882,94 @@
         },
         {
           "Id": "00916a546fae4758a925726a0a0bbfb9",
+          "Name": "fullVersion",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Auto",
+      "Description": "Retrieves the name, version and build of the current Revit application."
+    },
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "NodeType": "PythonScriptNode",
+      "Code": "input = IN[0]\r\n\r\nif input == 2024:\r\n    res = [3, 0]\r\nelse:\r\n    res = [0, 3]\r\n\r\nOUT = res",
+      "VariableInputPorts": true,
+      "Id": "ac34f5a62aab4c1eaac5f043f7cd465d",
+      "Inputs": [
+        {
+          "Id": "98a9a3fba69c41ccb93429e9ba2e4cb4",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "447ec78a53244b7e8622b7d2f0c867de",
+          "Name": "OUT",
+          "Description": "Result of the python script",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Runs an embedded IronPython script."
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.CustomNodes.Function, DynamoCore",
+      "FunctionSignature": "3df0961d-9d46-464f-9175-0a74eeb61bc1",
+      "FunctionType": "Graph",
+      "NodeType": "FunctionNode",
+      "Id": "21c4a2fc42004e018de407fe5696a71e",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "8e18b4cb716a48c78652ca53e8634a95",
+          "Name": "Name",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "454708d322b642e6b9d92bdeff59166a",
+          "Name": "Version",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "ea5548ef7f284b299d4e903d2f18803d",
+          "Name": "Build",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "c1f5cf2bc39640d2b52b62d8bad62c87",
+          "Name": "Language",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "296becf6414549a599b1fe2b257e057f",
           "Name": "fullVersion",
           "Description": "return value",
           "UsingDefaultValue": false,
@@ -14345,11 +14354,6 @@
       "Id": "06ff120e10684e03b2e7144e12ced0ba"
     },
     {
-      "Start": "8802c8f26ca1409980dbe4cde533b577",
-      "End": "7311e6308be34941a7847e1977d1e102",
-      "Id": "641e98a1d1144670ba7ec828c046b862"
-    },
-    {
       "Start": "ed0ba831430c4b73a0b4ea7b1600570c",
       "End": "46d9dd09177c46c08c5b06adebf39abc",
       "Id": "3efcbbe09d9947aca5b890d5f70c16da"
@@ -14453,11 +14457,6 @@
       "Start": "c09ea3d5db3c4f9b9881b6f77a11f33b",
       "End": "9e165621463e4a1da7a8014f931fdff3",
       "Id": "eabd877ec1ae47cfadfd86de8474236a"
-    },
-    {
-      "Start": "c09ea3d5db3c4f9b9881b6f77a11f33b",
-      "End": "4dfe25347e8e48cfa7a14cdf757aa1e5",
-      "Id": "4e7b6c8700e043658aff7d08eb8bdd02"
     },
     {
       "Start": "c09ea3d5db3c4f9b9881b6f77a11f33b",
@@ -15168,6 +15167,16 @@
       "Start": "9dbcb3b7312c43559ce1cc651b033e8f",
       "End": "823a207cda2a4ee0ab50f3a349ac10b9",
       "Id": "aef7c8fe42db4e85b7d06d19f97b504f"
+    },
+    {
+      "Start": "447ec78a53244b7e8622b7d2f0c867de",
+      "End": "7311e6308be34941a7847e1977d1e102",
+      "Id": "589c170567e445e6b8f490492ed04683"
+    },
+    {
+      "Start": "454708d322b642e6b9d92bdeff59166a",
+      "End": "98a9a3fba69c41ccb93429e9ba2e4cb4",
+      "Id": "35d0b611752d44b2bba6f7f681e583a3"
     }
   ],
   "Dependencies": [
@@ -15265,7 +15274,8 @@
       "Nodes": [
         "c28748b6459d492f9ff3eeabd26eb7f6",
         "ed4e5a4a9a6c498d927031b659cbfa24",
-        "590893d1dc06478491443200346ce810"
+        "590893d1dc06478491443200346ce810",
+        "21c4a2fc42004e018de407fe5696a71e"
       ]
     }
   ],
@@ -17053,16 +17063,6 @@
         "Y": -8641.6658675746858
       },
       {
-        "Id": "203878e770084f47af7dc8d46bdf1313",
-        "IsSetAsInput": false,
-        "IsSetAsOutput": false,
-        "Name": "Code Block",
-        "ShowGeometry": false,
-        "Excluded": false,
-        "X": 14525.264560919995,
-        "Y": -8528.7155386092145
-      },
-      {
         "Id": "1e8e2e4690e8430e802fc6b04fbc0af0",
         "IsSetAsInput": false,
         "IsSetAsOutput": false,
@@ -17321,26 +17321,6 @@
         "Excluded": false,
         "X": 14333.883043011561,
         "Y": -5586.1977365301809
-      },
-      {
-        "Id": "a12e96a0df204ee5b56ed3b9b143aac6",
-        "IsSetAsInput": false,
-        "IsSetAsOutput": false,
-        "Name": "Code Block",
-        "ShowGeometry": false,
-        "Excluded": false,
-        "X": 14333.883043011561,
-        "Y": -5473.24740756471
-      },
-      {
-        "Id": "1041fcf304c944d2962217e83d740229",
-        "IsSetAsInput": false,
-        "IsSetAsOutput": false,
-        "Name": "Code Block",
-        "ShowGeometry": false,
-        "Excluded": false,
-        "X": 13683.382875377278,
-        "Y": -5316.4030194097122
       },
       {
         "Id": "e61a9a8802b14cd4ac99eb9eecdb9d7e",
@@ -18679,13 +18659,33 @@
         "Name": "Application.Version",
         "ShowGeometry": true,
         "Excluded": false,
-        "X": 13900.686509202704,
-        "Y": -8059.1979260170556
+        "X": 13943.295680345085,
+        "Y": -8340.26553242562
+      },
+      {
+        "Id": "ac34f5a62aab4c1eaac5f043f7cd465d",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Name": "Python Script",
+        "ShowGeometry": true,
+        "Excluded": false,
+        "X": 14015.094585961942,
+        "Y": -5380.2925575463942
+      },
+      {
+        "Id": "21c4a2fc42004e018de407fe5696a71e",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Name": "Application.Version",
+        "ShowGeometry": true,
+        "Excluded": false,
+        "X": 13753.475053432243,
+        "Y": -5406.6728451287636
       }
     ],
     "Annotations": [],
-    "X": -12992.124888346123,
-    "Y": 8275.2187845490043,
-    "Zoom": 0.97502863258865247
+    "X": -1254.8521977014175,
+    "Y": 1756.4099406156486,
+    "Zoom": 0.16198091433182488
   }
 }
