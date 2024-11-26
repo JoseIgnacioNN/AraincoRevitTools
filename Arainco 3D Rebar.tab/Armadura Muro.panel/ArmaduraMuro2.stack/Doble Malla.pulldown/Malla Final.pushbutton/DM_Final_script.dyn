@@ -12883,6 +12883,94 @@
       ],
       "Replication": "Disabled",
       "Description": "Runs an embedded IronPython script."
+    },
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "NodeType": "PythonScriptNode",
+      "Code": "input = IN[0]\r\n\r\nif input == 2024:\r\n    res = [1, 2]\r\nelse:\r\n    res = [0, 1]\r\n\r\nOUT = res",
+      "VariableInputPorts": true,
+      "Id": "f81763779b3149c7ba4e7f96b7c3c681",
+      "Inputs": [
+        {
+          "Id": "823a207cda2a4ee0ab50f3a349ac10b9",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "c5aeef252cba411fa1b1ddafaca4cd0d",
+          "Name": "OUT",
+          "Description": "Result of the python script",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Runs an embedded IronPython script."
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.CustomNodes.Function, DynamoCore",
+      "FunctionSignature": "3df0961d-9d46-464f-9175-0a74eeb61bc1",
+      "FunctionType": "Graph",
+      "NodeType": "FunctionNode",
+      "Id": "590893d1dc06478491443200346ce810",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "7c3a819a33fc44b7aa6d5b61dd3dbf76",
+          "Name": "Name",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "9dbcb3b7312c43559ce1cc651b033e8f",
+          "Name": "Version",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "1c3670fe08094251833022705bf2ce3c",
+          "Name": "Build",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "4aff3bd97e354e1c8d16f2f1aec2b7c0",
+          "Name": "Language",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "00916a546fae4758a925726a0a0bbfb9",
+          "Name": "fullVersion",
+          "Description": "return value",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Auto",
+      "Description": "Retrieves the name, version and build of the current Revit application."
     }
   ],
   "Connectors": [
@@ -14047,11 +14135,6 @@
       "Id": "778f7cb0e95a45079428152d6027bf3b"
     },
     {
-      "Start": "bea2d142e8084104bd4f84acf5317fb4",
-      "End": "101cfb14749643a28e690d148060c77a",
-      "Id": "584d27f4211d4ad2807c569987ebbcf7"
-    },
-    {
       "Start": "89af9bb463494af89503383a1d6e85cc",
       "End": "4420aba1e6c34986b271d3534773a5a2",
       "Id": "5cee748da48f40adada0cb94fb3435a8"
@@ -15075,6 +15158,16 @@
       "Start": "3bb8a7944d2c435980ffe32f0a0efdfc",
       "End": "e3babadcc4364b31a6862d562f151c8f",
       "Id": "3cf64fb876e2409a923697f7a4f729a9"
+    },
+    {
+      "Start": "c5aeef252cba411fa1b1ddafaca4cd0d",
+      "End": "101cfb14749643a28e690d148060c77a",
+      "Id": "86456726fabf4d8f8f7d8e6e6429238f"
+    },
+    {
+      "Start": "9dbcb3b7312c43559ce1cc651b033e8f",
+      "End": "823a207cda2a4ee0ab50f3a349ac10b9",
+      "Id": "aef7c8fe42db4e85b7d06d19f97b504f"
     }
   ],
   "Dependencies": [
@@ -15171,7 +15264,8 @@
       "ReferenceType": "Package",
       "Nodes": [
         "c28748b6459d492f9ff3eeabd26eb7f6",
-        "ed4e5a4a9a6c498d927031b659cbfa24"
+        "ed4e5a4a9a6c498d927031b659cbfa24",
+        "590893d1dc06478491443200346ce810"
       ]
     }
   ],
@@ -15187,12 +15281,12 @@
     },
     "Camera": {
       "Name": "Background Preview",
-      "EyeX": -32298.168114134322,
-      "EyeY": 16829.141540973829,
-      "EyeZ": -71.455338407976,
-      "LookX": 3553.9356922593179,
-      "LookY": -24.141540973829251,
-      "LookZ": -808.12785250999275,
+      "EyeX": -27601.645644398963,
+      "EyeY": 11592.386578414518,
+      "EyeZ": -3978.1789999328221,
+      "LookX": 4031.6456443989632,
+      "LookY": -27.386578414519036,
+      "LookZ": -916.754105535928,
       "UpX": -0.20273640099009824,
       "UpY": 0.978147600733834,
       "UpZ": 0.046100139829342184
@@ -16953,7 +17047,7 @@
         "IsSetAsInput": false,
         "IsSetAsOutput": false,
         "Name": "List.GetItemAtIndex",
-        "ShowGeometry": false,
+        "ShowGeometry": true,
         "Excluded": false,
         "X": 14525.264560919995,
         "Y": -8641.6658675746858
@@ -18567,11 +18661,31 @@
         "Excluded": false,
         "X": 9741.5182576695715,
         "Y": 3392.8614236422786
+      },
+      {
+        "Id": "f81763779b3149c7ba4e7f96b7c3c681",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Name": "Python Script",
+        "ShowGeometry": true,
+        "Excluded": false,
+        "X": 14204.91521287477,
+        "Y": -8313.8852448432481
+      },
+      {
+        "Id": "590893d1dc06478491443200346ce810",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Name": "Application.Version",
+        "ShowGeometry": true,
+        "Excluded": false,
+        "X": 13900.686509202704,
+        "Y": -8059.1979260170556
       }
     ],
     "Annotations": [],
-    "X": -7166.41439418819,
-    "Y": -2589.6748366826268,
-    "Zoom": 0.84019783915088164
+    "X": -12992.124888346123,
+    "Y": 8275.2187845490043,
+    "Zoom": 0.97502863258865247
   }
 }
