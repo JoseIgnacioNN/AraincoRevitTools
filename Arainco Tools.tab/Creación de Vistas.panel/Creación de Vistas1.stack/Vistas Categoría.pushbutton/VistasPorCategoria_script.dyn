@@ -6273,12 +6273,12 @@
     {
       "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
       "NodeType": "CodeBlockNode",
-      "Code": "//InputName\n\"Categoria Vistas\";\n//Keys\nlst = [\n\"00_PG - PLANTAS GENERALES\",\n\"01_LO - PLANTAS LOSAS\",\n\"02_MA - ELEVACION POR EJE\",\n\"03_VH - ELEVACION VIGAS\",\n\"04_CH - ELEVACION COLUMNAS\",\n\"05_EM - ESTRUCTURA METALICA\",\n\"06_ES - DETALLE ESCALERA\",\n\"07_DE - DETALLE ESTANQUE\",\n\"08_RP - DETALLE RAMPA\",\n\"09_MC - DETALLE MONTACARGA\",\n\"10_PC - PLANTAS DE CARGA\",\n\"11_CF - CIELO FALSO\"\n];\n//Values\nsplit_lst = DSCore.String.Split(lst, \" - \");\nvalues = DSCore.List.GetItemAtIndex(split_lst@L2<1>, 0);\n//DefaultValueIndex\n0;",
+      "Code": "//InputName\n\"Categoria Vistas\";\n//Keys\nlst = [\n\"00_PG - PLANTAS GENERALES\",\n\"01_LO - PLANTAS LOSAS\",\n\"02_MA - ELEVACION POR EJE\",\n\"03_VH - ELEVACION VIGAS\",\n\"04_CH - ELEVACION COLUMNAS\",\n\"05_EM - ESTRUCTURA METALICA\",\n\"06_ES - DETALLE ESCALERA\",\n\"07_DE - DETALLE ESTANQUE\",\n\"08_RP - DETALLE RAMPA\",\n\"09_MC - DETALLE MONTACARGA\",\n\"10_PC - PLANTAS DE CARGA\",\n\"11_CF - CIELOS FALSOS\",\n\"12_OE - OBRAS EXTERIORES\",\n\"13_SK - ESQUEMAS\"\n];\n//Values\nsplit_lst = DSCore.String.Split(lst, \" - \");\nvalues = DSCore.List.GetItemAtIndex(split_lst@L2<1>, 0);\n//DefaultValueIndex\n0;",
       "Id": "732a4d2ba8ad4a4ea91bb44b1dc723a9",
       "Inputs": [],
       "Outputs": [
         {
-          "Id": "f4a8e34a9df347c585c57b4142b16b41",
+          "Id": "2aef47fcf5c1420899a1466c5ed50410",
           "Name": "",
           "Description": "Value of expression at line 2",
           "UsingDefaultValue": false,
@@ -6287,7 +6287,7 @@
           "KeepListStructure": false
         },
         {
-          "Id": "e484c89497434ee59222ba7f026ca436",
+          "Id": "9a947617d1ac4380a739aba8b8613c22",
           "Name": "",
           "Description": "lst",
           "UsingDefaultValue": false,
@@ -6296,7 +6296,7 @@
           "KeepListStructure": false
         },
         {
-          "Id": "d98ed448781d4ce480ac6bb6391b34cb",
+          "Id": "7c89319ae24c455e9fe3fd85d8201cb7",
           "Name": "",
           "Description": "split_lst",
           "UsingDefaultValue": false,
@@ -6305,7 +6305,7 @@
           "KeepListStructure": false
         },
         {
-          "Id": "f382dc60d0fa44d19d6c14a264b7e892",
+          "Id": "bf162ec6224042e0bd6898de0704f44a",
           "Name": "",
           "Description": "values",
           "UsingDefaultValue": false,
@@ -6314,9 +6314,9 @@
           "KeepListStructure": false
         },
         {
-          "Id": "003f6ab7e0714f97b2e8e3b1aefc18be",
+          "Id": "3f06d63ae1e347d2a605af88e5aed363",
           "Name": "",
-          "Description": "Value of expression at line 22",
+          "Description": "Value of expression at line 24",
           "UsingDefaultValue": false,
           "Level": 2,
           "UseLevels": false,
@@ -10656,24 +10656,24 @@
       "Id": "96c62bba2d9e4b50942f5336c6e12485"
     },
     {
-      "Start": "f4a8e34a9df347c585c57b4142b16b41",
+      "Start": "2aef47fcf5c1420899a1466c5ed50410",
       "End": "e556b1ab2b7d4606b8e914615d3572a3",
-      "Id": "abf11b1321d340578b9cce69700ff691"
+      "Id": "790bee2203be456c9b91d45ee35b277f"
     },
     {
-      "Start": "e484c89497434ee59222ba7f026ca436",
+      "Start": "9a947617d1ac4380a739aba8b8613c22",
       "End": "a220551b5a694804a59cccbea49d9767",
-      "Id": "76a1c586c91f4234973eb32774d62eea"
+      "Id": "f68f7084eb9c47e689875a2ef07282b8"
     },
     {
-      "Start": "f382dc60d0fa44d19d6c14a264b7e892",
+      "Start": "bf162ec6224042e0bd6898de0704f44a",
       "End": "3b23ca321cea4d8abe18e965a0f68d02",
-      "Id": "c35b67f3c0c1442a92c4c38c941bc026"
+      "Id": "6f970586f3714e97a1ad25d57c73f668"
     },
     {
-      "Start": "003f6ab7e0714f97b2e8e3b1aefc18be",
+      "Start": "3f06d63ae1e347d2a605af88e5aed363",
       "End": "5189827d41854d7c98a2e2fc20bf4d59",
-      "Id": "29161fe5ba664d658b2399072d9d815d"
+      "Id": "5defbfc4cfed4a858b64baea8c09ae77"
     },
     {
       "Start": "e4caa36d9bb64154bd48de0eadc65b33",
@@ -11233,14 +11233,7 @@
       ]
     }
   ],
-  "Bindings": [
-    {
-      "NodeId": "c51c6adb-ad9c-4eb1-8ec9-2e5c75fd81cf",
-      "Binding": {
-        "ByRules_InClassDecl-1_InFunctionScope-1_Instance0_c51c6adb-ad9c-4eb1-8ec9-2e5c75fd81cf": "PFNPQVAtRU5WOkVudmVsb3BlIHhtbG5zOnhzaT0iaHR0cDovL3d3dy53My5vcmcvMjAwMS9YTUxTY2hlbWEtaW5zdGFuY2UiIHhtbG5zOnhzZD0iaHR0cDovL3d3dy53My5vcmcvMjAwMS9YTUxTY2hlbWEiIHhtbG5zOlNPQVAtRU5DPSJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy9zb2FwL2VuY29kaW5nLyIgeG1sbnM6U09BUC1FTlY9Imh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3NvYXAvZW52ZWxvcGUvIiB4bWxuczpjbHI9Imh0dHA6Ly9zY2hlbWFzLm1pY3Jvc29mdC5jb20vc29hcC9lbmNvZGluZy9jbHIvMS4wIiBTT0FQLUVOVjplbmNvZGluZ1N0eWxlPSJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy9zb2FwL2VuY29kaW5nLyI+DQo8U09BUC1FTlY6Qm9keT4NCjxhMTpDYWxsU2l0ZV94MDAyQl9UcmFjZVNlcmlhbGlzZXJIZWxwZXIgaWQ9InJlZi0xIiB4bWxuczphMT0iaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS9jbHIvbnNhc3NlbS9Qcm90b0NvcmUvUHJvdG9Db3JlJTJDJTIwVmVyc2lvbiUzRDIuNi4yLjE1NzA1JTJDJTIwQ3VsdHVyZSUzRG5ldXRyYWwlMkMlMjBQdWJsaWNLZXlUb2tlbiUzRG51bGwiPg0KPE51bWJlck9mRWxlbWVudHM+MTwvTnVtYmVyT2ZFbGVtZW50cz4NCjxCYXNlLTBfSGFzRGF0YT50cnVlPC9CYXNlLTBfSGFzRGF0YT4NCjxCYXNlLTBfRGF0YSBpZD0icmVmLTMiPlBGTlBRVkF0UlU1V09rVnVkbVZzYjNCbElIaHRiRzV6T25oemFUMGlhSFIwY0RvdkwzZDNkeTUzTXk1dmNtY3ZNakF3TVM5WVRVeFRZMmhsYldFdGFXNXpkR0Z1WTJVaUlIaHRiRzV6T25oelpEMGlhSFIwY0RvdkwzZDNkeTUzTXk1dmNtY3ZNakF3TVM5WVRVeFRZMmhsYldFaUlIaHRiRzV6T2xOUFFWQXRSVTVEUFNKb2RIUndPaTh2YzJOb1pXMWhjeTU0Yld4emIyRndMbTl5Wnk5emIyRndMMlZ1WTI5a2FXNW5MeUlnZUcxc2JuTTZVMDlCVUMxRlRsWTlJbWgwZEhBNkx5OXpZMmhsYldGekxuaHRiSE52WVhBdWIzSm5MM052WVhBdlpXNTJaV3h2Y0dVdklpQjRiV3h1Y3pwamJISTlJbWgwZEhBNkx5OXpZMmhsYldGekxtMXBZM0p2YzI5bWRDNWpiMjB2YzI5aGNDOWxibU52WkdsdVp5OWpiSEl2TVM0d0lpQlRUMEZRTFVWT1ZqcGxibU52WkdsdVoxTjBlV3hsUFNKb2RIUndPaTh2YzJOb1pXMWhjeTU0Yld4emIyRndMbTl5Wnk5emIyRndMMlZ1WTI5a2FXNW5MeUkrRFFvOFUwOUJVQzFGVGxZNlFtOWtlVDROQ2p4aE1UcFRaWEpwWVd4cGVtRmliR1ZKWkNCcFpEMGljbVZtTFRFaUlIaHRiRzV6T21FeFBTSm9kSFJ3T2k4dmMyTm9aVzFoY3k1dGFXTnliM052Wm5RdVkyOXRMMk5zY2k5dWMyRnpjMlZ0TDFKbGRtbDBVMlZ5ZG1salpYTXVVR1Z5YzJsemRHVnVZMlV2VW1WMmFYUlRaWEoyYVdObGN5VXlReVV5TUZabGNuTnBiMjRsTTBReUxqWXVNaTR4T0RRek1DVXlReVV5TUVOMWJIUjFjbVVsTTBSdVpYVjBjbUZzSlRKREpUSXdVSFZpYkdsalMyVjVWRzlyWlc0bE0wUnVkV3hzSWo0TkNqeHpkSEpwYm1kSlJDQnBaRDBpY21WbUxUTWlQbVU1TlRjeFpEY3lMVGcyWVRVdE5Ea3pNeTFoTkRZNUxUSTROV0V6TVRZeE1UVmpZeTB3TURCbVl6SmhNRHd2YzNSeWFXNW5TVVErRFFvOGFXNTBTVVErTVRBek1qZzJORHd2YVc1MFNVUStEUW84TDJFeE9sTmxjbWxoYkdsNllXSnNaVWxrUGcwS1BDOVRUMEZRTFVWT1ZqcENiMlI1UGcwS1BDOVRUMEZRTFVWT1ZqcEZiblpsYkc5d1pUNE5DZz09PC9CYXNlLTBfRGF0YT4NCjxCYXNlLTBfSGFzTmVzdGVkRGF0YT5mYWxzZTwvQmFzZS0wX0hhc05lc3RlZERhdGE+DQo8L2ExOkNhbGxTaXRlX3gwMDJCX1RyYWNlU2VyaWFsaXNlckhlbHBlcj4NCjwvU09BUC1FTlY6Qm9keT4NCjwvU09BUC1FTlY6RW52ZWxvcGU+DQo="
-      }
-    }
-  ],
+  "Bindings": [],
   "View": {
     "Dynamo": {
       "ScaleFactor": 1.0,
@@ -14358,8 +14351,8 @@
         "Background": "#FFC1D676"
       }
     ],
-    "X": 7013.78102528377,
-    "Y": -1144.2979025421628,
-    "Zoom": 0.96249694682026266
+    "X": 36952.499493200492,
+    "Y": -8154.1489827329,
+    "Zoom": 1.5373693691207364
   }
 }
