@@ -539,64 +539,6 @@
       "Description": "Allows for DesignScript code to be authored directly"
     },
     {
-      "ConcreteType": "Dynamo.Graph.Nodes.CustomNodes.Function, DynamoCore",
-      "FunctionSignature": "d683fc0e-aae1-4bb7-b6cc-5f8bc13740ac",
-      "FunctionType": "Graph",
-      "NodeType": "FunctionNode",
-      "Id": "509570e5e08142d296b966d886f6a668",
-      "Inputs": [
-        {
-          "Id": "7a2524a0e88348d89a67df20e4b8b071",
-          "Name": "levels",
-          "Description": "var[]..[]",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        },
-        {
-          "Id": "47e9789c8b2d4ace883ce964a456082c",
-          "Name": "names",
-          "Description": "var[]..[]",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        },
-        {
-          "Id": "9832173c7af44f2cad235ecb710c7a99",
-          "Name": "viewType",
-          "Description": "var[]..[]",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        }
-      ],
-      "Outputs": [
-        {
-          "Id": "03b4c646acd44a849e1b9c9804c3efa2",
-          "Name": "planViews",
-          "Description": "return value",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        },
-        {
-          "Id": "1f594c1200b546518665e57ced1f3ad4",
-          "Name": "wasRenamed",
-          "Description": "return value",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        }
-      ],
-      "Replication": "Auto",
-      "Description": "Given an even list of levels and names and a view type, this node will create new plan views for those levels and attempt to rename them if a name is available. You can automate the application of view templates by assigning them to the view types in Revit as well. If you feed in a ceiling plan type, it will make a ceiling plan due to how the ViewPlan API works."
-    },
-    {
       "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
       "NodeType": "CodeBlockNode",
       "Code": "//ElementType (Cielo);\nRevit.Elements.ElementSelector.ByElementId(204495);",
@@ -4570,64 +4512,6 @@
       "Description": "Gets an element's level.\r\nBased on a Clockwork's node"
     },
     {
-      "ConcreteType": "Dynamo.Graph.Nodes.CustomNodes.Function, DynamoCore",
-      "FunctionSignature": "d683fc0e-aae1-4bb7-b6cc-5f8bc13740ac",
-      "FunctionType": "Graph",
-      "NodeType": "FunctionNode",
-      "Id": "a413ecd01fef4908a50147a8a08467e4",
-      "Inputs": [
-        {
-          "Id": "2abf8be7a3dc42e3b1e0788cde886b6d",
-          "Name": "levels",
-          "Description": "var[]..[]",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        },
-        {
-          "Id": "0791a7eccaed4c40bab493fc3156e1a2",
-          "Name": "names",
-          "Description": "var[]..[]",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        },
-        {
-          "Id": "f5afa6a8b18f4b168e938a8dc8db8712",
-          "Name": "viewType",
-          "Description": "var[]..[]",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        }
-      ],
-      "Outputs": [
-        {
-          "Id": "9d3e005c49584327a20c1d6c43b77aca",
-          "Name": "planViews",
-          "Description": "return value",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        },
-        {
-          "Id": "f68f719204bc411c9dd3002e2072e0fa",
-          "Name": "wasRenamed",
-          "Description": "return value",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        }
-      ],
-      "Replication": "Auto",
-      "Description": "Given an even list of levels and names and a view type, this node will create new plan views for those levels and attempt to rename them if a name is available. You can automate the application of view templates by assigning them to the view types in Revit as well. If you feed in a ceiling plan type, it will make a ceiling plan due to how the ViewPlan API works."
-    },
-    {
       "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
       "NodeType": "CodeBlockNode",
       "Code": "//ElementType (Piso);\nRevit.Elements.ElementSelector.ByElementId(92026);",
@@ -8147,6 +8031,104 @@
       ],
       "Replication": "Auto",
       "Description": "Filters a sequence by looking up corresponding indices in a separate list of booleans.\n\nList.FilterByBoolMask (list: var[]..[], mask: var[]..[]): var[]..[]"
+    },
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "NodeType": "PythonScriptNode",
+      "Code": "# Importaciones necesarias para la API de Revit y Dynamo\r\nimport clr\r\n\r\nclr.AddReference('RevitAPI')\r\nfrom Autodesk.Revit.DB import *\r\n\r\nclr.AddReference('RevitServices')\r\nimport RevitServices\r\nfrom RevitServices.Persistence import DocumentManager\r\nfrom RevitServices.Transactions import TransactionManager\r\n\r\n# Obtener el documento actual de Revit\r\ndoc = DocumentManager.Instance.CurrentDBDocument\r\n\r\n# --- ENTRADAS DE DYNAMO ---\r\n# IN[0]: Lista de elementos Nivel de Revit (Revit.Elements.Level)\r\n# IN[1]: Lista de nombres (strings) para las nuevas vistas\r\n# IN[2]: Elemento ViewFamilyType de Revit (Revit.Elements.ViewFamilyType)\r\ninput_levels = IN[0]\r\ninput_view_names = IN[1]\r\nview_family_type_input = IN[2] # Nueva entrada para el elemento ViewFamilyType\r\n\r\n# --- PARÁMETROS ADICIONALES ---\r\n# (Opcional) Nombre de la plantilla de vista a aplicar (dejar como None si no se usa)\r\n# view_template_name_input = IN[3] # Si quieres pasarla como input (cambia el índice si añades más inputs)\r\n\r\n# --- VALIDACIÓN DE ENTRADAS ---\r\nif not isinstance(input_levels, list):\r\n    input_levels = [input_levels]  # Convertir a lista si es un solo elemento\r\nif not isinstance(input_view_names, list):\r\n    input_view_names = [input_view_names]  # Convertir a lista si es un solo elemento\r\n\r\nif len(input_levels) == 0:\r\n    OUT = \"Error: La lista de niveles (IN[0]) está vacía.\"\r\nelif len(input_view_names) == 0:\r\n    OUT = \"Error: La lista de nombres de vista (IN[1]) está vacía.\"\r\nelif len(input_levels) != len(input_view_names):\r\n    OUT = \"Error: El número de niveles no coincide con el número de nombres de vista.\"\r\nelse: # A partir de aquí, validamos view_family_type_input\r\n    # --- LÓGICA PRINCIPAL ---\r\n\r\n    # 1. Obtener el Tipo de Familia de Vista (ViewFamilyType) desde la entrada directa\r\n    target_vft = None\r\n    if hasattr(view_family_type_input, 'InternalElement'):\r\n        target_vft = view_family_type_input.InternalElement\r\n    else:\r\n        target_vft = view_family_type_input # Asumir que ya es un elemento de la API\r\n\r\n    # Asegurarse de que el elemento de entrada es realmente un ViewFamilyType\r\n    if not isinstance(target_vft, ViewFamilyType):\r\n        OUT = \"Error: La entrada del ViewFamilyType (IN[2]) no es un elemento ViewFamilyType válido.\"\r\n    else:\r\n        # (Opcional) Obtener la plantilla de vista si se proporcionó un nombre\r\n        # view_template = None\r\n        # if view_template_name_input:\r\n        #     templates = FilteredElementCollector(doc).OfClass(View).WhereElementIsNotElementType().ToElements()\r\n        #     for t in templates:\r\n        #         if t.IsTemplate and t.Name == view_template_name_input:\r\n        #             view_template = t\r\n        #             break\r\n        #     if not view_template:\r\n        #         pass # print(\"Advertencia: Plantilla de vista '{}' no encontrada.\".format(view_template_name_input))\r\n\r\n        # 2. Iniciar una transacción para crear las vistas\r\n        TransactionManager.Instance.EnsureInTransaction(doc)\r\n        created_views_output = []\r\n\r\n        # 3. Bucle para crear vistas usando las listas de entrada\r\n        for i in range(len(input_levels)):\r\n            level_element = input_levels[i]\r\n            view_name = input_view_names[i]\r\n\r\n            # Asegurarse de que el nivel sea un elemento Level de Revit\r\n            if hasattr(level_element, 'InternalElement'):\r\n                level_revit_element = level_element.InternalElement\r\n            else:\r\n                level_revit_element = level_element  # Asumir que ya es un elemento de la API\r\n\r\n            if not isinstance(level_revit_element, Level):\r\n                created_views_output.append(\"Error: El elemento en la posición {} de IN[0] no es un Nivel válido.\".format(i))\r\n                continue  # Saltar al siguiente elemento\r\n\r\n            try:\r\n                # Usamos ViewPlan.Create() para todos los tipos de plano.\r\n                # El tipo específico (FloorPlan, StructuralPlan, etc.) se determina por target_vft.Id.\r\n                new_view = ViewPlan.Create(doc, target_vft.Id, level_revit_element.Id)\r\n                \r\n                if new_view:\r\n                    new_view.Name = view_name\r\n                    \r\n                    # (Opcional) Aplicar plantilla de vista\r\n                    # if view_template:\r\n                    #    new_view.ViewTemplateId = view_template.Id\r\n                        \r\n                    created_views_output.append(new_view)  # Devuelve el elemento de Revit\r\n                else:\r\n                    created_views_output.append(\"Error: No se pudo crear la vista para el nivel '{}'.\".format(level_revit_element.Name))\r\n\r\n            except Exception as e:\r\n                error_message = \"Error creando vista '{}' para nivel '{}': {}\".format(view_name, level_revit_element.Name, str(e))\r\n                # Comprobar si el error es por vista duplicada\r\n                if \"There is already a Plan View named\" in str(e) or \"ya existe una vista de plano denominada\" in str(e):\r\n                     error_message = \"Ya existe una vista para el nivel '{}' con el nombre '{}' y tipo especificados.\".format(level_revit_element.Name, view_name)\r\n                created_views_output.append(error_message)\r\n\r\n        # 4. Finalizar la transacción\r\n        TransactionManager.Instance.TransactionTaskDone()\r\n        OUT = created_views_output",
+      "VariableInputPorts": true,
+      "Id": "b7f4a1c45ebd498fb1e79de79a57883b",
+      "Inputs": [
+        {
+          "Id": "341a3007591942b894aa2c641ad3d004",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "18cf320a940349d093b0f8989c446a66",
+          "Name": "IN[1]",
+          "Description": "Input #1",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "9ec84a63f499409fbbc6c4f5cc108c7c",
+          "Name": "IN[2]",
+          "Description": "Input #2",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "d9e89e8227694c62938bd463cb8ec468",
+          "Name": "OUT",
+          "Description": "Result of the python script",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Runs an embedded IronPython script."
+    },
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "NodeType": "PythonScriptNode",
+      "Code": "# Importaciones necesarias para la API de Revit y Dynamo\r\nimport clr\r\n\r\nclr.AddReference('RevitAPI')\r\nfrom Autodesk.Revit.DB import *\r\n\r\nclr.AddReference('RevitServices')\r\nimport RevitServices\r\nfrom RevitServices.Persistence import DocumentManager\r\nfrom RevitServices.Transactions import TransactionManager\r\n\r\n# Obtener el documento actual de Revit\r\ndoc = DocumentManager.Instance.CurrentDBDocument\r\n\r\n# --- ENTRADAS DE DYNAMO ---\r\n# IN[0]: Lista de elementos Nivel de Revit (Revit.Elements.Level)\r\n# IN[1]: Lista de nombres (strings) para las nuevas vistas\r\n# IN[2]: Elemento ViewFamilyType de Revit (Revit.Elements.ViewFamilyType)\r\ninput_levels = IN[0]\r\ninput_view_names = IN[1]\r\nview_family_type_input = IN[2] # Nueva entrada para el elemento ViewFamilyType\r\n\r\n# --- PARÁMETROS ADICIONALES ---\r\n# (Opcional) Nombre de la plantilla de vista a aplicar (dejar como None si no se usa)\r\n# view_template_name_input = IN[3] # Si quieres pasarla como input (cambia el índice si añades más inputs)\r\n\r\n# --- VALIDACIÓN DE ENTRADAS ---\r\nif not isinstance(input_levels, list):\r\n    input_levels = [input_levels]  # Convertir a lista si es un solo elemento\r\nif not isinstance(input_view_names, list):\r\n    input_view_names = [input_view_names]  # Convertir a lista si es un solo elemento\r\n\r\nif len(input_levels) == 0:\r\n    OUT = \"Error: La lista de niveles (IN[0]) está vacía.\"\r\nelif len(input_view_names) == 0:\r\n    OUT = \"Error: La lista de nombres de vista (IN[1]) está vacía.\"\r\nelif len(input_levels) != len(input_view_names):\r\n    OUT = \"Error: El número de niveles no coincide con el número de nombres de vista.\"\r\nelse: # A partir de aquí, validamos view_family_type_input\r\n    # --- LÓGICA PRINCIPAL ---\r\n\r\n    # 1. Obtener el Tipo de Familia de Vista (ViewFamilyType) desde la entrada directa\r\n    target_vft = None\r\n    if hasattr(view_family_type_input, 'InternalElement'):\r\n        target_vft = view_family_type_input.InternalElement\r\n    else:\r\n        target_vft = view_family_type_input # Asumir que ya es un elemento de la API\r\n\r\n    # Asegurarse de que el elemento de entrada es realmente un ViewFamilyType\r\n    if not isinstance(target_vft, ViewFamilyType):\r\n        OUT = \"Error: La entrada del ViewFamilyType (IN[2]) no es un elemento ViewFamilyType válido.\"\r\n    else:\r\n        # (Opcional) Obtener la plantilla de vista si se proporcionó un nombre\r\n        # view_template = None\r\n        # if view_template_name_input:\r\n        #     templates = FilteredElementCollector(doc).OfClass(View).WhereElementIsNotElementType().ToElements()\r\n        #     for t in templates:\r\n        #         if t.IsTemplate and t.Name == view_template_name_input:\r\n        #             view_template = t\r\n        #             break\r\n        #     if not view_template:\r\n        #         pass # print(\"Advertencia: Plantilla de vista '{}' no encontrada.\".format(view_template_name_input))\r\n\r\n        # 2. Iniciar una transacción para crear las vistas\r\n        TransactionManager.Instance.EnsureInTransaction(doc)\r\n        created_views_output = []\r\n\r\n        # 3. Bucle para crear vistas usando las listas de entrada\r\n        for i in range(len(input_levels)):\r\n            level_element = input_levels[i]\r\n            view_name = input_view_names[i]\r\n\r\n            # Asegurarse de que el nivel sea un elemento Level de Revit\r\n            if hasattr(level_element, 'InternalElement'):\r\n                level_revit_element = level_element.InternalElement\r\n            else:\r\n                level_revit_element = level_element  # Asumir que ya es un elemento de la API\r\n\r\n            if not isinstance(level_revit_element, Level):\r\n                created_views_output.append(\"Error: El elemento en la posición {} de IN[0] no es un Nivel válido.\".format(i))\r\n                continue  # Saltar al siguiente elemento\r\n\r\n            try:\r\n                # Usamos ViewPlan.Create() para todos los tipos de plano.\r\n                # El tipo específico (FloorPlan, StructuralPlan, etc.) se determina por target_vft.Id.\r\n                new_view = ViewPlan.Create(doc, target_vft.Id, level_revit_element.Id)\r\n                \r\n                if new_view:\r\n                    new_view.Name = view_name\r\n                    \r\n                    # (Opcional) Aplicar plantilla de vista\r\n                    # if view_template:\r\n                    #    new_view.ViewTemplateId = view_template.Id\r\n                        \r\n                    created_views_output.append(new_view)  # Devuelve el elemento de Revit\r\n                else:\r\n                    created_views_output.append(\"Error: No se pudo crear la vista para el nivel '{}'.\".format(level_revit_element.Name))\r\n\r\n            except Exception as e:\r\n                error_message = \"Error creando vista '{}' para nivel '{}': {}\".format(view_name, level_revit_element.Name, str(e))\r\n                # Comprobar si el error es por vista duplicada\r\n                if \"There is already a Plan View named\" in str(e) or \"ya existe una vista de plano denominada\" in str(e):\r\n                     error_message = \"Ya existe una vista para el nivel '{}' con el nombre '{}' y tipo especificados.\".format(level_revit_element.Name, view_name)\r\n                created_views_output.append(error_message)\r\n\r\n        # 4. Finalizar la transacción\r\n        TransactionManager.Instance.TransactionTaskDone()\r\n        OUT = created_views_output",
+      "VariableInputPorts": true,
+      "Id": "f465d375d0d64264a36306209e824862",
+      "Inputs": [
+        {
+          "Id": "8f8c64af330541a8ac2911b951d31c06",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "8a394f8155e84132afe72fe5b44d2e7f",
+          "Name": "IN[1]",
+          "Description": "Input #1",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "0934daa4bd6648c1a867d600b6ad6713",
+          "Name": "IN[2]",
+          "Description": "Input #2",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "dfaa38a1173248f99360558389c5b34d",
+          "Name": "OUT",
+          "Description": "Result of the python script",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Runs an embedded IronPython script."
     }
   ],
   "Connectors": [
@@ -8262,13 +8244,13 @@
     },
     {
       "Start": "6e2c3642b99d4e55bdd28113d3972a11",
-      "End": "7a2524a0e88348d89a67df20e4b8b071",
-      "Id": "13d342af916342c6824908d5b0867d87"
+      "End": "eef1311e12c84496a42f86e502aa3e2b",
+      "Id": "a317a57437474dc2be0bd41eeff3e781"
     },
     {
       "Start": "6e2c3642b99d4e55bdd28113d3972a11",
-      "End": "eef1311e12c84496a42f86e502aa3e2b",
-      "Id": "a317a57437474dc2be0bd41eeff3e781"
+      "End": "8f8c64af330541a8ac2911b951d31c06",
+      "Id": "33d38cf131db434ea1fdbc139b0cb19d"
     },
     {
       "Start": "4d5f2b2bed2d446997b6f9e14ecb18a7",
@@ -8276,14 +8258,9 @@
       "Id": "222ad79fec3c444d977b0c738f9633f5"
     },
     {
-      "Start": "03b4c646acd44a849e1b9c9804c3efa2",
-      "End": "54ffcdd220544cf59097dfd716f6507d",
-      "Id": "d45cc2c1fce74b04a9dfc52fae3032f1"
-    },
-    {
       "Start": "33131432f32d4c959ba1072902715f48",
-      "End": "9832173c7af44f2cad235ecb710c7a99",
-      "Id": "4f8a43d796b74f9ea5ce334805fa7c18"
+      "End": "0934daa4bd6648c1a867d600b6ad6713",
+      "Id": "6afeb09f6b1041c195c4714827cf0500"
     },
     {
       "Start": "a38c841db029483686d8d8012f89219f",
@@ -8347,8 +8324,8 @@
     },
     {
       "Start": "2528216fd1084c138fd239073df093ad",
-      "End": "47e9789c8b2d4ace883ce964a456082c",
-      "Id": "550c67cc7d634f82a6b6c5e5059c2d19"
+      "End": "8a394f8155e84132afe72fe5b44d2e7f",
+      "Id": "d6582889e49643beb8556e05a1aae837"
     },
     {
       "Start": "874c0430ec0842d7b2ec6453a65a55c6",
@@ -9091,19 +9068,14 @@
       "Id": "02daea1c075444e997e492e65efe77d3"
     },
     {
-      "Start": "9d3e005c49584327a20c1d6c43b77aca",
-      "End": "f523b6c2abfc481196b91da809cfaa3a",
-      "Id": "c72676e699e543cc9f8c7e6af18c1f43"
-    },
-    {
       "Start": "1e2998fb0b664884a88ad2f66cc56525",
-      "End": "f5afa6a8b18f4b168e938a8dc8db8712",
-      "Id": "a8d8b8f4b4854342a641367fd72392e2"
+      "End": "9ec84a63f499409fbbc6c4f5cc108c7c",
+      "Id": "1bef02e6e178447881d51ce30b55f92e"
     },
     {
       "Start": "29f2bc6760b845019d86d7037081190b",
-      "End": "0791a7eccaed4c40bab493fc3156e1a2",
-      "Id": "c5b9ce6ab9b64ef7b0510a950bfa5b26"
+      "End": "18cf320a940349d093b0f8989c446a66",
+      "Id": "31f6ddf6edf84075aa1390229a3a34b9"
     },
     {
       "Start": "09d2700e6fd24e2aa94d18176805ec22",
@@ -9127,8 +9099,8 @@
     },
     {
       "Start": "45ae135a62924a2fb035b664f96beb63",
-      "End": "2abf8be7a3dc42e3b1e0788cde886b6d",
-      "Id": "6912ecbac5694302be949c6a83cb5058"
+      "End": "341a3007591942b894aa2c641ad3d004",
+      "Id": "bce5d6d1ea2c449880e4d29ae01f291c"
     },
     {
       "Start": "936693e4722d44feb824ae102ddba490",
@@ -9599,10 +9571,19 @@
       "Start": "0eee35979a7a46d2ac3307ba67af3812",
       "End": "f953658ad18945c5bfe961fc7c4e410a",
       "Id": "1aeb0abe83084540921d198d1faed831"
+    },
+    {
+      "Start": "d9e89e8227694c62938bd463cb8ec468",
+      "End": "f523b6c2abfc481196b91da809cfaa3a",
+      "Id": "68973063151b4ac3adba5da31b7ff138"
+    },
+    {
+      "Start": "dfaa38a1173248f99360558389c5b34d",
+      "End": "54ffcdd220544cf59097dfd716f6507d",
+      "Id": "5d43bf083d4c44d08f4dc0d6bf805e52"
     }
   ],
   "Dependencies": [
-    "d683fc0e-aae1-4bb7-b6cc-5f8bc13740ac",
     "67a60879-a708-4aa8-8e8e-aa3ac271335c",
     "66b134d7-9aac-4af1-87ca-8c88f23ae250",
     "8dd21e87-e410-4572-a88f-a63efab2624a",
@@ -9616,16 +9597,6 @@
   ],
   "NodeLibraryDependencies": [
     {
-      "Name": "Crumple",
-      "Version": "2022.2.13",
-      "ReferenceType": "Package",
-      "Nodes": [
-        "509570e5e08142d296b966d886f6a668",
-        "1e5620dab6204da3ab85853012686c26",
-        "a413ecd01fef4908a50147a8a08467e4"
-      ]
-    },
-    {
       "Name": "Genius Loci",
       "Version": "2021.11.10",
       "ReferenceType": "Package",
@@ -9634,6 +9605,14 @@
         "5804c7ff939043988be23c79a3888912",
         "451503d1d7ff4164bcaad2a7eddab844",
         "02e4e23892f144539b2982b8595bcb38"
+      ]
+    },
+    {
+      "Name": "Crumple",
+      "Version": "2022.2.13",
+      "ReferenceType": "Package",
+      "Nodes": [
+        "1e5620dab6204da3ab85853012686c26"
       ]
     },
     {
@@ -9673,14 +9652,7 @@
       ]
     }
   ],
-  "Bindings": [
-    {
-      "NodeId": "83203d95-b3d6-4bf7-aa9c-583f7372fad5",
-      "Binding": {
-        "ByRules_InClassDecl-1_InFunctionScope-1_Instance0_83203d95-b3d6-4bf7-aa9c-583f7372fad5": "PFNPQVAtRU5WOkVudmVsb3BlIHhtbG5zOnhzaT0iaHR0cDovL3d3dy53My5vcmcvMjAwMS9YTUxTY2hlbWEtaW5zdGFuY2UiIHhtbG5zOnhzZD0iaHR0cDovL3d3dy53My5vcmcvMjAwMS9YTUxTY2hlbWEiIHhtbG5zOlNPQVAtRU5DPSJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy9zb2FwL2VuY29kaW5nLyIgeG1sbnM6U09BUC1FTlY9Imh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3NvYXAvZW52ZWxvcGUvIiB4bWxuczpjbHI9Imh0dHA6Ly9zY2hlbWFzLm1pY3Jvc29mdC5jb20vc29hcC9lbmNvZGluZy9jbHIvMS4wIiBTT0FQLUVOVjplbmNvZGluZ1N0eWxlPSJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy9zb2FwL2VuY29kaW5nLyI+DQo8U09BUC1FTlY6Qm9keT4NCjxhMTpDYWxsU2l0ZV94MDAyQl9UcmFjZVNlcmlhbGlzZXJIZWxwZXIgaWQ9InJlZi0xIiB4bWxuczphMT0iaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS9jbHIvbnNhc3NlbS9Qcm90b0NvcmUvUHJvdG9Db3JlJTJDJTIwVmVyc2lvbiUzRDIuNi4yLjE1NzA1JTJDJTIwQ3VsdHVyZSUzRG5ldXRyYWwlMkMlMjBQdWJsaWNLZXlUb2tlbiUzRG51bGwiPg0KPE51bWJlck9mRWxlbWVudHM+MTwvTnVtYmVyT2ZFbGVtZW50cz4NCjxCYXNlLTBfSGFzRGF0YT50cnVlPC9CYXNlLTBfSGFzRGF0YT4NCjxCYXNlLTBfRGF0YSBpZD0icmVmLTMiPlBGTlBRVkF0UlU1V09rVnVkbVZzYjNCbElIaHRiRzV6T25oemFUMGlhSFIwY0RvdkwzZDNkeTUzTXk1dmNtY3ZNakF3TVM5WVRVeFRZMmhsYldFdGFXNXpkR0Z1WTJVaUlIaHRiRzV6T25oelpEMGlhSFIwY0RvdkwzZDNkeTUzTXk1dmNtY3ZNakF3TVM5WVRVeFRZMmhsYldFaUlIaHRiRzV6T2xOUFFWQXRSVTVEUFNKb2RIUndPaTh2YzJOb1pXMWhjeTU0Yld4emIyRndMbTl5Wnk5emIyRndMMlZ1WTI5a2FXNW5MeUlnZUcxc2JuTTZVMDlCVUMxRlRsWTlJbWgwZEhBNkx5OXpZMmhsYldGekxuaHRiSE52WVhBdWIzSm5MM052WVhBdlpXNTJaV3h2Y0dVdklpQjRiV3h1Y3pwamJISTlJbWgwZEhBNkx5OXpZMmhsYldGekxtMXBZM0p2YzI5bWRDNWpiMjB2YzI5aGNDOWxibU52WkdsdVp5OWpiSEl2TVM0d0lpQlRUMEZRTFVWT1ZqcGxibU52WkdsdVoxTjBlV3hsUFNKb2RIUndPaTh2YzJOb1pXMWhjeTU0Yld4emIyRndMbTl5Wnk5emIyRndMMlZ1WTI5a2FXNW5MeUkrRFFvOFUwOUJVQzFGVGxZNlFtOWtlVDROQ2p4aE1UcFRaWEpwWVd4cGVtRmliR1ZKWkNCcFpEMGljbVZtTFRFaUlIaHRiRzV6T21FeFBTSm9kSFJ3T2k4dmMyTm9aVzFoY3k1dGFXTnliM052Wm5RdVkyOXRMMk5zY2k5dWMyRnpjMlZ0TDFKbGRtbDBVMlZ5ZG1salpYTXVVR1Z5YzJsemRHVnVZMlV2VW1WMmFYUlRaWEoyYVdObGN5VXlReVV5TUZabGNuTnBiMjRsTTBReUxqWXVNaTR4T0RRek1DVXlReVV5TUVOMWJIUjFjbVVsTTBSdVpYVjBjbUZzSlRKREpUSXdVSFZpYkdsalMyVjVWRzlyWlc0bE0wUnVkV3hzSWo0TkNqeHpkSEpwYm1kSlJDQnBaRDBpY21WbUxUTWlQalJqTnpRNE0yVXdMV1kzTldFdE5EZzFNUzA0WkRCa0xUTTVPR1ZpWVRrMFkyWXdaUzB3TURBMk5qRmlNand2YzNSeWFXNW5TVVErRFFvOGFXNTBTVVErTkRFNE1qSTJQQzlwYm5SSlJENE5Dand2WVRFNlUyVnlhV0ZzYVhwaFlteGxTV1ErRFFvOEwxTlBRVkF0UlU1V09rSnZaSGsrRFFvOEwxTlBRVkF0UlU1V09rVnVkbVZzYjNCbFBnMEs8L0Jhc2UtMF9EYXRhPg0KPEJhc2UtMF9IYXNOZXN0ZWREYXRhPmZhbHNlPC9CYXNlLTBfSGFzTmVzdGVkRGF0YT4NCjwvYTE6Q2FsbFNpdGVfeDAwMkJfVHJhY2VTZXJpYWxpc2VySGVscGVyPg0KPC9TT0FQLUVOVjpCb2R5Pg0KPC9TT0FQLUVOVjpFbnZlbG9wZT4NCg=="
-      }
-    }
-  ],
+  "Bindings": [],
   "View": {
     "Dynamo": {
       "ScaleFactor": 1.0,
@@ -9832,16 +9804,6 @@
         "Excluded": false,
         "X": -6334.9812399075945,
         "Y": 3705.5778220543607
-      },
-      {
-        "ShowGeometry": true,
-        "Name": "© ViewPlanCreate",
-        "Id": "509570e5e08142d296b966d886f6a668",
-        "IsSetAsInput": false,
-        "IsSetAsOutput": false,
-        "Excluded": false,
-        "X": -5218.0614835291781,
-        "Y": 3716.7241558776141
       },
       {
         "ShowGeometry": true,
@@ -10965,23 +10927,13 @@
       },
       {
         "ShowGeometry": true,
-        "Name": "© ViewPlanCreate",
-        "Id": "a413ecd01fef4908a50147a8a08467e4",
-        "IsSetAsInput": false,
-        "IsSetAsOutput": false,
-        "Excluded": false,
-        "X": -5193.5793388844768,
-        "Y": 1406.4088619693805
-      },
-      {
-        "ShowGeometry": true,
         "Name": "View Family Types ⁽ᶜᵒⁿᵛᵉʳᵗᵉᵈ ᵈʳᵒᵖᵈᵒʷⁿ⁾",
         "Id": "b19380be11284a188d540c0652c55b20",
         "IsSetAsInput": false,
         "IsSetAsOutput": false,
         "Excluded": false,
-        "X": -5409.5793388844768,
-        "Y": 1557.6666573876412
+        "X": -5621.5274416391312,
+        "Y": 1563.1012241249402
       },
       {
         "ShowGeometry": true,
@@ -10990,8 +10942,8 @@
         "IsSetAsInput": false,
         "IsSetAsOutput": false,
         "Excluded": false,
-        "X": -5834.0977706038866,
-        "Y": 1465.4698384657006
+        "X": -6046.045873358541,
+        "Y": 1470.9044052029997
       },
       {
         "ShowGeometry": true,
@@ -11010,8 +10962,8 @@
         "IsSetAsInput": false,
         "IsSetAsOutput": false,
         "Excluded": false,
-        "X": -6058.6835900709066,
-        "Y": 1526.2883196716468
+        "X": -6270.631692825561,
+        "Y": 1531.7228864089459
       },
       {
         "ShowGeometry": true,
@@ -11020,8 +10972,8 @@
         "IsSetAsInput": false,
         "IsSetAsOutput": false,
         "Excluded": false,
-        "X": -6311.07805987443,
-        "Y": 1396.07058744177
+        "X": -6523.0261626290849,
+        "Y": 1401.505154179069
       },
       {
         "ShowGeometry": true,
@@ -11030,8 +10982,8 @@
         "IsSetAsInput": false,
         "IsSetAsOutput": false,
         "Excluded": false,
-        "X": -6311.07805987443,
-        "Y": 1693.53811089933
+        "X": -6523.0261626290849,
+        "Y": 1698.972677636629
       },
       {
         "ShowGeometry": false,
@@ -11430,8 +11382,8 @@
         "IsSetAsInput": false,
         "IsSetAsOutput": false,
         "Excluded": false,
-        "X": -5408.1170942074968,
-        "Y": 6342.3824320282465
+        "X": -5463.8663277066253,
+        "Y": 6414.6030299703
       },
       {
         "ShowGeometry": true,
@@ -11802,6 +11754,26 @@
         "Excluded": false,
         "X": -18214.420262619966,
         "Y": 6210.9449527044881
+      },
+      {
+        "ShowGeometry": true,
+        "Name": "Crear Vistas de Planta",
+        "Id": "b7f4a1c45ebd498fb1e79de79a57883b",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": -5106.5519149700694,
+        "Y": 1416.7442612396208
+      },
+      {
+        "ShowGeometry": true,
+        "Name": "Crear Vistas de Planta",
+        "Id": "f465d375d0d64264a36306209e824862",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": -5213.4875902859685,
+        "Y": 3688.8774890315226
       }
     ],
     "Annotations": [
@@ -11809,19 +11781,19 @@
         "Id": "d12f61e4244a440a97cda77d21fa2eec",
         "Title": "Crea y Nombra las Vistas",
         "Nodes": [
-          "509570e5e08142d296b966d886f6a668",
           "f9c80fe04b4f4a99b663e7ee7d32d5ef",
           "7811f7f0e4f548588e2b598b8be7366d",
-          "1b0d412101734049bb136b303d363eab"
+          "1b0d412101734049bb136b303d363eab",
+          "f465d375d0d64264a36306209e824862"
         ],
         "Left": -6110.4776127637779,
-        "Top": 3627.4370004231796,
+        "Top": 3636.4370004231796,
         "Width": 1158.4161292345998,
-        "Height": 342.54495087269424,
+        "Height": 333.54495087269424,
         "FontSize": 24.0,
         "InitialTop": 3666.4370004231796,
         "InitialHeight": 346.54495087269424,
-        "TextblockHeight": 29.0,
+        "TextblockHeight": 0.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -11836,13 +11808,13 @@
           "5804c7ff939043988be23c79a3888912"
         ],
         "Left": -4503.362977850642,
-        "Top": 3946.1721608280595,
+        "Top": 3955.1721608280595,
         "Width": 1050.7567619332003,
-        "Height": 431.39008836317953,
+        "Height": 422.39008836317953,
         "FontSize": 24.0,
         "InitialTop": 3985.1721608280595,
         "InitialHeight": 444.39008836317953,
-        "TextblockHeight": 29.0,
+        "TextblockHeight": 0.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -11867,13 +11839,13 @@
           "7a6503a7d78d45b4a03cbb445bc5d8ee"
         ],
         "Left": -6286.38464225145,
-        "Top": 4482.48668400081,
+        "Top": 4491.48668400081,
         "Width": 2820.9034768016813,
-        "Height": 685.307830682742,
+        "Height": 676.307830682742,
         "FontSize": 24.0,
         "InitialTop": 4521.48668400081,
         "InitialHeight": 698.307830682742,
-        "TextblockHeight": 29.0,
+        "TextblockHeight": 0.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -11901,13 +11873,13 @@
           "07ff1f63825a44e78cbb23eb4daadf26"
         ],
         "Left": -6343.96027868206,
-        "Top": 6975.0947538882219,
+        "Top": 6984.0947538882219,
         "Width": 3473.3496861563535,
-        "Height": 786.41218815691354,
+        "Height": 777.41218815691354,
         "FontSize": 24.0,
         "InitialTop": 7014.0947538882219,
         "InitialHeight": 562.41218815691354,
-        "TextblockHeight": 29.0,
+        "TextblockHeight": 0.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -11935,13 +11907,13 @@
           "552cd1251605464c8c1590a134a0e0b3"
         ],
         "Left": -6287.28490329589,
-        "Top": 8541.70044260236,
+        "Top": 8550.70044260236,
         "Width": 3504.0461161139647,
-        "Height": 817.55719810874871,
+        "Height": 808.55719810874871,
         "FontSize": 24.0,
         "InitialTop": 8580.70044260236,
         "InitialHeight": 593.55719810874871,
-        "TextblockHeight": 29.0,
+        "TextblockHeight": 0.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -11955,13 +11927,13 @@
           "d1456bbafc0d46f9addae22f9004ae6e"
         ],
         "Left": -1499.9913382271948,
-        "Top": 5317.0543495700831,
+        "Top": 5326.0543495700831,
         "Width": 1216.7994095230688,
-        "Height": 395.94974455215106,
+        "Height": 386.94974455215106,
         "FontSize": 24.0,
         "InitialTop": 5356.0543495700831,
         "InitialHeight": 408.94974455215106,
-        "TextblockHeight": 29.0,
+        "TextblockHeight": 0.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -11973,32 +11945,31 @@
           "02e4e23892f144539b2982b8595bcb38"
         ],
         "Left": -4478.88083320594,
-        "Top": 1637.388031915589,
+        "Top": 1646.388031915589,
         "Width": 635.811048082749,
-        "Height": 411.00027152455914,
+        "Height": 402.00027152455914,
         "FontSize": 24.0,
         "InitialTop": 1676.388031915589,
         "InitialHeight": 414.00027152455914,
-        "TextblockHeight": 29.0,
+        "TextblockHeight": 0.0,
         "Background": "#FFB0C4DE"
       },
       {
         "Id": "7d7c5bd69f5f4a1aa449ed5670bae917",
         "Title": "Crea y Nombra las Vistas",
         "Nodes": [
-          "a413ecd01fef4908a50147a8a08467e4",
           "b19380be11284a188d540c0652c55b20",
           "669f3a4b811a4f6383a8ecc239e1d263",
           "e44309d6c33444b9a82b8115952863b6"
         ],
-        "Left": -6068.6835900709066,
-        "Top": 1367.4088619693805,
-        "Width": 1141.1042511864298,
-        "Height": 292.25779541826068,
+        "Left": -6280.631692825561,
+        "Top": 1440.9044052029997,
+        "Width": 1132.1042511864298,
+        "Height": 224.19681892194058,
         "FontSize": 24.0,
-        "InitialTop": 1406.4088619693805,
-        "InitialHeight": 296.25779541826068,
-        "TextblockHeight": 29.0,
+        "InitialTop": 1470.9044052029997,
+        "InitialHeight": 237.19681892194058,
+        "TextblockHeight": 0.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -12023,13 +11994,13 @@
           "c43e1dcfc6944f339e957a0b1f13a81b"
         ],
         "Left": -6255.03778789683,
-        "Top": 2126.44115916741,
+        "Top": 2135.44115916741,
         "Width": 2798.6957624971919,
-        "Height": 594.41455001686427,
+        "Height": 585.41455001686427,
         "FontSize": 24.0,
         "InitialTop": 2165.44115916741,
         "InitialHeight": 607.41455001686427,
-        "TextblockHeight": 29.0,
+        "TextblockHeight": 0.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -12043,13 +12014,13 @@
           "2d2eaf1e76194be18ffbd44b830983cb"
         ],
         "Left": -1819.6360723896751,
-        "Top": 2475.62896699672,
+        "Top": 2484.62896699672,
         "Width": 1247.8572177902652,
-        "Height": 405.99785899153449,
+        "Height": 396.99785899153449,
         "FontSize": 24.0,
         "InitialTop": 2514.62896699672,
         "InitialHeight": 418.99785899153449,
-        "TextblockHeight": 29.0,
+        "TextblockHeight": 0.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -12071,18 +12042,18 @@
           "fd56e8895085459aa0647b50a7a3b5bd"
         ],
         "Left": -7850.0818972937232,
-        "Top": 5686.88935331846,
+        "Top": 5695.88935331846,
         "Width": 2776.9648030862263,
-        "Height": 748.49307870978646,
+        "Height": 811.71367665183971,
         "FontSize": 24.0,
         "InitialTop": 5725.88935331846,
-        "InitialHeight": 761.49307870978646,
-        "TextblockHeight": 29.0,
+        "InitialHeight": 833.71367665183971,
+        "TextblockHeight": 0.0,
         "Background": "#FFB0C4DE"
       }
     ],
-    "X": 5331.486594300347,
-    "Y": -1951.3867900372725,
-    "Zoom": 0.35087785024921914
+    "X": 910.52971532868878,
+    "Y": 142.86056166215914,
+    "Zoom": 0.035893115978564545
   }
 }
