@@ -5211,11 +5211,11 @@
     {
       "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
       "NodeType": "CodeBlockNode",
-      "Code": "categoria+\"_PISO_\"+lvl_name+\"_\"+zona+uso;",
+      "Code": "categoria+\"_PISO_\"+lvl_name+\"_\"+zona;",
       "Id": "669f3a4b811a4f6383a8ecc239e1d263",
       "Inputs": [
         {
-          "Id": "04a8dc1ef2084713b6f99341054e64cb",
+          "Id": "0fc995dbe0e24f7ea2f3da8e66263756",
           "Name": "categoria",
           "Description": "categoria",
           "UsingDefaultValue": false,
@@ -5224,7 +5224,7 @@
           "KeepListStructure": false
         },
         {
-          "Id": "62506f0915024f97bfeca0aea4bfc9f7",
+          "Id": "80ba812f0aad436281c74f2d005ba436",
           "Name": "lvl_name",
           "Description": "lvl_name",
           "UsingDefaultValue": false,
@@ -5233,18 +5233,9 @@
           "KeepListStructure": false
         },
         {
-          "Id": "aac10dade2dd4221b33e37342decd2ec",
+          "Id": "7d095c807d9b4c00b7fc8ce677ece9f5",
           "Name": "zona",
           "Description": "zona",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        },
-        {
-          "Id": "f1767b1caadb4a9e911e84cc870f5f18",
-          "Name": "uso",
-          "Description": "uso",
           "UsingDefaultValue": false,
           "Level": 2,
           "UseLevels": false,
@@ -5253,7 +5244,7 @@
       ],
       "Outputs": [
         {
-          "Id": "5cca402ca36f4d898efa105012968491",
+          "Id": "ef78a85816974c7c95313594f1a533a6",
           "Name": "",
           "Description": "Value of expression at line 1",
           "UsingDefaultValue": false,
@@ -6370,46 +6361,6 @@
     {
       "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
       "NodeType": "PythonScriptNode",
-      "Code": "import clr\r\n\r\n# Import RevitAPI\r\nclr.AddReference('RevitAPI')\r\nimport Autodesk\r\nfrom Autodesk.Revit.DB import *\r\n\r\n# Supongamos que 'niveles' es tu lista anidada de niveles de Revit\r\nniveles = UnwrapElement(IN[0])  # Reemplaza esto con tu entrada de Dynamo\r\ncategoria = IN[1]\r\n# Obtén la elevación de cada nivel y encuentra el mínimo\r\nif categoria == \"00_PG\" or categoria == \"01_LO\" or categoria == \"07_DE\":\r\n\tnivel_resultado = [min(niveles, key=lambda x: x.Elevation)] * 2\r\nelif categoria == \"02_MA\" or categoria == \"03_VH\" or categoria == \"04_CH\" or categoria == \"10_PC\":\r\n\tnivel_resultado = []\r\nelse:\r\n\tnivel_resultado = niveles\r\n\t\r\n# Imprime el nombre del nivel más bajo\r\nOUT = nivel_resultado",
-      "VariableInputPorts": true,
-      "Id": "6bdf321026404161a155e796dcfb23de",
-      "Inputs": [
-        {
-          "Id": "459b3a431c164f95aa7e8e2cef577254",
-          "Name": "IN[0]",
-          "Description": "Input #0",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        },
-        {
-          "Id": "0e51aa921a5f42bba98f1801369b0d72",
-          "Name": "IN[1]",
-          "Description": "Input #1",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        }
-      ],
-      "Outputs": [
-        {
-          "Id": "8c490ec5499d41d19639a365cc9cf696",
-          "Name": "OUT",
-          "Description": "Result of the python script",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        }
-      ],
-      "Replication": "Disabled",
-      "Description": "Runs an embedded IronPython script."
-    },
-    {
-      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
-      "NodeType": "PythonScriptNode",
       "Code": "import clr\r\n\r\n# Import RevitAPI\r\nclr.AddReference('RevitAPI')\r\nimport Autodesk\r\nfrom Autodesk.Revit.DB import *\r\n\r\n# Supongamos que 'niveles' es tu lista anidada de niveles de Revit\r\nniveles = UnwrapElement(IN[0])  # Reemplaza esto con tu entrada de Dynamo\r\ncategoria = IN[1]\r\n# Obtén la elevación de cada nivel y encuentra el mínimo\r\nif categoria == \"06_ES\" or categoria == \"08_RP\":\r\n\tnivel_resultado = []\r\nelse:\r\n\tnivel_resultado = niveles\r\n\t\r\n# Imprime el nombre del nivel más bajo\r\nOUT = nivel_resultado",
       "VariableInputPorts": true,
       "Id": "b4b57a3be6284f7788b4a7e844676a6f",
@@ -6436,37 +6387,6 @@
       "Outputs": [
         {
           "Id": "5a767f78f69d4a81bd730f347f0f8000",
-          "Name": "OUT",
-          "Description": "Result of the python script",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        }
-      ],
-      "Replication": "Disabled",
-      "Description": "Runs an embedded IronPython script."
-    },
-    {
-      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
-      "NodeType": "PythonScriptNode",
-      "Code": "def cuenta_elementos(lista):\r\n    if len(lista) == 2:\r\n        return [\"_FUNDACION\", \"_RADIER\"]\r\n    else:\r\n        return \"\"\r\n\r\nlevels = IN[0]\r\n\r\n\r\nOUT = cuenta_elementos(levels)",
-      "VariableInputPorts": true,
-      "Id": "5bcf26cbf73e4b83a31337b2f9feb429",
-      "Inputs": [
-        {
-          "Id": "b7caa56131bd4e2ca03d2752e85f11ef",
-          "Name": "IN[0]",
-          "Description": "Input #0",
-          "UsingDefaultValue": false,
-          "Level": 2,
-          "UseLevels": false,
-          "KeepListStructure": false
-        }
-      ],
-      "Outputs": [
-        {
-          "Id": "7026d95d7fca47e4bac6a071515883d2",
           "Name": "OUT",
           "Description": "Result of the python script",
           "UsingDefaultValue": false,
@@ -9419,6 +9339,46 @@
       ],
       "Replication": "Disabled",
       "Description": "Runs an embedded IronPython script."
+    },
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "NodeType": "PythonScriptNode",
+      "Code": "import clr\r\n\r\n# Import RevitAPI\r\nclr.AddReference('RevitAPI')\r\nimport Autodesk\r\nfrom Autodesk.Revit.DB import *\r\n\r\n# Supongamos que 'niveles' es tu lista anidada de niveles de Revit\r\nniveles = UnwrapElement(IN[0])  # Reemplaza esto con tu entrada de Dynamo\r\ncategoria = IN[1]\r\n# Obtén la elevación de cada nivel y encuentra el mínimo\r\nif categoria == \"06_ES\" or categoria == \"08_RP\":\r\n\tnivel_resultado = []\r\nelse:\r\n\tnivel_resultado = niveles\r\n\t\r\n# Imprime el nombre del nivel más bajo\r\nOUT = nivel_resultado",
+      "VariableInputPorts": true,
+      "Id": "79d6d5788e2046f79014b7c1a8970fd5",
+      "Inputs": [
+        {
+          "Id": "9638dd7999e847408165f213e73c6961",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "60b1899944d04101bb74f86fdcc5b41a",
+          "Name": "IN[1]",
+          "Description": "Input #1",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "412b02b572004c5f9cac5831552e5730",
+          "Name": "OUT",
+          "Description": "Result of the python script",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Runs an embedded IronPython script."
     }
   ],
   "Connectors": [
@@ -10453,9 +10413,9 @@
       "Id": "e9538d5146514876a91d5bdf0966f0d6"
     },
     {
-      "Start": "5cca402ca36f4d898efa105012968491",
+      "Start": "ef78a85816974c7c95313594f1a533a6",
       "End": "1c480fea7f904d38a9b5de14548e7d13",
-      "Id": "37a07a21bd0b45c3b55936ad99322000"
+      "Id": "0d10e3e5edfc475da340f95ea7b8cde3"
     },
     {
       "Start": "09d2700e6fd24e2aa94d18176805ec22",
@@ -10469,13 +10429,8 @@
     },
     {
       "Start": "de5328ed0a10440c8f2646c5115edb05",
-      "End": "62506f0915024f97bfeca0aea4bfc9f7",
-      "Id": "f620aa2fda304cdd8bcca13c61980afc"
-    },
-    {
-      "Start": "6860f1a2fcfb46acbe9fae9c160822f2",
-      "End": "459b3a431c164f95aa7e8e2cef577254",
-      "Id": "ed54a690741f453fb90ca2a8307ce890"
+      "End": "80ba812f0aad436281c74f2d005ba436",
+      "Id": "352234529b694010b52660676dd4396b"
     },
     {
       "Start": "6860f1a2fcfb46acbe9fae9c160822f2",
@@ -10483,19 +10438,24 @@
       "Id": "1c091a972d1241e4aa37d617cc83c0b4"
     },
     {
-      "Start": "07bc38d2eb824968ad3d82d7e435a05a",
-      "End": "0e51aa921a5f42bba98f1801369b0d72",
-      "Id": "8c4808bcc9894b64908ab1b2ff402e14"
+      "Start": "6860f1a2fcfb46acbe9fae9c160822f2",
+      "End": "9638dd7999e847408165f213e73c6961",
+      "Id": "93e12dab7fe24802bd7e5d06f88eaffb"
     },
     {
       "Start": "07bc38d2eb824968ad3d82d7e435a05a",
-      "End": "04a8dc1ef2084713b6f99341054e64cb",
-      "Id": "26f28efe860e448ab9080e4c949d4c54"
+      "End": "0fc995dbe0e24f7ea2f3da8e66263756",
+      "Id": "c7b7c7a1166e478e90605478d781c2e8"
+    },
+    {
+      "Start": "07bc38d2eb824968ad3d82d7e435a05a",
+      "End": "60b1899944d04101bb74f86fdcc5b41a",
+      "Id": "2bfb90bf98dc48739600e4cec55ea1f8"
     },
     {
       "Start": "29f710a197414272ba5e55ab3db01aff",
-      "End": "aac10dade2dd4221b33e37342decd2ec",
-      "Id": "1a23461268654f578ab1b385cdd7e406"
+      "End": "7d095c807d9b4c00b7fc8ce677ece9f5",
+      "Id": "99e359ad23c345809dbb0f23847537f0"
     },
     {
       "Start": "acb4533e23b946d5a356cb2004bdd7e5",
@@ -10678,24 +10638,9 @@
       "Id": "eb60097edc6d47aab7f593d7f7215577"
     },
     {
-      "Start": "8c490ec5499d41d19639a365cc9cf696",
-      "End": "c1534082d7ac40fc9f90142bb2bc07ca",
-      "Id": "d217f47d2e5f48288349ab874171ff24"
-    },
-    {
-      "Start": "8c490ec5499d41d19639a365cc9cf696",
-      "End": "b7caa56131bd4e2ca03d2752e85f11ef",
-      "Id": "0f23e6d7af0944e594898a81955411f2"
-    },
-    {
       "Start": "5a767f78f69d4a81bd730f347f0f8000",
       "End": "eef1311e12c84496a42f86e502aa3e2b",
       "Id": "cb9ac66f98704844b6d5aa6c12e86f2f"
-    },
-    {
-      "Start": "7026d95d7fca47e4bac6a071515883d2",
-      "End": "f1767b1caadb4a9e911e84cc870f5f18",
-      "Id": "e8fa2892b92a4e61af875e172b372558"
     },
     {
       "Start": "bac0826257484a058e22bcafd4c08449",
@@ -11136,6 +11081,11 @@
       "Start": "9406c393644c4827b198e6f5ba4401be",
       "End": "f9800b395b7d4a96a0d62162352445f0",
       "Id": "1f09486d2318435dbe410313005c6cf9"
+    },
+    {
+      "Start": "412b02b572004c5f9cac5831552e5730",
+      "End": "c1534082d7ac40fc9f90142bb2bc07ca",
+      "Id": "a7c26f80e0e1422894f8a1da6c43f7a4"
     }
   ],
   "Dependencies": [
@@ -12888,32 +12838,12 @@
       {
         "ShowGeometry": true,
         "Name": "Evalua los Niveles en funcion de la categoria de Vistas",
-        "Id": "6bdf321026404161a155e796dcfb23de",
-        "IsSetAsInput": false,
-        "IsSetAsOutput": false,
-        "Excluded": false,
-        "X": -6688.7994883930141,
-        "Y": 1327.348652310651
-      },
-      {
-        "ShowGeometry": true,
-        "Name": "Evalua los Niveles en funcion de la categoria de Vistas",
         "Id": "b4b57a3be6284f7788b4a7e844676a6f",
         "IsSetAsInput": false,
         "IsSetAsOutput": false,
         "Excluded": false,
         "X": -6697.6433766599448,
         "Y": 3632.5244088546774
-      },
-      {
-        "ShowGeometry": true,
-        "Name": "Python Script",
-        "Id": "5bcf26cbf73e4b83a31337b2f9feb429",
-        "IsSetAsInput": false,
-        "IsSetAsOutput": false,
-        "Excluded": false,
-        "X": -6081.9624451877,
-        "Y": 1564.38752587806
       },
       {
         "ShowGeometry": true,
@@ -13644,6 +13574,16 @@
         "Excluded": false,
         "X": -5244.6521292268844,
         "Y": 3722.3705924409915
+      },
+      {
+        "ShowGeometry": true,
+        "Name": "Evalua los Niveles en funcion de la categoria de Vistas",
+        "Id": "79d6d5788e2046f79014b7c1a8970fd5",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": -6633.6951749835953,
+        "Y": 1305.029175666308
       }
     ],
     "Annotations": [
@@ -13657,13 +13597,13 @@
           "c5c36910ad97494b9223bb2739d15c83"
         ],
         "Left": -6110.4776127637779,
-        "Top": 3636.4370004231796,
+        "Top": 3627.4370004231796,
         "Width": 1151.8810667980197,
-        "Height": 389.09298158362344,
+        "Height": 398.09298158362344,
         "FontSize": 24.0,
         "InitialTop": 3666.4370004231796,
         "InitialHeight": 402.09298158362344,
-        "TextblockHeight": 0.0,
+        "TextblockHeight": 29.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -13682,13 +13622,13 @@
           "d7d2f8a7e709413e8363a9bf1af1386e"
         ],
         "Left": -4503.362977850642,
-        "Top": 3920.1721608280595,
+        "Top": 3911.1721608280595,
         "Width": 1048.7567619332003,
-        "Height": 457.39008836317953,
+        "Height": 466.39008836317953,
         "FontSize": 24.0,
         "InitialTop": 3950.1721608280595,
         "InitialHeight": 479.39008836317953,
-        "TextblockHeight": 0.0,
+        "TextblockHeight": 29.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -13714,13 +13654,13 @@
           "b643b96aef87455694203a9749bfb8d7"
         ],
         "Left": -6286.38464225145,
-        "Top": 4491.48668400081,
+        "Top": 4482.48668400081,
         "Width": 2949.6832497645187,
-        "Height": 676.307830682742,
+        "Height": 685.307830682742,
         "FontSize": 24.0,
         "InitialTop": 4521.48668400081,
         "InitialHeight": 698.307830682742,
-        "TextblockHeight": 0.0,
+        "TextblockHeight": 29.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -13748,13 +13688,13 @@
           "9051556fd7664d2c9cccb261a7febda0"
         ],
         "Left": -6343.96027868206,
-        "Top": 6984.0947538882219,
+        "Top": 6975.0947538882219,
         "Width": 3425.6575127272827,
-        "Height": 777.41218815691354,
+        "Height": 786.41218815691354,
         "FontSize": 24.0,
         "InitialTop": 7014.0947538882219,
         "InitialHeight": 562.41218815691354,
-        "TextblockHeight": 0.0,
+        "TextblockHeight": 29.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -13782,13 +13722,13 @@
           "520a912cdfe943f8be479ba0cef20e59"
         ],
         "Left": -6287.28490329589,
-        "Top": 8581.8454525541965,
+        "Top": 8572.8454525541965,
         "Width": 3425.6575127272381,
-        "Height": 777.41218815691354,
+        "Height": 786.41218815691354,
         "FontSize": 24.0,
         "InitialTop": 8611.8454525541965,
         "InitialHeight": 562.41218815691354,
-        "TextblockHeight": 0.0,
+        "TextblockHeight": 29.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -13802,13 +13742,13 @@
           "d1456bbafc0d46f9addae22f9004ae6e"
         ],
         "Left": -978.534057070427,
-        "Top": 5338.8172900179761,
+        "Top": 5329.8172900179761,
         "Width": 1216.7994095230688,
-        "Height": 386.94974455215106,
+        "Height": 395.94974455215106,
         "FontSize": 24.0,
         "InitialTop": 5368.8172900179761,
         "InitialHeight": 408.94974455215106,
-        "TextblockHeight": 0.0,
+        "TextblockHeight": 29.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -13822,13 +13762,13 @@
           "899f93ed667442eb8b4b3688a69df843"
         ],
         "Left": -4478.88083320594,
-        "Top": 1611.388031915589,
+        "Top": 1602.388031915589,
         "Width": 633.811048082749,
-        "Height": 437.00027152455914,
+        "Height": 446.00027152455914,
         "FontSize": 24.0,
         "InitialTop": 1641.388031915589,
         "InitialHeight": 449.00027152455914,
-        "TextblockHeight": 0.0,
+        "TextblockHeight": 29.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -13838,17 +13778,16 @@
           "b19380be11284a188d540c0652c55b20",
           "669f3a4b811a4f6383a8ecc239e1d263",
           "e44309d6c33444b9a82b8115952863b6",
-          "5bcf26cbf73e4b83a31337b2f9feb429",
           "96b6449e5c7a4961b0b3c8f5e0bd2dc0"
         ],
         "Left": -6091.9624451877,
-        "Top": 1374.6033951975,
+        "Top": 1365.6033951975,
         "Width": 1055.2063089486473,
-        "Height": 345.55636842754984,
+        "Height": 354.55636842754984,
         "FontSize": 24.0,
         "InitialTop": 1404.6033951975,
         "InitialHeight": 358.55636842754984,
-        "TextblockHeight": 0.0,
+        "TextblockHeight": 29.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -13874,13 +13813,13 @@
           "defe955aa97f437193fe5c56816bedc4"
         ],
         "Left": -6255.03778789683,
-        "Top": 2088.5153884540327,
+        "Top": 2079.5153884540327,
         "Width": 2874.9119086435858,
-        "Height": 632.34032073024173,
+        "Height": 641.34032073024173,
         "FontSize": 24.0,
         "InitialTop": 2118.5153884540327,
         "InitialHeight": 654.34032073024173,
-        "TextblockHeight": 0.0,
+        "TextblockHeight": 29.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -13894,13 +13833,13 @@
           "2d2eaf1e76194be18ffbd44b830983cb"
         ],
         "Left": -1141.4437482803005,
-        "Top": 1627.477076314306,
+        "Top": 1618.477076314306,
         "Width": 1247.8572177902652,
-        "Height": 396.99785899153449,
+        "Height": 405.99785899153449,
         "FontSize": 24.0,
         "InitialTop": 1657.477076314306,
         "InitialHeight": 418.99785899153449,
-        "TextblockHeight": 0.0,
+        "TextblockHeight": 29.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -13924,13 +13863,13 @@
           "ac196071b64041179470029ab3ee49b4"
         ],
         "Left": 2091.0567757759859,
-        "Top": 2354.72675158132,
+        "Top": 2345.72675158132,
         "Width": 2462.5468338488213,
-        "Height": 488.59758458460328,
+        "Height": 497.59758458460328,
         "FontSize": 24.0,
         "InitialTop": 2384.72675158132,
         "InitialHeight": 510.59758458460328,
-        "TextblockHeight": 0.0,
+        "TextblockHeight": 29.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -13952,13 +13891,13 @@
           "95d4e0aedadc4e02a72b98c9ebeead43"
         ],
         "Left": -8020.6830994992633,
-        "Top": 6031.093747603778,
+        "Top": 6022.093747603778,
         "Width": 2776.9648030862172,
-        "Height": 664.75583852406453,
+        "Height": 673.75583852406453,
         "FontSize": 24.0,
         "InitialTop": 6061.093747603778,
         "InitialHeight": 686.75583852406453,
-        "TextblockHeight": 0.0,
+        "TextblockHeight": 29.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -13982,13 +13921,13 @@
           "fb4fbf6f473347569319cc89bc7f1372"
         ],
         "Left": 1507.4224866585032,
-        "Top": 857.73175936074222,
+        "Top": 848.73175936074222,
         "Width": 2462.54683384882,
-        "Height": 488.59758458461056,
+        "Height": 497.59758458461056,
         "FontSize": 24.0,
         "InitialTop": 887.73175936074222,
         "InitialHeight": 510.59758458461056,
-        "TextblockHeight": 0.0,
+        "TextblockHeight": 29.0,
         "Background": "#FFB0C4DE"
       },
       {
@@ -14300,8 +14239,8 @@
         "Background": "#FFC1D676"
       }
     ],
-    "X": 1185.101363996851,
-    "Y": -545.97982900541126,
-    "Zoom": 0.11957689151549791
+    "X": 3670.3107606719773,
+    "Y": -287.06261251881062,
+    "Zoom": 0.46846477881421678
   }
 }
