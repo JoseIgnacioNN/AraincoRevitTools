@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Ver Incidencias BIM</title>
+    <style>
+        :root {
+            --bg-dark: #0A1C26;
+            --bg-panel: #0F2535;
+            --accent: #5BB8D4;
+            --accent-dim: #4A8BA6;
+            --text: #C8E4EF;
+            --text-dim: #8BA6B4;
+            --border: #1A3D52;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.8em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 28px;
+        }
+        h3 { font-size: 1em; color: var(--text); margin-top: 20px; }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        .step {
+            background: var(--bg-panel);
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin: 10px 0;
+            border: 1px solid var(--border);
+        }
+        .step-num {
+            display: inline-block;
+            background: var(--accent);
+            color: var(--bg-dark);
+            width: 24px;
+            height: 24px;
+            text-align: center;
+            line-height: 24px;
+            border-radius: 50%;
+            font-weight: bold;
+            font-size: 0.9em;
+            margin-right: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 0.9em;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 10px 12px;
+            text-align: left;
+        }
+        th {
+            background: var(--bg-panel);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        td { color: var(--text-dim); }
+        .tip {
+            background: rgba(91, 184, 212, 0.1);
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            padding: 12px;
+            margin: 12px 0;
+        }
+        .tip::before { content: "💡 "; }
+        .footer {
+            margin-top: 40px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+            font-size: 0.9em;
+            color: var(--text-dim);
+        }
+    </style>
+</head>
+<body>
+    <h1>Manual — Ver Incidencias BIM</h1>
+
+    <div class="intro">
+        <strong>Ver Incidencias</strong> es una herramienta que permite consultar, filtrar y visualizar todas las incidencias guardadas en el servidor BIM. Permite navegar al punto de vista original de cada incidencia directamente desde Revit, modificar prioridad y estado, y ver un dashboard con estadísticas.
+    </div>
+
+    <h2>1. ¿Cómo funciona?</h2>
+    <p>La herramienta lee las incidencias desde el servidor (<code>Y:\00_SERVIDOR DE INCIDENCIAS</code>) y las muestra en una ventana con:</p>
+    <ul>
+        <li><strong>Lista principal</strong> — Tabla con todas las incidencias que coinciden con los filtros aplicados.</li>
+        <li><strong>Panel de detalle</strong> — Al seleccionar una incidencia, se muestra la captura, descripción, metadatos y controles para cambiar prioridad/estado.</li>
+        <li><strong>Ir al punto de vista</strong> — Restaura en Revit la vista exacta donde se creó la incidencia (orientación de cámara 3D o vista 2D).</li>
+        <li><strong>Dashboard</strong> — Gráficos de estado, prioridad, proyecto y asignado a.</li>
+    </ul>
+
+    <h2>2. Flujo de uso</h2>
+
+    <div class="step">
+        <span class="step-num">1</span>
+        <strong>Abre Ver Incidencias</strong> — Ejecuta la herramienta desde el panel de Incidencias en Revit. La ventana cargará todas las incidencias del servidor.
+    </div>
+    <div class="step">
+        <span class="step-num">2</span>
+        <strong>Aplica filtros (opcional)</strong> — Usa los desplegables de Proyecto, Estado y Prioridad para reducir la lista. Por defecto, si el modelo actual es colaborativo, se filtra por el proyecto actual.
+    </div>
+    <div class="step">
+        <span class="step-num">3</span>
+        <strong>Selecciona una incidencia</strong> — Haz clic en una fila de la tabla. En el panel derecho aparecerán los detalles: captura, descripción, prioridad, estado, personas, elementos vinculados y archivos adjuntos.
+    </div>
+    <div class="step">
+        <span class="step-num">4</span>
+        <strong>Modifica prioridad o estado</strong> — En el panel de detalle puedes cambiar la prioridad (Crítica, Alta, Media, Baja) o el estado (Abierto, En revisión, Resuelto). Los cambios se guardan automáticamente en el servidor.
+    </div>
+    <div class="step">
+        <span class="step-num">5</span>
+        <strong>Ir al punto de vista</strong> — Si la incidencia tiene datos de vista guardados, pulsa "Ir al punto de vista" para que Revit navegue a la misma vista donde se creó la incidencia. La ventana se cerrará automáticamente.
+    </div>
+
+    <h2>3. Barra de filtros</h2>
+    <table>
+        <tr><th>Filtro</th><th>Descripción</th></tr>
+        <tr><td><strong>Proyecto</strong></td><td>Muestra solo incidencias del proyecto seleccionado. "Todos" incluye todos los proyectos. Si el modelo es colaborativo, por defecto se filtra por el proyecto actual.</td></tr>
+        <tr><td><strong>Estado</strong></td><td>Abierto, En revisión, Resuelto o Todos.</td></tr>
+        <tr><td><strong>Prioridad</strong></td><td>Crítica, Alta, Media, Baja o Todos.</td></tr>
+        <tr><td><strong>Limpiar filtros</strong></td><td>Restablece todos los filtros a "Todos".</td></tr>
+        <tr><td><strong>Actualizar</strong></td><td>Vuelve a cargar las incidencias desde el servidor.</td></tr>
+        <tr><td><strong>Dashboard</strong></td><td>Abre una ventana con gráficos de estado (dona), prioridad, proyecto y asignado a. Usa todas las incidencias del servidor, no las filtradas.</td></tr>
+        <tr><td><strong>Manual</strong></td><td>Abre este manual en el navegador predeterminado.</td></tr>
+    </table>
+
+    <h2>4. Columnas de la lista</h2>
+    <table>
+        <tr><th>Columna</th><th>Descripción</th></tr>
+        <tr><td><strong>Nº</strong></td><td>Número de incidencia.</td></tr>
+        <tr><td><strong>Título</strong></td><td>Título de la incidencia.</td></tr>
+        <tr><td><strong>Prioridad</strong></td><td>Crítica, Alta, Media o Baja (con badge de color).</td></tr>
+        <tr><td><strong>Estado</strong></td><td>Abierto, En revisión o Resuelto (con badge de color).</td></tr>
+        <tr><td><strong>Asignado a</strong></td><td>Persona responsable de la incidencia.</td></tr>
+        <tr><td><strong>Fecha de Creación</strong></td><td>Fecha en que se creó la incidencia.</td></tr>
+    </table>
+
+    <h2>5. Panel de detalle</h2>
+    <p>Al seleccionar una incidencia, el panel derecho muestra:</p>
+    <ul>
+        <li><strong>Captura</strong> — Imagen PNG de la vista en el momento de crear la incidencia.</li>
+        <li><strong>Título, prioridad y estado</strong> — Con opción de cambiar prioridad y estado mediante desplegables (los cambios se guardan al seleccionar).</li>
+        <li><strong>Descripción y disciplinas</strong> — Texto libre y clasificación.</li>
+        <li><strong>Reportado por / Asignado a</strong> — Personas involucradas.</li>
+        <li><strong>Fecha de creación / Autor</strong> — Metadatos de la incidencia.</li>
+        <li><strong>Elementos vinculados</strong> — Cantidad de elementos seleccionados en el modelo.</li>
+        <li><strong>Vista / Cámara</strong> — Nombre y tipo de la vista original.</li>
+        <li><strong>Archivos adjuntos</strong> — Lista de archivos. Selecciona uno y pulsa "Abrir archivo" para abrirlo con la aplicación predeterminada.</li>
+        <li><strong>Ir al punto de vista</strong> — Botón para navegar en Revit a la vista original.</li>
+    </ul>
+
+    <h2>6. Ir al punto de vista</h2>
+    <p>El botón "Ir al punto de vista" restaura la vista donde se creó la incidencia. El comportamiento depende de los datos guardados:</p>
+    <ul>
+        <li><strong>Vista 3D con cámara</strong> — Usa o crea la vista "Gestión de incidencias" y aplica la orientación de cámara (posición, dirección, zoom) guardada. Cierra la ventana automáticamente.</li>
+        <li><strong>Vista 2D o con ID de vista</strong> — Navega directamente a la vista por su ElementId si sigue existiendo en el documento.</li>
+        <li><strong>Sin datos de vista</strong> — Si la incidencia no tiene viewpoint ni view_id guardados, el botón permanece deshabilitado.</li>
+    </ul>
+    <p><em>Nota:</em> Debe haber un documento de Revit abierto para que la navegación funcione.</p>
+
+    <h2>7. Dashboard</h2>
+    <p>El Dashboard muestra gráficos con todas las incidencias del servidor (ignora los filtros aplicados):</p>
+    <ul>
+        <li><strong>Estado</strong> — Gráfico de dona con Abierto, En revisión y Resuelto.</li>
+        <li><strong>Prioridad</strong> — Barras horizontales con Crítica, Alta, Media y Baja.</li>
+        <li><strong>Proyecto</strong> — Barras con los proyectos con más incidencias (hasta 6).</li>
+        <li><strong>Asignado a</strong> — Barras con las personas asignadas (hasta 6).</li>
+    </ul>
+    <p>Pulsa <kbd>ESC</kbd> para cerrar el Dashboard.</p>
+
+    <h2>8. Ubicación de las incidencias</h2>
+    <p>Las incidencias se leen desde:</p>
+    <p><code>Y:\00_SERVIDOR DE INCIDENCIAS\[NombreProyecto]\ISSUE_N\</code></p>
+    <p>Donde <em>NombreProyecto</em> es el directorio del proyecto y <em>N</em> es el número de incidencia. Cada carpeta contiene <code>issue.json</code>, <code>screenshot.png</code>, <code>viewpoint.json</code> y, opcionalmente, archivos en <code>adjuntos\</code>.</p>
+
+    <div class="tip">
+        <strong>Consejo:</strong> Usa la herramienta "Crear Incidencia" para registrar nuevas incidencias en el modelo. Las incidencias creadas aparecerán en Ver Incidencias tras pulsar "Actualizar".
+    </div>
+
+    <h2>9. Atajos de teclado</h2>
+    <ul>
+        <li><kbd>ESC</kbd> — Cierra la ventana de consulta o el Dashboard.</li>
+    </ul>
+
+    <div class="footer">
+        Arainco Ingeniería Estructural — Herramientas BIM para gestión de incidencias.
+    </div>
+</body>
+</html>

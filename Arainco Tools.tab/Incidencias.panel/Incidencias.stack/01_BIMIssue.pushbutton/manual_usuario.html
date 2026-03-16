@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Crear Incidencia BIM</title>
+    <style>
+        :root {
+            --bg-dark: #0A1C26;
+            --bg-panel: #0F2535;
+            --accent: #5BB8D4;
+            --accent-dim: #4A8BA6;
+            --text: #C8E4EF;
+            --text-dim: #8BA6B4;
+            --border: #1A3D52;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.8em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 28px;
+        }
+        h3 { font-size: 1em; color: var(--text); margin-top: 20px; }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        .step {
+            background: var(--bg-panel);
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin: 10px 0;
+            border: 1px solid var(--border);
+        }
+        .step-num {
+            display: inline-block;
+            background: var(--accent);
+            color: var(--bg-dark);
+            width: 24px;
+            height: 24px;
+            text-align: center;
+            line-height: 24px;
+            border-radius: 50%;
+            font-weight: bold;
+            font-size: 0.9em;
+            margin-right: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 0.9em;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 10px 12px;
+            text-align: left;
+        }
+        th {
+            background: var(--bg-panel);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        td { color: var(--text-dim); }
+        .tip {
+            background: rgba(91, 184, 212, 0.1);
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            padding: 12px;
+            margin: 12px 0;
+        }
+        .tip::before { content: "💡 "; }
+        .footer {
+            margin-top: 40px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+            font-size: 0.9em;
+            color: var(--text-dim);
+        }
+    </style>
+</head>
+<body>
+    <h1>Manual — Crear Incidencia BIM</h1>
+
+    <div class="intro">
+        <strong>Crear Incidencia</strong> es una herramienta inspirada en BIMcollab que permite registrar incidencias en el modelo BIM con captura de vista, viewpoint (orientación de cámara) y lista de elementos seleccionados. Cada incidencia se guarda en el servidor con imagen PNG, metadatos JSON y notificación por correo a la persona asignada.
+    </div>
+
+    <h2>1. ¿Cómo funciona?</h2>
+    <p>La herramienta captura el contexto visual del problema en Revit y lo guarda en una carpeta del servidor (<code>Y:\00_SERVIDOR DE INCIDENCIAS</code>). Cada incidencia incluye:</p>
+    <ul>
+        <li><strong>Captura de vista</strong> — Imagen PNG de la vista activa en el momento de crear la incidencia.</li>
+        <li><strong>Viewpoint</strong> — Datos de la cámara (posición, orientación) para poder restaurar exactamente la misma vista desde "Ver Incidencias".</li>
+        <li><strong>Elementos seleccionados</strong> — IDs y categorías de los elementos que el usuario selecciona en el modelo.</li>
+        <li><strong>Metadatos</strong> — Título, descripción, prioridad, personas asignadas, disciplinas, etc. (El estado siempre es "Abierto" al crear.)</li>
+    </ul>
+
+    <h2>2. Flujo de uso</h2>
+
+    <div class="step">
+        <span class="step-num">1</span>
+        <strong>Posiciona la vista</strong> — En Revit, navega a la vista 3D o 2D donde está el problema. Ajusta el zoom y la orientación como quieras que aparezca en la incidencia.
+    </div>
+    <div class="step">
+        <span class="step-num">2</span>
+        <strong>Abre Crear Incidencia</strong> — Ejecuta la herramienta desde el panel de Incidencias. La ventana se abrirá con la vista actual ya capturada automáticamente (si la herramienta captura al abrir) o tendrás que capturar manualmente.
+    </div>
+    <div class="step">
+        <span class="step-num">3</span>
+        <strong>Selecciona elementos</strong> — Pulsa "Seleccionar en Modelo" para elegir en Revit los elementos relacionados con la incidencia (vigas, ductos, muros, etc.). Aparecerán en la tabla con ID, categoría y tipo.
+    </div>
+    <div class="step">
+        <span class="step-num">4</span>
+        <strong>Completa los detalles</strong> — Rellena el título (obligatorio), descripción, prioridad, reportado por y asignado a. Marca las disciplinas involucradas si procede. Las nuevas incidencias se crean siempre en estado "Abierto".
+    </div>
+    <div class="step">
+        <span class="step-num">5</span>
+        <strong>Adjunta archivos (opcional)</strong> — Puedes añadir archivos adicionales (PDF, imágenes, etc.) con el botón "+ Adjuntar archivo".
+    </div>
+    <div class="step">
+        <span class="step-num">6</span>
+        <strong>Crear Incidencia</strong> — Pulsa "Crear Incidencia" para guardar. La incidencia se guardará en la carpeta del proyecto en el servidor y, si hay correo configurado, se enviará una notificación a la persona asignada.
+    </div>
+
+    <h2>3. Campos principales</h2>
+    <table>
+        <tr><th>Campo</th><th>Descripción</th></tr>
+        <tr><td><strong>Título</strong></td><td>Obligatorio. Breve descripción del problema (ej: "Conflicto entre viga y ducto HVAC").</td></tr>
+        <tr><td><strong>Descripción</strong></td><td>Texto libre con más detalles, ubicación o acción requerida.</td></tr>
+        <tr><td><strong>Prioridad</strong></td><td>Crítica, Alta, Media o Baja.</td></tr>
+        <tr><td><strong>Estado</strong></td><td>Al crear, siempre "Abierto". El estado se cambia desde Ver Incidencias.</td></tr>
+        <tr><td><strong>Reportado por</strong></td><td>Persona que crea la incidencia (del directorio de personas).</td></tr>
+        <tr><td><strong>Asignado a</strong></td><td>Persona responsable de resolver la incidencia. Recibirá la notificación por correo.</td></tr>
+        <tr><td><strong>Disciplinas</strong></td><td>Arquitectura, Estructura, MEP, Civil, General — para clasificar la incidencia.</td></tr>
+    </table>
+
+    <h2>4. Botones de la interfaz</h2>
+    <table>
+        <tr><th>Botón</th><th>Acción</th></tr>
+        <tr><td><strong>Manual</strong></td><td>Abre este manual en el navegador.</td></tr>
+        <tr><td><strong>Seleccionar en Modelo</strong></td><td>Permite seleccionar elementos en Revit para asociarlos a la incidencia.</td></tr>
+        <tr><td><strong>Gestionar directorio de personas</strong></td><td>Abre la ventana para agregar o eliminar personas (reportado por / asignado a).</td></tr>
+        <tr><td><strong>+ Adjuntar archivo</strong></td><td>Añade archivos adicionales a la incidencia.</td></tr>
+        <tr><td><strong>Quitar seleccionado</strong></td><td>Elimina el archivo adjunto seleccionado de la lista.</td></tr>
+        <tr><td><strong>Cancelar</strong></td><td>Cierra la ventana sin guardar.</td></tr>
+        <tr><td><strong>Crear Incidencia</strong></td><td>Guarda la incidencia en el servidor y envía la notificación.</td></tr>
+    </table>
+
+    <h2>5. Ubicación de las incidencias</h2>
+    <p>Las incidencias se guardan en:</p>
+    <p><code>Y:\00_SERVIDOR DE INCIDENCIAS\[NombreProyecto]\ISSUE_N\</code></p>
+    <p>Donde <em>NombreProyecto</em> es el directorio que contiene el modelo central (o el archivo actual) y <em>N</em> es el número secuencial de la incidencia. Cada carpeta contiene:</p>
+    <ul>
+        <li><code>screenshot.png</code> — Imagen de la vista capturada.</li>
+        <li><code>viewpoint.json</code> — Datos de la cámara para restaurar la vista.</li>
+        <li><code>issue.json</code> — Metadatos (título, prioridad, elementos, etc.).</li>
+        <li>Archivos adjuntos que hayas incluido.</li>
+    </ul>
+
+    <div class="tip">
+        <strong>Consejo:</strong> Usa la herramienta "Ver Incidencias" para consultar, filtrar y visualizar todas las incidencias del servidor, y para navegar a la vista original de cada incidencia.
+    </div>
+
+    <div class="footer">
+        Arainco Ingeniería Estructural — Herramientas BIM para gestión de incidencias.
+    </div>
+</body>
+</html>
