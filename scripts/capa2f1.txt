@@ -1,0 +1,31 @@
+def _desplazar_curva_por_normal_mm(curva, face_normal_unit, offset_mm):
+    if curva is None or face_normal_unit is None:
+        return None
+    try:
+        n = face_normal_unit
+        if n.GetLength() < 1e-12:
+            return None
+        n = n.Normalize()
+        d_ft = float(offset_mm) / 304.8
+        disp = n.Multiply(d_ft)
+    except Exception:
+        return None
+    if isinstance(curva, Line):
+        try:
+            q0 = curva.GetEndPoint(0) + disp
+            q1 = curva.GetEndPoint(1) + disp
+            if q0.DistanceTo(q1) < _MIN_LINE_LEN_FT:
+                return None
+            return Line.CreateBound(q0, q1)
+        except Exception:
+            return None
+    if isinstance(curva, PolyLine):
+        pts = _puntos_desde_polyline(curva)
+        if not pts or len(pts) < 2:
+            return None
+        moved = []
+        for p in pts:
+            try:
+                moved.append(p + disp)
+            except Exception:
+                return None

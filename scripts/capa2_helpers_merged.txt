@@ -1,0 +1,111 @@
+def _desplazar_curva_por_normal_mm(curva, face_normal_unit, offset_mm):
+    if curva is None or face_normal_unit is None:
+        return None
+    try:
+        n = face_normal_unit
+        if n.GetLength() < 1e-12:
+            return None
+        n = n.Normalize()
+        d_ft = float(offset_mm) / 304.8
+        disp = n.Multiply(d_ft)
+    except Exception:
+        return None
+    if isinstance(curva, Line):
+        try:
+            q0 = curva.GetEndPoint(0) + disp
+            q1 = curva.GetEndPoint(1) + disp
+            if q0.DistanceTo(q1) < _MIN_LINE_LEN_FT:
+                return None
+            return Line.CreateBound(q0, q1)
+        except Exception:
+            return None
+    if isinstance(curva, PolyLine):
+        pts = _puntos_desde_polyline(curva)
+        if not pts or len(pts) < 2:
+            return None
+        moved = []
+        for p in pts:
+            try:
+                moved.append(p + disp)
+            except Exception:
+                return None
+        if len(moved) == 2:
+            try:
+                if moved[0].DistanceTo(moved[1]) < _MIN_LINE_LEN_FT:
+                    return None
+                return Line.CreateBound(moved[0], moved[1])
+            except Exception:
+                return None
+        try:
+            from System.Collections.Generic import List
+            lst = List[XYZ]()
+            for p in moved:
+                lst.Add(p)
+            return PolyLine.Create(lst)
+        except Exception:
+            return None
+    return None
+
+
+def _curve_extremos_mundo(curva):
+    if curva is None:
+        return None, None
+    try:
+        lo, hi = _rango_nativo_curva(curva)
+        if lo is None or hi is None:
+            return None, None
+        return curva.Evaluate(lo, False), curva.Evaluate(hi, False)
+    except Exception:
+        return None, None
+
+
+def _troceo_ganchos_extremo_segmento_vs_curva_global(
+    seg, curva_global, troceo_ini_glob, troceo_fin_glob,
+):
+    tol_ft = float(_TOL_EXTREMO_CAPA2_COINCIDE_MM) / 304.8
+    pa = pb = None
+    try:
+        pa = seg.GetEndPoint(0)
+        pb = seg.GetEndPoint(1)
+    except Exception:
+        pass
+    ga, gb = _curve_extremos_mundo(curva_global)
+    if pa is None or pb is None or ga is None or gb is None:
+        return False, False
+    try:
+        d_a_g = pa.DistanceTo(ga)
+        d_b_g = pb.DistanceTo(ga)
+        d_a_h = pa.DistanceTo(gb)
+        d_b_h = pb.DistanceTo(gb)
+    except Exception:
+        return False, False
+    ini_es_a = d_a_g <= d_b_g
+    if ini_es_a:
+        ti = bool(troceo_ini_glob) and d_a_g <= tol_ft
+        tf = bool(troceo_fin_glob) and d_b_h <= tol_ft
+    else:
+        ti = bool(troceo_ini_glob) and d_b_g <= tol_ft
+        tf = bool(troceo_fin_glob) and d_a_h <= tol_ft
+    return ti, tf
+
+
+def _subdividir_curva_por_cortes_interiores(curva, cortes_params):
+    if curva is None:
+        return []
+    lo, hi = _rango_nativo_curva(curva)
+    if lo is None or hi is None:
+        return []
+    cortes = _dedupe_sorted_params(list(cortes_params or []), _TOL_DEDUPE_PARAM_FT)
+    cortes = _params_interiores(cortes, lo, hi)
+    bounds = [lo] + list(cortes) + [hi]
+    segmentos = []
+    for i in range(len(bounds) - 1):
+        a, b = bounds[i], bounds[i + 1]
+        if b - a <= _MIN_LINE_LEN_FT * 2:
+            continue
+        seg = _subcurva_entre_parametros_nativos(curva, a, b)
+        if seg is not None:
+            segmentos.append(seg)
+    return segmentos
+
+

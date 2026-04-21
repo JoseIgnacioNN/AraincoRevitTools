@@ -1,0 +1,27 @@
+def _plano_division_empalme_desde_location_curve(elemento):
+    """
+    Plano para trocear el trazo de armadura en la viga de apoyo:
+
+    - **Origen**: punto medio de ``Location.Curve`` (eje estructural).
+    - **Normal del plano** (Revit): dirección unitaria de ese eje.
+
+    Así el plano es **perpendicular** al eje de la viga (planos paralelos entre sí si el eje es recto);
+    la curva del refuerzo se corta donde la atraviesa.
+    """
+    crv = _curva_location_framing(elemento)
+    if crv is None:
+        return None
+    try:
+        p0 = crv.GetEndPoint(0)
+        p1 = crv.GetEndPoint(1)
+        d = p1 - p0
+        L = d.GetLength()
+        if L < _MIN_LINE_LEN_FT:
+            return None
+        u = d.Normalize()
+        mid = p0 + (p1 - p0).Multiply(0.5)
+        return Plane.CreateByNormalAndOrigin(u, mid)
+    except Exception:
+        return None
+
+

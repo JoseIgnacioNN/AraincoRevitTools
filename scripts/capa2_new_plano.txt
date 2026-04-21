@@ -1,0 +1,39 @@
+def _plano_division_desde_location_curve_fraccion_normalizada(elemento, u_norm):
+    crv = _curva_location_framing(elemento)
+    if crv is None:
+        return None
+    try:
+        uu = float(u_norm)
+        if uu < 0.0 or uu > 1.0:
+            return None
+        origin = crv.Evaluate(uu, True)
+    except Exception:
+        return None
+    u = None
+    try:
+        der = crv.ComputeDerivatives(uu, True)
+        if der is not None:
+            tx = der.BasisX
+            if tx is not None and tx.GetLength() >= 1e-12:
+                u = tx.Normalize()
+    except Exception:
+        u = None
+    if u is None:
+        try:
+            p0 = crv.GetEndPoint(0)
+            p1 = crv.GetEndPoint(1)
+            d = p1 - p0
+            if d.GetLength() < _MIN_LINE_LEN_FT:
+                return None
+            u = d.Normalize()
+        except Exception:
+            return None
+    try:
+        return Plane.CreateByNormalAndOrigin(u, origin)
+    except Exception:
+        return None
+
+
+def _plano_division_empalme_desde_location_curve(elemento):
+    return _plano_division_desde_location_curve_fraccion_normalizada(elemento, 0.5)
+

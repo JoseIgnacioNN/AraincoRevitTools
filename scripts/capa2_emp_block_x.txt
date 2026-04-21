@@ -1,0 +1,31 @@
+def _parametros_corte_por_planos_empalme_location(curva, elementos_framing):
+    """Parámetros donde ``curva`` corta los planos (medio de ``LocationCurve``, normal = eje) de cada viga."""
+    out = []
+    if curva is None or not elementos_framing:
+        return out
+    for el in elementos_framing:
+        if el is None:
+            continue
+        pl = _plano_division_empalme_desde_location_curve(el)
+        if pl is None:
+            continue
+        for t in _parametros_interseccion_curva_plano(curva, pl):
+            out.append(t)
+    return out
+
+
+def _parametros_corte_por_planos_capa2_location(curva, elementos_framing):
+    out = []
+    if curva is None or not elementos_framing:
+        return out
+    for el in elementos_framing:
+        if el is None:
+            continue
+        for ufrac in (0.25, 0.75):
+            pl = _plano_division_desde_location_curve_fraccion_normalizada(el, ufrac)
+            if pl is None:
+                continue
+            for t in _parametros_interseccion_curva_plano(curva, pl):
+                out.append(t)
+    return out
+

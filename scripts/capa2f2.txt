@@ -1,0 +1,41 @@
+        if len(moved) == 2:
+            try:
+                if moved[0].DistanceTo(moved[1]) < _MIN_LINE_LEN_FT:
+                    return None
+                return Line.CreateBound(moved[0], moved[1])
+            except Exception:
+                return None
+        try:
+            from System.Collections.Generic import List
+            lst = List[XYZ]()
+            for p in moved:
+                lst.Add(p)
+            return PolyLine.Create(lst)
+        except Exception:
+            return None
+    return None
+
+
+def _curve_extremos_mundo(curva):
+    if curva is None:
+        return None, None
+    try:
+        lo, hi = _rango_nativo_curva(curva)
+        if lo is None or hi is None:
+            return None, None
+        return curva.Evaluate(lo, False), curva.Evaluate(hi, False)
+    except Exception:
+        return None, None
+
+
+def _troceo_ganchos_extremo_segmento_vs_curva_global(
+    seg, curva_global, troceo_ini_glob, troceo_fin_glob,
+):
+    tol_ft = float(_TOL_EXTREMO_CAPA2_COINCIDE_MM) / 304.8
+    pa = pb = None
+    try:
+        pa = seg.GetEndPoint(0)
+        pb = seg.GetEndPoint(1)
+    except Exception:
+        pass
+    ga, gb = _curve_extremos_mundo(curva_global)
