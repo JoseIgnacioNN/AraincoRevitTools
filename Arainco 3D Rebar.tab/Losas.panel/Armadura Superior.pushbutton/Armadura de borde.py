@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 from Autodesk.Revit import DB
-from Autodesk.Revit import UI
 from Autodesk.Revit.DB import UnitUtils, UnitTypeId
 from Autodesk.Revit.Exceptions import OperationCanceledException
 from pyrevit import revit, forms
@@ -131,6 +130,8 @@ class EstadoFormulario: # Almacenar valores del formulario
         self.Lext = None
         self.sel_index = -1
         self.esp_text = None
+        self.form_top = saved_form_top if 'saved_form_top' in globals() else None
+        self.form_left = saved_form_left if 'saved_form_left' in globals() else None
 estado = EstadoFormulario()
 
 class Formulario(forms.WPFWindow):  # Funciones del formulario
@@ -148,8 +149,14 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
             self.imgLogo.Source = BitmapImage(Uri(ruta_logo))
 
         # Posición del formulario en pantalla
-        self.Left = 5 # Separación del borde izquierdo
-        self.Top = (SystemParameters.WorkArea.Height - self.Height) / 2
+        if datos.form_top is not None:
+            self.Top = datos.form_top
+        else:
+            self.Top = (SystemParameters.WorkArea.Height - self.Height) / 2 # Centrado verticalmente
+        if datos.form_left is not None:
+            self.Left = datos.form_left
+        else:
+            self.Left = 5 # Separación del borde izquierdo
 
         # Restaurar valores seleccionados en el formulario, cada vez que se abra
         self.cmbCambioRutina.SelectedIndex = 1
@@ -172,6 +179,8 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
         estado.sel_index = self.cmbRebar.SelectedIndex
         estado.esp_text = self.txtEspaciamiento.Text
         estado.barra_izq = self.chkIzq.IsChecked
+        estado.form_top = self.Top
+        estado.form_left = self.Left
 
         # Rescatar el índice de la rutina
         if self.cmbCambioRutina.IsLoaded: 
@@ -383,8 +392,9 @@ while True:
         
         # Parámetros de la losa encontrada
         try:
-            rec_param = slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_TOP)
-            rec = doc.GetElement(rec_param.AsElementId()).CoverDistance
+            rec_top = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_TOP).AsElementId()).CoverDistance
+            rec_bottom = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_BOTTOM).AsElementId()).CoverDistance
+            rec_other = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_OTHER).AsElementId()).CoverDistance
             e = slab.get_Parameter(DB.BuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM).AsDouble()
         except Exception:
             t_group.RollBack()
@@ -394,8 +404,8 @@ while True:
 # ===================================================================================
 # GEOMETRÍA DE LA BARRA
 # ===================================================================================
-        offset_lateral = rec + rebar_fi / 2
-        offset_rec = rec + rebar_fi / 2
+        offset_lateral = rec_other + rebar_fi / 2
+        offset_rec = rec_top + rebar_fi / 2
         origen_desplazado = plane_origin - plane_normal * offset_rec # Desplazamos el plano matemático hacia abajo para incluir el recubrimiento y diámetro
         
         # Evitar que el código colapse si el usuario dibuja una línea muy corta
@@ -412,8 +422,15 @@ while True:
         p1_3D = p1_3D + v_recorrido_3D * offset_lateral
         p2_3D = p2_3D - v_recorrido_3D * offset_lateral
         v_bar_3D = plane_normal.CrossProduct(v_recorrido_3D).Normalize() # # Vector director de la barra (en la dirección longitudinal)
-        t1 = e - 2 * rec # Largo 1 del gancho
-        t2 = UnitUtils.ConvertToInternalUnits(15, UnitTypeId.Centimeters) # Largo 2 del gancho
+        t1 = e - rec_top - rec_bottom # Largo 1 del gancho
+
+        # Largo 2 del gancho según ACI 318-19
+        if UnitUtils.ConvertFromInternalUnits(rebar_fi, UnitTypeId.Millimeters) <= 25:
+            t2 = 3.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5, UnitTypeId.Centimeters))
+        elif UnitUtils.ConvertFromInternalUnits(rebar_fi, UnitTypeId.Millimeters) <= 36:
+            t2 = 4.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5, UnitTypeId.Centimeters)) 
+        else:
+            t2 = 5.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5), UnitTypeId.Centimeters) 
 
         if estado.barra_izq == True:
             start = p1_3D + v_bar_3D * (L + Lext) # Extremo inicial de la barra
@@ -553,4 +570,7 @@ while True:
             forms.alert("Error al crear la barra: {}".format(e), title="Error de creación de barra")
             continue
         
+# Variables a guardar cuando se produce el break debido al cambio de rutina
 nueva_rutina_idx = estado.rutina_idx
+form_top = estado.form_top
+form_left = estado.form_left

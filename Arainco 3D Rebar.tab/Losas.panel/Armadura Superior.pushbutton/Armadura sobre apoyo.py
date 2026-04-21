@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 from Autodesk.Revit import DB
-from Autodesk.Revit import UI
 from Autodesk.Revit.DB import UnitUtils, UnitTypeId
 from Autodesk.Revit.Exceptions import OperationCanceledException
 from pyrevit import revit, forms
@@ -133,6 +132,8 @@ class EstadoFormulario: # Almacenar valores del formulario
         self.Lext_izq = True
         self.sel_index = -1
         self.esp_text = None
+        self.form_top = saved_form_top if 'saved_form_top' in globals() else None
+        self.form_left = saved_form_left if 'saved_form_left' in globals() else None
 estado = EstadoFormulario()
 
 class Formulario(forms.WPFWindow):  # Funciones del formulario
@@ -150,8 +151,14 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
             self.imgLogo.Source = BitmapImage(Uri(ruta_logo))
 
         # Posición del formulario en pantalla
-        self.Left = 5 # Separación del borde izquierdo
-        self.Top = (SystemParameters.WorkArea.Height - self.Height) / 2
+        if datos.form_top is not None:
+            self.Top = datos.form_top
+        else:
+            self.Top = (SystemParameters.WorkArea.Height - self.Height) / 2 # Centrado verticalmente
+        if datos.form_left is not None:
+            self.Left = datos.form_left
+        else:
+            self.Left = 5 # Separación del borde izquierdo
 
         # Restaurar valores seleccionados en el formulario, cada vez que se abra
         self.cmbCambioRutina.SelectedIndex = 0
@@ -178,6 +185,8 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
         estado.sel_index = self.cmbRebar.SelectedIndex
         estado.esp_text = self.txtEspaciamiento.Text
         estado.Lext_izq = self.chkIzq.IsChecked
+        estado.form_top = self.Top
+        estado.form_left = self.Left
 
         # Rescatar el índice de la rutina
         if self.cmbCambioRutina.IsLoaded: 
@@ -400,8 +409,8 @@ while True:
         
         # Parámetros de la losa encontrada
         try:
-            rec_param = slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_TOP)
-            rec = doc.GetElement(rec_param.AsElementId()).CoverDistance
+            rec_top = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_TOP).AsElementId()).CoverDistance
+            rec_other = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_OTHER).AsElementId()).CoverDistance
         except Exception:
             t_group.RollBack()
             forms.alert("La losa detectada no tiene parámetros de recubrimiento estructural válidos.", title="Error de Parámetro")
@@ -410,8 +419,8 @@ while True:
 # ===================================================================================
 # GEOMETRÍA DE LA BARRA
 # ===================================================================================
-        offset_lateral = rec + rebar_fi / 2
-        offset_rec = rec + rebar_fi / 2
+        offset_lateral = rec_other + rebar_fi / 2
+        offset_rec = rec_top + rebar_fi / 2
         origen_desplazado = plane_origin - plane_normal * offset_rec # Desplazamos el plano matemático hacia abajo para incluir el recubrimiento y diámetro
         
         # Evitar que el código colapse si el usuario dibuja una línea muy corta
@@ -586,5 +595,7 @@ while True:
             forms.alert("Error al crear la barra: {}".format(e), title="Error de creación de barra")
             continue
 
-nueva_rutina_idx = estado.rutina_idx # Cuando se cambia de rutina el break hace saltar hasta esta línea. Se guarda el índice de rutina escogido
-        
+# Variables a guardar cuando se produce el break debido al cambio de rutina
+nueva_rutina_idx = estado.rutina_idx
+form_top = estado.form_top
+form_left = estado.form_left

@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 from Autodesk.Revit import DB
-from Autodesk.Revit import UI
 from Autodesk.Revit.DB import UnitUtils, UnitTypeId
 from Autodesk.Revit.Exceptions import OperationCanceledException
 from pyrevit import revit, forms
@@ -129,6 +128,8 @@ class EstadoFormulario: # Almacenar valores del formulario
         self.esp_text = None
         self.sel_index2 = -1
         self.esp_text2 = None
+        self.form_top = saved_form_top if 'saved_form_top' in globals() else None
+        self.form_left = saved_form_left if 'saved_form_left' in globals() else None
 estado = EstadoFormulario()
 
 class Formulario(forms.WPFWindow):  # Funciones del formulario
@@ -147,8 +148,14 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
             self.imgLogo.Source = BitmapImage(Uri(ruta_logo))
 
         # Posición del formulario en pantalla
-        self.Left = 5 # Separación del borde izquierdo
-        self.Top = (SystemParameters.WorkArea.Height - self.Height) / 2
+        if datos.form_top is not None:
+            self.Top = datos.form_top
+        else:
+            self.Top = (SystemParameters.WorkArea.Height - self.Height) / 2 # Centrado verticalmente
+        if datos.form_left is not None:
+            self.Left = datos.form_left
+        else:
+            self.Left = 5 # Separación del borde izquierdo
 
         # Restaurar valores seleccionados en el formulario, cada vez que se abra
         self.cmbCambioRutina.SelectedIndex = 3
@@ -167,6 +174,8 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
         estado.sel_index2 = self.cmbRebar2.SelectedIndex
         estado.esp_text = self.txtEspaciamiento.Text
         estado.esp_text2 = self.txtEspaciamiento2.Text
+        estado.form_top = self.Top
+        estado.form_left = self.Left
 
         # Rescatar el índice de la rutina
         if self.cmbCambioRutina.IsLoaded: 
@@ -306,8 +315,9 @@ while True:
         
         # Parámetros de la losa encontrada
         try:
-            rec_param = slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_TOP)
-            rec = doc.GetElement(rec_param.AsElementId()).CoverDistance
+            rec_top = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_TOP).AsElementId()).CoverDistance
+            rec_bottom = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_BOTTOM).AsElementId()).CoverDistance
+            rec_other = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_OTHER).AsElementId()).CoverDistance
             e = slab.get_Parameter(DB.BuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM).AsDouble()
         except Exception:
             t_group.RollBack()
@@ -332,13 +342,13 @@ while True:
         L_vano1 = (p2_vano1 - p1_vano1).GetLength()
         L_vano2 = (p2_vano2 - p1_vano2).GetLength()
         if L_vano1 < L_vano2: 
-            rec_vano1 = rec + rebar_fi_vano1 / 2
-            rec_vano2 = rec + rebar_fi_vano1 + rebar_fi_vano2 / 2
+            rec_vano1 = rec_top + rebar_fi_vano1 / 2
+            rec_vano2 = rec_top + rebar_fi_vano1 + rebar_fi_vano2 / 2
             ubic_vano1 = "F's"
             ubic_vano2 = "F'i"
         else: 
-            rec_vano1 = rec + rebar_fi_vano2 + rebar_fi_vano1/ 2
-            rec_vano2 = rec + rebar_fi_vano2 / 2
+            rec_vano1 = rec_top + rebar_fi_vano2 + rebar_fi_vano1/ 2
+            rec_vano2 = rec_top + rebar_fi_vano2 / 2
             ubic_vano1 = "F'i"
             ubic_vano2 = "F's"
 
@@ -354,7 +364,7 @@ while True:
             rebar_fi = rebar_selected.get_Parameter(DB.BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble()
             esp = bar["esp"]
             offset_rec = bar["rec_vano"]
-            offset_lateral = rec + rebar_fi / 2
+            offset_lateral = rec_other + rebar_fi / 2
             origen_desplazado = plane_origin - plane_normal * offset_rec # Desplazamos el plano matemático hacia abajo para incluir el recubrimiento y diámetro
             
             # Evitar que el código colapse si el usuario dibuja una línea muy corta
@@ -388,9 +398,16 @@ while True:
             centro_barra = centro_vano_3D + v_recorrido_3D * desplazamiento
             start = centro_barra + v_bar_3D * (L/2 - offset_lateral) # Extremo inicial de la barra
             end = centro_barra - v_bar_3D * (L/2 - offset_lateral) # Extremo final de la barra
+            t1 = e - rec_top - rec_bottom # Largo 1 del gancho
+            
+            # Largo 2 del gancho según ACI 318-19
+            if UnitUtils.ConvertFromInternalUnits(rebar_fi, UnitTypeId.Millimeters) <= 25:
+                t2 = 3.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5, UnitTypeId.Centimeters))
+            elif UnitUtils.ConvertFromInternalUnits(rebar_fi, UnitTypeId.Millimeters) <= 36:
+                t2 = 4.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5, UnitTypeId.Centimeters)) 
+            else:
+                t2 = 5.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5), UnitTypeId.Centimeters) 
 
-            t1 = e - 2 * rec # Largo 1 del gancho
-            t2 = UnitUtils.ConvertToInternalUnits(15, UnitTypeId.Centimeters) # Largo 2 del gancho
             pt1_1 = start - plane_normal * t1 # Tramo 1 del gancho 1
             pt2_1 = pt1_1 - v_bar_3D * t2 # Tramo 2 del gancho 1
             pt1_2 = end - plane_normal * t1 # Tramo 1 del gancho 2
@@ -527,5 +544,7 @@ while True:
         if t_group.HasStarted(): t_group.RollBack()
         continue # Vuelve a abrir el formulario para intentar de nuevo
 
+# Variables a guardar cuando se produce el break debido al cambio de rutina
 nueva_rutina_idx = estado.rutina_idx
-        
+form_top = estado.form_top
+form_left = estado.form_left      
