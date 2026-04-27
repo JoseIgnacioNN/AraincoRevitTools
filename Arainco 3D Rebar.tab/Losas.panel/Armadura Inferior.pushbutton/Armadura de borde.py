@@ -142,9 +142,22 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
         self.cmbCambioRutina.SelectedIndex = 1 # Armadura de borde
 
         # Ruta del logo
-        ruta_logo = os.path.join(os.path.dirname(__file__), "logo.png")
-        if os.path.exists(ruta_logo):
-            self.imgLogo.Source = BitmapImage(Uri(ruta_logo))
+        try:
+            base_dir = os.path.dirname(__file__)
+            logo_candidates = [
+                os.path.join(base_dir, "empresa_logo.png"),
+                os.path.join(base_dir, "logo_empresa.png"),
+                os.path.join(base_dir, "logo.png"),
+                os.path.join(os.path.dirname(base_dir), "empresa_logo.png"),
+                os.path.join(os.path.dirname(base_dir), "logo_empresa.png"),
+                os.path.join(os.path.dirname(base_dir), "logo.png"),
+            ]
+            for ruta_logo in logo_candidates:
+                if os.path.exists(ruta_logo):
+                    self.imgLogo.Source = BitmapImage(Uri(ruta_logo))
+                    break
+        except Exception:
+            pass
 
         # Posición del formulario en pantalla
         self.Left = 5 # Separación del borde izquierdo
