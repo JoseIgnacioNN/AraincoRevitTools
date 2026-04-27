@@ -11,6 +11,11 @@ from Autodesk.Revit.UI import TaskDialog
 
 _TOOL_DIALOG_TITLE = u"Refuerzo borde losa"
 
+# El módulo principal vive en `scripts/` (cargado con imp.load_source), por lo que
+# `__file__` dentro de ese módulo NO apunta a esta carpeta `.pushbutton`.
+# Esto permite resolver recursos (logo) desde la ubicación real del botón.
+_ARAINCO_BORDE_LOSA_PB_ENV = u"ARAINCO_BORDE_LOSA_PUSHBUTTON_DIR"
+
 
 def _find_module(start_dir):
     cursor = start_dir
@@ -38,6 +43,11 @@ if not _module_path:
 import sys as _sys
 _sys.modules.pop("enfierrado_shaft_hashtag", None)
 _sys.modules.pop("barras_bordes_losa_gancho_empotramiento", None)
+
+try:
+    os.environ[_ARAINCO_BORDE_LOSA_PB_ENV] = _pushbutton_dir
+except Exception:
+    pass
 
 try:
     _mod = imp.load_source("barras_bordes_losa_gancho_empotramiento", _module_path)

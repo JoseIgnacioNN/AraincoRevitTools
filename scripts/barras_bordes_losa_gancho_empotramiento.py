@@ -97,18 +97,62 @@ def _host_display_name(host):
 
 
 _EXT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir))
-_ENFIERRADO_PASADA_PUSHBUTTON = os.path.join(
-    _EXT_ROOT,
-    "BIMTools.tab",
-    "Armadura.panel",
-    "20_BordeLosaGanchoEmpotramiento.pushbutton",
-)
-# Orden: marca corporativa opcional, luego logo del botón (reemplazar logo.png por PNG corporativo si aplica).
-_LOGO_PATHS = [
-    os.path.join(_ENFIERRADO_PASADA_PUSHBUTTON, "empresa_logo.png"),
-    os.path.join(_ENFIERRADO_PASADA_PUSHBUTTON, "logo_empresa.png"),
-    os.path.join(_ENFIERRADO_PASADA_PUSHBUTTON, "logo.png"),
-]
+_ARAINCO_BORDE_LOSA_PB_ENV = u"ARAINCO_BORDE_LOSA_PUSHBUTTON_DIR"
+
+
+def _resolve_borde_losa_pushbutton_dir():
+    """
+    Carpeta real del botón `.pushbutton` (recursos como `empresa_logo.png`).
+
+    Importante: este archivo normalmente se carga con ``imp.load_source`` desde
+    ``scripts/``, así que ``__file__`` NO apunta al `.pushbutton`. Por eso:
+    - Preferimos ``ARAINCO_BORDE_LOSA_PUSHBUTTON_DIR`` (lo setea ``script.py`` del botón).
+    - Si falta, intentamos inferir subiendo desde ``scripts/`` hasta encontrar
+      ``20_BordeLosaGanchoEmpotramiento.pushbutton``.
+    - Como último recurso, conservamos la ruta histórica bajo ``BIMTools.tab`` (si existe).
+    """
+    try:
+        v = os.environ.get(_ARAINCO_BORDE_LOSA_PB_ENV)
+        if v:
+            d = os.path.abspath(v)
+            if os.path.isdir(d):
+                return d
+    except Exception:
+        pass
+
+    scripts_dir = os.path.dirname(os.path.abspath(__file__))
+    cursor = scripts_dir
+    for _ in range(14):
+        cand = os.path.join(cursor, "20_BordeLosaGanchoEmpotramiento.pushbutton")
+        if os.path.isdir(cand) and os.path.isfile(os.path.join(cand, "script.py")):
+            return os.path.abspath(cand)
+        parent = os.path.dirname(cursor)
+        if parent == cursor:
+            break
+        cursor = parent
+
+    legacy = os.path.join(
+        _EXT_ROOT,
+        "BIMTools.tab",
+        "Armadura.panel",
+        "20_BordeLosaGanchoEmpotramiento.pushbutton",
+    )
+    if os.path.isdir(legacy):
+        return os.path.abspath(legacy)
+
+    return os.path.abspath(legacy)
+
+
+def _borde_losa_logo_file_paths(pushbutton_dir):
+    """Lista ordenada de candidatos de archivo de logo dentro del `.pushbutton`."""
+    d = pushbutton_dir or u""
+    return [
+        os.path.join(d, "empresa_logo.png"),
+        os.path.join(d, "logo_empresa.png"),
+        os.path.join(d, "logo.png"),
+        # Fallback visual (mejor que vacío): icono del botón en pyRevit.
+        os.path.join(d, "icon.png"),
+    ]
 
 # Paleta Arainco / Revit 2024+: fondo #0A1A2F, acento cyan #5BC0DE, bordes #1A3A4D
 # Combo: hover/foco #4C7383 (tenue); flecha #7AA3B8 — evita #5BC0DE en el campo (muy claro).
@@ -1093,7 +1137,8 @@ class EnfierradoShaftPasadaWindow(object):
         try:
             img = self._win.FindName("ImgLogo")
             if img is not None:
-                for logo_path in _LOGO_PATHS:
+                pushbutton_dir = _resolve_borde_losa_pushbutton_dir()
+                for logo_path in _borde_losa_logo_file_paths(pushbutton_dir):
                     if os.path.isfile(logo_path):
                         stream = None
                         try:
@@ -1128,8 +1173,8 @@ class EnfierradoShaftPasadaWindow(object):
 
                 script.get_logger().warn(
                     u"[barras_bordes_losa_gancho_empotramiento] Ningún logo encontrado. Coloque "
-                    u"empresa_logo.png, logo_empresa.png o logo.png en la carpeta del botón: "
-                    + _ENFIERRADO_PASADA_PUSHBUTTON
+                    u"empresa_logo.png, logo_empresa.png o logo.png (o icon.png) en la carpeta del botón: "
+                    + _resolve_borde_losa_pushbutton_dir()
                 )
             except Exception:
                 pass
