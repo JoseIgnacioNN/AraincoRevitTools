@@ -568,4 +568,4 @@ while True:
 # Variables a guardar cuando se produce el break debido al cambio de rutina
 nueva_rutina_idx = estado.rutina_idx
 form_top = estado.form_top
-form_left = estado.form_left      
+form_left = estado.form_left       
