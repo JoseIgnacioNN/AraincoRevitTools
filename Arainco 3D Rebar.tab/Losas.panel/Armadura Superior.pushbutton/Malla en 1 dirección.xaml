@@ -53,6 +53,26 @@
       </Border>
     </StackPanel>
 
+    <!-- Botón de Información -->
+    <Button x:Name="btnInfo"
+            Grid.Row="0"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Width="26" Height="26"
+            Margin="0,4,4,0"
+            Click="InfoClick"
+            Cursor="Hand"
+            ToolTip="Ver esquema de losa">
+        <Button.Template>
+            <ControlTemplate TargetType="Button">
+                <Grid Background="Transparent">
+                    <Ellipse Stroke="#FF1F93C9" StrokeThickness="2" Fill="White"/>
+                    <TextBlock Text="i" Foreground="#FF1F93C9" FontWeight="Bold" FontStyle="Italic" FontSize="18" FontFamily="Times New Roman" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Grid>
+            </ControlTemplate>
+        </Button.Template>
+    </Button>
+
 
     <!-- Diámetro de barra -->
     <Border Grid.Row="2" BorderBrush="#FFD0D0D0" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,6" Background="#FFFFFFFF">

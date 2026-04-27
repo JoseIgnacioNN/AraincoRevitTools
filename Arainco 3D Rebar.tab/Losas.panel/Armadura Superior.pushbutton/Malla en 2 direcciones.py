@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 from Autodesk.Revit import DB
-from Autodesk.Revit import UI
 from Autodesk.Revit.DB import UnitUtils, UnitTypeId
 from Autodesk.Revit.Exceptions import OperationCanceledException
 from pyrevit import revit, forms
@@ -11,7 +10,7 @@ from System import EventHandler, Uri
 from System.Windows import SystemParameters
 from System.Collections.Generic import List
 from System.Windows.Media.Imaging import BitmapImage
-import math, os, ctypes
+import os, ctypes
 import clr # Permite comunicar Python con C#
 clr.AddReference("PresentationFramework")
 
@@ -129,7 +128,15 @@ class EstadoFormulario: # Almacenar valores del formulario
         self.esp_text = None
         self.sel_index2 = -1
         self.esp_text2 = None
+        self.form_top = saved_form_top if 'saved_form_top' in globals() else None
+        self.form_left = saved_form_left if 'saved_form_left' in globals() else None
 estado = EstadoFormulario()
+
+class InfoWindow(forms.WPFWindow): # Ventana de información con Esquema Armadura de Losa
+    def __init__(self, xaml_file):
+        forms.WPFWindow.__init__(self, xaml_file)
+        ruta_img = os.path.join(os.path.dirname(__file__), "Esquema Losa.png")
+        self.imgEsquema.Source = BitmapImage(Uri(ruta_img))
 
 class Formulario(forms.WPFWindow):  # Funciones del formulario
 
@@ -147,8 +154,14 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
             self.imgLogo.Source = BitmapImage(Uri(ruta_logo))
 
         # Posición del formulario en pantalla
-        self.Left = 5 # Separación del borde izquierdo
-        self.Top = (SystemParameters.WorkArea.Height - self.Height) / 2
+        if datos.form_top is not None:
+            self.Top = datos.form_top
+        else:
+            self.Top = (SystemParameters.WorkArea.Height - self.Height) / 2 # Centrado verticalmente
+        if datos.form_left is not None:
+            self.Left = datos.form_left
+        else:
+            self.Left = 5 # Separación del borde izquierdo
 
         # Restaurar valores seleccionados en el formulario, cada vez que se abra
         self.cmbCambioRutina.SelectedIndex = 3
@@ -167,6 +180,8 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
         estado.sel_index2 = self.cmbRebar2.SelectedIndex
         estado.esp_text = self.txtEspaciamiento.Text
         estado.esp_text2 = self.txtEspaciamiento2.Text
+        estado.form_top = self.Top
+        estado.form_left = self.Left
 
         # Rescatar el índice de la rutina
         if self.cmbCambioRutina.IsLoaded: 
@@ -180,6 +195,10 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
         self.Close()
 
     # Funciones al hacer clic en los botones
+    def InfoClick(self, sender, args):
+        win = InfoWindow(os.path.join(os.path.dirname(__file__), "Esquema Losa.xaml"))
+        win.ShowDialog()
+
     def AplicarClick(self, sender, args):
 
         # Validación diámetro
@@ -306,8 +325,9 @@ while True:
         
         # Parámetros de la losa encontrada
         try:
-            rec_param = slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_TOP)
-            rec = doc.GetElement(rec_param.AsElementId()).CoverDistance
+            rec_top = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_TOP).AsElementId()).CoverDistance
+            rec_bottom = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_BOTTOM).AsElementId()).CoverDistance
+            rec_other = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_OTHER).AsElementId()).CoverDistance
             e = slab.get_Parameter(DB.BuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM).AsDouble()
         except Exception:
             t_group.RollBack()
@@ -332,29 +352,35 @@ while True:
         L_vano1 = (p2_vano1 - p1_vano1).GetLength()
         L_vano2 = (p2_vano2 - p1_vano2).GetLength()
         if L_vano1 < L_vano2: 
-            rec_vano1 = rec + rebar_fi_vano1 / 2
-            rec_vano2 = rec + rebar_fi_vano1 + rebar_fi_vano2 / 2
+            rec_vano1 = rec_top + rebar_fi_vano1 / 2
+            rec_vano2 = rec_top + rebar_fi_vano1 + rebar_fi_vano2 / 2
+            t1_diff_vano1 = 0
+            t1_diff_vano2 = rebar_fi_vano1
             ubic_vano1 = "F's"
             ubic_vano2 = "F'i"
         else: 
-            rec_vano1 = rec + rebar_fi_vano2 + rebar_fi_vano1/ 2
-            rec_vano2 = rec + rebar_fi_vano2 / 2
+            rec_vano1 = rec_top + rebar_fi_vano2 + rebar_fi_vano1/ 2
+            rec_vano2 = rec_top + rebar_fi_vano2 / 2
+            t1_diff_vano1 = rebar_fi_vano2
+            t1_diff_vano2 = 0
             ubic_vano1 = "F'i"
             ubic_vano2 = "F's"
 
         # Se realiza un bucle para el Rebar Set 1 y 2
         sets_bar = [
-        {"vano": (p1_vano1, p2_vano1), "recorrido": (p1_vano2, p2_vano2), "rebar_selected": rebar_types[estado.sel_index], "esp": UnitUtils.ConvertToInternalUnits(float(estado.esp_text), UnitTypeId.Millimeters), "rec_vano": rec_vano1, "ubicacion": ubic_vano1},
-        {"vano": (p1_vano2, p2_vano2), "recorrido": (p1_vano1, p2_vano1), "rebar_selected": rebar_types[estado.sel_index2], "esp": UnitUtils.ConvertToInternalUnits(float(estado.esp_text2), UnitTypeId.Millimeters), "rec_vano": rec_vano2, "ubicacion": ubic_vano2}]
+        {"vano": (p1_vano1, p2_vano1), "recorrido": (p1_vano2, p2_vano2), "rebar_selected": rebar_types[estado.sel_index], "rebar_opos": rebar_types[estado.sel_index2], "esp": UnitUtils.ConvertToInternalUnits(float(estado.esp_text), UnitTypeId.Millimeters), "rec": rec_vano1, "t1_diff": t1_diff_vano1, "ubicacion": ubic_vano1},
+        {"vano": (p1_vano2, p2_vano2), "recorrido": (p1_vano1, p2_vano1), "rebar_selected": rebar_types[estado.sel_index2], "rebar_opos": rebar_types[estado.sel_index], "esp": UnitUtils.ConvertToInternalUnits(float(estado.esp_text2), UnitTypeId.Millimeters), "rec": rec_vano2, "t1_diff": t1_diff_vano2, "ubicacion": ubic_vano2}]
 
         for bar in sets_bar:
             p1_vano, p2_vano = bar["vano"]
             p1, p2 = bar["recorrido"]
             rebar_selected = bar["rebar_selected"]
             rebar_fi = rebar_selected.get_Parameter(DB.BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble()
+            rebar_fi_opos = bar["rebar_opos"].get_Parameter(DB.BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble()
             esp = bar["esp"]
-            offset_rec = bar["rec_vano"]
-            offset_lateral = rec + rebar_fi / 2
+            t1_diff = bar["t1_diff"]
+            offset_rec = bar["rec"]
+            offset_lateral = rec_other + rebar_fi / 2
             origen_desplazado = plane_origin - plane_normal * offset_rec # Desplazamos el plano matemático hacia abajo para incluir el recubrimiento y diámetro
             
             # Evitar que el código colapse si el usuario dibuja una línea muy corta
@@ -382,15 +408,24 @@ while True:
             p2_z = get_z_on_plane(p2.X, p2.Y, origen_desplazado, plane_normal)
             p1_3D = DB.XYZ(p1.X, p1.Y, p1_z)
             p2_3D = DB.XYZ(p2.X, p2.Y, p2_z)
-            p1_3D = p1_3D + v_recorrido_3D * offset_lateral
-            p2_3D = p2_3D - v_recorrido_3D * offset_lateral
+            p1_3D = p1_3D + v_recorrido_3D * (offset_lateral + rebar_fi_opos) # Se aplica el offset lateral al recorrido
+            p2_3D = p2_3D - v_recorrido_3D * (offset_lateral + rebar_fi_opos)
             desplazamiento = (p1_3D - centro_vano_3D).DotProduct(v_recorrido_3D)
             centro_barra = centro_vano_3D + v_recorrido_3D * desplazamiento
             start = centro_barra + v_bar_3D * (L/2 - offset_lateral) # Extremo inicial de la barra
             end = centro_barra - v_bar_3D * (L/2 - offset_lateral) # Extremo final de la barra
+            
+            # Largo vertical (t1) y horizontal (t2) del gancho, según ACI 318-19. (Las longitudes son de eje a eje)
+            if UnitUtils.ConvertFromInternalUnits(rebar_fi, UnitTypeId.Millimeters) <= 25:
+                t1 = max(7*rebar_fi, e - rec_top - rec_bottom - rebar_fi - t1_diff)
+                t2 = 3.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5, UnitTypeId.Centimeters))
+            elif UnitUtils.ConvertFromInternalUnits(rebar_fi, UnitTypeId.Millimeters) <= 36:
+                t1 = max(9*rebar_fi, e - rec_top - rec_bottom - rebar_fi - t1_diff)
+                t2 = 4.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5, UnitTypeId.Centimeters)) 
+            else:
+                t1 = max(11*rebar_fi, e - rec_top - rec_bottom - rebar_fi - t1_diff)
+                t2 = 5.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5), UnitTypeId.Centimeters) 
 
-            t1 = e - 2 * rec # Largo 1 del gancho
-            t2 = UnitUtils.ConvertToInternalUnits(15, UnitTypeId.Centimeters) # Largo 2 del gancho
             pt1_1 = start - plane_normal * t1 # Tramo 1 del gancho 1
             pt2_1 = pt1_1 - v_bar_3D * t2 # Tramo 2 del gancho 1
             pt1_2 = end - plane_normal * t1 # Tramo 1 del gancho 2
@@ -451,24 +486,27 @@ while True:
                 tipo = next((t for t in tipos if DB.Element.Name.GetValue(t) == nombre_tipo), None) # Se encuentra la cota indicada
 
                 if tipo:
-                    tipo_opts = DB.MultiReferenceAnnotationOptions(tipo) # Se abre la configuración de Multi-Rebar Annotation
-                    rebar_ids = List[DB.ElementId]()
-                    rebar_ids.Add(rebar.Id)
-                    tipo_opts.SetElementsToDimension(rebar_ids)
+                    try:
+                        tipo_opts = DB.MultiReferenceAnnotationOptions(tipo) # Se abre la configuración de Multi-Rebar Annotation
+                        rebar_ids = List[DB.ElementId]()
+                        rebar_ids.Add(rebar.Id)
+                        tipo_opts.SetElementsToDimension(rebar_ids)
 
-                    # El vector director de la cota debe ser 2D
-                    v_bar_2D = DB.XYZ(v_bar_3D.X, v_bar_3D.Y, 0).Normalize()
-                    v_mra_2D = DB.XYZ(-v_bar_2D.Y, v_bar_2D.X, 0)
-                    if v_mra_2D.DotProduct(v_recorrido_2D) < 0: # Nos aseguramos de que no apunte al lado contrario
-                        v_mra_2D = -v_mra_2D
+                        # El vector director de la cota debe ser 2D
+                        v_bar_2D = DB.XYZ(v_bar_3D.X, v_bar_3D.Y, 0).Normalize()
+                        v_mra_2D = DB.XYZ(-v_bar_2D.Y, v_bar_2D.X, 0)
+                        if v_mra_2D.DotProduct(v_recorrido_2D) < 0: # Nos aseguramos de que no apunte en dirección contraria al vector recorrido
+                            v_mra_2D = -v_mra_2D
 
-                    tipo_opts.DimensionLineDirection = v_mra_2D
-                    tipo_opts.DimensionPlaneNormal = uidoc.ActiveView.ViewDirection
-                    mid_point = DB.XYZ((x_min + x_max) / 2, (y_min + y_max) / 2, Z_elev)
-                    mid_point = mid_point + v_bar_2D * offset_mra # Se centra la cota al punto medio y luego se suma el offset
-                    tipo_opts.DimensionLineOrigin = mid_point
-                    tipo_opts.TagHeadPosition = mid_point
-                    DB.MultiReferenceAnnotation.Create(doc, uidoc.ActiveView.Id, tipo_opts)
+                        tipo_opts.DimensionLineDirection = v_mra_2D
+                        tipo_opts.DimensionPlaneNormal = uidoc.ActiveView.ViewDirection
+                        mid_point = DB.XYZ((x_min + x_max) / 2, (y_min + y_max) / 2, Z_elev)
+                        mid_point = mid_point + v_bar_2D * offset_mra # Se centra la cota al punto medio y luego se suma el offset
+                        tipo_opts.DimensionLineOrigin = mid_point
+                        tipo_opts.TagHeadPosition = mid_point
+                        DB.MultiReferenceAnnotation.Create(doc, uidoc.ActiveView.Id, tipo_opts)
+                    except Exception:
+                        forms.alert("Se creó la armadura, pero no fue posible agregar el Multi-Rebar Annotation dado que la losa tiene pendiente. Dibujar recorrido manualmente.", title="Error de Multi-Rebar Annotation") # Si los ganchos se crean desde la lista DB.Line.CreateBound() en lugar de la manera tradicional dentro de DB.Structure.Rebar.CreateFromCurves(), Revit no permite agregar la cota MRA en losas con pendiente
                 else:
                     forms.alert("La armadura se creó, pero no se encontró el tipo de cota llamado '{}'.\n\nRevisa que esté cargado en el proyecto o que el nombre esté escrito exactamente igual.".format(nombre_tipo), title="Falta Tipo de Recorrido")
 
@@ -527,5 +565,7 @@ while True:
         if t_group.HasStarted(): t_group.RollBack()
         continue # Vuelve a abrir el formulario para intentar de nuevo
 
+# Variables a guardar cuando se produce el break debido al cambio de rutina
 nueva_rutina_idx = estado.rutina_idx
-        
+form_top = estado.form_top
+form_left = estado.form_left      
