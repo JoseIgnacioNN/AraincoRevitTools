@@ -514,3 +514,4 @@ while True:
 nueva_rutina_idx = estado.rutina_idx
 form_top = estado.form_top
 form_left = estado.form_left
+ 
