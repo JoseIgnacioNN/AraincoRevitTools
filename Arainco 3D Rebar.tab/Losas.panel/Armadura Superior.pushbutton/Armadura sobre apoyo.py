@@ -10,7 +10,7 @@ from System import EventHandler, Uri
 from System.Windows import SystemParameters
 from System.Collections.Generic import List
 from System.Windows.Media.Imaging import BitmapImage
-import math, os, ctypes
+import os, ctypes
 import clr # Permite comunicar Python con C#
 clr.AddReference("PresentationFramework")
 
@@ -136,6 +136,12 @@ class EstadoFormulario: # Almacenar valores del formulario
         self.form_left = saved_form_left if 'saved_form_left' in globals() else None
 estado = EstadoFormulario()
 
+class InfoWindow(forms.WPFWindow): # Ventana de información con Esquema Armadura de Losa
+    def __init__(self, xaml_file):
+        forms.WPFWindow.__init__(self, xaml_file)
+        ruta_img = os.path.join(os.path.dirname(__file__), "Esquema Losa.png")
+        self.imgEsquema.Source = BitmapImage(Uri(ruta_img))
+
 class Formulario(forms.WPFWindow):  # Funciones del formulario
 
     # Función al iniciar el formulario
@@ -215,6 +221,10 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
         self.Close()
 
     # Funciones al hacer clic en los botones
+    def InfoClick(self, sender, args):
+        win = InfoWindow(os.path.join(os.path.dirname(__file__), "Esquema Losa.xaml"))
+        win.ShowDialog()
+
     def Vano1Click(self, sender, args):
         self.action = "vano1" # Indica que se hizo clic en el botón "vano1"
         self.guardar_estado() # Se guardan datos antes de cerrar el formulario
@@ -303,20 +313,20 @@ while True:
         try: p1, p2 = seleccionar_puntos(1)
         except OperationCanceledException: continue
         estado.largo1 = UnitUtils.ConvertFromInternalUnits((p2 - p1).GetLength(), UnitTypeId.Millimeters)
-        estado.L1 = math.ceil(estado.largo1/3/10)*10 # Redondear al centímetro superior
+        estado.L1 = estado.largo1/3
         continue # Permite reiniciar el bucle While True, de modo que se vuelve a abrir el formulario
 
     if form.action == "vano2":
         try: p1, p2 = seleccionar_puntos(1)
         except OperationCanceledException: continue
         estado.largo2 = UnitUtils.ConvertFromInternalUnits((p2 - p1).GetLength(), UnitTypeId.Millimeters)
-        estado.L2 = math.ceil(estado.largo2/3/10)*10
+        estado.L2 = estado.largo2/3
         continue
 
     if form.action == "Lext":
         try: p1, p2 = seleccionar_puntos(1)
         except OperationCanceledException: continue
-        estado.Lext = round(UnitUtils.ConvertFromInternalUnits((p2 - p1).GetLength(), UnitTypeId.Millimeters)/10)*10
+        estado.Lext = UnitUtils.ConvertFromInternalUnits((p2 - p1).GetLength(), UnitTypeId.Millimeters)
         continue
 
     if form.action == "aplicar":
@@ -531,7 +541,7 @@ while True:
                 v_recorrido_2D = DB.XYZ(v_recorrido_3D.X, v_recorrido_3D.Y, 0).Normalize()
                 v_bar_2D = DB.XYZ(v_bar_3D.X, v_bar_3D.Y, 0).Normalize()
                 v_mra_2D = DB.XYZ(-v_bar_2D.Y, v_bar_2D.X, 0)
-                if v_mra_2D.DotProduct(v_recorrido_2D) < 0: # Nos aseguramos de que no apunte al lado contrario
+                if v_mra_2D.DotProduct(v_recorrido_2D) < 0: # Nos aseguramos de que no apunte en dirección contraria al vector recorrido
                     v_mra_2D = -v_mra_2D
 
                 tipo_opts.DimensionLineDirection = v_mra_2D

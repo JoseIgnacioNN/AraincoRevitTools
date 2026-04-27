@@ -10,7 +10,7 @@ from System import EventHandler, Uri
 from System.Windows import SystemParameters
 from System.Collections.Generic import List
 from System.Windows.Media.Imaging import BitmapImage
-import math, os, ctypes
+import os, ctypes
 import clr # Permite comunicar Python con C#
 clr.AddReference("PresentationFramework")
 
@@ -130,6 +130,12 @@ class EstadoFormulario: # Almacenar valores del formulario
         self.form_left = saved_form_left if 'saved_form_left' in globals() else None
 estado = EstadoFormulario()
 
+class InfoWindow(forms.WPFWindow): # Ventana de información con Esquema Armadura de Losa
+    def __init__(self, xaml_file):
+        forms.WPFWindow.__init__(self, xaml_file)
+        ruta_img = os.path.join(os.path.dirname(__file__), "Esquema Losa.png")
+        self.imgEsquema.Source = BitmapImage(Uri(ruta_img))
+
 class Formulario(forms.WPFWindow):  # Funciones del formulario
 
     # Función al iniciar el formulario
@@ -180,6 +186,10 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
         self.Close()
 
     # Funciones al hacer clic en los botones
+    def InfoClick(self, sender, args):
+        win = InfoWindow(os.path.join(os.path.dirname(__file__), "Esquema Losa.xaml"))
+        win.ShowDialog()
+
     def AplicarClick(self, sender, args):
 
         # Validación diámetro barra
@@ -348,20 +358,22 @@ while True:
         p2_z = get_z_on_plane(p2.X, p2.Y, origen_desplazado, plane_normal)
         p1_3D = DB.XYZ(p1.X, p1.Y, p1_z)
         p2_3D = DB.XYZ(p2.X, p2.Y, p2_z)
-        p1_3D = p1_3D + v_recorrido_3D * offset_lateral
+        p1_3D = p1_3D + v_recorrido_3D * offset_lateral # Se aplica el offset lateral al recorrido
         p2_3D = p2_3D - v_recorrido_3D * offset_lateral
         desplazamiento = (p1_3D - centro_vano_3D).DotProduct(v_recorrido_3D)
         centro_barra = centro_vano_3D + v_recorrido_3D * desplazamiento
         start = centro_barra + v_bar_3D * (L/2 - offset_lateral) # Extremo inicial de la barra
         end = centro_barra - v_bar_3D * (L/2 - offset_lateral) # Extremo final de la barra
-        t1 = e - rec_top - rec_bottom # Largo 1 del gancho
 
-        # Largo 2 del gancho según ACI 318-19
+        # Largo vertical (t1) y horizontal (t2) del gancho, según ACI 318-19. (Las longitudes son de eje a eje)
         if UnitUtils.ConvertFromInternalUnits(rebar_fi, UnitTypeId.Millimeters) <= 25:
+            t1 = max(7*rebar_fi, e - rec_top - rec_bottom - rebar_fi)
             t2 = 3.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5, UnitTypeId.Centimeters))
         elif UnitUtils.ConvertFromInternalUnits(rebar_fi, UnitTypeId.Millimeters) <= 36:
+            t1 = max(9*rebar_fi, e - rec_top - rec_bottom - rebar_fi)
             t2 = 4.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5, UnitTypeId.Centimeters)) 
         else:
+            t1 = max(11*rebar_fi, e - rec_top - rec_bottom - rebar_fi)
             t2 = 5.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5), UnitTypeId.Centimeters) 
 
         pt1_1 = start - plane_normal * t1 # Tramo 1 del gancho 1
@@ -423,23 +435,26 @@ while True:
             tipo = next((t for t in tipos if DB.Element.Name.GetValue(t) == nombre_tipo), None) # Se encuentra la cota indicada
 
             if tipo:
-                tipo_opts = DB.MultiReferenceAnnotationOptions(tipo) # Se abre la configuración de Multi-Rebar Annotation
-                rebar_ids = List[DB.ElementId]()
-                rebar_ids.Add(rebar.Id)
-                tipo_opts.SetElementsToDimension(rebar_ids)
+                try:
+                    tipo_opts = DB.MultiReferenceAnnotationOptions(tipo) # Se abre la configuración de Multi-Rebar Annotation
+                    rebar_ids = List[DB.ElementId]()
+                    rebar_ids.Add(rebar.Id)
+                    tipo_opts.SetElementsToDimension(rebar_ids)
 
-                # El vector director de la cota debe ser 2D
-                v_bar_2D = DB.XYZ(v_bar_3D.X, v_bar_3D.Y, 0).Normalize()
-                v_mra_2D = DB.XYZ(-v_bar_2D.Y, v_bar_2D.X, 0)
-                if v_mra_2D.DotProduct(v_recorrido_2D) < 0: # Nos aseguramos de que no apunte al lado contrario
-                    v_mra_2D = -v_mra_2D
+                    # El vector director de la cota debe ser 2D
+                    v_bar_2D = DB.XYZ(v_bar_3D.X, v_bar_3D.Y, 0).Normalize()
+                    v_mra_2D = DB.XYZ(-v_bar_2D.Y, v_bar_2D.X, 0)
+                    if v_mra_2D.DotProduct(v_recorrido_2D) < 0: # Nos aseguramos de que no apunte en dirección contraria al vector recorrido
+                        v_mra_2D = -v_mra_2D
 
-                tipo_opts.DimensionLineDirection = v_mra_2D
-                tipo_opts.DimensionPlaneNormal = uidoc.ActiveView.ViewDirection
-                mid_point = (p1_vano + p2_vano) / 2 + v_bar_2D * offset_mra # Se centra la cota al punto medio del vano y luego se suma el offset
-                tipo_opts.DimensionLineOrigin = mid_point
-                tipo_opts.TagHeadPosition = mid_point
-                DB.MultiReferenceAnnotation.Create(doc, uidoc.ActiveView.Id, tipo_opts)
+                    tipo_opts.DimensionLineDirection = v_mra_2D
+                    tipo_opts.DimensionPlaneNormal = uidoc.ActiveView.ViewDirection
+                    mid_point = (p1_vano + p2_vano) / 2 + v_bar_2D * offset_mra # Se centra la cota al punto medio del vano y luego se suma el offset
+                    tipo_opts.DimensionLineOrigin = mid_point
+                    tipo_opts.TagHeadPosition = mid_point
+                    DB.MultiReferenceAnnotation.Create(doc, uidoc.ActiveView.Id, tipo_opts)
+                except Exception:
+                    forms.alert("Se creó la armadura, pero no fue posible agregar el Multi-Rebar Annotation dado que la losa tiene pendiente. Dibujar recorrido manualmente.", title="Error de Multi-Rebar Annotation") # Si los ganchos se crean desde la lista DB.Line.CreateBound() en lugar de la manera tradicional dentro de DB.Structure.Rebar.CreateFromCurves(), Revit no permite agregar la cota MRA en losas con pendiente
             else:
                 forms.alert("La armadura se creó, pero no se encontró el tipo de cota llamado '{}'.\n\nRevisa que esté cargado en el proyecto o que el nombre esté escrito exactamente igual.".format(nombre_tipo), title="Falta Tipo de Recorrido")
 
