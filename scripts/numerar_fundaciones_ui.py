@@ -32,18 +32,7 @@ from System.Windows.Media import SolidColorBrush, Color
 from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
 from revit_wpf_window_position import position_wpf_window_top_left_at_active_view, revit_main_hwnd
 
-_ext_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_panel_dir = os.path.join(_ext_root, "BIMTools.tab", "Armadura.panel")
-_tab_dir = os.path.join(_ext_root, "BIMTools.tab")
-
-_LOGO_PATHS = [
-    os.path.join(_panel_dir, "02_NumerarFundaciones.pushbutton", "empresa_logo.png"),
-    os.path.join(_panel_dir, "02_NumerarFundaciones.pushbutton", "logo_empresa.png"),
-    os.path.join(_panel_dir, "02_NumerarFundaciones.pushbutton", "logo.png"),
-    os.path.join(_panel_dir, "22_EnfierradoFundacionAislada.pushbutton", "empresa_logo.png"),
-    os.path.join(_panel_dir, "08_CrearAreaReinforcementRPS.pushbutton", "empresa_logo.png"),
-    os.path.join(_tab_dir, "Incidencias.panel", "Incidencias.stack", "01_BIMIssue.pushbutton", "logo.png"),
-]
+from bimtools_paths import get_logo_paths
 
 _APPDOMAIN_WINDOW_KEY = "BIMTools.NumerarFundaciones.ActiveWindow"
 _TOOL_DIALOG_TITLE = u"BIMTools — Numerar Fundaciones"
@@ -420,7 +409,7 @@ def _try_load_logo(image_control):
     from System.IO import FileAccess, FileMode, FileStream
     from System.Windows.Media.Imaging import BitmapCacheOption, BitmapImage
 
-    for path in _LOGO_PATHS:
+    for path in get_logo_paths():
         if not path or not os.path.isfile(path):
             continue
         stream = None

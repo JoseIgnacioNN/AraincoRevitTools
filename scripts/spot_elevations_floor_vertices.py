@@ -85,33 +85,7 @@ def main(revit):
     )
     import os
     from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
-
-    _EXT_ROOT = os.path.abspath(
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir)
-    )
-    _SPOT_LOGO_PATHS = [
-        os.path.join(
-            _EXT_ROOT,
-            "BIMTools.tab",
-            "Modelado.panel",
-            "01_SpotElevVerticesLosa.pushbutton",
-            "empresa_logo.png",
-        ),
-        os.path.join(
-            _EXT_ROOT,
-            "BIMTools.tab",
-            "Modelado.panel",
-            "01_SpotElevVerticesLosa.pushbutton",
-            "logo_empresa.png",
-        ),
-        os.path.join(
-            _EXT_ROOT,
-            "BIMTools.tab",
-            "Modelado.panel",
-            "01_SpotElevVerticesLosa.pushbutton",
-            "logo.png",
-        ),
-    ]
+    from bimtools_paths import get_logo_paths
 
     def _try_load_spot_logo(img):
         if img is None:
@@ -119,7 +93,7 @@ def main(revit):
         from System.IO import FileAccess, FileMode, FileStream
         from System.Windows.Media.Imaging import BitmapCacheOption, BitmapImage
 
-        for path in _SPOT_LOGO_PATHS:
+        for path in get_logo_paths():
             if not path or not os.path.isfile(path):
                 continue
             stream = None

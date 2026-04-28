@@ -38,6 +38,9 @@ if os.path.isdir(_shared_scripts_dir) and _shared_scripts_dir not in sys.path:
     _added_shared = True
 
 try:
+    import bimtools_paths
+
+    bimtools_paths.set_pushbutton_dir(_pushbutton_dir)
     from area_reinforcement_losa import run  # shared module
 except ImportError:
     # Limpiar posible entrada parcial y hacer fallback a la copia local.
@@ -49,6 +52,11 @@ except ImportError:
 
     if _pushbutton_dir not in sys.path:
         sys.path.insert(0, _pushbutton_dir)
+    if os.path.isdir(_shared_scripts_dir) and _shared_scripts_dir not in sys.path:
+        sys.path.insert(0, _shared_scripts_dir)
+    import bimtools_paths
+
+    bimtools_paths.set_pushbutton_dir(_pushbutton_dir)
     from area_reinforcement_losa import run  # local module
 finally:
     # Si no logramos importar desde shared (o ya no es necesario), no dejamos

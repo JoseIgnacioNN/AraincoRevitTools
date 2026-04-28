@@ -35,6 +35,15 @@ if not _module_path:
     )
     raise Exception(u"No se encontró scripts/enfierrado_fundacion_aislada.py")
 
+import sys
+
+_scripts_dir = os.path.dirname(_module_path)
+if _scripts_dir not in sys.path:
+    sys.path.insert(0, _scripts_dir)
+import bimtools_paths
+
+bimtools_paths.set_pushbutton_dir(_pushbutton_dir)
+
 try:
     _mod = imp.load_source("enfierrado_fundacion_aislada", _module_path)
     _mod.run_pyrevit(__revit__)
