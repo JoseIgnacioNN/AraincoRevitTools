@@ -259,7 +259,7 @@ if _pbar_exit_safe is None:
                 pass
 
 
-_APPDOMAIN_WINDOW_KEY = u"AraincoTools.ExportarLaminasPDFDWG.ActiveWindow"
+_APPDOMAIN_WINDOW_KEY = u"AraincoTools.AraincoExportarLaminasPDFDWG.ActiveWindow"
 
 # TaskDialog: con TitleAutoPrefix (por defecto), Revit antepone el nombre del botón al título.
 _TASK_DLG_EXPORT_LAM_TITLE = u"Exportar Láminas"

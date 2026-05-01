@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Exportación de láminas (ViewSheet) a PDF y DWG para BIMTools.
-Usado por 04_ExportarLaminasPDFDWG.pushbutton.
+Usado por pushbuttons de exportación de láminas (p. ej. Arainco_ExportarLaminasPDFDWG, 04_ExportarLaminasPDFDWG).
 """
 
 import re
