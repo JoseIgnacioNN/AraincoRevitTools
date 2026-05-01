@@ -81,6 +81,9 @@ try:
 except Exception:
     BIMTOOLS_DARK_STYLES_XML = u""
 
+_NB_CHROME_MS = 260
+_NB_WPF_STORYBOARD_DUR_STR = u"0:0:{0:.2f}".format(_NB_CHROME_MS / 1000.0)
+
 
 def _build_options_datatable(opts_list):
     import clr as _clr
@@ -183,11 +186,12 @@ def _load_bimtools_logo_into_window(win):
         pass
 
 
-XAML = u"""
+XAML = (
+    u"""
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     x:Name="NbNamingWin"
-    Title="BIMTools — Nombre Personalizado"
+    Title="Nombre Personalizado"
     Height="600" Width="980" MinHeight="520" MinWidth="800"
     Background="Transparent"
     AllowsTransparency="True"
@@ -197,7 +201,29 @@ XAML = u"""
     UseLayoutRounding="True"
     FontFamily="Segoe UI" FontSize="12">
   <Window.Resources>
-""" + BIMTOOLS_DARK_STYLES_XML + u"""
+    <Storyboard x:Key="NbOpenGrowStoryboard">
+      <DoubleAnimation Storyboard.TargetName="NbRootScale" Storyboard.TargetProperty="ScaleX"
+                       From="0.88" To="1" Duration="__NB_WPF_STORYBOARD_DUR__" FillBehavior="HoldEnd">
+        <DoubleAnimation.EasingFunction>
+          <CubicEase EasingMode="EaseOut"/>
+        </DoubleAnimation.EasingFunction>
+      </DoubleAnimation>
+      <DoubleAnimation Storyboard.TargetName="NbRootScale" Storyboard.TargetProperty="ScaleY"
+                       From="0.88" To="1" Duration="__NB_WPF_STORYBOARD_DUR__" FillBehavior="HoldEnd">
+        <DoubleAnimation.EasingFunction>
+          <CubicEase EasingMode="EaseOut"/>
+        </DoubleAnimation.EasingFunction>
+      </DoubleAnimation>
+      <DoubleAnimation Storyboard.TargetName="NbRootChrome" Storyboard.TargetProperty="Opacity"
+                       From="0" To="1" Duration="__NB_WPF_STORYBOARD_DUR__" FillBehavior="HoldEnd">
+        <DoubleAnimation.EasingFunction>
+          <CubicEase EasingMode="EaseOut"/>
+        </DoubleAnimation.EasingFunction>
+      </DoubleAnimation>
+    </Storyboard>
+"""
+    + BIMTOOLS_DARK_STYLES_XML
+    + u"""
     <Style x:Key="StepBadge" TargetType="TextBlock">
       <Setter Property="Foreground" Value="#7ED8ED"/>
       <Setter Property="FontSize" Value="11"/>
@@ -403,11 +429,14 @@ XAML = u"""
       </Style.Triggers>
     </Style>
   </Window.Resources>
-  <Border x:Name="NbRootChrome" CornerRadius="8" Background="#0E1B32" Padding="14"
-          BorderBrush="#5BC0DE" BorderThickness="1" ClipToBounds="True">
+  <Border x:Name="NbRootChrome" Opacity="0" CornerRadius="8" Background="#0E1B32" Padding="14"
+          BorderBrush="#5BC0DE" BorderThickness="1" ClipToBounds="True" RenderTransformOrigin="0.5,0.5">
     <Border.Effect>
       <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="0" Opacity="0.35"/>
     </Border.Effect>
+    <Border.RenderTransform>
+      <ScaleTransform x:Name="NbRootScale" ScaleX="0.88" ScaleY="0.88"/>
+    </Border.RenderTransform>
     <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
@@ -553,6 +582,7 @@ XAML = u"""
   </Border>
 </Window>
 """
+).replace(u"__NB_WPF_STORYBOARD_DUR__", _NB_WPF_STORYBOARD_DUR_STR)
 
 
 def _hydrate_recipe_table(recipe_dt, doc, opts_list):
@@ -631,6 +661,9 @@ class ComponerNombreLaminaDialog(object):
         _hydrate_recipe_table(self._recipe, self._doc, self._opts_full)
 
         self._win = XamlReader.Parse(XAML)
+        self._open_grow_storyboard_started = False
+        self._is_closing_with_fade = False
+        self._close_dialog_result = None
         _load_bimtools_logo_into_window(self._win)
         self._lst_opciones = self._win.FindName(u"LstOpciones")
         self._bd_opciones = self._win.FindName(u"BdOpcionesLista")
@@ -720,8 +753,122 @@ class ComponerNombreLaminaDialog(object):
         except Exception:
             pass
 
+    def _begin_open_grow_storyboard(self):
+        if self._open_grow_storyboard_started:
+            return
+        self._open_grow_storyboard_started = True
+        try:
+            from System import TimeSpan
+            from System.Windows import Duration
+
+            sc = self._win.FindName(u"NbRootScale")
+            if sc is not None:
+                sc.ScaleX = 0.88
+                sc.ScaleY = 0.88
+            ch = self._win.FindName(u"NbRootChrome")
+            if ch is not None:
+                ch.Opacity = 0.0
+            sb = self._win.TryFindResource(u"NbOpenGrowStoryboard")
+            if sb is None:
+                if sc is not None:
+                    sc.ScaleX = sc.ScaleY = 1.0
+                if ch is not None:
+                    ch.Opacity = 1.0
+                self._win.Opacity = 1.0
+                return
+            dur = Duration(TimeSpan.FromMilliseconds(float(_NB_CHROME_MS)))
+            try:
+                for i in range(int(sb.Children.Count)):
+                    sb.Children[i].Duration = dur
+            except Exception:
+                pass
+            sb.Begin(self._win, True)
+        except Exception:
+            try:
+                self._win.Opacity = 1.0
+                sc = self._win.FindName(u"NbRootScale")
+                if sc is not None:
+                    sc.ScaleX = sc.ScaleY = 1.0
+                ch = self._win.FindName(u"NbRootChrome")
+                if ch is not None:
+                    ch.Opacity = 1.0
+            except Exception:
+                pass
+
+    def _close_with_fade(self):
+        if self._is_closing_with_fade:
+            return
+        self._is_closing_with_fade = True
+        try:
+            from System import TimeSpan, EventHandler
+            from System.Windows import Duration
+            from System.Windows.Media import ScaleTransform
+            from System.Windows.Media.Animation import DoubleAnimation, QuadraticEase, EasingMode
+
+            sc = self._win.FindName(u"NbRootScale")
+            dur = Duration(TimeSpan.FromMilliseconds(float(_NB_CHROME_MS)))
+            ease_in = QuadraticEase()
+            ease_in.EasingMode = EasingMode.EaseIn
+
+            def _da(f0, f1):
+                a = DoubleAnimation()
+                a.From = float(f0)
+                a.To = float(f1)
+                a.Duration = dur
+                a.EasingFunction = ease_in
+                return a
+
+            try:
+                sx0 = float(sc.ScaleX) if sc is not None else 1.0
+                sy0 = float(sc.ScaleY) if sc is not None else 1.0
+            except Exception:
+                sx0 = sy0 = 1.0
+            try:
+                op0 = float(self._win.Opacity)
+            except Exception:
+                op0 = 1.0
+
+            op_anim = _da(op0, 0.0)
+            ax = _da(sx0, 0.0)
+            ay = _da(sy0, 0.0)
+
+            def _done(sender, args):
+                try:
+                    res = self._close_dialog_result
+                    if res is None:
+                        res = False
+                    self._win.DialogResult = res
+                except Exception:
+                    try:
+                        self._win.Close()
+                    except Exception:
+                        pass
+                self._is_closing_with_fade = False
+
+            op_anim.Completed += EventHandler(_done)
+            if sc is not None:
+                sc.BeginAnimation(ScaleTransform.ScaleXProperty, ax)
+                sc.BeginAnimation(ScaleTransform.ScaleYProperty, ay)
+            self._win.BeginAnimation(self._win.OpacityProperty, op_anim)
+        except Exception:
+            try:
+                res = self._close_dialog_result
+                if res is None:
+                    res = False
+                self._win.DialogResult = res
+            except Exception:
+                try:
+                    self._win.Close()
+                except Exception:
+                    pass
+            self._is_closing_with_fade = False
+
     def _on_win_loaded_opciones(self, sender, args):
         self._sync_lst_opciones_max_height()
+        try:
+            self._begin_open_grow_storyboard()
+        except Exception:
+            pass
 
     def _on_opciones_host_size(self, sender, args):
         self._sync_lst_opciones_max_height()
@@ -808,6 +955,8 @@ class ComponerNombreLaminaDialog(object):
         self._refresh_preview()
 
     def _on_ok(self, sender, args):
+        if self._is_closing_with_fade:
+            return
         from Autodesk.Revit.UI import TaskDialog
 
         try:
@@ -857,22 +1006,14 @@ class ComponerNombreLaminaDialog(object):
         except Exception:
             pass
 
-        try:
-            self._win.DialogResult = True
-        except Exception:
-            try:
-                self._win.Close()
-            except Exception:
-                pass
+        self._close_dialog_result = True
+        self._close_with_fade()
 
     def _on_cancel(self, sender, args):
-        try:
-            self._win.DialogResult = False
-        except Exception:
-            try:
-                self._win.Close()
-            except Exception:
-                pass
+        if self._is_closing_with_fade:
+            return
+        self._close_dialog_result = False
+        self._close_with_fade()
 
     def _refresh_preview(self):
         sh = _sample_sheet(self._doc, self._main)
@@ -894,6 +1035,17 @@ class ComponerNombreLaminaDialog(object):
         self._txt_prev.Text = u"{0}\n\u2014 Ref.: {1}".format(prev, sn)
 
     def show_modal(self):
+        try:
+            sc = self._win.FindName(u"NbRootScale")
+            if sc is not None:
+                sc.ScaleX = 0.88
+                sc.ScaleY = 0.88
+            ch = self._win.FindName(u"NbRootChrome")
+            if ch is not None:
+                ch.Opacity = 0.0
+            self._win.Opacity = 1.0
+        except Exception:
+            pass
         try:
             self._win.ShowDialog()
         except Exception:

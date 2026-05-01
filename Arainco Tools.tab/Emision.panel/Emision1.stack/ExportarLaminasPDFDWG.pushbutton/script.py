@@ -2,15 +2,15 @@
 """
 Exportar láminas a PDF y/o DWG con nombre de archivo personalizado por fila.
 Carpeta de entrega: ruta completa en el cuadro (tras «Examinar…» se propone
-YYYY.MM.DD_ENTREGA bajo la carpeta elegida; el nombre es editable). Dentro: PDF, DWG y opcionalmente listado Excel (láminas seleccionadas, plantilla TemplateListado).
+YYYY.MM.DD_ENTREGA bajo la carpeta elegida; el nombre es editable). Dentro: PDF, DWG y opcionalmente listado Excel (láminas seleccionadas; plantilla TemplateListado en la carpeta del botón).
 Progreso de exportación: barras ``pyrevit.forms.ProgressBar`` consecutivas — DWG, luego PDF (solo conteo de PDF), luego listado Excel (barra aparte, 1 paso). Acento cian #5BC0DE.
 """
 
 __title__ = "Exportar\nLáminas"
-__author__ = "BIMTools"
+__author__ = "Arainco / José Ignacio Núñez"
 __doc__ = (
     "Selecciona y exporta láminas (PDF/DWG). Nombre Personalizado: encabezado «Nombre de archivo». "
-    "Opcional: listado Excel de las seleccionadas (misma plantilla que «Listado planos Excel»). "
+    "Opcional: listado Excel de las seleccionadas (plantilla TemplateListado en la carpeta del botón). "
     "Ruta de entrega completa y editable; «Examinar…» la completa con YYYY.MM.DD_ENTREGA (hoy). Subcarpetas PDF y DWG."
 )
 
@@ -58,7 +58,7 @@ try:
     )
     if os.path.isfile(_bimtools_paths_fp):
         bimtools_paths = imp.load_source(
-            "bimtools_paths__ExportarLaminasPDFDWG", _bimtools_paths_fp
+            "bimtools_paths__AraincoExportarLaminasPDFDWG", _bimtools_paths_fp
         )
     else:
         import bimtools_paths as _bimtools_paths_std
@@ -71,7 +71,7 @@ except Exception:
 # Carga explícita desde la carpeta del botón: evita importar un exportar_laminas_pdf_dwg.py
 # viejo en scripts/ o un módulo cacheado en sys.modules.
 _EXPORT_MOD_PATH = os.path.join(_pb, "exportar_laminas_pdf_dwg.py")
-_EXPORT_MOD_NAME = u"bimtools_exportar_laminas_pdf_dwg__04pushbutton"
+_EXPORT_MOD_NAME = u"arainco_exportar_laminas_pdf_dwg__emision_pushbutton"
 for _k in (u"exportar_laminas_pdf_dwg", _EXPORT_MOD_NAME):
     try:
         if _k in sys.modules:
@@ -84,6 +84,9 @@ if not os.path.isfile(_EXPORT_MOD_PATH):
     )
 _export_el = imp.load_source(_EXPORT_MOD_NAME, _EXPORT_MOD_PATH)
 build_sheets_datatable = _export_el.build_sheets_datatable
+list_fch_entrega_parameter_names_in_model = _export_el.list_fch_entrega_parameter_names_in_model
+unique_fecha_entrega_values_from_datatable = _export_el.unique_fecha_entrega_values_from_datatable
+datatable_row_matches_fecha_entrega_selection = _export_el.datatable_row_matches_fecha_entrega_selection
 export_sheet_dwg = _export_el.export_sheet_dwg
 export_sheet_pdf = _export_el.export_sheet_pdf
 sanitize_file_base = _export_el.sanitize_file_base
@@ -91,17 +94,18 @@ list_naming_source_options = _export_el.list_naming_source_options
 evaluate_naming_recipe = _export_el.evaluate_naming_recipe
 
 _COMPOSER_PATH = os.path.join(_pb, "componer_nombre_lamina_ui.py")
-_COMPOSER_MOD_NAME = u"bimtools_componer_nombre_lamina_ui__04pushbutton"
+_COMPOSER_MOD_NAME = u"arainco_componer_nombre_lamina_ui__emision_pushbutton"
 if not os.path.isfile(_COMPOSER_PATH):
     raise IOError(u"Falta el módulo de UI: {0}".format(_COMPOSER_PATH))
 _composer_el = imp.load_source(_COMPOSER_MOD_NAME, _COMPOSER_PATH)
 show_componer_nombre_dialog = _composer_el.show_componer_nombre_dialog
 
 # Núcleo compartido con 12_ListadoPlanosExcel (misma plantilla y PowerShell).
-_LISTADO_PB = os.path.join(os.path.dirname(_pb), u"12_ListadoPlanosExcel.pushbutton")
+# Plantilla y núcleo del listado Excel en esta carpeta (un solo pushbutton en despliegue).
+_LISTADO_PB = _pb
 _TEMPLATE_LISTADO_XLSX = os.path.join(_LISTADO_PB, u"TemplateListado.xlsx")
 _LISTADO_CORE_PATH = os.path.join(_LISTADO_PB, u"listado_planos_excel_core.py")
-_LISTADO_CORE_NAME = u"bimtools_listado_planos_excel_core__04export_laminas"
+_LISTADO_CORE_NAME = u"arainco_listado_planos_excel_core__emision_export"
 _listado_planos_core = None
 try:
     if os.path.isfile(_LISTADO_CORE_PATH):
@@ -126,10 +130,7 @@ from System.Windows.Controls import DataGridCellEditEndingEventArgs  # noqa: E40
 from System.Windows.Markup import XamlReader  # noqa: E402
 import System  # noqa: E402
 
-from revit_wpf_window_position import (  # noqa: E402
-    position_wpf_window_top_left_at_active_view,
-    revit_main_hwnd,
-)
+from revit_wpf_window_position import revit_main_hwnd  # noqa: E402
 
 try:
     from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
@@ -137,7 +138,6 @@ except Exception:
     BIMTOOLS_DARK_STYLES_XML = u""
 
 doc = __revit__.ActiveUIDocument.Document  # noqa: F821
-uidoc = __revit__.ActiveUIDocument  # noqa: F821
 
 try:
     from join_geometry_concrete_vista import (
@@ -259,7 +259,7 @@ if _pbar_exit_safe is None:
                 pass
 
 
-_APPDOMAIN_WINDOW_KEY = u"BIMTools.ExportarLaminasPDFDWG.ActiveWindow"
+_APPDOMAIN_WINDOW_KEY = u"AraincoTools.ExportarLaminasPDFDWG.ActiveWindow"
 
 # TaskDialog: con TitleAutoPrefix (por defecto), Revit antepone el nombre del botón al título.
 _TASK_DLG_EXPORT_LAM_TITLE = u"Exportar Láminas"
@@ -268,7 +268,7 @@ _TASK_DLG_EXPORT_LAM_TITLE = u"Exportar Láminas"
 _DWG_EXPORT_SETUP_NAME = u"Default"
 
 # Apertura/cierre: mismo ritmo que Fundación aislada (ScaleTransform + opacidad).
-_EXPORT_LAM_CHROME_MS = 180
+_EXPORT_LAM_CHROME_MS = 260
 _WPF_STORYBOARD_DUR_STR = u"0:0:{0:.2f}".format(_EXPORT_LAM_CHROME_MS / 1000.0)
 
 
@@ -324,6 +324,7 @@ XAML = (
     u"""
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:sys="clr-namespace:System;assembly=mscorlib"
     x:Name="ExpLamWin"
     Title="Exportar Láminas"
     Height="810" Width="1040" MinHeight="640" MinWidth="800"
@@ -331,34 +332,50 @@ XAML = (
     AllowsTransparency="True"
     WindowStyle="None"
     ResizeMode="NoResize"
-    WindowStartupLocation="Manual"
+    WindowStartupLocation="CenterScreen"
     Topmost="True"
     UseLayoutRounding="True"
     FontFamily="Segoe UI" FontSize="12">
   <Window.Resources>
     <Storyboard x:Key="ExpLamOpenGrowStoryboard">
       <DoubleAnimation Storyboard.TargetName="ExpLamRootScale" Storyboard.TargetProperty="ScaleX"
-                       From="0" To="1" Duration="__WPF_STORYBOARD_DUR__" FillBehavior="HoldEnd">
+                       From="0.88" To="1" Duration="__WPF_STORYBOARD_DUR__" FillBehavior="HoldEnd">
         <DoubleAnimation.EasingFunction>
-          <QuadraticEase EasingMode="EaseOut"/>
+          <CubicEase EasingMode="EaseOut"/>
         </DoubleAnimation.EasingFunction>
       </DoubleAnimation>
       <DoubleAnimation Storyboard.TargetName="ExpLamRootScale" Storyboard.TargetProperty="ScaleY"
-                       From="0" To="1" Duration="__WPF_STORYBOARD_DUR__" FillBehavior="HoldEnd">
+                       From="0.88" To="1" Duration="__WPF_STORYBOARD_DUR__" FillBehavior="HoldEnd">
         <DoubleAnimation.EasingFunction>
-          <QuadraticEase EasingMode="EaseOut"/>
+          <CubicEase EasingMode="EaseOut"/>
         </DoubleAnimation.EasingFunction>
       </DoubleAnimation>
-      <DoubleAnimation Storyboard.TargetName="ExpLamWin" Storyboard.TargetProperty="Opacity"
+      <DoubleAnimation Storyboard.TargetName="ExpLamRootChrome" Storyboard.TargetProperty="Opacity"
                        From="0" To="1" Duration="__WPF_STORYBOARD_DUR__" FillBehavior="HoldEnd">
         <DoubleAnimation.EasingFunction>
-          <QuadraticEase EasingMode="EaseOut"/>
+          <CubicEase EasingMode="EaseOut"/>
         </DoubleAnimation.EasingFunction>
       </DoubleAnimation>
     </Storyboard>
 """
     + BIMTOOLS_DARK_STYLES_XML
     + u"""
+    <Style x:Key="ExpLamFechaComboItem" TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}">
+      <Setter Property="Padding" Value="10,8"/>
+      <Setter Property="FontSize" Value="12"/>
+    </Style>
+    <Style x:Key="ExpLamFechaCombo" TargetType="ComboBox" BasedOn="{StaticResource Combo}">
+      <Setter Property="Width" Value="{x:Static sys:Double.NaN}"/>
+      <Setter Property="Height" Value="{x:Static sys:Double.NaN}"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="MinWidth" Value="120"/>
+      <Setter Property="MaxWidth" Value="99999"/>
+      <Setter Property="MinHeight" Value="32"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="#F2F8FC"/>
+      <Setter Property="ItemContainerStyle" Value="{StaticResource ExpLamFechaComboItem}"/>
+    </Style>
     <Style x:Key="StepBadge" TargetType="TextBlock">
       <Setter Property="Foreground" Value="#5BC0DE"/>
       <Setter Property="FontSize" Value="11"/>
@@ -586,13 +603,13 @@ XAML = (
     <!-- Misma barra que BIMTools (flechas rellenas, ~18px): la versión ExpLam 10px + trazos se leía mal. -->
     <Style x:Key="ExpLamScrollBarDark" TargetType="ScrollBar" BasedOn="{StaticResource BimToolsScrollBarDark}"/>
   </Window.Resources>
-  <Border x:Name="ExpLamRootChrome" CornerRadius="8" Background="#0E1B32" Padding="14"
-          BorderBrush="#5BC0DE" BorderThickness="1" ClipToBounds="True" RenderTransformOrigin="0,0">
+  <Border x:Name="ExpLamRootChrome" Opacity="0" CornerRadius="8" Background="#0E1B32" Padding="14"
+          BorderBrush="#5BC0DE" BorderThickness="1" ClipToBounds="True" RenderTransformOrigin="0.5,0.5">
     <Border.Effect>
       <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="0" Opacity="0.35"/>
     </Border.Effect>
     <Border.RenderTransform>
-      <ScaleTransform x:Name="ExpLamRootScale" ScaleX="0" ScaleY="0"/>
+      <ScaleTransform x:Name="ExpLamRootScale" ScaleX="0.88" ScaleY="0.88"/>
     </Border.RenderTransform>
     <Grid>
     <Grid.RowDefinitions>
@@ -632,7 +649,11 @@ XAML = (
           <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
         <Grid Grid.Column="0" Margin="0,0,10,0">
-          <Border Background="#050E18" BorderBrush="#355973" BorderThickness="1" CornerRadius="5" Padding="0" MinHeight="32">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*"/>
+          </Grid.ColumnDefinitions>
+          <Border Grid.Column="0" Margin="0,0,6,0" Background="#050E18" BorderBrush="#355973" BorderThickness="1" CornerRadius="5" Padding="0" MinHeight="32">
             <Grid>
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
@@ -643,9 +664,28 @@ XAML = (
               <Grid Grid.Column="1" MinHeight="28">
                 <TextBox x:Name="TxtBuscar" Background="Transparent" BorderThickness="0"
                          VerticalContentAlignment="Center" Padding="0,6,10,6"
-                         ToolTip="Filtrar por número o nombre de lámina (lista principal)"/>
+                         ToolTip="Filtrar por número, nombre o fecha de entrega (lista principal)"/>
                 <TextBlock x:Name="TxtBuscarWatermark" Text="Buscar" IsHitTestVisible="False"
                            Foreground="#5C7A8F" FontSize="12" VerticalAlignment="Center" Margin="0,0,10,0"/>
+              </Grid>
+            </Grid>
+          </Border>
+          <Border Grid.Column="1" Background="#050E18" BorderBrush="#355973" BorderThickness="1" CornerRadius="5"
+                  Padding="0" MinHeight="32">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="&#xE787;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                         Foreground="#6B94AA" VerticalAlignment="Center" Margin="10,0,4,0" IsHitTestVisible="False"
+                         ToolTip="Fecha de entrega (parámetros FCH)"/>
+              <Grid Grid.Column="1" MinHeight="28">
+                <ComboBox x:Name="CmbFechaEntrega" Style="{StaticResource ExpLamFechaCombo}"
+                          VerticalAlignment="Center" VerticalContentAlignment="Center"
+                          ToolTip="Al elegir una fecha se marcan automáticamente los planos con esa fecha en cualquier parámetro FCH."/>
+                <TextBlock x:Name="TxtFechaEntregaWatermark" Text="Fecha de entrega" IsHitTestVisible="False"
+                           Foreground="#5C7A8F" FontSize="12" VerticalAlignment="Center" Margin="6,0,10,0"/>
               </Grid>
             </Grid>
           </Border>
@@ -957,6 +997,9 @@ class ExportarLaminasWindow(object):
         self._chk_pdf = self._win.FindName("ChkPdf")
         self._chk_dwg = self._win.FindName("ChkDwg")
         self._chk_listado_plan = self._win.FindName("ChkListadoPlanos")
+        self._cmb_fecha_entrega = self._win.FindName("CmbFechaEntrega")
+        self._txt_fecha_entrega_watermark = self._win.FindName("TxtFechaEntregaWatermark")
+        self._suppress_fecha_combo_selection_changed = False
         self._btn_export = self._win.FindName("BtnExportar")
         # Capturamos en self: IronPython 2 + pyRevit no expone globales del módulo
         # en métodos de clase llamados desde eventos WPF asíncronos. self siempre accesible.
@@ -964,6 +1007,7 @@ class ExportarLaminasWindow(object):
         self._export_sheet_pdf = export_sheet_pdf
         self._export_sheet_dwg = export_sheet_dwg
         self._sanitize_file_base = sanitize_file_base
+        self._fch_param_names = list_fch_entrega_parameter_names_in_model(doc)
         self._table = build_sheets_datatable(doc)
         self._table.RowChanged += self._on_table_row_changed
         self._grid.ItemsSource = self._table.DefaultView
@@ -991,6 +1035,32 @@ class ExportarLaminasWindow(object):
         self._win.FindName("BtnRefrescar").Click += RoutedEventHandler(self._on_refrescar)
         self._win.FindName("BtnCarpeta").Click += RoutedEventHandler(self._on_carpeta)
         self._btn_export.Click += RoutedEventHandler(self._on_exportar)
+        try:
+            from System.Windows.Controls import SelectionChangedEventHandler
+
+            if self._cmb_fecha_entrega is not None:
+                self._cmb_fecha_entrega.SelectionChanged += SelectionChangedEventHandler(
+                    self._on_fecha_entrega_selection_changed
+                )
+                self._cmb_fecha_entrega.GotFocus += RoutedEventHandler(
+                    lambda s, e: self._sync_fecha_entrega_watermark()
+                )
+                self._cmb_fecha_entrega.LostFocus += RoutedEventHandler(
+                    lambda s, e: self._sync_fecha_entrega_watermark()
+                )
+                try:
+                    self._cmb_fecha_entrega.DropDownOpened += RoutedEventHandler(
+                        lambda s, e: self._sync_fecha_entrega_watermark()
+                    )
+                    self._cmb_fecha_entrega.DropDownClosed += RoutedEventHandler(
+                        lambda s, e: self._sync_fecha_entrega_watermark()
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        self._refresh_fecha_entrega_combo()
 
         btn_close = self._win.FindName("BtnClose")
         if btn_close is not None:
@@ -1077,12 +1147,17 @@ class ExportarLaminasWindow(object):
 
             sc = self._win.FindName("ExpLamRootScale")
             if sc is not None:
-                sc.ScaleX = 0.0
-                sc.ScaleY = 0.0
+                sc.ScaleX = 0.88
+                sc.ScaleY = 0.88
+            ch = self._win.FindName("ExpLamRootChrome")
+            if ch is not None:
+                ch.Opacity = 0.0
             sb = self._win.TryFindResource("ExpLamOpenGrowStoryboard")
             if sb is None:
                 if sc is not None:
                     sc.ScaleX = sc.ScaleY = 1.0
+                if ch is not None:
+                    ch.Opacity = 1.0
                 self._win.Opacity = 1.0
                 return
             dur = Duration(TimeSpan.FromMilliseconds(float(_EXPORT_LAM_CHROME_MS)))
@@ -1098,6 +1173,9 @@ class ExportarLaminasWindow(object):
                 sc = self._win.FindName("ExpLamRootScale")
                 if sc is not None:
                     sc.ScaleX = sc.ScaleY = 1.0
+                ch = self._win.FindName("ExpLamRootChrome")
+                if ch is not None:
+                    ch.Opacity = 1.0
             except Exception:
                 pass
 
@@ -1159,8 +1237,7 @@ class ExportarLaminasWindow(object):
     def _on_grid_loaded(self, sender, args):
         try:
             if self._grid.Columns.Count > 0:
-                c = self._grid.Columns[self._grid.Columns.Count - 1]
-                c.Visibility = Visibility.Collapsed
+                self._grid.Columns[self._grid.Columns.Count - 1].Visibility = Visibility.Collapsed
         except Exception:
             pass
         try:
@@ -1373,6 +1450,83 @@ class ExportarLaminasWindow(object):
         if not getattr(self, "_syncing_select_all", False):
             self._sync_select_all_header()
 
+    def _refresh_fecha_entrega_combo(self):
+        """Rellena el combo con valores únicos de todos los parámetros FCH (tokens por fila)."""
+        cmb = getattr(self, "_cmb_fecha_entrega", None)
+        if cmb is None:
+            return
+        no_param_tip = (
+            u"No hay parámetro de lámina cuyo nombre contenga «FCH». "
+            u"Se revisan todos los parámetros FCH por plano al elegir fecha."
+        )
+        self._suppress_fecha_combo_selection_changed = True
+        try:
+            try:
+                cmb.Items.Clear()
+            except Exception:
+                pass
+            if not self._fch_param_names:
+                try:
+                    cmb.IsEnabled = False
+                    cmb.ToolTip = no_param_tip
+                except Exception:
+                    pass
+            else:
+                vals = unique_fecha_entrega_values_from_datatable(self._table)
+                for v in vals:
+                    try:
+                        cmb.Items.Add(v)
+                    except Exception:
+                        pass
+                try:
+                    names_tip = u", ".join(self._fch_param_names[:8])
+                    if len(self._fch_param_names) > 8:
+                        names_tip += u"…"
+                    cmb.IsEnabled = len(vals) > 0
+                    cmb.ToolTip = (
+                        u"Parámetros FCH: {0}. Al elegir un valor se marcan los planos que lo tienen."
+                    ).format(names_tip)
+                except Exception:
+                    pass
+        finally:
+            self._suppress_fecha_combo_selection_changed = False
+        self._sync_fecha_entrega_watermark()
+
+    def _apply_grid_selection_for_fecha_entrega_key(self, key):
+        from System import Boolean
+
+        try:
+            key = unicode(key).strip()
+        except Exception:
+            key = u""
+        if not key:
+            return
+        for i in range(self._table.Rows.Count):
+            self._table.Rows[i][u"Sel"] = Boolean(
+                datatable_row_matches_fecha_entrega_selection(self._table.Rows[i], key)
+            )
+        self._refresh_estado()
+
+    def _on_fecha_entrega_selection_changed(self, sender, args):
+        if getattr(self, "_suppress_fecha_combo_selection_changed", False):
+            return
+        cmb = getattr(self, "_cmb_fecha_entrega", None)
+        if cmb is None:
+            return
+        try:
+            sel = cmb.SelectedItem
+        except Exception:
+            sel = None
+        if sel is None:
+            self._sync_fecha_entrega_watermark()
+            return
+        try:
+            key = unicode(sel).strip()
+        except Exception:
+            key = u""
+        self._apply_grid_selection_for_fecha_entrega_key(key)
+        self._sync_fecha_entrega_watermark()
+
     def _sync_buscar_watermark(self):
         wm = getattr(self, "_txt_buscar_watermark", None)
         tb = getattr(self, "_txt_buscar", None)
@@ -1393,6 +1547,38 @@ class ExportarLaminasWindow(object):
         except Exception:
             pass
 
+    def _sync_fecha_entrega_watermark(self):
+        """Misma idea que Buscar: hint dentro del control cuando no hay fecha y no está activo el combo."""
+        wm = getattr(self, "_txt_fecha_entrega_watermark", None)
+        cmb = getattr(self, "_cmb_fecha_entrega", None)
+        if wm is None or cmb is None:
+            return
+        has_sel = False
+        try:
+            sel = cmb.SelectedItem
+            if sel is not None:
+                s = unicode(sel).strip() if sel is not None else u""
+                has_sel = bool(s)
+        except Exception:
+            pass
+        dd_open = False
+        try:
+            dd_open = bool(cmb.IsDropDownOpen)
+        except Exception:
+            pass
+        try:
+            focused = bool(cmb.IsKeyboardFocusWithin)
+        except Exception:
+            try:
+                focused = bool(cmb.IsFocused)
+            except Exception:
+                focused = False
+        show = (not has_sel) and (not focused) and (not dd_open)
+        try:
+            wm.Visibility = Visibility.Visible if show else Visibility.Collapsed
+        except Exception:
+            pass
+
     def _on_buscar_changed(self, sender, args):
         self._sync_buscar_watermark()
         dv = self._table.DefaultView
@@ -1405,7 +1591,9 @@ class ExportarLaminasWindow(object):
             dv.RowFilter = u""
         else:
             esc = t.replace(u"'", u"''")
-            dv.RowFilter = u"[SheetNumber] LIKE '%{0}%' OR [SheetName] LIKE '%{0}%'".format(esc)
+            dv.RowFilter = (
+                u"[SheetNumber] LIKE '%{0}%' OR [SheetName] LIKE '%{0}%' OR [FechaEntrega] LIKE '%{0}%'".format(esc)
+            )
         self._sync_select_all_header()
 
     def _on_refrescar(self, sender, args):
@@ -1415,10 +1603,12 @@ class ExportarLaminasWindow(object):
             self._table.RowChanged -= self._on_table_row_changed
         except Exception:
             pass
+        self._fch_param_names = list_fch_entrega_parameter_names_in_model(doc)
         self._table = build_sheets_datatable(doc)
         self._table.RowChanged += self._on_table_row_changed
         self._grid.ItemsSource = self._table.DefaultView
         self._txt_buscar.Text = u""
+        self._refresh_fecha_entrega_combo()
         self._refresh_estado()
         try:
             from System.Windows.Threading import DispatcherPriority
@@ -1679,6 +1869,25 @@ class ExportarLaminasWindow(object):
                 )
             except Exception:
                 pass
+
+    def _listado_fecha_emision_override_for_export(self):
+        """
+        Si en el formulario hay una fecha de entrega elegida en el combo, el listado Excel
+        usa ese texto en la columna FECHA para todas las filas. Si no hay selección (solo
+        marcado manual de láminas), devuelve None y cada fila lleva la fecha de la última
+        revisión en la lámina.
+        """
+        cmb = getattr(self, "_cmb_fecha_entrega", None)
+        if cmb is None:
+            return None
+        try:
+            sel = cmb.SelectedItem
+            if sel is None:
+                return None
+            key = unicode(sel).strip()
+            return key if key else None
+        except Exception:
+            return None
 
     def _exportar_impl(self):
         import os
@@ -1949,20 +2158,16 @@ class ExportarLaminasWindow(object):
                     )
                 else:
                     try:
-                        try:
-                            proj = (self._doc.ProjectInformation.Name or u"Listado").strip()
-                        except Exception:
-                            proj = u"Listado"
-                        proj_safe = re.sub(r'[<>:"/\\|?*]', u"_", proj).strip() or u"Listado"
                         listado_path = os.path.join(
                             entrega_root,
-                            proj_safe + u"_ListadoPlanos.xlsx",
+                            _listado_planos_core.default_listado_workbook_filename(self._doc),
                         )
                         n_listado_rows, listado_truncated = _listado_planos_core.run_export_sheets(
                             __revit__,
                             _TEMPLATE_LISTADO_XLSX,
                             listado_path,
                             sheets_for_listado,
+                            self._listado_fecha_emision_override_for_export(),
                         )
                     except Exception as ex:
                         errores.append(
@@ -2045,15 +2250,17 @@ class ExportarLaminasWindow(object):
             _hw = revit_main_hwnd(__revit__.Application)
             if _hw:
                 WindowInteropHelper(self._win).Owner = _hw
-            position_wpf_window_top_left_at_active_view(self._win, uidoc, _hw)
         except Exception:
             pass
         try:
             sc = self._win.FindName("ExpLamRootScale")
             if sc is not None:
-                sc.ScaleX = 0.0
-                sc.ScaleY = 0.0
-            self._win.Opacity = 0.0
+                sc.ScaleX = 0.88
+                sc.ScaleY = 0.88
+            ch = self._win.FindName("ExpLamRootChrome")
+            if ch is not None:
+                ch.Opacity = 0.0
+            self._win.Opacity = 1.0
         except Exception:
             pass
         try:

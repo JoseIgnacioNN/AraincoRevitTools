@@ -462,9 +462,136 @@ def default_custom_name(sheet):
     return u"Sheet_{}".format(element_id_int(sheet.Id))
 
 
-def build_sheets_datatable(doc):
+# Subcadena en el nombre del parámetro de lámina que marca «fecha de entrega» (mismo criterio que Dynamo).
+_FECHA_ENTREGA_PARAM_SUBSTRING = u"FCH"
+# Separador interno entre valores FCH distintos en una misma lámina (carácter de control, no suele aparecer en fechas).
+_FECHA_ENTREGA_TOKEN_SEP = u"\x1f"
+
+
+def _fch_param_names_on_sheet_sorted(sheet):
+    """Nombres de definición en la lámina cuyo nombre contiene ``FCH`` (orden alfabético, sin duplicados)."""
+    sub = _FECHA_ENTREGA_PARAM_SUBSTRING.upper()
+    found = []
+    for nm in _definition_names_on_sheet(sheet):
+        try:
+            n = (nm or u"").strip()
+        except Exception:
+            n = u""
+        if n and sub in n.upper():
+            found.append(n)
+    seen = set()
+    out = []
+    for n in sorted(found, key=lambda x: x.upper()):
+        if n not in seen:
+            seen.add(n)
+            out.append(n)
+    return out
+
+
+def _sheet_fch_entrega_display_and_tokens(sheet):
     """
-    DataTable columnas: Sel, SheetNumber, SheetName, Revision, Size, CustomName, IdInt
+    Recorre **todos** los parámetros FCH de la lámina, acumula valores de texto no vacíos
+    (como Dynamo con varias claves). Devuelve (texto para grilla, cadena de tokens para filtrar).
+    """
+    values_ordered = []
+    seen_val = set()
+    for nm in _fch_param_names_on_sheet_sorted(sheet):
+        disp = _lookup_sheet_parameter_display_string(sheet, nm)
+        disp = (disp or u"").strip()
+        if disp and disp not in seen_val:
+            seen_val.add(disp)
+            values_ordered.append(disp)
+    if not values_ordered:
+        return u"", u""
+    display = u"; ".join(values_ordered)
+    tokens = _FECHA_ENTREGA_TOKEN_SEP.join(values_ordered)
+    return display, tokens
+
+
+def list_fch_entrega_parameter_names_in_model(doc):
+    """Todos los nombres de parámetro distintos que contienen ``FCH`` y existen en al menos una lámina."""
+    if doc is None:
+        return []
+    try:
+        sheets = list(FilteredElementCollector(doc).OfClass(ViewSheet).ToElements())
+    except Exception:
+        sheets = []
+    names = set()
+    sub = _FECHA_ENTREGA_PARAM_SUBSTRING.upper()
+    for sh in sheets:
+        for nm in _definition_names_on_sheet(sh):
+            try:
+                n = (nm or u"").strip()
+            except Exception:
+                n = u""
+            if n and sub in n.upper():
+                names.add(n)
+    return sorted(names, key=lambda x: x.upper())
+
+
+def model_has_fch_entrega_params(doc):
+    return len(list_fch_entrega_parameter_names_in_model(doc)) > 0
+
+
+def discover_fecha_entrega_param_name(doc):
+    """
+    Compatibilidad: devuelve un solo nombre FCH (el primero alfabéticamente).
+    Para lógica de selección use :func:`_sheet_fch_entrega_display_and_tokens` / tokens en DataTable.
+    """
+    names = list_fch_entrega_parameter_names_in_model(doc)
+    return names[0] if names else None
+
+
+def unique_fecha_entrega_values_from_datatable(dt):
+    """Valores únicos no vacíos entre todas las filas (desde ``FechaEntregaTokens``), ordenados."""
+    if dt is None:
+        return []
+    seen = set()
+    out = []
+    n = dt.Rows.Count
+    for i in range(n):
+        try:
+            tok = dt.Rows[i][u"FechaEntregaTokens"]
+            tok = unicode(tok) if tok is not None else u""
+        except Exception:
+            tok = u""
+        for part in tok.split(_FECHA_ENTREGA_TOKEN_SEP):
+            v = (part or u"").strip()
+            if v and v not in seen:
+                seen.add(v)
+                out.append(v)
+    out.sort(key=lambda x: x.upper())
+    return out
+
+
+def datatable_row_matches_fecha_entrega_selection(row, selected_key):
+    """True si algún valor FCH de la fila coincide exactamente con ``selected_key`` (trim)."""
+    if row is None or not selected_key:
+        return False
+    try:
+        key = unicode(selected_key).strip()
+    except Exception:
+        key = u""
+    if not key:
+        return False
+    try:
+        tok = row[u"FechaEntregaTokens"]
+        tok = unicode(tok) if tok is not None else u""
+    except Exception:
+        tok = u""
+    for part in tok.split(_FECHA_ENTREGA_TOKEN_SEP):
+        if (part or u"").strip() == key:
+            return True
+    return False
+
+
+def build_sheets_datatable(doc, fecha_entrega_param_name=None):
+    """
+    DataTable columnas: Sel, SheetNumber, SheetName, Revision, Size, FechaEntrega,
+    FechaEntregaTokens, CustomName, IdInt
+
+    ``fecha_entrega_param_name`` se ignora: se consideran **todos** los parámetros cuyo nombre
+    contiene ``FCH`` en cada lámina.
     """
     dt = DataTable()
     dt.Columns.Add(DataColumn(u"Sel", clr.GetClrType(Boolean)))
@@ -472,6 +599,8 @@ def build_sheets_datatable(doc):
     dt.Columns.Add(DataColumn(u"SheetName", clr.GetClrType(String)))
     dt.Columns.Add(DataColumn(u"Revision", clr.GetClrType(String)))
     dt.Columns.Add(DataColumn(u"Size", clr.GetClrType(String)))
+    dt.Columns.Add(DataColumn(u"FechaEntrega", clr.GetClrType(String)))
+    dt.Columns.Add(DataColumn(u"FechaEntregaTokens", clr.GetClrType(String)))
     dt.Columns.Add(DataColumn(u"CustomName", clr.GetClrType(String)))
     dt.Columns.Add(DataColumn(u"IdInt", clr.GetClrType(Int32)))
 
@@ -491,6 +620,9 @@ def build_sheets_datatable(doc):
         row[u"SheetName"] = sheet.Name or u""
         row[u"Revision"] = _sheet_revision_display(sheet, doc)
         row[u"Size"] = _sheet_size_display(sheet)
+        disp, tok = _sheet_fch_entrega_display_and_tokens(sheet)
+        row[u"FechaEntrega"] = disp
+        row[u"FechaEntregaTokens"] = tok
         if persisted_recipe:
             row[u"CustomName"] = evaluate_naming_recipe(sheet, doc, persisted_recipe)
         else:
