@@ -7,6 +7,9 @@ Prioridad (cada sección añade candidatos sin duplicar):
   2) ``<raíz_extensión>/assets/`` y ``<raíz_extensión>/branding/`` (mismos nombres de archivo)
   3) Si existe ``BIMTools.tab``, listas heredadas por botón (compatibilidad con el layout actual)
 
+``icon.png`` (icono del botón en la cinta) va **al final**: solo se usa como imagen de cabecera
+si no existe ningún logo corporativo (``logo.png``, etc.), para no confundirlo con el logo de empresa.
+
 ``raíz_extensión`` se infiere de la ruta de este módulo (hijo de ``scripts/``). Cualquier
 herramienta que añada ``.../ExtensionName.extension/scripts`` al path puede
 ``import bimtools_paths`` y recibir la raíz de esa extensión.
@@ -54,6 +57,8 @@ def get_logo_paths(extension_root=None):
 
     out = []
     seen = set()
+    icon_last = []
+    icon_seen = set()
 
     def _add(p):
         p = os.path.normpath(os.path.abspath(p))
@@ -61,42 +66,91 @@ def get_logo_paths(extension_root=None):
             seen.add(p)
             out.append(p)
 
+    def _queue_icon(p):
+        p = os.path.normpath(os.path.abspath(p))
+        if p not in icon_seen:
+            icon_seen.add(p)
+            icon_last.append(p)
+
     if _pushbutton_dir:
         for name in _LOGO_NAMES:
             _add(os.path.join(_pushbutton_dir, name))
-        _add(os.path.join(_pushbutton_dir, "icon.png"))
+        _queue_icon(os.path.join(_pushbutton_dir, "icon.png"))
     for sub in ("assets", "branding"):
         base = os.path.join(extension_root, sub)
         for name in _LOGO_NAMES:
             _add(os.path.join(base, name))
-        _add(os.path.join(base, "icon.png"))
+        _queue_icon(os.path.join(base, "icon.png"))
 
     bimtools_tab = os.path.join(extension_root, "BIMTools.tab")
-    if not os.path.isdir(bimtools_tab):
-        return out
+    if os.path.isdir(bimtools_tab):
+        panel = os.path.join(bimtools_tab, "Armadura.panel")
+        model = os.path.join(bimtools_tab, "Modelado.panel")
+        inc = os.path.join(
+            bimtools_tab,
+            "Incidencias.panel",
+            "Incidencias.stack",
+            "01_BIMIssue.pushbutton",
+        )
+        pushbuttons = (
+            os.path.join(panel, "08_CrearAreaReinforcementRPS.pushbutton"),
+            os.path.join(panel, "22_EnfierradoFundacionAislada.pushbutton"),
+            os.path.join(panel, "02_NumerarFundaciones.pushbutton"),
+            os.path.join(panel, "20_BordeLosaGanchoEmpotramiento.pushbutton"),
+            os.path.join(panel, "23_EnfierradoVigas.pushbutton"),
+            os.path.join(panel, "24_EnfierradoColumnas.pushbutton"),
+            os.path.join(panel, "25_ArmaduraColumnasV2.pushbutton"),
+            os.path.join(panel, "26_WallFoundationReinforcement.pushbutton"),
+            os.path.join(panel, "09_CrearAreaReinforcementMuroRPS.pushbutton"),
+            os.path.join(model, "01_SpotElevVerticesLosa.pushbutton"),
+            os.path.join(model, "04_ExportarLaminasPDFDWG.pushbutton"),
+        )
+        for pb in pushbuttons:
+            for name in _LOGO_NAMES:
+                _add(os.path.join(pb, name))
+        _add(os.path.join(inc, "logo.png"))
 
-    panel = os.path.join(bimtools_tab, "Armadura.panel")
-    model = os.path.join(bimtools_tab, "Modelado.panel")
-    inc = os.path.join(
-        bimtools_tab,
-        "Incidencias.panel",
-        "Incidencias.stack",
-        "01_BIMIssue.pushbutton",
-    )
-    pushbuttons = (
-        os.path.join(panel, "08_CrearAreaReinforcementRPS.pushbutton"),
-        os.path.join(panel, "22_EnfierradoFundacionAislada.pushbutton"),
-        os.path.join(panel, "02_NumerarFundaciones.pushbutton"),
-        os.path.join(panel, "20_BordeLosaGanchoEmpotramiento.pushbutton"),
-        os.path.join(panel, "23_EnfierradoVigas.pushbutton"),
-        os.path.join(panel, "24_EnfierradoColumnas.pushbutton"),
-        os.path.join(panel, "25_ArmaduraColumnasV2.pushbutton"),
-        os.path.join(panel, "26_WallFoundationReinforcement.pushbutton"),
-        os.path.join(panel, "09_CrearAreaReinforcementMuroRPS.pushbutton"),
-        os.path.join(model, "01_SpotElevVerticesLosa.pushbutton"),
-    )
-    for pb in pushbuttons:
-        for name in _LOGO_NAMES:
-            _add(os.path.join(pb, name))
-    _add(os.path.join(inc, "logo.png"))
+    for p in icon_last:
+        _add(p)
     return out
+
+
+def load_logo_bitmap_image():
+    """
+    Carga el primer logo existente como ``BitmapImage`` (WPF), vía ``FileStream``.
+
+    ``UriSource`` con rutas locales falla a menudo en IronPython/pyRevit; el patrón
+    de stream coincide con herramientas que ya muestran el logo correctamente.
+    """
+    try:
+        import clr
+
+        clr.AddReference("PresentationCore")
+        clr.AddReference("System")
+        from System.IO import FileAccess, FileMode, FileStream
+        from System.Windows.Media.Imaging import BitmapCacheOption, BitmapImage
+    except Exception:
+        return None
+
+    for path in get_logo_paths():
+        if not path or not os.path.isfile(path):
+            continue
+        stream = None
+        try:
+            stream = FileStream(path, FileMode.Open, FileAccess.Read)
+            bmp = BitmapImage()
+            bmp.BeginInit()
+            bmp.StreamSource = stream
+            bmp.CacheOption = BitmapCacheOption.OnLoad
+            bmp.EndInit()
+            bmp.Freeze()
+            return bmp
+        except Exception:
+            continue
+        finally:
+            if stream is not None:
+                try:
+                    stream.Dispose()
+                except Exception:
+                    pass
+    return None

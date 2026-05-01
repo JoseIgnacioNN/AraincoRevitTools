@@ -663,7 +663,7 @@ _ENFIERRADO_FUND_XAML = (
     x:Name="FundacionWin"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Arainco - Armadura Fundacion Aislada"
+    Title="BIMTools — Armadura Fundacion Aislada"
     SizeToContent="Height"
     MaxHeight="920"
     WindowStartupLocation="Manual"
@@ -698,9 +698,12 @@ _ENFIERRADO_FUND_XAML = (
       </DoubleAnimation>
     </Storyboard>
 """ + BIMTOOLS_DARK_STYLES_XML + u"""
+    <Style x:Key="FundGb" TargetType="GroupBox" BasedOn="{StaticResource GbParams}">
+      <Setter Property="BorderBrush" Value="#5BC0DE"/>
+    </Style>
   </Window.Resources>
-  <Border x:Name="FundacionRootChrome" CornerRadius="10" Background="#0A1A2F" Padding="12"
-          BorderBrush="#1A3A4D" BorderThickness="1" ClipToBounds="True" RenderTransformOrigin="0,0">
+  <Border x:Name="FundacionRootChrome" CornerRadius="8" Background="#0A1627" Padding="14"
+          BorderBrush="#5BC0DE" BorderThickness="1" ClipToBounds="True" RenderTransformOrigin="0,0">
     <Border.Effect>
       <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="0" Opacity="0.35"/>
     </Border.Effect>
@@ -714,19 +717,19 @@ _ENFIERRADO_FUND_XAML = (
         <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
 
-      <Border x:Name="TitleBar" Grid.Row="0" Background="#0E1B32" CornerRadius="6" Padding="10,8" Margin="0,0,0,10"
-              BorderBrush="#21465C" BorderThickness="1" HorizontalAlignment="Stretch">
+      <Border x:Name="TitleBar" Grid.Row="0" Background="#0D1E2E" CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
+              BorderBrush="#5BC0DE" BorderThickness="1" HorizontalAlignment="Stretch">
         <Grid HorizontalAlignment="Stretch">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="*"/>
             <ColumnDefinition Width="Auto"/>
           </Grid.ColumnDefinitions>
-          <Image x:Name="ImgLogo" Width="38" Height="38" Grid.Column="0"
-                 Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center"/>
-          <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,4,0">
-            <TextBlock Text="Armadura Fundacion Aislada" FontSize="13" FontWeight="SemiBold"
-                       Foreground="#E8F4F8" TextWrapping="NoWrap"/>
+          <Image x:Name="ImgLogo" Width="40" Height="40" Grid.Column="0"
+                 Stretch="Uniform" Margin="0,0,10,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
+          <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="4,0">
+            <TextBlock Text="Armadura Fundacion Aislada" FontSize="14" FontWeight="Bold"
+                       Foreground="#FFFFFF" TextWrapping="NoWrap" TextAlignment="Center" HorizontalAlignment="Center"/>
           </StackPanel>
           <Button x:Name="BtnClose" Grid.Column="2"
                   Style="{StaticResource BtnCloseX_MinimalNoBg}"
@@ -736,21 +739,21 @@ _ENFIERRADO_FUND_XAML = (
 
       <ScrollViewer x:Name="SvContenido" Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="600" Margin="0,0,0,2">
         <StackPanel HorizontalAlignment="Stretch">
-          <StackPanel Margin="0,0,0,8" HorizontalAlignment="Stretch">
+          <StackPanel Margin="0,0,0,10" HorizontalAlignment="Stretch">
             <Button x:Name="BtnSeleccionar" Content="Seleccionar fundación en modelo"
                     Style="{StaticResource BtnSelectOutline}"
-                    HorizontalAlignment="Stretch"/>
+                    HorizontalAlignment="Stretch" Padding="12,8"/>
           </StackPanel>
 
-          <GroupBox Style="{StaticResource GbParams}" Margin="0,0,0,10" HorizontalAlignment="Stretch">
+          <GroupBox Style="{StaticResource FundGb}" Margin="0,0,0,10" HorizontalAlignment="Stretch">
             <GroupBox.Header>
-              <TextBlock Text="Informacion Armadura" FontWeight="SemiBold" Foreground="#E8F4F8" FontSize="11"/>
+              <TextBlock Text="Informacion Armadura" FontWeight="Bold" Foreground="#FFFFFF" FontSize="12"/>
             </GroupBox.Header>
             <StackPanel>
-          <GroupBox Style="{StaticResource GbParams}" Margin="0,0,0,10" HorizontalAlignment="Stretch">
+          <GroupBox Style="{StaticResource FundGb}" Margin="0,0,0,10" HorizontalAlignment="Stretch">
             <GroupBox.Header>
               <CheckBox x:Name="ChkInferior" IsChecked="True" Content="Armadura Inferior"
-                        Foreground="#E8F4F8" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
+                        Foreground="#FFFFFF" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
             </GroupBox.Header>
             <StackPanel x:Name="PanelInferior">
               <Grid HorizontalAlignment="Center">
@@ -763,9 +766,9 @@ _ENFIERRADO_FUND_XAML = (
                   <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
                 </ComboBox>
                 <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
-                           Foreground="#95B8CC" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="6,0,6,0"/>
-                <Border Grid.Column="2" Width="110" Height="24" CornerRadius="4" Background="#050E18"
-                        BorderBrush="#1A3A4D" BorderThickness="1" SnapsToDevicePixels="True">
+                           Foreground="#5BC0DE" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,0,8,0"/>
+                <Border Grid.Column="2" Width="110" Height="24" CornerRadius="5" Background="#050E18"
+                        BorderBrush="#5BC0DE" BorderThickness="1" SnapsToDevicePixels="True">
                   <Grid>
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="*"/>
@@ -774,8 +777,8 @@ _ENFIERRADO_FUND_XAML = (
                     <TextBox x:Name="TxtInfSepMm" Grid.Column="0" Style="{StaticResource CantSpinnerText}"
                              Text="150" Padding="6,0,6,0" HorizontalAlignment="Stretch" VerticalContentAlignment="Center"
                              ToolTip="Separación entre barras (mm): 100 a 300, paso 10"/>
-                    <Border Grid.Column="1" Background="#0E1B32" BorderBrush="#1A3A4D"
-                            BorderThickness="1,0,0,0" CornerRadius="0,4,4,0" ClipToBounds="True">
+                    <Border Grid.Column="1" Background="#11253D" BorderBrush="#4A8FA8"
+                            BorderThickness="1,0,0,0" CornerRadius="0,5,5,0" ClipToBounds="True">
                       <Grid>
                         <Grid.RowDefinitions>
                           <RowDefinition Height="*"/>
@@ -793,10 +796,10 @@ _ENFIERRADO_FUND_XAML = (
             </StackPanel>
           </GroupBox>
 
-          <GroupBox Style="{StaticResource GbParams}" Margin="0,0,0,10" HorizontalAlignment="Stretch">
+          <GroupBox Style="{StaticResource FundGb}" Margin="0,0,0,10" HorizontalAlignment="Stretch">
             <GroupBox.Header>
               <CheckBox x:Name="ChkSuperior" IsChecked="True" Content="Armadura Superior"
-                        Foreground="#E8F4F8" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
+                        Foreground="#FFFFFF" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
             </GroupBox.Header>
             <StackPanel x:Name="PanelSuperior">
               <Grid HorizontalAlignment="Center">
@@ -809,9 +812,9 @@ _ENFIERRADO_FUND_XAML = (
                   <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
                 </ComboBox>
                 <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
-                           Foreground="#95B8CC" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="6,0,6,0"/>
-                <Border Grid.Column="2" Width="110" Height="24" CornerRadius="4" Background="#050E18"
-                        BorderBrush="#1A3A4D" BorderThickness="1" SnapsToDevicePixels="True">
+                           Foreground="#5BC0DE" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,0,8,0"/>
+                <Border Grid.Column="2" Width="110" Height="24" CornerRadius="5" Background="#050E18"
+                        BorderBrush="#5BC0DE" BorderThickness="1" SnapsToDevicePixels="True">
                   <Grid>
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="*"/>
@@ -820,8 +823,8 @@ _ENFIERRADO_FUND_XAML = (
                     <TextBox x:Name="TxtSupSepMm" Grid.Column="0" Style="{StaticResource CantSpinnerText}"
                              Text="150" Padding="6,0,6,0" HorizontalAlignment="Stretch" VerticalContentAlignment="Center"
                              ToolTip="Separación entre barras (mm): 100 a 300, paso 10"/>
-                    <Border Grid.Column="1" Background="#0E1B32" BorderBrush="#1A3A4D"
-                            BorderThickness="1,0,0,0" CornerRadius="0,4,4,0" ClipToBounds="True">
+                    <Border Grid.Column="1" Background="#11253D" BorderBrush="#4A8FA8"
+                            BorderThickness="1,0,0,0" CornerRadius="0,5,5,0" ClipToBounds="True">
                       <Grid>
                         <Grid.RowDefinitions>
                           <RowDefinition Height="*"/>
@@ -839,10 +842,10 @@ _ENFIERRADO_FUND_XAML = (
             </StackPanel>
           </GroupBox>
 
-          <GroupBox Style="{StaticResource GbParams}" Margin="0,0,0,0" HorizontalAlignment="Stretch">
+          <GroupBox Style="{StaticResource FundGb}" Margin="0,0,0,0" HorizontalAlignment="Stretch">
             <GroupBox.Header>
               <CheckBox x:Name="ChkLateral" IsChecked="True" Content="Armadura Lateral"
-                        Foreground="#E8F4F8" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
+                        Foreground="#FFFFFF" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
             </GroupBox.Header>
             <StackPanel x:Name="PanelLateral">
               <Grid HorizontalAlignment="Center">
@@ -851,8 +854,8 @@ _ENFIERRADO_FUND_XAML = (
                   <ColumnDefinition Width="Auto"/>
                   <ColumnDefinition Width="110"/>
                 </Grid.ColumnDefinitions>
-                <Border Grid.Column="0" Width="110" Height="24" CornerRadius="4" Background="#050E18"
-                        BorderBrush="#1A3A4D" BorderThickness="1" SnapsToDevicePixels="True">
+                <Border Grid.Column="0" Width="110" Height="24" CornerRadius="5" Background="#050E18"
+                        BorderBrush="#5BC0DE" BorderThickness="1" SnapsToDevicePixels="True">
                   <Grid>
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="*"/>
@@ -861,8 +864,8 @@ _ENFIERRADO_FUND_XAML = (
                     <TextBox x:Name="TxtLatCant" Grid.Column="0" Style="{StaticResource CantSpinnerText}"
                              Text="2" Padding="6,0,6,0" HorizontalAlignment="Stretch" VerticalContentAlignment="Center"
                              ToolTip="Cantidad de barras laterales (1 a 10). Tras seleccionar la fundación, valor sugerido según altura."/>
-                    <Border Grid.Column="1" Background="#0E1B32" BorderBrush="#1A3A4D"
-                            BorderThickness="1,0,0,0" CornerRadius="0,4,4,0" ClipToBounds="True">
+                    <Border Grid.Column="1" Background="#11253D" BorderBrush="#4A8FA8"
+                            BorderThickness="1,0,0,0" CornerRadius="0,5,5,0" ClipToBounds="True">
                       <Grid>
                         <Grid.RowDefinitions>
                           <RowDefinition Height="*"/>
@@ -876,7 +879,7 @@ _ENFIERRADO_FUND_XAML = (
                     </Border>
                   </Grid>
                 </Border>
-                <Border Grid.Column="1" Background="Transparent" MinWidth="14" Margin="6,0,6,0"/>
+                <Border Grid.Column="1" Background="Transparent" MinWidth="14" Margin="8,0,8,0"/>
                 <ComboBox Grid.Column="2" x:Name="CmbLatDiam" Style="{StaticResource Combo}" IsEditable="False" IsReadOnly="True">
                   <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
                 </ComboBox>
@@ -889,13 +892,13 @@ _ENFIERRADO_FUND_XAML = (
       </ScrollViewer>
 
       <StackPanel Grid.Row="2" Margin="0" HorizontalAlignment="Stretch">
-        <Border x:Name="BorderPropagacion" Visibility="Collapsed" Background="#0E1B32"
-                BorderBrush="#1A3A4D" BorderThickness="1" CornerRadius="4" Padding="8,6" Margin="0,0,0,6">
-          <TextBlock x:Name="TxtPropagacionTitulo" TextWrapping="Wrap" Foreground="#E8F4F8" FontSize="11"/>
+        <Border x:Name="BorderPropagacion" Visibility="Collapsed" Background="#0D1E2E"
+                BorderBrush="#5BC0DE" BorderThickness="1" CornerRadius="5" Padding="8,6" Margin="0,0,0,8">
+          <TextBlock x:Name="TxtPropagacionTitulo" TextWrapping="Wrap" Foreground="#FFFFFF" FontSize="11"/>
         </Border>
         <Button x:Name="BtnColocar" Content="Colocar armaduras"
                 Style="{StaticResource BtnPrimary}"
-                HorizontalAlignment="Stretch"/>
+                HorizontalAlignment="Stretch" Padding="20,11" FontSize="13"/>
       </StackPanel>
     </Grid>
   </Border>

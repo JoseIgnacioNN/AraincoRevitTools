@@ -3,7 +3,8 @@
 Recursos WPF compartidos (tema oscuro BIMTools) para ventanas embebidas en scripts IronPython.
 
 Incluye: Label, LabelSmall, GbParams, Combo, ComboItem, BtnPrimary, BtnSelectOutline,
-SpinRepeatBtn, CantSpinnerText, BtnCloseX_MinimalNoBg (linea visual Fundacion Aislada).
+SpinRepeatBtn, CantSpinnerText, BtnCloseX_MinimalNoBg (linea visual Fundacion Aislada),
+BimToolsScrollBarCapButton + BimToolsScrollBarDark + estilo implícito ScrollBar (DataGrid / ScrollViewer / listas).
 
 Uso: dentro de Window.Resources, tras Storyboard si aplica, concatenar BIMTOOLS_DARK_STYLES_XML.
 """
@@ -304,4 +305,154 @@ BIMTOOLS_DARK_STYLES_XML = u"""
         </Setter.Value>
       </Setter>
     </Style>
+    <Style x:Key="BimToolsScrollBarCapButton" TargetType="RepeatButton">
+      <Setter Property="SnapsToDevicePixels" Value="True"/>
+      <Setter Property="OverridesDefaultStyle" Value="True"/>
+      <Setter Property="IsTabStop" Value="False"/>
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Delay" Value="400"/>
+      <Setter Property="Interval" Value="90"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RepeatButton">
+            <Grid SnapsToDevicePixels="True">
+              <Border x:Name="CapVUp" Visibility="Collapsed" Background="#284760" BorderBrush="#355973" BorderThickness="0,0,0,1"
+                      CornerRadius="8,8,0,0" Margin="2,3,2,0" MinHeight="18" Padding="0,2,0,1">
+                <Path Data="M 6 3 L 10 8 L 2 8 Z" Fill="#E8F4F8" Stretch="Uniform" Width="9" Height="6"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <Border x:Name="CapVDown" Visibility="Collapsed" Background="#284760" BorderBrush="#355973" BorderThickness="0,1,0,0"
+                      CornerRadius="0,0,8,8" Margin="2,0,2,3" MinHeight="18" Padding="0,1,0,2">
+                <Path Data="M 6 8 L 10 3 L 2 3 Z" Fill="#E8F4F8" Stretch="Uniform" Width="9" Height="6"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <Border x:Name="CapHLeft" Visibility="Collapsed" Background="#284760" BorderBrush="#355973" BorderThickness="0,0,1,0"
+                      CornerRadius="8,0,0,8" Margin="3,2,0,2" MinWidth="18" Padding="2,0,1,0">
+                <Path Data="M 3 6 L 8 10 L 8 2 Z" Fill="#E8F4F8" Stretch="Uniform" Width="6" Height="9"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <Border x:Name="CapHRight" Visibility="Collapsed" Background="#284760" BorderBrush="#355973" BorderThickness="1,0,0,0"
+                      CornerRadius="0,8,8,0" Margin="0,2,3,2" MinWidth="18" Padding="1,0,2,0">
+                <Path Data="M 8 6 L 3 10 L 3 2 Z" Fill="#E8F4F8" Stretch="Uniform" Width="6" Height="9"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                  <Condition Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=ScrollBar}}" Value="Vertical"/>
+                  <Condition Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Decrease"/>
+                </MultiDataTrigger.Conditions>
+                <Setter TargetName="CapVUp" Property="Visibility" Value="Visible"/>
+              </MultiDataTrigger>
+              <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                  <Condition Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=ScrollBar}}" Value="Vertical"/>
+                  <Condition Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Increase"/>
+                </MultiDataTrigger.Conditions>
+                <Setter TargetName="CapVDown" Property="Visibility" Value="Visible"/>
+              </MultiDataTrigger>
+              <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                  <Condition Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=ScrollBar}}" Value="Horizontal"/>
+                  <Condition Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Decrease"/>
+                </MultiDataTrigger.Conditions>
+                <Setter TargetName="CapHLeft" Property="Visibility" Value="Visible"/>
+              </MultiDataTrigger>
+              <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                  <Condition Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=ScrollBar}}" Value="Horizontal"/>
+                  <Condition Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Increase"/>
+                </MultiDataTrigger.Conditions>
+                <Setter TargetName="CapHRight" Property="Visibility" Value="Visible"/>
+              </MultiDataTrigger>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="CapVUp" Property="Background" Value="#355973"/>
+                <Setter TargetName="CapVDown" Property="Background" Value="#355973"/>
+                <Setter TargetName="CapHLeft" Property="Background" Value="#355973"/>
+                <Setter TargetName="CapHRight" Property="Background" Value="#355973"/>
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="CapVUp" Property="Background" Value="#4A6B88"/>
+                <Setter TargetName="CapVDown" Property="Background" Value="#4A6B88"/>
+                <Setter TargetName="CapHLeft" Property="Background" Value="#4A6B88"/>
+                <Setter TargetName="CapHRight" Property="Background" Value="#4A6B88"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="BimToolsScrollBarDark" TargetType="ScrollBar">
+      <Setter Property="Background" Value="#0B1726"/>
+      <Setter Property="OverridesDefaultStyle" Value="True"/>
+      <Setter Property="Width" Value="18"/>
+      <Setter Property="MinWidth" Value="18"/>
+      <Setter Property="Height" Value="18"/>
+      <Setter Property="MinHeight" Value="18"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ScrollBar">
+            <Grid SnapsToDevicePixels="True">
+              <Border x:Name="TrackPill" CornerRadius="9" Background="{TemplateBinding Background}"
+                      BorderBrush="#152A3D" BorderThickness="1" Margin="0"/>
+              <Track x:Name="PART_Track" IsDirectionReversed="True" Focusable="False" Margin="1"
+                     Orientation="{TemplateBinding Orientation}">
+                <Track.DecreaseRepeatButton>
+                  <RepeatButton x:Name="PART_PageUpOrLeft" Style="{StaticResource BimToolsScrollBarCapButton}" Tag="Decrease"
+                                Command="{x:Static ScrollBar.PageUpCommand}"/>
+                </Track.DecreaseRepeatButton>
+                <Track.IncreaseRepeatButton>
+                  <RepeatButton x:Name="PART_PageDownOrRight" Style="{StaticResource BimToolsScrollBarCapButton}" Tag="Increase"
+                                Command="{x:Static ScrollBar.PageDownCommand}"/>
+                </Track.IncreaseRepeatButton>
+                <Track.Thumb>
+                  <Thumb>
+                    <Thumb.Template>
+                      <ControlTemplate TargetType="Thumb">
+                        <Border x:Name="SbThumb" Background="#355973" CornerRadius="6" Margin="4,3" BorderThickness="0"/>
+                        <ControlTemplate.Triggers>
+                          <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="SbThumb" Property="Background" Value="#4A6B88"/>
+                          </Trigger>
+                          <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="SbThumb" Property="Background" Value="#5BC0DE"/>
+                          </Trigger>
+                          <DataTrigger Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=ScrollBar}}" Value="Horizontal">
+                            <Setter TargetName="SbThumb" Property="Margin" Value="3,4"/>
+                          </DataTrigger>
+                        </ControlTemplate.Triggers>
+                      </ControlTemplate>
+                    </Thumb.Template>
+                  </Thumb>
+                </Track.Thumb>
+              </Track>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="Orientation" Value="Horizontal">
+                <Setter TargetName="PART_Track" Property="Margin" Value="1"/>
+                <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False"/>
+                <Setter TargetName="PART_PageUpOrLeft" Property="Command" Value="{x:Static ScrollBar.PageLeftCommand}"/>
+                <Setter TargetName="PART_PageDownOrRight" Property="Command" Value="{x:Static ScrollBar.PageRightCommand}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+      <Style.Triggers>
+        <Trigger Property="Orientation" Value="Horizontal">
+          <Setter Property="Width" Value="Auto"/>
+          <Setter Property="MinWidth" Value="0"/>
+          <Setter Property="Height" Value="18"/>
+          <Setter Property="MinHeight" Value="18"/>
+        </Trigger>
+        <Trigger Property="Orientation" Value="Vertical">
+          <Setter Property="Width" Value="18"/>
+          <Setter Property="MinWidth" Value="18"/>
+          <Setter Property="Height" Value="Auto"/>
+          <Setter Property="MinHeight" Value="0"/>
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+    <Style TargetType="ScrollBar" BasedOn="{StaticResource BimToolsScrollBarDark}"/>
 """
