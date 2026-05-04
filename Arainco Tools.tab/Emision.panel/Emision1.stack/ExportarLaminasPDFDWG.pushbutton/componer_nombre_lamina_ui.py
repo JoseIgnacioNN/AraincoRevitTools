@@ -191,7 +191,7 @@ XAML = (
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     x:Name="NbNamingWin"
-    Title="BIMTools — Nombre Personalizado"
+    Title="Arainco: Nombre Personalizado"
     Height="600" Width="980" MinHeight="520" MinWidth="800"
     Background="Transparent"
     AllowsTransparency="True"

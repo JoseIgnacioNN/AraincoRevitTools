@@ -106,7 +106,7 @@ class RevitTransactionScope(object):
 
     def __init__(self, document, name):
         self._doc = document
-        self._name = name or u"BIMTools"
+        self._name = name or u"Arainco: Exportar láminas PDF/DWG"
         self._tx = None
 
     def __enter__(self):

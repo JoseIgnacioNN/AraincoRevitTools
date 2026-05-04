@@ -58,7 +58,7 @@ FIRST_DATA_ROW_LISTADO = 13   # fila 12 = encabezado
 FIRST_DATA_ROW_HISTORIAL = 8  # fila 7 = encabezado
 BLOCK_START_COL = 3           # col C (1-based): inicio del primer bloque de revisión
 BLOCK_STEP      = 6           # 6 cols por bloque: Revision, Descripcion, Dibujo, Reviso, Aprobo, Fecha
-MAX_REVISION_BLOCKS = 15      # slots R01-R15
+MAX_REVISION_BLOCKS = 20      # slots R01-R20
 
 # Metadatos de proyecto en LISTADO (valor en col B, 1-based=2)
 META_ROW_PROYECTO  = 7
@@ -68,11 +68,11 @@ META_ROW_FECHA_ENV = 10
 
 # Parámetros compartidos ARAINCO en láminas (Data group)
 # Cada revisión tiene 6 campos: R{nn}_01_NUM … R{nn}_06_FCH
-# Ejemplo: R01_01_NUM="A", R01_02_DES="PRELIMINAR", R01_03_DIB="J.N.N.",
+# Ejemplo: R01_01_NUM="A", R01_02_DES="PRELIMINAR", R01_03_DIR o R01_03_DIB="J.N.N.",
 #          R01_04_REV="C.M.Q.", R01_05_APR="P.A.V.", R01_06_FCH="29.08.25"
 _PARAM_SLOTS = [u"R{:02d}_{:02d}_{}".format(n, f, s)
                 for n in range(1, MAX_REVISION_BLOCKS + 1)
-                for f, s in [(1, u"NUM"), (2, u"DES"), (3, u"DIB"),
+                for f, s in [(1, u"NUM"), (2, u"DES"), (3, u"DIR"),
                              (4, u"REV"), (5, u"APR"), (6, u"FCH")]]
 
 
@@ -225,7 +225,9 @@ def _read_revision_slots(sheet):
         prefix = u"R{:02d}_".format(n)
         num = _lookup_param(sheet, prefix + u"01_NUM")
         des = _lookup_param(sheet, prefix + u"02_DES")
-        dib = _lookup_param(sheet, prefix + u"03_DIB")
+        dib = _lookup_param(sheet, prefix + u"03_DIR")
+        if not dib:
+            dib = _lookup_param(sheet, prefix + u"03_DIB")
         rev = _lookup_param(sheet, prefix + u"04_REV")
         apr = _lookup_param(sheet, prefix + u"05_APR")
         fch = _lookup_param(sheet, prefix + u"06_FCH")
