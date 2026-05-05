@@ -26,6 +26,7 @@ if _scripts_dir not in sys.path:
 
 import enfierrado_vigas as ev
 
+from bimtools_paths import get_logo_paths
 from barras_bordes_losa_gancho_empotramiento import (
     _rebar_nominal_diameter_mm,
     _task_dialog_show,
@@ -40,19 +41,6 @@ from geometria_columnas_v2_caras import ejecutar_v2_model_lines_cara_ancho
 from troceo_model_curves_planos_empalme_v2 import (
     trocear_model_lines_con_planos_sketch_v2,
 )
-
-_EXT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir))
-_PUSHBUTTON_DIR = os.path.join(
-    _EXT_ROOT,
-    "BIMTools.tab",
-    "Armadura.panel",
-    "25_ArmaduraColumnasV2.pushbutton",
-)
-_LOGO_PATHS_COLUMNAS_V2 = [
-    os.path.join(_PUSHBUTTON_DIR, "empresa_logo.png"),
-    os.path.join(_PUSHBUTTON_DIR, "logo_empresa.png"),
-    os.path.join(_PUSHBUTTON_DIR, "logo.png"),
-]
 
 _APPDOMAIN_WINDOW_KEY = "BIMTools.ArmaduraColumnasV2.ActiveWindow"
 
@@ -784,7 +772,7 @@ class ArmaduraColumnasV2Window(ev.EnfierradoVigasWindow):
             self,
             revit,
             xaml_string=_xaml_columnas_desde_vigas(),
-            logo_paths=_LOGO_PATHS_COLUMNAS_V2,
+            logo_paths=get_logo_paths(),
             appdomain_window_key=_APPDOMAIN_WINDOW_KEY,
             tool_title_short=u"Armadura Columnas V2",
         )

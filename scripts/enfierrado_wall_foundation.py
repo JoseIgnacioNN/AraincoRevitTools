@@ -143,41 +143,9 @@ from revit_wpf_window_position import (
 )
 
 from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
+from bimtools_paths import get_logo_paths
 
 _APPDOMAIN_WINDOW_KEY = "BIMTools.WallFoundationReinforcement.ActiveWindow"
-
-_EXT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir))
-_PUSHBUTTON_DIR = os.path.join(
-    _EXT_ROOT,
-    "BIMTools.tab",
-    "Armadura.panel",
-    "26_WallFoundationReinforcement.pushbutton",
-)
-# Mismo criterio que fundación aislada y otras apps BIMTools: carpeta del botón primero,
-# luego herramienta hermana en Armadura, logo corporativo común en Incidencias.
-_FUND_AISL_PB = os.path.join(
-    _EXT_ROOT,
-    "BIMTools.tab",
-    "Armadura.panel",
-    "22_EnfierradoFundacionAislada.pushbutton",
-)
-_BIMISSUE_LOGO = os.path.join(
-    _EXT_ROOT,
-    "BIMTools.tab",
-    "Incidencias.panel",
-    "Incidencias.stack",
-    "01_BIMIssue.pushbutton",
-    "logo.png",
-)
-_LOGO_PATHS = [
-    os.path.join(_PUSHBUTTON_DIR, "empresa_logo.png"),
-    os.path.join(_PUSHBUTTON_DIR, "logo_empresa.png"),
-    os.path.join(_PUSHBUTTON_DIR, "logo.png"),
-    os.path.join(_FUND_AISL_PB, "empresa_logo.png"),
-    os.path.join(_FUND_AISL_PB, "logo_empresa.png"),
-    os.path.join(_FUND_AISL_PB, "logo.png"),
-    _BIMISSUE_LOGO,
-]
 
 _FOUNDATION_CAT_ID = int(BuiltInCategory.OST_StructuralFoundation)
 
@@ -3664,7 +3632,7 @@ class WallFoundationReinforcementWindow(object):
 
         img = self._win.FindName("ImgLogo")
         if img is not None:
-            for pth in _LOGO_PATHS:
+            for pth in get_logo_paths():
                 if os.path.isfile(pth):
                     stream = None
                     try:

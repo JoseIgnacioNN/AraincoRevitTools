@@ -55,18 +55,11 @@ from area_reinforcement_losa import (
     _get_first_rebar_hook_type_id,
 )
 
+from bimtools_paths import get_logo_paths
+
 # ── Constantes ─────────────────────────────────────────────────────────────
 # Resta al espesor de muro para el largo del gancho (independiente de losas: −60 mm allí).
 _HOOK_RESTA_MURO_MM = 40
-_script_dir = os.path.dirname(os.path.abspath(__file__))
-_ext_root = os.path.dirname(_script_dir)
-_panel_dir = os.path.join(_ext_root, "BIMTools.tab", "Armadura.panel")
-_tab_dir = os.path.join(_ext_root, "BIMTools.tab")
-_LOGO_PATHS = [
-    os.path.join(_panel_dir, "09_CrearAreaReinforcementMuroRPS.pushbutton", "logo.png"),
-    os.path.join(_panel_dir, "08_CrearAreaReinforcementRPS.pushbutton", "logo.png"),
-    os.path.join(_tab_dir, "Incidencias.panel", "Incidencias.stack", "01_BIMIssue.pushbutton", "logo.png"),
-]
 
 
 def _obtener_espesor_muro_mm(wall):
@@ -787,7 +780,7 @@ class AreaReinforcementMuroRPSWindow(object):
             img_ctrl = self._win.FindName("ImgLogo")
             if not img_ctrl:
                 return
-            for logo_path in _LOGO_PATHS:
+            for logo_path in get_logo_paths():
                 if os.path.exists(logo_path):
                     bmp = BitmapImage()
                     bmp.BeginInit()

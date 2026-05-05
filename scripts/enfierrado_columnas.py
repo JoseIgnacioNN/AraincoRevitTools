@@ -28,6 +28,7 @@ if _scripts_dir not in sys.path:
 
 import enfierrado_vigas as ev
 
+from bimtools_paths import get_logo_paths
 from barras_bordes_losa_gancho_empotramiento import (
     _rebar_nominal_diameter_mm,
     _task_dialog_show,
@@ -38,19 +39,6 @@ from geometria_columnas_eje import (
     estimar_largo_max_mm_eje_columnas_fallback_ubicacion,
     estimar_largo_max_mm_eje_columnas_fusionado,
 )
-
-_EXT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir))
-_PUSHBUTTON_DIR = os.path.join(
-    _EXT_ROOT,
-    "BIMTools.tab",
-    "Armadura.panel",
-    "24_EnfierradoColumnas.pushbutton",
-)
-_LOGO_PATHS_COLUMNAS = [
-    os.path.join(_PUSHBUTTON_DIR, "empresa_logo.png"),
-    os.path.join(_PUSHBUTTON_DIR, "logo_empresa.png"),
-    os.path.join(_PUSHBUTTON_DIR, "logo.png"),
-]
 
 _APPDOMAIN_WINDOW_KEY = "BIMTools.EnfierradoColumnas.ActiveWindow"
 # ``True``: 2.ª/3.ª anillo de ModelLine cuando «Capas» superior = 2 o 3 (véase
@@ -558,7 +546,7 @@ class EnfierradoColumnasWindow(ev.EnfierradoVigasWindow):
             self,
             revit,
             xaml_string=_xaml_columnas_desde_vigas(),
-            logo_paths=_LOGO_PATHS_COLUMNAS,
+            logo_paths=get_logo_paths(),
             appdomain_window_key=_APPDOMAIN_WINDOW_KEY,
             tool_title_short=u"Enfierrado columnas",
         )

@@ -30,8 +30,6 @@ from System import Action, EventHandler
 from System.Windows import RoutedEventHandler, SizeToContent
 from System.Windows.Threading import DispatcherPriority
 from System.Windows.Input import Key, KeyBinding, ModifierKeys, ApplicationCommands, CommandBinding
-from System.Windows.Media.Imaging import BitmapImage, BitmapCacheOption
-from System import Uri, UriKind
 import System
 
 from revit_wpf_window_position import (
@@ -40,6 +38,7 @@ from revit_wpf_window_position import (
 )
 
 from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
+from bimtools_paths import load_logo_bitmap_image
 
 from Autodesk.Revit.DB import (
     BuiltInCategory,
@@ -76,18 +75,6 @@ from Autodesk.Revit.DB.Structure import (
 )
 from Autodesk.Revit.UI import TaskDialog, ExternalEvent, IExternalEventHandler
 from Autodesk.Revit.UI.Selection import ObjectType
-
-# ── Constantes (rutas desde raíz de la extensión) ───────────────────────────
-_script_dir = os.path.dirname(os.path.abspath(__file__))
-_ext_root = os.path.dirname(_script_dir)
-_panel_dir = os.path.join(_ext_root, "BIMTools.tab", "Armadura.panel")
-_tab_dir = os.path.join(_ext_root, "BIMTools.tab")
-_LOGO_PATHS = [
-    os.path.join(_panel_dir, "08_CrearAreaReinforcementRPS.pushbutton", "empresa_logo.png"),
-    os.path.join(_panel_dir, "22_EnfierradoFundacionAislada.pushbutton", "empresa_logo.png"),
-    os.path.join(_panel_dir, "08_CrearAreaReinforcementRPS.pushbutton", "logo.png"),
-    os.path.join(_tab_dir, "Incidencias.panel", "Incidencias.stack", "01_BIMIssue.pushbutton", "logo.png"),
-]
 
 # Misma línea de diseño que Refuerzo Borde Losa (barras_bordes_losa_gancho_empotramiento).
 _APPDOMAIN_WINDOW_KEY = "BIMTools.AreaReinforcementLosa.ActiveWindow"
@@ -2478,21 +2465,15 @@ class AreaReinforcementLosaWindow(object):
                 pass
 
     def _load_logo(self):
-        """Carga logo.png desde esta carpeta o fallback a otras apps BIMTools."""
+        """Logo corporativo en cabecera (no prioriza icon.png del botón de la cinta)."""
         try:
             img_ctrl = self._win.FindName("ImgLogo")
             if not img_ctrl:
                 return
-            for logo_path in _LOGO_PATHS:
-                if os.path.exists(logo_path):
-                    bmp = BitmapImage()
-                    bmp.BeginInit()
-                    bmp.UriSource = Uri(logo_path, UriKind.Absolute)
-                    bmp.CacheOption = BitmapCacheOption.OnLoad
-                    bmp.EndInit()
-                    bmp.Freeze()
-                    img_ctrl.Source = bmp
-                    break
+            bmp = load_logo_bitmap_image()
+            if bmp is None:
+                return
+            img_ctrl.Source = bmp
         except Exception:
             pass
 

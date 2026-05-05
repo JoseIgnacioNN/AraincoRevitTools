@@ -40,6 +40,7 @@ from revit_wpf_window_position import (
 )
 
 from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
+from bimtools_paths import get_logo_paths
 
 from Autodesk.Revit.DB import (
     BuiltInCategory,
@@ -76,18 +77,6 @@ from Autodesk.Revit.DB.Structure import (
 )
 from Autodesk.Revit.UI import TaskDialog, ExternalEvent, IExternalEventHandler
 from Autodesk.Revit.UI.Selection import ObjectType
-
-# ── Constantes (rutas desde raíz de la extensión) ───────────────────────────
-_script_dir = os.path.dirname(os.path.abspath(__file__))
-_ext_root = os.path.dirname(_script_dir)
-_panel_dir = os.path.join(_ext_root, "BIMTools.tab", "Armadura.panel")
-_tab_dir = os.path.join(_ext_root, "BIMTools.tab")
-_LOGO_PATHS = [
-    os.path.join(_panel_dir, "08_CrearAreaReinforcementRPS.pushbutton", "empresa_logo.png"),
-    os.path.join(_panel_dir, "22_EnfierradoFundacionAislada.pushbutton", "empresa_logo.png"),
-    os.path.join(_panel_dir, "08_CrearAreaReinforcementRPS.pushbutton", "logo.png"),
-    os.path.join(_tab_dir, "Incidencias.panel", "Incidencias.stack", "01_BIMIssue.pushbutton", "logo.png"),
-]
 
 # Misma línea de diseño que Refuerzo Borde Losa (barras_bordes_losa_gancho_empotramiento).
 _APPDOMAIN_WINDOW_KEY = "BIMTools.AreaReinforcementLosa.ActiveWindow"
@@ -2483,7 +2472,7 @@ class AreaReinforcementLosaWindow(object):
             img_ctrl = self._win.FindName("ImgLogo")
             if not img_ctrl:
                 return
-            for logo_path in _LOGO_PATHS:
+            for logo_path in get_logo_paths():
                 if os.path.exists(logo_path):
                     bmp = BitmapImage()
                     bmp.BeginInit()

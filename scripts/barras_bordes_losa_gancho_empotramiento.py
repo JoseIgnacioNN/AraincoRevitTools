@@ -44,6 +44,7 @@ from revit_wpf_window_position import (
 )
 
 from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
+from bimtools_paths import get_logo_paths
 
 _APPDOMAIN_WINDOW_KEY = "BIMTools.BordeLosaGanchoEmpotramiento.ActiveWindow"
 _TOOL_TASK_DIALOG_TITLE = u"BIMTools — Refuerzo Borde Losa"
@@ -95,20 +96,6 @@ def _host_display_name(host):
     except Exception:
         return u"(host)"
 
-
-_EXT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir))
-_ENFIERRADO_PASADA_PUSHBUTTON = os.path.join(
-    _EXT_ROOT,
-    "BIMTools.tab",
-    "Armadura.panel",
-    "20_BordeLosaGanchoEmpotramiento.pushbutton",
-)
-# Orden: marca corporativa opcional, luego logo del botón (reemplazar logo.png por PNG corporativo si aplica).
-_LOGO_PATHS = [
-    os.path.join(_ENFIERRADO_PASADA_PUSHBUTTON, "empresa_logo.png"),
-    os.path.join(_ENFIERRADO_PASADA_PUSHBUTTON, "logo_empresa.png"),
-    os.path.join(_ENFIERRADO_PASADA_PUSHBUTTON, "logo.png"),
-]
 
 # Paleta Arainco / Revit 2024+: fondo #0A1A2F, acento cyan #5BC0DE, bordes #1A3A4D
 # Combo: hover/foco #4C7383 (tenue); flecha #7AA3B8 — evita #5BC0DE en el campo (muy claro).
@@ -1093,7 +1080,7 @@ class EnfierradoShaftPasadaWindow(object):
         try:
             img = self._win.FindName("ImgLogo")
             if img is not None:
-                for logo_path in _LOGO_PATHS:
+                for logo_path in get_logo_paths():
                     if os.path.isfile(logo_path):
                         stream = None
                         try:

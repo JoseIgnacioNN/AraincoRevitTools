@@ -59,21 +59,9 @@ from revit_wpf_window_position import (
 )
 
 from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
+from bimtools_paths import get_logo_paths
 
 _APPDOMAIN_WINDOW_KEY = "BIMTools.EnfierradoVigas.ActiveWindow"
-
-_EXT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir))
-_PUSHBUTTON_DIR = os.path.join(
-    _EXT_ROOT,
-    "BIMTools.tab",
-    "Armadura.panel",
-    "23_EnfierradoVigas.pushbutton",
-)
-_LOGO_PATHS = [
-    os.path.join(_PUSHBUTTON_DIR, "empresa_logo.png"),
-    os.path.join(_PUSHBUTTON_DIR, "logo_empresa.png"),
-    os.path.join(_PUSHBUTTON_DIR, "logo.png"),
-]
 
 _ALLOWED_SELECTION_CAT_IDS = frozenset(
     (
@@ -2278,7 +2266,7 @@ class EnfierradoVigasWindow(object):
         try:
             img = self._win.FindName("ImgLogo")
             if img is not None:
-                for logo_path in _LOGO_PATHS:
+                for logo_path in get_logo_paths():
                     if os.path.isfile(logo_path):
                         stream = None
                         try:

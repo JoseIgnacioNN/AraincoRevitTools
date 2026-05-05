@@ -150,9 +150,22 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
         self.cmbRebar.ItemsSource = rebar_types_names # Se muestran los nombres de barra en la lista desplegable
 
         # Ruta del logo
-        ruta_logo = os.path.join(os.path.dirname(__file__), "logo.png")
-        if os.path.exists(ruta_logo):
-            self.imgLogo.Source = BitmapImage(Uri(ruta_logo))
+        try:
+            base_dir = os.path.dirname(__file__)
+            logo_candidates = [
+                os.path.join(base_dir, "empresa_logo.png"),
+                os.path.join(base_dir, "logo_empresa.png"),
+                os.path.join(base_dir, "logo.png"),
+                os.path.join(os.path.dirname(base_dir), "empresa_logo.png"),
+                os.path.join(os.path.dirname(base_dir), "logo_empresa.png"),
+                os.path.join(os.path.dirname(base_dir), "logo.png"),
+            ]
+            for ruta_logo in logo_candidates:
+                if os.path.exists(ruta_logo):
+                    self.imgLogo.Source = BitmapImage(Uri(ruta_logo))
+                    break
+        except Exception:
+            pass
 
         # Posición del formulario en pantalla
         if datos.form_top is not None:

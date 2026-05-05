@@ -36,6 +36,13 @@ if not _module_path:
     raise Exception(u"No se encontro scripts/barras_bordes_losa_gancho_empotramiento.py")
 
 import sys as _sys
+
+_scripts_dir = os.path.dirname(_module_path)
+if _scripts_dir not in _sys.path:
+    _sys.path.insert(0, _scripts_dir)
+import bimtools_paths
+
+bimtools_paths.set_pushbutton_dir(_pushbutton_dir)
 _sys.modules.pop("enfierrado_shaft_hashtag", None)
 _sys.modules.pop("barras_bordes_losa_gancho_empotramiento", None)
 
