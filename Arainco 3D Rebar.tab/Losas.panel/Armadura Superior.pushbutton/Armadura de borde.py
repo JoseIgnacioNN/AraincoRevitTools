@@ -5,7 +5,7 @@ from Autodesk.Revit.Exceptions import OperationCanceledException
 from pyrevit import revit, forms
 doc = revit.doc
 uidoc = revit.uidoc
- 
+
 from System import EventHandler, Uri
 from System.Windows import SystemParameters
 from System.Collections.Generic import List
@@ -341,9 +341,9 @@ while True:
         v_recorrido_2D = (p2 - p1).Normalize() # Vector del recorrido 2D
         v_izq_2D = DB.XYZ(-v_recorrido_2D.Y, v_recorrido_2D.X, 0) # Vector perpendicular hacia la izquierda (Rotación de 90° en 2D)
         if estado.barra_izq == True:
-            pt_busqueda = mid_point + v_izq_2D * L
+            pt_busqueda = mid_point + v_izq_2D * (L + Lext)
         else:
-            pt_busqueda = mid_point - v_izq_2D * L
+            pt_busqueda = mid_point - v_izq_2D * (L + Lext)
 
         # Intersección del recorrido con la losa
         filtro_combinado = DB.LogicalOrFilter(DB.ElementCategoryFilter(DB.BuiltInCategory.OST_Floors), 
@@ -418,12 +418,16 @@ while True:
             rec_top = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_TOP).AsElementId()).CoverDistance
             rec_bottom = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_BOTTOM).AsElementId()).CoverDistance
             rec_other = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_OTHER).AsElementId()).CoverDistance
-            e = slab.get_Parameter(DB.BuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM).AsDouble()
+            if isinstance(slab, DB.Floor):
+                espesor = slab.get_Parameter(DB.BuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM).AsDouble() # Losa y Losa de fundación
+            else:
+                bbox = slab.get_BoundingBox(None)
+                espesor = bbox.Max.Z - bbox.Min.Z # Fundación aislada y corrida
         except Exception:
             t_group.RollBack()
             forms.alert("La losa detectada no tiene parámetros de recubrimiento estructural válidos.", title="Error de Parámetro")
             continue
-        
+
 # ===================================================================================
 # GEOMETRÍA DE LA BARRA
 # ===================================================================================
@@ -448,13 +452,13 @@ while True:
 
         # Largo vertical (t1) y horizontal (t2) del gancho, según ACI 318-19. (Las longitudes son de eje a eje)
         if UnitUtils.ConvertFromInternalUnits(rebar_fi, UnitTypeId.Millimeters) <= 25:
-            t1 = max(7*rebar_fi, e - rec_top - rec_bottom - rebar_fi)
+            t1 = max(7*rebar_fi, espesor - rec_top - rec_bottom - rebar_fi)
             t2 = 3.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5, UnitTypeId.Centimeters))
         elif UnitUtils.ConvertFromInternalUnits(rebar_fi, UnitTypeId.Millimeters) <= 36:
-            t1 = max(9*rebar_fi, e - rec_top - rec_bottom - rebar_fi)
+            t1 = max(9*rebar_fi, espesor - rec_top - rec_bottom - rebar_fi)
             t2 = 4.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5, UnitTypeId.Centimeters)) 
         else:
-            t1 = max(11*rebar_fi, e - rec_top - rec_bottom - rebar_fi)
+            t1 = max(11*rebar_fi, espesor - rec_top - rec_bottom - rebar_fi)
             t2 = 5.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5), UnitTypeId.Centimeters) 
 
         if estado.barra_izq == True:
@@ -510,12 +514,13 @@ while True:
                 rebar.SetPresentationMode(uidoc.ActiveView, DB.Structure.RebarPresentationMode.All)
 
     # Offset para Multi-Rebar Annotation y Tag
+            scale = view.Scale
             if estado.barra_izq == True:
-                offset_mra = UnitUtils.ConvertToInternalUnits(90, UnitTypeId.Centimeters)
-                offset_tag = UnitUtils.ConvertToInternalUnits(185, UnitTypeId.Centimeters) - L_barra/2
+                offset_mra = UnitUtils.ConvertToInternalUnits(65, UnitTypeId.Centimeters)
+                offset_tag = UnitUtils.ConvertToInternalUnits(65 + 1.4*scale, UnitTypeId.Centimeters) - L_barra/2
             else:
-                offset_mra = UnitUtils.ConvertToInternalUnits(-90, UnitTypeId.Centimeters)
-                offset_tag = UnitUtils.ConvertToInternalUnits(-185, UnitTypeId.Centimeters) + L_barra/2
+                offset_mra = UnitUtils.ConvertToInternalUnits(-65, UnitTypeId.Centimeters)
+                offset_tag = UnitUtils.ConvertToInternalUnits(-65 - 1.4*scale, UnitTypeId.Centimeters) + L_barra/2
 
     # Multi-Rebar Annotation
             nombre_tipo = "Recorrido Barras"

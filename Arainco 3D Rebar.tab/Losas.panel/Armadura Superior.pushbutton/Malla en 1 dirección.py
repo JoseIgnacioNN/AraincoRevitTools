@@ -238,7 +238,7 @@ while True:
         except OperationCanceledException: continue
 
         # Transaction Group
-        t_group = DB.TransactionGroup(doc, u"ARAINCO - Armadura Superior (Malla en 1 dirección)")
+        t_group = DB.TransactionGroup(doc, "ARAINCO - Armadura Superior (Malla en 1 dirección)")
         t_group.Start()
 
 # ===================================================================================
@@ -319,7 +319,11 @@ while True:
             rec_top = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_TOP).AsElementId()).CoverDistance
             rec_bottom = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_BOTTOM).AsElementId()).CoverDistance
             rec_other = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_OTHER).AsElementId()).CoverDistance
-            e = slab.get_Parameter(DB.BuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM).AsDouble()
+            if isinstance(slab, DB.Floor):
+                espesor = slab.get_Parameter(DB.BuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM).AsDouble() # Losa y Losa de fundación
+            else:
+                bbox = slab.get_BoundingBox(None)
+                espesor = bbox.Max.Z - bbox.Min.Z # Fundación aislada y corrida
         except Exception:
             t_group.RollBack()
             forms.alert("La losa detectada no tiene parámetros de recubrimiento estructural válidos.", title="Error de Parámetro")
@@ -343,7 +347,7 @@ while True:
         p2_vano_z = get_z_on_plane(p2_vano.X, p2_vano.Y, origen_desplazado, plane_normal)
         p1_vano_3D = DB.XYZ(p1_vano.X, p1_vano.Y, p1_vano_z)
         p2_vano_3D = DB.XYZ(p2_vano.X, p2_vano.Y, p2_vano_z)
-        L = (p2_vano_3D - p1_vano_3D).GetLength() # Largo de la barra
+        L = (p2_vano_3D - p1_vano_3D).GetLength() # Largo del vano
         centro_vano_3D = (p1_vano_3D + p2_vano_3D) /2
         v_bar_3D = (p2_vano_3D - p1_vano_3D).Normalize() # Vector director de la barra (en la dirección longitudinal)
         v_recorrido_3D = plane_normal.CrossProduct(v_bar_3D).Normalize() # Vector director del recorrido en 3D. Es perpendicular al eje de la barra y paralelo a la pendiente de la losa
@@ -367,13 +371,13 @@ while True:
 
         # Largo vertical (t1) y horizontal (t2) del gancho, según ACI 318-19. (Las longitudes son de eje a eje)
         if UnitUtils.ConvertFromInternalUnits(rebar_fi, UnitTypeId.Millimeters) <= 25:
-            t1 = max(7*rebar_fi, e - rec_top - rec_bottom - rebar_fi)
+            t1 = max(7*rebar_fi, espesor - rec_top - rec_bottom - rebar_fi)
             t2 = 3.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5, UnitTypeId.Centimeters))
         elif UnitUtils.ConvertFromInternalUnits(rebar_fi, UnitTypeId.Millimeters) <= 36:
-            t1 = max(9*rebar_fi, e - rec_top - rec_bottom - rebar_fi)
+            t1 = max(9*rebar_fi, espesor - rec_top - rec_bottom - rebar_fi)
             t2 = 4.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5, UnitTypeId.Centimeters)) 
         else:
-            t1 = max(11*rebar_fi, e - rec_top - rec_bottom - rebar_fi)
+            t1 = max(11*rebar_fi, espesor - rec_top - rec_bottom - rebar_fi)
             t2 = 5.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5), UnitTypeId.Centimeters) 
 
         pt1_1 = start - plane_normal * t1 # Tramo 1 del gancho 1
@@ -426,8 +430,9 @@ while True:
                 rebar.SetPresentationMode(uidoc.ActiveView, DB.Structure.RebarPresentationMode.All)
 
     # Offset para Multi-Rebar Annotation y Tag
-            offset_mra = min( UnitUtils.ConvertToInternalUnits(85, UnitTypeId.Centimeters), L_barra/2 - 0.49)
-            offset_tag = UnitUtils.ConvertToInternalUnits(-10, UnitTypeId.Centimeters)
+            scale = view.Scale
+            offset_mra = UnitUtils.ConvertToInternalUnits(-65, UnitTypeId.Centimeters) + L_barra/2
+            offset_tag = UnitUtils.ConvertToInternalUnits(-65 - 1.45*scale, UnitTypeId.Centimeters) + L_barra/2
 
     # Multi-Rebar Annotation
             nombre_tipo = "Recorrido Barras"
@@ -514,4 +519,3 @@ while True:
 nueva_rutina_idx = estado.rutina_idx
 form_top = estado.form_top
 form_left = estado.form_left
- 

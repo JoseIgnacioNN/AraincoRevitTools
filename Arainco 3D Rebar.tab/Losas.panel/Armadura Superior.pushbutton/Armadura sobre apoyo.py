@@ -496,35 +496,36 @@ while True:
                 rebar.SetPresentationMode(uidoc.ActiveView, DB.Structure.RebarPresentationMode.All)
 
     # Offset para Multi-Rebar Annotation y Tag
+            scale = view.Scale
             if Lext == 0:
                 if L1 > L2:
                     offset_mra = UnitUtils.ConvertToInternalUnits(-65, UnitTypeId.Centimeters)
-                    offset_tag = UnitUtils.ConvertToInternalUnits(125, UnitTypeId.Centimeters) - L_barra/2 + L2
+                    offset_tag = UnitUtils.ConvertToInternalUnits(55 + 1.25*scale, UnitTypeId.Centimeters) - L_barra/2 + L2
                 else:
                     offset_mra = UnitUtils.ConvertToInternalUnits(65, UnitTypeId.Centimeters)
-                    offset_tag = UnitUtils.ConvertToInternalUnits(-125, UnitTypeId.Centimeters) - L_barra/2 + L2
-            elif Lext < UnitUtils.ConvertToInternalUnits(290, UnitTypeId.Centimeters):
+                    offset_tag = UnitUtils.ConvertToInternalUnits(-55 - 1.25*scale, UnitTypeId.Centimeters) - L_barra/2 + L2
+            elif Lext < UnitUtils.ConvertToInternalUnits(80 + 3.2*scale, UnitTypeId.Centimeters):
                 if L1 > L2:
                     if Lext_izq == True:
                         offset_mra = UnitUtils.ConvertToInternalUnits(-65, UnitTypeId.Centimeters) + Lext
-                        offset_tag = UnitUtils.ConvertToInternalUnits(125, UnitTypeId.Centimeters) + L_barra/2 - L1
+                        offset_tag = UnitUtils.ConvertToInternalUnits(55 + 1.25*scale, UnitTypeId.Centimeters) + L_barra/2 - L1
                     else:
                         offset_mra = UnitUtils.ConvertToInternalUnits(-65, UnitTypeId.Centimeters)
-                        offset_tag = UnitUtils.ConvertToInternalUnits(125, UnitTypeId.Centimeters) + L_barra/2 - L1
+                        offset_tag = UnitUtils.ConvertToInternalUnits(55 + 1.25*scale, UnitTypeId.Centimeters) + L_barra/2 - L1
                 else:
                     if Lext_izq == True:
                         offset_mra = UnitUtils.ConvertToInternalUnits(65, UnitTypeId.Centimeters)
-                        offset_tag = UnitUtils.ConvertToInternalUnits(-125, UnitTypeId.Centimeters) - L_barra/2 + L2
+                        offset_tag = UnitUtils.ConvertToInternalUnits(-55 - 1.25*scale, UnitTypeId.Centimeters) - L_barra/2 + L2
                     else:
                         offset_mra = UnitUtils.ConvertToInternalUnits(65, UnitTypeId.Centimeters) - Lext
-                        offset_tag = UnitUtils.ConvertToInternalUnits(-125, UnitTypeId.Centimeters) - L_barra/2 + L2
+                        offset_tag = UnitUtils.ConvertToInternalUnits(-55 - 1.25*scale, UnitTypeId.Centimeters) - L_barra/2 + L2
             else:
                 if Lext_izq == True:
-                    offset_mra = UnitUtils.ConvertToInternalUnits(-85, UnitTypeId.Centimeters) + Lext/2
-                    offset_tag = UnitUtils.ConvertToInternalUnits(10, UnitTypeId.Centimeters) - L_barra/2 + L2 + Lext/2
+                    offset_mra = UnitUtils.ConvertToInternalUnits(-1.35*scale, UnitTypeId.Centimeters) + Lext/2
+                    offset_tag = UnitUtils.ConvertToInternalUnits(0.15*scale, UnitTypeId.Centimeters) - L_barra/2 + L2 + Lext/2
                 else:
-                    offset_mra = UnitUtils.ConvertToInternalUnits(-85, UnitTypeId.Centimeters) - Lext/2
-                    offset_tag = UnitUtils.ConvertToInternalUnits(10, UnitTypeId.Centimeters) - L_barra/2 + L1 + Lext/2
+                    offset_mra = UnitUtils.ConvertToInternalUnits(-1.35*scale, UnitTypeId.Centimeters) - Lext/2
+                    offset_tag = UnitUtils.ConvertToInternalUnits(0.15*scale, UnitTypeId.Centimeters) - L_barra/2 + L1 + Lext/2
 
     # Multi-Rebar Annotation
             nombre_tipo = "Recorrido Barras"
@@ -608,4 +609,4 @@ while True:
 # Variables a guardar cuando se produce el break debido al cambio de rutina
 nueva_rutina_idx = estado.rutina_idx
 form_top = estado.form_top
-form_left = estado.form_left 
+form_left = estado.form_left

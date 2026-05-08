@@ -328,7 +328,11 @@ while True:
             rec_top = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_TOP).AsElementId()).CoverDistance
             rec_bottom = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_BOTTOM).AsElementId()).CoverDistance
             rec_other = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_OTHER).AsElementId()).CoverDistance
-            e = slab.get_Parameter(DB.BuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM).AsDouble()
+            if isinstance(slab, DB.Floor):
+                espesor = slab.get_Parameter(DB.BuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM).AsDouble() # Losa y Losa de fundación
+            else:
+                bbox = slab.get_BoundingBox(None)
+                espesor = bbox.Max.Z - bbox.Min.Z # Fundación aislada y corrida
         except Exception:
             t_group.RollBack()
             forms.alert("La losa detectada no tiene parámetros de recubrimiento estructural válidos.", title="Error de Parámetro")
@@ -346,40 +350,41 @@ while True:
             forms.alert("Los vanos deben ser perpendiculares entre sí. Selecciona los vanos nuevamente.", title="Vanos no perpendiculares")
             continue
 
-        # Definir posición de mallas
-        rebar_fi_vano1 = rebar_types[estado.sel_index].get_Parameter(DB.BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble()
-        rebar_fi_vano2 = rebar_types[estado.sel_index2].get_Parameter(DB.BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble()
-        L_vano1 = (p2_vano1 - p1_vano1).GetLength()
-        L_vano2 = (p2_vano2 - p1_vano2).GetLength()
-        if L_vano1 < L_vano2: 
-            rec_vano1 = rec_top + rebar_fi_vano1 / 2
-            rec_vano2 = rec_top + rebar_fi_vano1 + rebar_fi_vano2 / 2
-            t1_diff_vano1 = 0
-            t1_diff_vano2 = rebar_fi_vano1
-            ubic_vano1 = "F's"
-            ubic_vano2 = "F'i"
-        else: 
-            rec_vano1 = rec_top + rebar_fi_vano2 + rebar_fi_vano1/ 2
-            rec_vano2 = rec_top + rebar_fi_vano2 / 2
-            t1_diff_vano1 = rebar_fi_vano2
-            t1_diff_vano2 = 0
-            ubic_vano1 = "F'i"
-            ubic_vano2 = "F's"
+        # Se realiza un bucle para el vano 1 y 2
+        for vano in ["vano 1", "vano2"]:
+            if vano == "vano 1":
+                p1_vano = p1_vano1
+                p2_vano = p2_vano1
+                p1 = p1_vano2
+                p2 = p2_vano2
+                rebar_selected = rebar_types[estado.sel_index]
+                rebar_fi = rebar_selected.get_Parameter(DB.BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble()
+                rebar_fi_opos = rebar_types[estado.sel_index2].get_Parameter(DB.BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble()
+                esp = UnitUtils.ConvertToInternalUnits(float(estado.esp_text), UnitTypeId.Millimeters)
+                L_vano = (p2_vano1 - p1_vano1).GetLength()
+                L_vano_opos = (p2_vano2 - p1_vano2).GetLength()
+            else:
+                p1_vano = p1_vano2
+                p2_vano = p2_vano2
+                p1 = p1_vano1
+                p2 = p2_vano1
+                rebar_selected = rebar_types[estado.sel_index2]
+                rebar_fi = rebar_selected.get_Parameter(DB.BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble()
+                rebar_fi_opos = rebar_types[estado.sel_index].get_Parameter(DB.BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble()
+                esp = UnitUtils.ConvertToInternalUnits(float(estado.esp_text2), UnitTypeId.Millimeters)
+                L_vano = (p2_vano2 - p1_vano2).GetLength()
+                L_vano_opos = (p2_vano1 - p1_vano1).GetLength()
+            
+            # Definir posición de mallas
+            if L_vano < L_vano_opos or (L_vano == L_vano_opos and vano == "vano 1"): 
+                offset_rec = rec_top + rebar_fi / 2
+                t1_diff = 0
+                ubicacion = "F's"
+            else:
+                offset_rec = rec_top + rebar_fi_opos + rebar_fi/ 2
+                t1_diff = rebar_fi_opos
+                ubicacion = "F'i"
 
-        # Se realiza un bucle para el Rebar Set 1 y 2
-        sets_bar = [
-        {"vano": (p1_vano1, p2_vano1), "recorrido": (p1_vano2, p2_vano2), "rebar_selected": rebar_types[estado.sel_index], "rebar_opos": rebar_types[estado.sel_index2], "esp": UnitUtils.ConvertToInternalUnits(float(estado.esp_text), UnitTypeId.Millimeters), "rec": rec_vano1, "t1_diff": t1_diff_vano1, "ubicacion": ubic_vano1},
-        {"vano": (p1_vano2, p2_vano2), "recorrido": (p1_vano1, p2_vano1), "rebar_selected": rebar_types[estado.sel_index2], "rebar_opos": rebar_types[estado.sel_index], "esp": UnitUtils.ConvertToInternalUnits(float(estado.esp_text2), UnitTypeId.Millimeters), "rec": rec_vano2, "t1_diff": t1_diff_vano2, "ubicacion": ubic_vano2}]
-
-        for bar in sets_bar:
-            p1_vano, p2_vano = bar["vano"]
-            p1, p2 = bar["recorrido"]
-            rebar_selected = bar["rebar_selected"]
-            rebar_fi = rebar_selected.get_Parameter(DB.BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble()
-            rebar_fi_opos = bar["rebar_opos"].get_Parameter(DB.BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble()
-            esp = bar["esp"]
-            t1_diff = bar["t1_diff"]
-            offset_rec = bar["rec"]
             offset_lateral = rec_other + rebar_fi / 2
             origen_desplazado = plane_origin - plane_normal * offset_rec # Desplazamos el plano matemático hacia abajo para incluir el recubrimiento y diámetro
             
@@ -393,7 +398,7 @@ while True:
             p2_vano_z = get_z_on_plane(p2_vano.X, p2_vano.Y, origen_desplazado, plane_normal)
             p1_vano_3D = DB.XYZ(p1_vano.X, p1_vano.Y, p1_vano_z)
             p2_vano_3D = DB.XYZ(p2_vano.X, p2_vano.Y, p2_vano_z)
-            L = (p2_vano_3D - p1_vano_3D).GetLength() # Largo de la barra
+            L = (p2_vano_3D - p1_vano_3D).GetLength() # Largo del vano
             centro_vano_3D = (p1_vano_3D + p2_vano_3D) /2
             v_bar_3D = (p2_vano_3D - p1_vano_3D).Normalize() # Vector director de la barra (en la dirección longitudinal)
             v_recorrido_3D = plane_normal.CrossProduct(v_bar_3D).Normalize() # Vector director del recorrido en 3D. Es perpendicular al eje de la barra y paralelo a la pendiente de la losa
@@ -417,13 +422,13 @@ while True:
             
             # Largo vertical (t1) y horizontal (t2) del gancho, según ACI 318-19. (Las longitudes son de eje a eje)
             if UnitUtils.ConvertFromInternalUnits(rebar_fi, UnitTypeId.Millimeters) <= 25:
-                t1 = max(7*rebar_fi, e - rec_top - rec_bottom - rebar_fi - t1_diff)
+                t1 = max(7*rebar_fi, espesor - rec_top - rec_bottom - rebar_fi - t1_diff)
                 t2 = 3.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5, UnitTypeId.Centimeters))
             elif UnitUtils.ConvertFromInternalUnits(rebar_fi, UnitTypeId.Millimeters) <= 36:
-                t1 = max(9*rebar_fi, e - rec_top - rec_bottom - rebar_fi - t1_diff)
+                t1 = max(9*rebar_fi, espesor - rec_top - rec_bottom - rebar_fi - t1_diff)
                 t2 = 4.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5, UnitTypeId.Centimeters)) 
             else:
-                t1 = max(11*rebar_fi, e - rec_top - rec_bottom - rebar_fi - t1_diff)
+                t1 = max(11*rebar_fi, espesor - rec_top - rec_bottom - rebar_fi - t1_diff)
                 t2 = 5.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5), UnitTypeId.Centimeters) 
 
             pt1_1 = start - plane_normal * t1 # Tramo 1 del gancho 1
@@ -477,8 +482,13 @@ while True:
                     rebar.SetPresentationMode(uidoc.ActiveView, DB.Structure.RebarPresentationMode.All)
 
         # Offset para Multi-Rebar Annotation y Tag
-                offset_mra = UnitUtils.ConvertToInternalUnits(100, UnitTypeId.Centimeters) - L/2
-                offset_tag = UnitUtils.ConvertToInternalUnits(205, UnitTypeId.Centimeters) - L/2
+                scale = view.Scale
+                if vano == "vano 1":
+                    offset_mra = UnitUtils.ConvertToInternalUnits(-75, UnitTypeId.Centimeters) + L_barra/2
+                    offset_tag = UnitUtils.ConvertToInternalUnits(-1.5*scale, UnitTypeId.Centimeters)
+                else:
+                    offset_mra = UnitUtils.ConvertToInternalUnits(75, UnitTypeId.Centimeters) - L_barra/2
+                    offset_tag = UnitUtils.ConvertToInternalUnits(1.5*scale, UnitTypeId.Centimeters)
 
         # Multi-Rebar Annotation
                 nombre_tipo = "Recorrido Barras"
@@ -497,7 +507,7 @@ while True:
                         v_mra_2D = DB.XYZ(-v_bar_2D.Y, v_bar_2D.X, 0)
                         if v_mra_2D.DotProduct(v_recorrido_2D) < 0: # Nos aseguramos de que no apunte en dirección contraria al vector recorrido
                             v_mra_2D = -v_mra_2D
-
+                        
                         tipo_opts.DimensionLineDirection = v_mra_2D
                         tipo_opts.DimensionPlaneNormal = uidoc.ActiveView.ViewDirection
                         mid_point = DB.XYZ((x_min + x_max) / 2, (y_min + y_max) / 2, Z_elev)
@@ -540,7 +550,7 @@ while True:
             # Parámetros y Visibilidad
                 param = "Armadura_Ubicacion"
                 if rebar.LookupParameter(param) and not rebar.LookupParameter(param).IsReadOnly:
-                    rebar.LookupParameter(param).Set(bar["ubicacion"])
+                    rebar.LookupParameter(param).Set(ubicacion)
                 else:
                     forms.alert("No se encontró el parámetro de instancia '{}', o está bloqueado.".format(param), title="Error de parámetro")
 
@@ -568,4 +578,4 @@ while True:
 # Variables a guardar cuando se produce el break debido al cambio de rutina
 nueva_rutina_idx = estado.rutina_idx
 form_top = estado.form_top
-form_left = estado.form_left       
+form_left = estado.form_left
