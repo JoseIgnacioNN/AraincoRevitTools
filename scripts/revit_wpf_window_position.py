@@ -277,3 +277,49 @@ def position_wpf_window_center_on_active_view(win, uidoc, hwnd, width_dip, heigh
         win.Top = cy - fh * 0.5
     except Exception:
         pass
+
+
+def clamp_wpf_window_to_work_area(win, margin_dip=8.0):
+    """Evita ventanas fuera de pantalla (multi-monitor / DPI).
+
+    Llama después de tener tamaño válido (p. ej. ``UpdateLayout`` o ``Show``).
+    Silenciosa si hay error.
+    """
+    try:
+        from System.Windows import SystemParameters
+
+        wa = SystemParameters.WorkArea
+        try:
+            win.UpdateLayout()
+        except Exception:
+            pass
+        fw = float(win.ActualWidth)
+        fh = float(win.ActualHeight)
+        if fw <= 1.0 or fh <= 1.0 or fw != fw or fh != fh:
+            fw = float(win.Width)
+            fh = float(win.Height)
+        mg = float(margin_dip)
+        wa_left = float(wa.Left)
+        wa_top = float(wa.Top)
+        wa_w = float(wa.Width)
+        wa_h = float(wa.Height)
+        min_left = wa_left + mg
+        min_top = wa_top + mg
+        max_left = wa_left + wa_w - fw - mg
+        max_top = wa_top + wa_h - fh - mg
+        if max_left < min_left:
+            max_left = min_left
+        if max_top < min_top:
+            max_top = min_top
+        left = float(win.Left)
+        top = float(win.Top)
+        if left < min_left:
+            win.Left = min_left
+        elif left > max_left:
+            win.Left = max_left
+        if top < min_top:
+            win.Top = min_top
+        elif top > max_top:
+            win.Top = max_top
+    except Exception:
+        pass
