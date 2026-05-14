@@ -1,0 +1,188 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Formulario"
+        Height="380"
+        Width="340"
+        Background="#FFF2F2F2"
+        WindowStartupLocation="Manual"
+        ResizeMode="NoResize"
+        Topmost="True"
+        ShowInTaskbar="False">
+  <Grid Margin="10">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <TextBlock Grid.Row="0"
+               Text="Armadura Superior Losas"
+               HorizontalAlignment="Center"
+               Margin="0,0,0,10"
+               FontSize="20"
+               FontWeight="Bold"
+               Foreground="#FF55BFE6"/>
+
+    <!-- Vano 1 -->
+    <Border Grid.Row="1" BorderBrush="#FFB7B7B7" BorderThickness="1" Padding="10" Margin="0,0,0,5" Background="#FFFFFFFF">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Column="0" Grid.Row="0" Text="Vano 1" FontWeight="Bold" Foreground="#FF55BFE6" Margin="0,0,10,5"/>
+        <Button x:Name="btnVano1"
+                Grid.Column="0" Grid.Row="0" Grid.ColumnSpan="4"
+                Content="Seleccionar"
+                Width="110"
+                Height="26"
+                HorizontalAlignment="Center"
+                Margin="0,0,0,5"
+                Background="#FF55BFE6"
+                Foreground="White"
+                BorderBrush="#FF55BFE6"
+                BorderThickness="1"
+                FontWeight="Bold"
+                Click="Vano1Click"/>
+
+        <TextBlock Grid.Column="0" Grid.Row="1" Text="Largo:" VerticalAlignment="Center" Foreground="#FF4F4F4F" Margin="0,0,5,0"/>
+        <TextBox x:Name="txtLargo1"
+                 Grid.Column="1" Grid.Row="1"
+                 IsReadOnly="True"
+                 Background="#FFFFFFFF"
+                 Foreground="#FF4F4F4F"
+                 BorderBrush="#FF55BFE6"
+                 BorderThickness="1"
+                 Padding="6,2"
+                 Margin="0,0,10,0"
+                 HorizontalContentAlignment="Center"/>
+
+        <TextBlock Grid.Column="2" Grid.Row="1" Text="L1:" VerticalAlignment="Center" Foreground="#FF4F4F4F" Margin="0,0,5,0"/>
+        <TextBox x:Name="txtL1"
+                 Grid.Column="3" Grid.Row="1"
+                 IsReadOnly="False"
+                 Background="#FFFFFFFF"
+                 Foreground="#FF4F4F4F"
+                 BorderBrush="#FF55BFE6"
+                 BorderThickness="1"
+                 Padding="6,2"
+                 HorizontalContentAlignment="Center"/>
+      </Grid>
+    </Border>
+
+    <!-- Vano 2 -->
+    <Border Grid.Row="2" BorderBrush="#FFB7B7B7" BorderThickness="1" Padding="10" Margin="0,0,0,5" Background="#FFFFFFFF">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Column="0" Grid.Row="0" Text="Vano 2" FontWeight="Bold" Foreground="#FF55BFE6" Margin="0,0,10,5"/>
+        <Button x:Name="btnVano2"
+                Grid.Column="0" Grid.Row="0" Grid.ColumnSpan="4"
+                Content="Seleccionar"
+                Width="110"
+                Height="26"
+                HorizontalAlignment="Center"
+                Margin="0,0,0,5"
+                Background="#FF55BFE6"
+                Foreground="White"
+                BorderBrush="#FF55BFE6"
+                BorderThickness="1"
+                FontWeight="Bold"
+                Click="Vano2Click"/>
+
+        <TextBlock Grid.Column="0" Grid.Row="1" Text="Largo:" VerticalAlignment="Center" Foreground="#FF4F4F4F" Margin="0,0,5,0"/>
+        <TextBox x:Name="txtLargo2"
+                 Grid.Column="1" Grid.Row="1"
+                 IsReadOnly="True"
+                 Background="#FFFFFFFF"
+                 Foreground="#FF4F4F4F"
+                 BorderBrush="#FF55BFE6"
+                 BorderThickness="1"
+                 Padding="6,2"
+                 Margin="0,0,10,0"
+                 HorizontalContentAlignment="Center"/>
+
+        <TextBlock Grid.Column="2" Grid.Row="1" Text="L2:" VerticalAlignment="Center" Foreground="#FF4F4F4F" Margin="0,0,5,0"/>
+        <TextBox x:Name="txtL2"
+                 Grid.Column="3" Grid.Row="1"
+                 IsReadOnly="False"
+                 Background="#FFFFFFFF"
+                 Foreground="#FF4F4F4F"
+                 BorderBrush="#FF55BFE6"
+                 BorderThickness="1"
+                 Padding="6,2"
+                 HorizontalContentAlignment="Center"/>
+      </Grid>
+    </Border>
+
+    <!-- Diámetro de barra -->
+    <Border Grid.Row="3" BorderBrush="#FFB7B7B7" BorderThickness="1" Padding="10" Margin="0,0,0,5" Background="#FFFFFFFF">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Column="0" Grid.Row="0" Text="Diámetro de barra:" VerticalAlignment="Center" Foreground="#FF4F4F4F" Margin="0,0,5,5"/>
+        <ComboBox x:Name="cmbRebar"
+                  Grid.Column="1" Grid.Row="0"
+                  Background="#FFFFFFFF"
+                  Foreground="#FF4F4F4F"
+                  BorderBrush="#FF55BFE6"
+                  BorderThickness="1"
+                  Padding="6,2"
+                  HorizontalContentAlignment="Center"/>
+
+        <TextBlock Grid.Column="0" Grid.Row="1" Text="Espaciamiento [cm]:" VerticalAlignment="Center" Foreground="#FF4F4F4F" Margin="0,5,5,0"/>
+        <TextBox x:Name="txtEspaciamiento"
+                 Grid.Column="1" Grid.Row="1"
+                 Margin="0,5,0,0"
+                 Background="#FFFFFFFF"
+                 Foreground="#FF4F4F4F"
+                 BorderBrush="#FF55BFE6"
+                 BorderThickness="1"
+                 Padding="6,2"
+                 HorizontalContentAlignment="Center"/>
+      </Grid>
+    </Border>
+
+    <!-- Botón aplicar -->
+    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,15,0,0">
+      <Button x:Name="btnAplicar"
+              Content="Aplicar recorrido"
+              Width="180"
+              Height="36"
+              Background="#FF55BFE6"
+              Foreground="White"
+              BorderBrush="#FF55BFE6"
+              BorderThickness="1"
+              FontWeight="Bold"
+              Click="AplicarClick"/>
+    </StackPanel>
+  </Grid>
+</Window>
+
