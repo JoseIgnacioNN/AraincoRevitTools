@@ -420,6 +420,7 @@ while True:
         # Parámetros de la losa encontrada
         try:
             rec_top = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_TOP).AsElementId()).CoverDistance
+            rec_bottom = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_BOTTOM).AsElementId()).CoverDistance
             rec_other = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_OTHER).AsElementId()).CoverDistance
         except Exception:
             t_group.RollBack()

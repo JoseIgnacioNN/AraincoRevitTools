@@ -1,10 +1,6 @@
 # -*- coding: utf-8 -*-
-__title__ = 'Buscar en\nProyecto'
-__doc__ = 'Busca texto en Notas y Etiquetas en todo el proyecto. Muestra las vistas donde se encontró.'
-
 from pyrevit import revit, DB, forms
 from System.Collections.Generic import List
-
 doc = revit.doc
 uidoc = revit.uidoc
 
@@ -40,6 +36,17 @@ def obtener_texto_elemento(elemento):
             texto = " ".join([p for p in partes if p and isinstance(p, str)])
         except AttributeError:
             pass
+    elif isinstance(elemento, DB.Viewport):
+        view_id = elemento.ViewId
+        if view_id != DB.ElementId.InvalidElementId:
+            try:
+                view = doc.GetElement(view_id)
+                if view:
+                    param_titulo = view.get_Parameter(DB.BuiltInParameter.VIEW_DESCRIPTION)
+                    titulo_plano = param_titulo.AsString() if param_titulo else ""
+                    texto = titulo_plano if titulo_plano else view.Name
+            except:
+                pass
             
     return texto if texto else ""
 
@@ -55,13 +62,13 @@ class SearchForm(forms.WPFWindow):
         forms.WPFWindow.__init__(self, xaml_file_name)
         self.search_string = ""
         self.match_case = False
-        self.match_whole_word = False
+        self.exact_match = False
         self.SearchTextBox.Focus()
 
     def search_click(self, sender, args):
         self.search_string = self.SearchTextBox.Text
         self.match_case = self.MatchCaseCheckBox.IsChecked
-        self.match_whole_word = self.WholeWordCheckBox.IsChecked
+        self.exact_match = self.WholeWordCheckBox.IsChecked
         self.Close()
 
 def buscar_texto_global():
@@ -76,7 +83,7 @@ def buscar_texto_global():
     if not search_string or not search_string.strip(): return
     
     match_case = form.match_case
-    match_whole_word = form.match_whole_word
+    exact_match = form.exact_match
 
     # Preparar el texto de búsqueda
     busqueda_original = search_string.strip()
@@ -86,14 +93,15 @@ def buscar_texto_global():
         busqueda_procesada = busqueda_original
         
     patron_regex = ""
-    if match_whole_word:
-        patron_regex = r'(?:^|[^\w\-])' + re.escape(busqueda_procesada) + r'(?:[^\w\-]+|$)'
+    if exact_match:
+        patron_regex = r'(?:^|\s)' + re.escape(busqueda_procesada) + r'(?:\s|$)'
 
     # 2. Recopilar TODOS los textos, etiquetas y cotas del proyecto completo
     # Al no pasarle el ID de una vista al FilteredElementCollector, busca en todo el documento
     text_notes = DB.FilteredElementCollector(doc).OfClass(DB.TextNote).WhereElementIsNotElementType().ToElements()
     tags = DB.FilteredElementCollector(doc).OfClass(DB.IndependentTag).WhereElementIsNotElementType().ToElements()
     dimensions = DB.FilteredElementCollector(doc).OfClass(DB.Dimension).WhereElementIsNotElementType().ToElements()
+    viewports = DB.FilteredElementCollector(doc).OfClass(DB.Viewport).WhereElementIsNotElementType().ToElements()
     
     try:
         room_tags = DB.FilteredElementCollector(doc).OfClass(DB.Architecture.RoomTag).WhereElementIsNotElementType().ToElements()
@@ -101,10 +109,11 @@ def buscar_texto_global():
         room_tags = []
 
     import itertools
-    todos_los_elementos = itertools.chain(text_notes, tags, room_tags, dimensions)
+    todos_los_elementos = itertools.chain(text_notes, tags, room_tags, dimensions, viewports)
     
     # Diccionario para agrupar los resultados por el ID de la vista a la que pertenecen
     resultados_dict = {}
+    cache_vistas_visibles = {}
 
     # 3. Filtrar y agrupar por vista
     for elemento in todos_los_elementos:
@@ -115,7 +124,7 @@ def buscar_texto_global():
         objetivo = texto_elemento if match_case else quitar_tildes(texto_elemento.lower())
         
         coincide = False
-        if match_whole_word:
+        if exact_match:
             if re.search(patron_regex, objetivo, re.UNICODE):
                 coincide = True
         else:
@@ -126,6 +135,19 @@ def buscar_texto_global():
             # OwnerViewId nos dice en qué vista "vive" este elemento anotativo
             view_id = elemento.OwnerViewId
             if view_id != DB.ElementId.InvalidElementId:
+                # Comprobar si el elemento está realmente visible (no oculto por Crop View ni oculto manualmente)
+                if not isinstance(elemento, DB.Viewport):
+                    if view_id.IntegerValue not in cache_vistas_visibles:
+                        try:
+                            # Obtener todos los IDs de elementos que Revit renderiza/ve en esta vista específica
+                            visibles = DB.FilteredElementCollector(doc, view_id).ToElementIds()
+                            cache_vistas_visibles[view_id.IntegerValue] = set([e.IntegerValue for e in visibles])
+                        except:
+                            cache_vistas_visibles[view_id.IntegerValue] = set()
+                    
+                    if elemento.Id.IntegerValue not in cache_vistas_visibles[view_id.IntegerValue]:
+                        continue # El elemento fue recortado o está oculto en la vista
+                
                 if view_id not in resultados_dict:
                     resultados_dict[view_id] = []
                 resultados_dict[view_id].append(elemento.Id)
@@ -171,9 +193,10 @@ def buscar_texto_global():
             if not vista: continue  # Seguridad: omitir si la vista es nula o inválida
             
             cantidad = len(ids)
+            texto_coincidencia = "1 coincidencia" if cantidad == 1 else "{} coincidencias".format(cantidad)
             
             if isinstance(vista, DB.ViewSheet):
-                etiqueta_menu = "📝 LÁMINA: {} - {} ({} coincidencia/s)".format(vista.SheetNumber, vista.Name, cantidad)
+                etiqueta_menu = "📝 LÁMINA: {} - {} ({})".format(vista.SheetNumber, vista.Name, texto_coincidencia)
             else:
                 nombre_vista = vista.Name
                 param_titulo = vista.get_Parameter(DB.BuiltInParameter.VIEW_DESCRIPTION)
@@ -181,9 +204,9 @@ def buscar_texto_global():
                 
                 if titulo_plano:
                     # Mostrar solo el título en la lámina como pidió el usuario
-                    etiqueta_menu = "{} ({} coincidencia/s)".format(titulo_plano, cantidad)
+                    etiqueta_menu = "{} ({})".format(titulo_plano, texto_coincidencia)
                 else:
-                    etiqueta_menu = "{} ({} coincidencia/s)".format(nombre_vista, cantidad)
+                    etiqueta_menu = "{} ({})".format(nombre_vista, texto_coincidencia)
 
             opciones_dict[etiqueta_menu] = (vista, ids)
 

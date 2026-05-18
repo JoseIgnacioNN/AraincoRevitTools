@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 from Autodesk.Revit import DB
-from Autodesk.Revit import UI
 from Autodesk.Revit.DB import UnitUtils, UnitTypeId
 from Autodesk.Revit.Exceptions import OperationCanceledException
 from pyrevit import revit, forms
@@ -11,7 +10,7 @@ from System import EventHandler, Uri
 from System.Windows import SystemParameters
 from System.Collections.Generic import List
 from System.Windows.Media.Imaging import BitmapImage
-import math, os, ctypes
+import os, ctypes
 import clr # Permite comunicar Python con C#
 clr.AddReference("PresentationFramework")
 
@@ -124,9 +123,18 @@ def seleccionar_puntos(cant_lineas):
 # ===================================================================================
 class EstadoFormulario: # Almacenar valores del formulario
     def __init__(self):
+        self.rutina_idx = 2
         self.sel_index = -1
         self.esp_text = None
+        self.form_top = saved_form_top if 'saved_form_top' in globals() else None
+        self.form_left = saved_form_left if 'saved_form_left' in globals() else None
 estado = EstadoFormulario()
+
+class InfoWindow(forms.WPFWindow): # Ventana de información con Esquema Armadura de Losa
+    def __init__(self, xaml_file):
+        forms.WPFWindow.__init__(self, xaml_file)
+        ruta_img = os.path.join(os.path.dirname(__file__), "Esquema Losa.png")
+        self.imgEsquema.Source = BitmapImage(Uri(ruta_img))
 
 class Formulario(forms.WPFWindow):  # Funciones del formulario
 
@@ -134,8 +142,8 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
     def __init__(self, xaml_file, datos):
         forms.WPFWindow.__init__(self, xaml_file)
         self.action = None  # Se crea la variable self.action, indicando que aún no se ha seleccionado ningún botón
-        self.cmbRebar.ItemsSource = rebar_types_names # Crear ComboBox de lista desplegable con nombres de barra
-        self.cmbCambioRutina.SelectedIndex = 2 # Malla en 1 dirección
+        self.cmbCambioRutina.ItemsSource = ["Armadura sobre apoyo", "Armadura de borde", "Malla en 1 dirección", "Malla en 2 direcciones"]
+        self.cmbRebar.ItemsSource = rebar_types_names # Se muestran los nombres de barra en la lista desplegable
 
         # Ruta del logo
         ruta_logo = os.path.join(os.path.dirname(__file__), "logo.png")
@@ -143,10 +151,17 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
             self.imgLogo.Source = BitmapImage(Uri(ruta_logo))
 
         # Posición del formulario en pantalla
-        self.Left = 5 # Separación del borde izquierdo
-        self.Top = (SystemParameters.WorkArea.Height - self.Height) / 2
+        if datos.form_top is not None:
+            self.Top = datos.form_top
+        else:
+            self.Top = (SystemParameters.WorkArea.Height - self.Height) / 2 # Centrado verticalmente
+        if datos.form_left is not None:
+            self.Left = datos.form_left
+        else:
+            self.Left = 5 # Separación del borde izquierdo    
 
         # Restaurar valores seleccionados en el formulario, cada vez que se abra
+        self.cmbCambioRutina.SelectedIndex = 2
         if 0 <= datos.sel_index < len(rebar_types_names):
             self.cmbRebar.SelectedIndex = datos.sel_index
         if datos.esp_text:              
@@ -156,22 +171,25 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
     def guardar_estado(self):
         estado.sel_index = self.cmbRebar.SelectedIndex
         estado.esp_text = self.txtEspaciamiento.Text
+        estado.form_top = self.Top
+        estado.form_left = self.Left
+
+        # Rescatar el índice de la rutina
+        if self.cmbCambioRutina.IsLoaded: 
+            estado.rutina_idx = self.cmbCambioRutina.SelectedIndex
 
     # Función para cambiar de rutina
     def CmbCambioRutina_SelectionChanged(self, sender, args):
         if not self.cmbCambioRutina.IsLoaded: return
-        idx = self.cmbCambioRutina.SelectedIndex
-        import tempfile
-        import json
-        temp_file = os.path.join(tempfile.gettempdir(), 'arainco_rutina.json')
-        with open(temp_file, 'w') as f:
-            json.dump({"rutina_idx": idx}, f)
-
         self.action = "cambio_rutina"
         self.guardar_estado()
         self.Close()
 
     # Funciones al hacer clic en los botones
+    def InfoClick(self, sender, args):
+        win = InfoWindow(os.path.join(os.path.dirname(__file__), "Esquema Losa.xaml"))
+        win.ShowDialog()
+
     def AplicarClick(self, sender, args):
 
         # Validación diámetro barra
@@ -209,7 +227,7 @@ while True:
         break # Cerrar formulario si es que se apretó la X del formulario o la tecla ESC.
 
     if form.action == "cambio_rutina":
-        break # Rompe el bucle interno para que el orquestador cambie de rutina.
+        break # Rompe el bucle interno para que el script.py central cambie de rutina.
 
     if form.action == "aplicar":
         rebar_selected = rebar_types[estado.sel_index]
@@ -220,7 +238,7 @@ while True:
         except OperationCanceledException: continue
 
         # Transaction Group
-        t_group = DB.TransactionGroup(doc, u"ARAINCO - Armadura Inferior (Malla en 1 dirección)")
+        t_group = DB.TransactionGroup(doc, "ARAINCO - Armadura Inferior (Malla en 1 dirección)")
         t_group.Start()
 
 # ===================================================================================
@@ -298,19 +316,24 @@ while True:
         
         # Parámetros de la losa encontrada
         try:
-            rec_param = slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_BOTTOM)
-            rec = doc.GetElement(rec_param.AsElementId()).CoverDistance
-            e = slab.get_Parameter(DB.BuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM).AsDouble()
+            rec_top = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_TOP).AsElementId()).CoverDistance
+            rec_bottom = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_BOTTOM).AsElementId()).CoverDistance
+            rec_other = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_OTHER).AsElementId()).CoverDistance
+            if isinstance(slab, DB.Floor):
+                espesor = slab.get_Parameter(DB.BuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM).AsDouble() # Losa y Losa de fundación
+            else:
+                bbox = slab.get_BoundingBox(None)
+                espesor = bbox.Max.Z - bbox.Min.Z # Fundación aislada y corrida
         except Exception:
             t_group.RollBack()
             forms.alert("La losa detectada no tiene parámetros de recubrimiento estructural válidos.", title="Error de Parámetro")
             continue
-        
+
 # ===================================================================================
 # GEOMETRÍA DE LA BARRA
 # ===================================================================================
-        offset_lateral = rec + rebar_fi / 2
-        offset_rec = rec + rebar_fi / 2
+        offset_lateral = rec_other + rebar_fi / 2
+        offset_rec = rec_bottom + rebar_fi / 2
         origen_desplazado = plane_origin - plane_normal * offset_rec # Desplazamos el plano matemático hacia abajo para incluir el recubrimiento y diámetro
         
         # Evitar que el código colapse si el usuario dibuja una línea muy corta
@@ -324,7 +347,7 @@ while True:
         p2_vano_z = get_z_on_plane(p2_vano.X, p2_vano.Y, origen_desplazado, plane_normal)
         p1_vano_3D = DB.XYZ(p1_vano.X, p1_vano.Y, p1_vano_z)
         p2_vano_3D = DB.XYZ(p2_vano.X, p2_vano.Y, p2_vano_z)
-        L = (p2_vano_3D - p1_vano_3D).GetLength() # Largo de la barra
+        L = (p2_vano_3D - p1_vano_3D).GetLength() # Largo del vano
         centro_vano_3D = (p1_vano_3D + p2_vano_3D) /2
         v_bar_3D = (p2_vano_3D - p1_vano_3D).Normalize() # Vector director de la barra (en la dirección longitudinal)
         v_recorrido_3D = -plane_normal.CrossProduct(v_bar_3D).Normalize() # Vector director del recorrido en 3D. Es perpendicular al eje de la barra y paralelo a la pendiente de la losa
@@ -339,12 +362,12 @@ while True:
         p2_z = get_z_on_plane(p2.X, p2.Y, origen_desplazado, plane_normal)
         p1_3D = DB.XYZ(p1.X, p1.Y, p1_z)
         p2_3D = DB.XYZ(p2.X, p2.Y, p2_z)
-        p1_3D = p1_3D + v_recorrido_3D * offset_lateral
+        p1_3D = p1_3D + v_recorrido_3D * offset_lateral # Se aplica el offset lateral al recorrido
         p2_3D = p2_3D - v_recorrido_3D * offset_lateral
         desplazamiento = (p1_3D - centro_vano_3D).DotProduct(v_recorrido_3D)
         centro_barra = centro_vano_3D + v_recorrido_3D * desplazamiento
-        start = centro_barra + v_bar_3D * (L/2 - offset_lateral) # Extremo inicial de la barra
-        end = centro_barra - v_bar_3D * (L/2 - offset_lateral) # Extremo final de la barra
+        start = centro_barra + v_bar_3D * (7*L/20) # Extremo inicial de la barra
+        end = centro_barra - v_bar_3D * (7*L/20) # Extremo final de la barra
         curves = [DB.Line.CreateBound(start, end)]
         L_barra = (end - start).GetLength()
         L_recorrido = (p2_3D - p1_3D).DotProduct(v_recorrido_3D)
@@ -386,8 +409,9 @@ while True:
                 rebar.SetPresentationMode(uidoc.ActiveView, DB.Structure.RebarPresentationMode.All)
 
     # Offset para Multi-Rebar Annotation y Tag
-            offset_mra = min( UnitUtils.ConvertToInternalUnits(85, UnitTypeId.Centimeters), L_barra/2 - 0.49)
-            offset_tag = UnitUtils.ConvertToInternalUnits(-10, UnitTypeId.Centimeters)
+            scale = view.Scale
+            offset_mra = UnitUtils.ConvertToInternalUnits(-65, UnitTypeId.Centimeters) + L_barra/2
+            offset_tag = UnitUtils.ConvertToInternalUnits(-65 - 1.45*scale, UnitTypeId.Centimeters) + L_barra/2
 
     # Multi-Rebar Annotation
             nombre_tipo = "Recorrido Barras"
@@ -395,23 +419,26 @@ while True:
             tipo = next((t for t in tipos if DB.Element.Name.GetValue(t) == nombre_tipo), None) # Se encuentra la cota indicada
 
             if tipo:
-                tipo_opts = DB.MultiReferenceAnnotationOptions(tipo) # Se abre la configuración de Multi-Rebar Annotation
-                rebar_ids = List[DB.ElementId]()
-                rebar_ids.Add(rebar.Id)
-                tipo_opts.SetElementsToDimension(rebar_ids)
+                try:
+                    tipo_opts = DB.MultiReferenceAnnotationOptions(tipo) # Se abre la configuración de Multi-Rebar Annotation
+                    rebar_ids = List[DB.ElementId]()
+                    rebar_ids.Add(rebar.Id)
+                    tipo_opts.SetElementsToDimension(rebar_ids)
 
-                # El vector director de la cota debe ser 2D
-                v_bar_2D = DB.XYZ(v_bar_3D.X, v_bar_3D.Y, 0).Normalize()
-                v_mra_2D = DB.XYZ(-v_bar_2D.Y, v_bar_2D.X, 0)
-                if v_mra_2D.DotProduct(v_recorrido_2D) < 0: # Nos aseguramos de que no apunte al lado contrario
-                    v_mra_2D = -v_mra_2D
+                    # El vector director de la cota debe ser 2D
+                    v_bar_2D = DB.XYZ(v_bar_3D.X, v_bar_3D.Y, 0).Normalize()
+                    v_mra_2D = DB.XYZ(-v_bar_2D.Y, v_bar_2D.X, 0)
+                    if v_mra_2D.DotProduct(v_recorrido_2D) < 0: # Nos aseguramos de que no apunte en dirección contraria al vector recorrido
+                        v_mra_2D = -v_mra_2D
 
-                tipo_opts.DimensionLineDirection = v_mra_2D
-                tipo_opts.DimensionPlaneNormal = uidoc.ActiveView.ViewDirection
-                mid_point = (p1_vano + p2_vano) / 2 + v_bar_2D * offset_mra # Se centra la cota al punto medio del vano y luego se suma el offset
-                tipo_opts.DimensionLineOrigin = mid_point
-                tipo_opts.TagHeadPosition = mid_point
-                DB.MultiReferenceAnnotation.Create(doc, uidoc.ActiveView.Id, tipo_opts)
+                    tipo_opts.DimensionLineDirection = v_mra_2D
+                    tipo_opts.DimensionPlaneNormal = uidoc.ActiveView.ViewDirection
+                    mid_point = (p1_vano + p2_vano) / 2 + v_bar_2D * offset_mra # Se centra la cota al punto medio del vano y luego se suma el offset
+                    tipo_opts.DimensionLineOrigin = mid_point
+                    tipo_opts.TagHeadPosition = mid_point
+                    DB.MultiReferenceAnnotation.Create(doc, uidoc.ActiveView.Id, tipo_opts)
+                except Exception:
+                    forms.alert("Se creó la armadura, pero no fue posible agregar el Multi-Rebar Annotation dado que la losa tiene pendiente. Dibujar recorrido manualmente.", title="Error de Multi-Rebar Annotation") # Si los ganchos se crean desde la lista DB.Line.CreateBound() en lugar de la manera tradicional dentro de DB.Structure.Rebar.CreateFromCurves(), Revit no permite agregar la cota MRA en losas con pendiente
             else:
                 forms.alert("La armadura se creó, pero no se encontró el tipo de cota llamado '{}'.\n\nRevisa que esté cargado en el proyecto o que el nombre esté escrito exactamente igual.".format(nombre_tipo), title="Falta Tipo de Recorrido")
 
@@ -445,7 +472,7 @@ while True:
         # Parámetros y Visibilidad
             param = "Armadura_Ubicacion"
             if rebar.LookupParameter(param) and not rebar.LookupParameter(param).IsReadOnly:
-                rebar.LookupParameter(param).Set("F's")
+                rebar.LookupParameter(param).Set("Fi")
             else:
                 forms.alert("No se encontró el parámetro de instancia '{}', o está bloqueado.".format(param), title="Error de parámetro")
 
@@ -467,3 +494,7 @@ while True:
             forms.alert("Error al crear la barra: {}".format(e), title="Error de creación de barra")
             continue
         
+# Variables a guardar cuando se produce el break debido al cambio de rutina
+nueva_rutina_idx = estado.rutina_idx
+form_top = estado.form_top
+form_left = estado.form_left

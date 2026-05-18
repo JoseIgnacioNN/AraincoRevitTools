@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 from Autodesk.Revit import DB
-from Autodesk.Revit import UI
 from Autodesk.Revit.DB import UnitUtils, UnitTypeId
 from Autodesk.Revit.Exceptions import OperationCanceledException
 from pyrevit import revit, forms
@@ -11,7 +10,7 @@ from System import EventHandler, Uri
 from System.Windows import SystemParameters
 from System.Collections.Generic import List
 from System.Windows.Media.Imaging import BitmapImage
-import math, os, ctypes
+import os, ctypes
 import clr # Permite comunicar Python con C#
 clr.AddReference("PresentationFramework")
 
@@ -124,6 +123,7 @@ def seleccionar_puntos(cant_lineas):
 # ===================================================================================
 class EstadoFormulario: # Almacenar valores del formulario
     def __init__(self):
+        self.rutina_idx = 0
         self.largo1 = None
         self.largo2 = None
         self.L1 = None
@@ -132,7 +132,15 @@ class EstadoFormulario: # Almacenar valores del formulario
         self.Lext_izq = True
         self.sel_index = -1
         self.esp_text = None
+        self.form_top = saved_form_top if 'saved_form_top' in globals() else None
+        self.form_left = saved_form_left if 'saved_form_left' in globals() else None
 estado = EstadoFormulario()
+
+class InfoWindow(forms.WPFWindow): # Ventana de información con Esquema Armadura de Losa
+    def __init__(self, xaml_file):
+        forms.WPFWindow.__init__(self, xaml_file)
+        ruta_img = os.path.join(os.path.dirname(__file__), "Esquema Losa.png")
+        self.imgEsquema.Source = BitmapImage(Uri(ruta_img))
 
 class Formulario(forms.WPFWindow):  # Funciones del formulario
 
@@ -140,8 +148,8 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
     def __init__(self, xaml_file, datos):
         forms.WPFWindow.__init__(self, xaml_file)
         self.action = None  # Se crea la variable self.action, indicando que aún no se ha seleccionado ningún botón
-        self.cmbRebar.ItemsSource = rebar_types_names # Crear ComboBox de lista desplegable con nombres de barra
-        self.cmbCambioRutina.SelectedIndex = 0 # Armadura sobre apoyo
+        self.cmbCambioRutina.ItemsSource = ["Armadura sobre apoyo", "Armadura de borde", "Malla en 1 dirección", "Malla en 2 direcciones"]
+        self.cmbRebar.ItemsSource = rebar_types_names # Se muestran los nombres de barra en la lista desplegable
 
         # Ruta del logo
         ruta_logo = os.path.join(os.path.dirname(__file__), "logo.png")
@@ -149,10 +157,17 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
             self.imgLogo.Source = BitmapImage(Uri(ruta_logo))
 
         # Posición del formulario en pantalla
-        self.Left = 5 # Separación del borde izquierdo
-        self.Top = (SystemParameters.WorkArea.Height - self.Height) / 2
+        if datos.form_top is not None:
+            self.Top = datos.form_top
+        else:
+            self.Top = (SystemParameters.WorkArea.Height - self.Height) / 2 # Centrado verticalmente
+        if datos.form_left is not None:
+            self.Left = datos.form_left
+        else:
+            self.Left = 5 # Separación del borde izquierdo
 
         # Restaurar valores seleccionados en el formulario, cada vez que se abra
+        self.cmbCambioRutina.SelectedIndex = 0
         if datos.largo1 is not None: 
             self.txtLargo1.Text = "{:.0f}".format(datos.largo1)
         if datos.L1 is not None:     
@@ -176,6 +191,12 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
         estado.sel_index = self.cmbRebar.SelectedIndex
         estado.esp_text = self.txtEspaciamiento.Text
         estado.Lext_izq = self.chkIzq.IsChecked
+        estado.form_top = self.Top
+        estado.form_left = self.Left
+
+        # Rescatar el índice de la rutina
+        if self.cmbCambioRutina.IsLoaded: 
+            estado.rutina_idx = self.cmbCambioRutina.SelectedIndex
 
         # Rescatar L1 (si el usuario lo sobreescribió manualmente)
         if self.txtL1.Text:
@@ -195,18 +216,15 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
     # Función para cambiar de rutina
     def CmbCambioRutina_SelectionChanged(self, sender, args):
         if not self.cmbCambioRutina.IsLoaded: return
-        idx = self.cmbCambioRutina.SelectedIndex
-        import tempfile
-        import json
-        temp_file = os.path.join(tempfile.gettempdir(), 'arainco_rutina.json')
-        with open(temp_file, 'w') as f:
-            json.dump({"rutina_idx": idx}, f)
-
         self.action = "cambio_rutina"
         self.guardar_estado()
         self.Close()
 
     # Funciones al hacer clic en los botones
+    def InfoClick(self, sender, args):
+        win = InfoWindow(os.path.join(os.path.dirname(__file__), "Esquema Losa.xaml"))
+        win.ShowDialog()
+
     def Vano1Click(self, sender, args):
         self.action = "vano1" # Indica que se hizo clic en el botón "vano1"
         self.guardar_estado() # Se guardan datos antes de cerrar el formulario
@@ -289,26 +307,26 @@ while True:
         break # Cerrar formulario si es que se apretó la X del formulario o la tecla ESC.
 
     if form.action == "cambio_rutina":
-        break # Rompe el bucle interno para que el orquestador cambie de rutina.
+        break # Rompe el bucle interno para que el script.py central cambie de rutina.
 
     if form.action == "vano1":
         try: p1, p2 = seleccionar_puntos(1)
         except OperationCanceledException: continue
         estado.largo1 = UnitUtils.ConvertFromInternalUnits((p2 - p1).GetLength(), UnitTypeId.Millimeters)
-        estado.L1 = math.ceil(estado.largo1/3/10)*10 # Redondear al centímetro superior
+        estado.L1 = estado.largo1/3
         continue # Permite reiniciar el bucle While True, de modo que se vuelve a abrir el formulario
 
     if form.action == "vano2":
         try: p1, p2 = seleccionar_puntos(1)
         except OperationCanceledException: continue
         estado.largo2 = UnitUtils.ConvertFromInternalUnits((p2 - p1).GetLength(), UnitTypeId.Millimeters)
-        estado.L2 = math.ceil(estado.largo2/3/10)*10
+        estado.L2 = estado.largo2/3
         continue
 
     if form.action == "Lext":
         try: p1, p2 = seleccionar_puntos(1)
         except OperationCanceledException: continue
-        estado.Lext = round(UnitUtils.ConvertFromInternalUnits((p2 - p1).GetLength(), UnitTypeId.Millimeters)/10)*10
+        estado.Lext = UnitUtils.ConvertFromInternalUnits((p2 - p1).GetLength(), UnitTypeId.Millimeters)
         continue
 
     if form.action == "aplicar":
@@ -401,8 +419,9 @@ while True:
         
         # Parámetros de la losa encontrada
         try:
-            rec_param = slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_BOTTOM)
-            rec = doc.GetElement(rec_param.AsElementId()).CoverDistance
+            rec_top = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_TOP).AsElementId()).CoverDistance
+            rec_bottom = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_BOTTOM).AsElementId()).CoverDistance
+            rec_other = doc.GetElement(slab.get_Parameter(DB.BuiltInParameter.CLEAR_COVER_OTHER).AsElementId()).CoverDistance
         except Exception:
             t_group.RollBack()
             forms.alert("La losa detectada no tiene parámetros de recubrimiento estructural válidos.", title="Error de Parámetro")
@@ -411,8 +430,8 @@ while True:
 # ===================================================================================
 # GEOMETRÍA DE LA BARRA
 # ===================================================================================
-        offset_lateral = rec + rebar_fi / 2
-        offset_rec = rec + rebar_fi / 2
+        offset_lateral = rec_other + rebar_fi / 2
+        offset_rec = rec_bottom + rebar_fi / 2
         origen_desplazado = plane_origin - plane_normal * offset_rec # Desplazamos el plano matemático hacia abajo para incluir el recubrimiento y diámetro
         
         # Evitar que el código colapse si el usuario dibuja una línea muy corta
@@ -478,35 +497,36 @@ while True:
                 rebar.SetPresentationMode(uidoc.ActiveView, DB.Structure.RebarPresentationMode.All)
 
     # Offset para Multi-Rebar Annotation y Tag
+            scale = view.Scale
             if Lext == 0:
                 if L1 > L2:
                     offset_mra = UnitUtils.ConvertToInternalUnits(-65, UnitTypeId.Centimeters)
-                    offset_tag = UnitUtils.ConvertToInternalUnits(125, UnitTypeId.Centimeters) - L_barra/2 + L2
+                    offset_tag = UnitUtils.ConvertToInternalUnits(55 + 1.25*scale, UnitTypeId.Centimeters) - L_barra/2 + L2
                 else:
                     offset_mra = UnitUtils.ConvertToInternalUnits(65, UnitTypeId.Centimeters)
-                    offset_tag = UnitUtils.ConvertToInternalUnits(-125, UnitTypeId.Centimeters) - L_barra/2 + L2
-            elif Lext < UnitUtils.ConvertToInternalUnits(290, UnitTypeId.Centimeters):
+                    offset_tag = UnitUtils.ConvertToInternalUnits(-55 - 1.25*scale, UnitTypeId.Centimeters) - L_barra/2 + L2
+            elif Lext < UnitUtils.ConvertToInternalUnits(80 + 3.2*scale, UnitTypeId.Centimeters):
                 if L1 > L2:
                     if Lext_izq == True:
                         offset_mra = UnitUtils.ConvertToInternalUnits(-65, UnitTypeId.Centimeters) + Lext
-                        offset_tag = UnitUtils.ConvertToInternalUnits(125, UnitTypeId.Centimeters) + L_barra/2 - L1
+                        offset_tag = UnitUtils.ConvertToInternalUnits(55 + 1.25*scale, UnitTypeId.Centimeters) + L_barra/2 - L1
                     else:
                         offset_mra = UnitUtils.ConvertToInternalUnits(-65, UnitTypeId.Centimeters)
-                        offset_tag = UnitUtils.ConvertToInternalUnits(125, UnitTypeId.Centimeters) + L_barra/2 - L1
+                        offset_tag = UnitUtils.ConvertToInternalUnits(55 + 1.25*scale, UnitTypeId.Centimeters) + L_barra/2 - L1
                 else:
                     if Lext_izq == True:
                         offset_mra = UnitUtils.ConvertToInternalUnits(65, UnitTypeId.Centimeters)
-                        offset_tag = UnitUtils.ConvertToInternalUnits(-125, UnitTypeId.Centimeters) - L_barra/2 + L2
+                        offset_tag = UnitUtils.ConvertToInternalUnits(-55 - 1.25*scale, UnitTypeId.Centimeters) - L_barra/2 + L2
                     else:
                         offset_mra = UnitUtils.ConvertToInternalUnits(65, UnitTypeId.Centimeters) - Lext
-                        offset_tag = UnitUtils.ConvertToInternalUnits(-125, UnitTypeId.Centimeters) - L_barra/2 + L2
+                        offset_tag = UnitUtils.ConvertToInternalUnits(-55 - 1.25*scale, UnitTypeId.Centimeters) - L_barra/2 + L2
             else:
                 if Lext_izq == True:
-                    offset_mra = UnitUtils.ConvertToInternalUnits(-85, UnitTypeId.Centimeters) + Lext/2
-                    offset_tag = UnitUtils.ConvertToInternalUnits(10, UnitTypeId.Centimeters) - L_barra/2 + L2 + Lext/2
+                    offset_mra = UnitUtils.ConvertToInternalUnits(-1.35*scale, UnitTypeId.Centimeters) + Lext/2
+                    offset_tag = UnitUtils.ConvertToInternalUnits(0.15*scale, UnitTypeId.Centimeters) - L_barra/2 + L2 + Lext/2
                 else:
-                    offset_mra = UnitUtils.ConvertToInternalUnits(-85, UnitTypeId.Centimeters) - Lext/2
-                    offset_tag = UnitUtils.ConvertToInternalUnits(10, UnitTypeId.Centimeters) - L_barra/2 + L1 + Lext/2
+                    offset_mra = UnitUtils.ConvertToInternalUnits(-1.35*scale, UnitTypeId.Centimeters) - Lext/2
+                    offset_tag = UnitUtils.ConvertToInternalUnits(0.15*scale, UnitTypeId.Centimeters) - L_barra/2 + L1 + Lext/2
 
     # Multi-Rebar Annotation
             nombre_tipo = "Recorrido Barras"
@@ -523,7 +543,7 @@ while True:
                 v_recorrido_2D = DB.XYZ(v_recorrido_3D.X, v_recorrido_3D.Y, 0).Normalize()
                 v_bar_2D = DB.XYZ(v_bar_3D.X, v_bar_3D.Y, 0).Normalize()
                 v_mra_2D = DB.XYZ(-v_bar_2D.Y, v_bar_2D.X, 0)
-                if v_mra_2D.DotProduct(v_recorrido_2D) < 0: # Nos aseguramos de que no apunte al lado contrario
+                if v_mra_2D.DotProduct(v_recorrido_2D) < 0: # Nos aseguramos de que no apunte en dirección contraria al vector recorrido
                     v_mra_2D = -v_mra_2D
 
                 tipo_opts.DimensionLineDirection = v_mra_2D
@@ -565,7 +585,7 @@ while True:
         # Parámetros y Visibilidad
             param = "Armadura_Ubicacion"
             if rebar.LookupParameter(param) and not rebar.LookupParameter(param).IsReadOnly:
-                rebar.LookupParameter(param).Set("F's")
+                rebar.LookupParameter(param).Set("Fi")
             else:
                 forms.alert("No se encontró el parámetro de instancia '{}', o está bloqueado.".format(param), title="Error de parámetro")
 
@@ -586,4 +606,8 @@ while True:
             if t_group.HasStarted(): t_group.RollBack()
             forms.alert("Error al crear la barra: {}".format(e), title="Error de creación de barra")
             continue
-        
+
+# Variables a guardar cuando se produce el break debido al cambio de rutina
+nueva_rutina_idx = estado.rutina_idx
+form_top = estado.form_top
+form_left = estado.form_left

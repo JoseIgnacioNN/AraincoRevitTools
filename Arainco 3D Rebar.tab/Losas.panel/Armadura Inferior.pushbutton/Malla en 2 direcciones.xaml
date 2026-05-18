@@ -1,7 +1,7 @@
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Formulario"
-        Height="535"
+        Height="555"
         Width="340"
         Background="#FFF7F7F7"
         FontFamily="Segoe UI"
@@ -21,7 +21,7 @@
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
-    <StackPanel Grid.Row="0" Orientation="Vertical" HorizontalAlignment="Center" Margin="0,2,0,12">
+    <StackPanel Grid.Row="0" Orientation="Vertical" HorizontalAlignment="Stretch" Margin="0,2,0,6">
       <Image x:Name="imgLogo"
              Width="260"
              Height="70"
@@ -38,19 +38,46 @@
         <LineBreak/>
         <Run Text="Losas y Fundaciones"/>
       </TextBlock>
-      <ComboBox x:Name="cmbCambioRutina" SelectionChanged="CmbCambioRutina_SelectionChanged" Margin="0,15,0,0" Width="260" HorizontalAlignment="Center" Height="28" Padding="6,2" VerticalContentAlignment="Center" Background="#FFFFFFFF" Foreground="#FF4F4F4F" BorderBrush="#FF1F93C9" BorderThickness="1">
-        <ComboBoxItem Content="Armadura sobre apoyo"/>
-        <ComboBoxItem Content="Armadura de borde"/>
-        <ComboBoxItem Content="Malla en 1 dirección"/>
-        <ComboBoxItem Content="Malla en 2 direcciones"/>
-      </ComboBox>
+      
+      <!-- Rutina de armado -->
+      <Border BorderBrush="#FFD0D0D0" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,10,0,0" Background="#FFFFFFFF">
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+
+          <TextBlock Grid.Row="0" Text="Rutina de armado" FontWeight="Bold" Foreground="#FF1F93C9" Margin="0,-1,0,6" FontSize="14"/>
+          <ComboBox x:Name="cmbCambioRutina" Grid.Row="1" SelectionChanged="CmbCambioRutina_SelectionChanged" Height="28" Padding="6,2" VerticalContentAlignment="Center" Background="#FFFFFFFF" Foreground="#FF4F4F4F" BorderBrush="#FFD0D0D0" BorderThickness="1"/>
+        </Grid>
+      </Border>
     </StackPanel>
 
+    <!-- Botón de Información -->
+    <Button x:Name="btnInfo"
+            Grid.Row="0"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Width="26" Height="26"
+            Margin="0,4,4,0"
+            Click="InfoClick"
+            Cursor="Hand"
+            ToolTip="Ver esquema de losa">
+        <Button.Template>
+            <ControlTemplate TargetType="Button">
+                <Grid Background="Transparent">
+                    <Ellipse Stroke="#FF1F93C9" StrokeThickness="2" Fill="White"/>
+                    <TextBlock Text="i" Foreground="#FF1F93C9" FontWeight="Bold" FontStyle="Italic" FontSize="18" FontFamily="Times New Roman" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Grid>
+            </ControlTemplate>
+        </Button.Template>
+    </Button>
 
-    <!-- Vano 1 -->
+
+    <!-- Cuantía 1 -->
     <Border Grid.Row="2" BorderBrush="#FFD0D0D0" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,6" Background="#FFFFFFFF">
       <StackPanel>
-        <TextBlock Text="Vano 1" FontSize="14" FontWeight="Bold" Foreground="#FF1F93C9" Margin="0,0,0,8"/>
+        <TextBlock Text="Cuantía 1" FontSize="14" FontWeight="Bold" Foreground="#FF1F93C9" Margin="0,-2,0,8"/>
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto"/>
@@ -61,7 +88,7 @@
             <RowDefinition Height="Auto"/>
           </Grid.RowDefinitions>
 
-          <TextBlock Grid.Column="0" Grid.Row="0" Text="Diámetro de barra:" VerticalAlignment="Center" Foreground="#FF4F4F4F" Margin="0,0,5,6" FontSize="13"/>
+          <TextBlock Grid.Column="0" Grid.Row="0" Text="Diámetro de barra:" VerticalAlignment="Center" Foreground="#FF4F4F4F" Margin="0,-1,5,0" FontSize="13"/>
           <ComboBox x:Name="cmbRebar"
                     Grid.Column="1" Grid.Row="0"
                     Background="#FFFFFFFF"
@@ -74,10 +101,10 @@
                     VerticalAlignment="Center"
                     MinHeight="28"/>
 
-          <TextBlock Grid.Column="0" Grid.Row="1" Text="Espaciamiento [mm]:" VerticalAlignment="Center" Foreground="#FF4F4F4F" Margin="0,6,5,0" FontSize="13"/>
+          <TextBlock Grid.Column="0" Grid.Row="1" Text="Espaciamiento [mm]:" VerticalAlignment="Center" Foreground="#FF4F4F4F" Margin="0,5,5,0" FontSize="13"/>
           <TextBox x:Name="txtEspaciamiento"
                    Grid.Column="1" Grid.Row="1"
-                   Margin="0,5,0,0"
+                   Margin="0,6,0,0"
                    Background="#FFFFFFFF"
                    Foreground="#FF4F4F4F"
                    BorderBrush="#FF1F93C9"
@@ -91,10 +118,10 @@
       </StackPanel>
     </Border>
 
-    <!-- Vano 2 -->
+    <!-- Cuantía 2 -->
     <Border Grid.Row="3" BorderBrush="#FFD0D0D0" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,6" Background="#FFFFFFFF">
       <StackPanel>
-        <TextBlock Text="Vano 2" FontSize="14" FontWeight="Bold" Foreground="#FF1F93C9" Margin="0,0,0,8"/>
+        <TextBlock Text="Cuantía 2" FontSize="14" FontWeight="Bold" Foreground="#FF1F93C9" Margin="0,-2,0,8"/>
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto"/>
@@ -105,7 +132,7 @@
             <RowDefinition Height="Auto"/>
           </Grid.RowDefinitions>
 
-          <TextBlock Grid.Column="0" Grid.Row="0" Text="Diámetro de barra:" VerticalAlignment="Center" Foreground="#FF4F4F4F" Margin="0,0,5,6" FontSize="13"/>
+          <TextBlock Grid.Column="0" Grid.Row="0" Text="Diámetro de barra:" VerticalAlignment="Center" Foreground="#FF4F4F4F" Margin="0,3,5,6" FontSize="13"/>
           <ComboBox x:Name="cmbRebar2"
                     Grid.Column="1" Grid.Row="0"
                     Background="#FFFFFFFF"
@@ -118,10 +145,10 @@
                     VerticalAlignment="Center"
                     MinHeight="28"/>
 
-          <TextBlock Grid.Column="0" Grid.Row="1" Text="Espaciamiento [mm]:" VerticalAlignment="Center" Foreground="#FF4F4F4F" Margin="0,6,5,0" FontSize="13"/>
+          <TextBlock Grid.Column="0" Grid.Row="1" Text="Espaciamiento [mm]:" VerticalAlignment="Center" Foreground="#FF4F4F4F" Margin="0,5,5,0" FontSize="13"/>
           <TextBox x:Name="txtEspaciamiento2"
                    Grid.Column="1" Grid.Row="1"
-                   Margin="0,5,0,0"
+                   Margin="0,6,0,0"
                    Background="#FFFFFFFF"
                    Foreground="#FF4F4F4F"
                    BorderBrush="#FF1F93C9"
@@ -136,7 +163,7 @@
     </Border>
 
     <!-- Botón aplicar -->
-    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,15,0,0">
+    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,7,0,0">
       <Button x:Name="btnAplicar"
               Content="Aplicar vano 1 y vano 2"
               Width="180"
