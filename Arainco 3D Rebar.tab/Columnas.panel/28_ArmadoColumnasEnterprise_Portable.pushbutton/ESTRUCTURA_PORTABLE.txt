@@ -1,0 +1,62 @@
+28_ArmadoColumnasEnterprise_Portable.pushbutton
+├── bundle.yaml          Metadatos del botón (pyRevit)
+├── script.py            Arranque: resuelve sys.path y llama runner.run_pyrevit
+├── ESTRUCTURA_PORTABLE.txt  Este archivo (árbol + políticas)
+└── scripts/             Librerías empaquetadas (misma disposición que BIMTools.extension/scripts)
+    ├── bimtools_paths.py
+    ├── bimtools_rebar_3d_visibility.py   (uso desde column_reinforcement_layout_rps)
+    ├── bimtools_rebar_hook_lengths.py
+    ├── column_stirrup_creator.py         (copia: estribos/trabas; importado por legado/UI)
+    ├── bimtools_wpf_dark_theme.py        (copia: estilos WPF; opcional si falla el import)
+    ├── revit_wpf_window_position.py      (copia: posición ventanas WPF respecto a Revit)
+    ├── column_reinforcement_layout_rps.py (motor legacy RPS; run_pyrevit → delega en runner)
+    └── column_reinforcement/
+        ├── ARCHITECTURE.py    Capas del paquete (referencia)
+        ├── DEPENDENCIES.md    Grafo de imports y módulos huérfanos/stubs
+        ├── runner.py          Punto oficial pyRevit: reload legado + inyección + main
+        ├── models/, geometry/, services/, revit/, ui/, viewmodels/, tests/
+
+Copia solo esta carpilla .pushbutton a la pestaña deseada de otra extensión.
+Icono opcional: icon.png dentro de esta misma carpilla (pyRevit).
+
+-----------------------------------------------------------------------------
+Relación con BIMTools.extension/scripts (fuente canónica de librerías)
+-----------------------------------------------------------------------------
+
+Política elegida: la raíz ``BIMTools.extension/scripts/`` es CANÓNICA para el
+código compartido (``column_reinforcement/``, ``column_reinforcement_layout_rps.py``,
+``bimtools_*.py``, ``column_stirrup_creator.py``, ``revit_wpf_window_position.py``, etc.).
+
+El motor legado antepone rutas a ``sys.path`` de forma que **el directorio de este
+``scripts/`` (junto al ``.py`` del legado) tiene prioridad** sobre la heurística
+``~/CustomRevitExtensions/.../BIMTools.extension/scripts``, para que al copiar solo
+esta carpilla se importen las copias empaquetadas.
+
+Esta carpilla portable debe actualizarse copiando o sincronizando desde esa raíz cuando
+se publique o comparta el botón suelto. Tras reorganización o cambios en ``scripts/``,
+regenerar el portable evita divergencias silenciosas.
+
+Si solo editas el portable por necesidad puntual, replica manualmente los mismos cambios
+en ``BIMTools.extension/scripts/`` en la siguiente integración, para no abandonar la
+fuente canónica.
+
+-----------------------------------------------------------------------------
+Verificación de paridad (antes / después de reorganizar o sincronizar)
+-----------------------------------------------------------------------------
+
+Objetivo: el comportamiento observable en Revit debe coincidir con la línea base.
+
+Checklist mínima (ajusta modelos y pasos a tu plantilla interna):
+
+  [ ] Misma versión de Revit que la línea base (ej. 2024–2026 según bundle.yaml).
+  [ ] Mismo archivo .rvt de prueba (plantilla, unidades, plantillas de vista).
+  [ ] Misma selección previa (misma categoría/cantidad de pilares; mismas refs. de troceo si aplica).
+  [ ] Recorrer el mismo flujo de UI (formularios WinForms/WPF según el flujo que uses).
+  [ ] Tras ejecutar: comparar conteo de Structural Rebar creados (o IDs si se documentan).
+  [ ] Transacción: nombres en deshacer siguen el prefijo Arainco: (sin cambios de cadenas).
+  [ ] Si se usa visibilidad 3D desoculta armadura: mismo número de vistas 3D afectadas o mismo resultado visual.
+
+Documenta brevemente modelo + pasos en nota de release si entregas el .pushbutton a otro equipo.
+
+Documentación técnica en el paquete: scripts/column_reinforcement/ARCHITECTURE.py,
+scripts/column_reinforcement/DEPENDENCIES.md.
