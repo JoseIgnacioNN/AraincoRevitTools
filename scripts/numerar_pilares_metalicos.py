@@ -124,7 +124,7 @@ def run(revit):
     uidoc = revit.ActiveUIDocument
     if uidoc is None:
         TaskDialog.Show(
-            u"BIMTools — Numerar pilares metálicos",
+            u"Arainco: Numerar pilares metálicos",
             u"No hay documento activo.",
         )
         return
@@ -142,7 +142,7 @@ def run(revit):
 
     if not instancias:
         TaskDialog.Show(
-            u"BIMTools — Numerar pilares metálicos",
+            u"Arainco: Numerar pilares metálicos",
             u"No se encontraron pilares estructurales con material Acero (Steel) en el modelo.",
         )
         return
@@ -158,7 +158,7 @@ def run(revit):
 
     if not type_ids:
         TaskDialog.Show(
-            u"BIMTools — Numerar pilares metálicos",
+            u"Arainco: Numerar pilares metálicos",
             u"No se pudieron obtener tipos de familia de los pilares seleccionados.",
         )
         return
@@ -185,7 +185,7 @@ def run(revit):
     skip = 0
     errores = []
 
-    tx = Transaction(doc, u"BIMTools: Type Mark pilares acero")
+    tx = Transaction(doc, u"Arainco: Type Mark pilares acero")
     tx.Start()
     try:
         siguiente = max_num + 1
@@ -219,7 +219,7 @@ def run(revit):
     except Exception as ex:
         tx.RollBack()
         TaskDialog.Show(
-            u"BIMTools — Numerar pilares metálicos",
+            u"Arainco: Numerar pilares metálicos",
             u"Error en la transacción: {0}".format(ex),
         )
         return
@@ -246,4 +246,4 @@ def run(revit):
         if len(errores) > 8:
             msg += u"\n…"
 
-    TaskDialog.Show(u"BIMTools — Numerar pilares metálicos", msg)
+    TaskDialog.Show(u"Arainco: Numerar pilares metálicos", msg)

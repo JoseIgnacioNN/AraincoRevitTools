@@ -333,7 +333,7 @@ def _etiquetar_area_rein_en_planta_si_aplica(document, uidocument, area_rein):
         document.Regenerate()
     except Exception:
         pass
-    t = Transaction(document, u"Etiquetar Area Reinforcement (vista planta)")
+    t = Transaction(document, u"Arainco: Etiquetar Area Reinforcement (vista planta)")
     try:
         t.Start()
         _crear_etiqueta_area_reinforcement(document, view, area_rein)
@@ -374,7 +374,7 @@ def run(document, uidocument):
                         print("Error: No hay AreaReinforcementType o RebarBarType en el proyecto.")
                     else:
                         curve_list = List[Curve](curves)
-                        trans = Transaction(doc, "Crear AreaReinforcement (7 params)")
+                        trans = Transaction(doc, "Arainco: Crear AreaReinforcement (7 params)")
                         trans.Start()
                         try:
                             if not hook_type_id or hook_type_id == ElementId.InvalidElementId:
@@ -403,7 +403,7 @@ def run(document, uidocument):
                         print("Error: No hay AreaReinforcementType o RebarBarType en el proyecto.")
                     else:
                         curve_list = List[Curve](curves)
-                        trans = Transaction(doc, "Crear AreaReinforcement (7 params)")
+                        trans = Transaction(doc, "Arainco: Crear AreaReinforcement (7 params)")
                         trans.Start()
                         try:
                             if not hook_type_id or hook_type_id == ElementId.InvalidElementId:

@@ -250,7 +250,7 @@ def _taskdialog_elementos_unidos_seleccion(doc, wall_ids):
         texto = texto[: max_len - 40] + "\n… (texto truncado)"
 
     try:
-        td = TaskDialog("BIMTools — Elementos unidos (Armado Muros Nodo)")
+        td = TaskDialog("Arainco: Elementos unidos (Armado Muros Nodo)")
         td.MainInstruction = (
             u"Por cada muro: (1) Unir geometría según API de Revit; (2) candidatos del boceto nudo (BIMTools)."
         )
@@ -262,7 +262,7 @@ def _taskdialog_elementos_unidos_seleccion(doc, wall_ids):
         try:
             forms.alert(
                 texto if texto else "(sin datos)",
-                title="BIMTools — Elementos unidos",
+                title="Arainco: Elementos unidos",
             )
         except Exception:
             pass

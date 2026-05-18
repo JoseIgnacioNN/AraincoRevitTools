@@ -482,7 +482,7 @@ def run(revit_app):
     # --- Transacción ----------------------------------------------------
     avisos = []
     n_ok = 0
-    t = Transaction(doc, u"BIMTools – Multi-Rebar Annotation")
+    t = Transaction(doc, u"Arainco: Multi-Rebar Annotation")
     try:
         t.Start()
         for rb in rebars:

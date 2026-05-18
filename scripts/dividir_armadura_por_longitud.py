@@ -305,7 +305,7 @@ def dividir_un_rebar(document, rebar, largo_segmento_mm, max_chunks=800):
     n_positions = _npos(rebar)
     created = 0
 
-    t = Transaction(document, u"Dividir armadura por longitud")
+    t = Transaction(document, u"Arainco: Dividir armadura por longitud")
     t.Start()
     try:
         for pi in range(n_positions):

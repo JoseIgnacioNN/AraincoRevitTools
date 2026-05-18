@@ -2427,7 +2427,7 @@ class PickWallFoundationHandler(IExternalEventHandler):
         uidoc = uiapp.ActiveUIDocument
         if uidoc is None:
             _task_dialog_show(
-                u"BIMTools — Wall Foundation Reinforcement",
+                u"Arainco: Wall Foundation Reinforcement",
                 u"No hay documento activo.",
                 win._win,
             )
@@ -3082,7 +3082,7 @@ class ColocarWallFoundationHandler(IExternalEventHandler):
         uidoc = uiapp.ActiveUIDocument
         if uidoc is None:
             _task_dialog_show(
-                u"BIMTools — Wall Foundation Reinforcement",
+                u"Arainco: Wall Foundation Reinforcement",
                 u"No hay documento activo.",
                 win._win,
             )
@@ -3091,7 +3091,7 @@ class ColocarWallFoundationHandler(IExternalEventHandler):
         wf_id = getattr(win, "_wf_id", None)
         if wf_id is None:
             _task_dialog_show(
-                u"BIMTools — Wall Foundation Reinforcement",
+                u"Arainco: Wall Foundation Reinforcement",
                 u"Seleccione una Wall Foundation.",
                 win._win,
             )
@@ -3099,7 +3099,7 @@ class ColocarWallFoundationHandler(IExternalEventHandler):
         wf = doc.GetElement(wf_id)
         if wf is None or not isinstance(wf, WallFoundation):
             _task_dialog_show(
-                u"BIMTools — Wall Foundation Reinforcement",
+                u"Arainco: Wall Foundation Reinforcement",
                 u"Elemento inválido o no es Wall Foundation.",
                 win._win,
             )
@@ -3115,14 +3115,14 @@ class ColocarWallFoundationHandler(IExternalEventHandler):
         )
         if do_t and bt_tr is None:
             _task_dialog_show(
-                u"BIMTools — Wall Foundation Reinforcement",
+                u"Arainco: Wall Foundation Reinforcement",
                 e1 or u"Tipo de barra transversal no válido.",
                 win._win,
             )
             return
         if do_l and bt_lo is None:
             _task_dialog_show(
-                u"BIMTools — Wall Foundation Reinforcement",
+                u"Arainco: Wall Foundation Reinforcement",
                 e2 or u"Tipo de barra longitudinal no válido.",
                 win._win,
             )
@@ -3142,7 +3142,7 @@ class ColocarWallFoundationHandler(IExternalEventHandler):
         L_hint_mm = _longitud_eje_hint_mm(wf)
         if L_hint_mm < 1.0:
             _task_dialog_show(
-                u"BIMTools — Wall Foundation Reinforcement",
+                u"Arainco: Wall Foundation Reinforcement",
                 u"No se pudo estimar la longitud de la zapata (geometría o caja).",
                 win._win,
             )
@@ -3159,7 +3159,7 @@ class ColocarWallFoundationHandler(IExternalEventHandler):
             )
             if max_pre <= lap_pre + 1.0:
                 _task_dialog_show(
-                    u"BIMTools — Wall Foundation Reinforcement",
+                    u"Arainco: Wall Foundation Reinforcement",
                     u"El largo máximo por tramo debe ser mayor que el empalme.",
                     win._win,
                 )
@@ -3169,7 +3169,7 @@ class ColocarWallFoundationHandler(IExternalEventHandler):
         active_view = uidoc.ActiveView
         n_t = n_l = 0
         linea_para_seccion = None
-        t = Transaction(doc, u"BIMTools — Wall Foundation Reinforcement")
+        t = Transaction(doc, u"Arainco: Wall Foundation Reinforcement")
         t.Start()
         try:
             _wf_unjoin_all(doc, wf, joined_ids, avisos)
@@ -3338,7 +3338,7 @@ class ColocarWallFoundationHandler(IExternalEventHandler):
         except Exception as ex:
             t.RollBack()
             _task_dialog_show(
-                u"BIMTools — Wall Foundation Reinforcement",
+                u"Arainco: Wall Foundation Reinforcement",
                 u"Error (se revirtió la transacción):\n{0}".format(ex),
                 win._win,
             )
@@ -3352,7 +3352,7 @@ class ColocarWallFoundationHandler(IExternalEventHandler):
         except Exception:
             pass
         if _crear_seccion_revision and (n_t > 0 or n_l > 0):
-            tsec = Transaction(doc, u"BIMTools — Sección revisión Wall Foundation")
+            tsec = Transaction(doc, u"Arainco: Sección revisión Wall Foundation")
             tsec.Start()
             try:
                 from vista_seccion_enfierrado_vigas import (
@@ -3428,7 +3428,7 @@ class ColocarWallFoundationHandler(IExternalEventHandler):
                 if len(txt) > 5000:
                     txt = txt[:4900] + u"\n…"
                 _task_dialog_show(
-                    u"BIMTools — Wall Foundation — Resultado",
+                    u"Arainco: Wall Foundation — Resultado",
                     txt,
                     win._win,
                 )
@@ -3875,7 +3875,7 @@ class WallFoundationReinforcementWindow(object):
         if err:
             try:
                 _task_dialog_show(
-                    u"BIMTools — Wall Foundation Reinforcement",
+                    u"Arainco: Wall Foundation Reinforcement",
                     err,
                     self._win,
                 )
@@ -3967,7 +3967,7 @@ def run_pyrevit(revit):
             existing = None
         if ok and existing is not None:
             _task_dialog_show(
-                u"BIMTools — Wall Foundation Reinforcement",
+                u"Arainco: Wall Foundation Reinforcement",
                 u"La herramienta ya está en ejecución.",
                 existing,
             )

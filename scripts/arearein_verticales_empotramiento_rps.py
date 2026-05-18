@@ -433,7 +433,7 @@ def _extender_rebar_por_eje_mm(
     o0 = _hook_orient_for_create(rebar, 0)
     o1 = _hook_orient_for_create(rebar, 1)
 
-    t = Transaction(doc, u"BIMTools: rebar eje + empotramiento (tabla diámetro)")
+    t = Transaction(doc, u"Arainco: rebar eje + empotramiento (tabla diámetro)")
     t.Start()
     try:
         new_rb = _create_from_curves_no_hooks(
@@ -575,7 +575,7 @@ def _run_area_to_rebar_empotramiento(doc, ar):
             [u"Import bimtools_rebar_hook_lengths: {0}".format(_EMBED_IMPORT_ERR)],
         )
 
-    t = Transaction(doc, u"BIMTools: quitar area reinforcement system (vert. emp.)")
+    t = Transaction(doc, u"Arainco: quitar area reinforcement system (vert. emp.)")
     t.Start()
     try:
         new_ids = AreaReinforcement.RemoveAreaReinforcementSystem(doc, ar)

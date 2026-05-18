@@ -510,7 +510,7 @@ def main():
         return
     ok_n = 0
     errs = []
-    t = Transaction(document, u"Quiebre leader etiqueta L")
+    t = Transaction(document, u"Arainco: Quiebre leader etiqueta L")
     t.Start()
     try:
         for tg in tags:

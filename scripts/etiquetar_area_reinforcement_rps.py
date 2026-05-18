@@ -246,7 +246,7 @@ def main():
         )
         return
 
-    trans = Transaction(document, u"Etiquetar Area Reinforcement")
+    trans = Transaction(document, u"Arainco: Etiquetar Area Reinforcement")
     trans.Start()
     try:
         creadas = []

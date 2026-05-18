@@ -3766,9 +3766,9 @@ def crear_detail_lines_largo_cara_superior_en_vista(
         t = Transaction(
             document,
             (
-                u"BIMTools — Cara inferior vigas (detalle)"
+                u"Arainco: Cara inferior vigas (detalle)"
                 if _es_inf
-                else u"BIMTools — Cara superior vigas (detalle)"
+                else u"Arainco: Cara superior vigas (detalle)"
             ),
         )
         t.Start()

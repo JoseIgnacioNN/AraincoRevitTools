@@ -371,7 +371,7 @@ def _run_internal(revit):
     view = _create_or_get_view(doc, VIEW_NAME)
 
     # Dibujo en una sola transacción.
-    t = Transaction(doc, u"Actualizar Leyenda de Rebar Shapes")
+    t = Transaction(doc, u"Arainco: Actualizar Leyenda de Rebar Shapes")
     t.Start()
     try:
         _clear_detail_curves_in_view(doc, view)

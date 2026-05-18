@@ -77,7 +77,7 @@ from revit_wpf_window_position import (
 XAML = u"""
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="BIMTools — Armadura en vigas"
+        Title="Arainco: Armadura en vigas"
         Height="900" Width="520" MinHeight="560" MinWidth="480"
         WindowStartupLocation="Manual"
         Background="#0A1C26"
@@ -2775,7 +2775,7 @@ class ColocarArmaduraVigasHandler(IExternalEventHandler):
         detalles = []
         t = Transaction(
             doc,
-            u"BIMTools — Armadura en vigas (capas y laterales)",
+            u"Arainco: Armadura en vigas (capas y laterales)",
         )
         t.Start()
         try:

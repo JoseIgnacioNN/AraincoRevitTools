@@ -543,7 +543,7 @@ def run(document, uidocument):
     total = 0
     errores = []
 
-    t = Transaction(docu, u"BIMTools RPS: estribos en vigas")
+    t = Transaction(docu, u"Arainco: estribos en vigas")
     t.Start()
     try:
         for eid in ids:

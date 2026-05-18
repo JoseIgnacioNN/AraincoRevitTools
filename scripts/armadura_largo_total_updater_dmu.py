@@ -33,7 +33,7 @@ from enfierrado_shaft_hashtag import _apply_armadura_largo_total_to_rebars
 
 UPDATER_GUID = Guid("7f2c9e1a-4d8b-4f6e-9c0a-1b3d5e7f9a2b")
 
-_TXN = u"BIMTools: Armadura_Largo Total (DMU)"
+_TXN = u"Arainco: Armadura_Largo Total (DMU)"
 
 _pending_rebar_by_doc = {}
 _largo_total_event = None
@@ -77,7 +77,7 @@ def _drain_pending():
 
 class _ArmaduraLargoTotalExternalHandler(IExternalEventHandler):
     def GetName(self):
-        return u"BIMTools — DMU Armadura_Largo Total (diferido)"
+        return u"Arainco: DMU Armadura_Largo Total (diferido)"
 
     def Execute(self, uiapp):
         pending = _drain_pending()
@@ -128,7 +128,7 @@ class ArmaduraLargoTotalUpdater(IUpdater):
         return self._updater_id
 
     def GetUpdaterName(self):
-        return u"BIMTools — Actualizar Armadura_Largo Total al cambiar Rebar"
+        return u"Arainco: Actualizar Armadura_Largo Total al cambiar Rebar"
 
     def GetAdditionalInformation(self):
         return (

@@ -829,7 +829,7 @@ def main(doc=None):
     # Ids de vistas creadas en esta ejecución (parámetros en subtransacciones posteriores)
     created_view_ids = []
 
-    txn_title = "Crear Vistas de Revisión"
+    txn_title = "Arainco: Crear vistas de revisión"
     param_catalog_shown = [False]
 
     try:

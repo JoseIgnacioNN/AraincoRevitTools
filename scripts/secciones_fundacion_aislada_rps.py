@@ -35,7 +35,7 @@ from __future__ import print_function
 MARGEN_MM = 1200.0       # margen alrededor del solido en la vista (mm)
 PROFUNDIDAD_MM = 800.0   # mitad del grosor del corte (mm)
 FAR_CLIP_MM = 200.0      # Far Clip Offset de cada vista (mm)
-NOMBRE_PREFIJO = u"BIMTools \u2014 Sec. Fund."  # prefijo de nombre de vista
+NOMBRE_PREFIJO = u"Arainco: Sec. Fund."  # prefijo de nombre de vista
 
 # ---------------------------------------------------------------------------
 # Imports Revit API
@@ -519,7 +519,7 @@ def _expandir_vista_planta(doc, vista_planta, vistas_seccion, extra_m):
         if not needs:
             return
 
-        tx2 = Transaction(doc, u"BIMTools \u2014 Expandir vista planta")
+        tx2 = Transaction(doc, u"Arainco: Expandir vista planta")
         tx2.Start()
         try:
             new_cb = BoundingBoxXYZ()
@@ -614,7 +614,7 @@ def main():
     # Guardar referencia a la vista de planta activa para expandirla despues
     vista_planta_activa = _uidoc.ActiveView
 
-    tx = Transaction(_doc, u"BIMTools \u2014 Secciones fundacion aislada")
+    tx = Transaction(_doc, u"Arainco: Secciones fundacion aislada")
     tx.Start()
     try:
         # Corte A-A: plano local YZ  (dir_corte = eje X local)

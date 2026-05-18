@@ -1648,7 +1648,7 @@ def extender_doble_pata_135_y_reemplazar(
     if new_chain is None:
         return False, err_chain or u"Cadena doble pata no construida.", None
 
-    t = Transaction(doc, u"BIMTools: Rebar doble pata L + ganchos 135°")
+    t = Transaction(doc, u"Arainco: Rebar doble pata L + ganchos 135°")
     out_eid = None
     try:
         _fho = t.GetFailureHandlingOptions()
@@ -1733,7 +1733,7 @@ def extender_doble_pata_135_y_reemplazar(
         t.RollBack()
         return False, u"{0!s}".format(ex), None
 
-    t2 = Transaction(doc, u"BIMTools: Rebar doble pata — eliminar malla original")
+    t2 = Transaction(doc, u"Arainco: Rebar doble pata — eliminar malla original")
     try:
         _fh2 = t2.GetFailureHandlingOptions()
         _fh2.SetFailuresPreprocessor(_BimToolsRebarTxnFailuresPreprocessor())
@@ -1885,7 +1885,7 @@ def extender_l_asignar_ganchos_135_y_reemplazar(
         leg = Line.CreateBound(p_end, p_tip)
         new_chain = chain + [leg]
 
-    t = Transaction(doc, u"BIMTools: Rebar L + ganchos 135° (nueva + layout + gancho)")
+    t = Transaction(doc, u"Arainco: Rebar L + ganchos 135° (nueva + layout + gancho)")
     out_eid = None
     try:
         _fho = t.GetFailureHandlingOptions()
@@ -2078,7 +2078,7 @@ def extender_l_asignar_ganchos_135_y_reemplazar(
         t.RollBack()
         return False, u"{0!s}".format(ex), None
 
-    t2 = Transaction(doc, u"BIMTools: Rebar L+135 — eliminar rebar (malla) original")
+    t2 = Transaction(doc, u"Arainco: Rebar L+135 — eliminar rebar (malla) original")
     try:
         _fh2 = t2.GetFailureHandlingOptions()
         _fh2.SetFailuresPreprocessor(_BimToolsRebarTxnFailuresPreprocessor())

@@ -714,7 +714,7 @@ def _crear_area_reinforcement_7params(document, floor_element, curvas_ordenadas)
     ))
     layout_dir = _direccion_desde_curvas(curvas_perimetro)
     curve_list = List[Curve](curvas_perimetro)
-    t = Transaction(document, "Area Reinforcement (7 params)")
+    t = Transaction(document, "Arainco: Area Reinforcement (7 params)")
     t.Start()
     try:
         ar = AreaReinforcement.Create(
@@ -785,7 +785,7 @@ def _crear_model_lines_shafts(document, uidoocument, shaft_elements, floor_eleme
     if not todas_las_curvas:
         return 0
     ids_creados = []
-    t = Transaction(document, "Losa + shafts (model lines)")
+    t = Transaction(document, "Arainco: Losa + shafts (model lines)")
     t.Start()
     try:
         sketch_plane = SketchPlane.Create(document, plano)

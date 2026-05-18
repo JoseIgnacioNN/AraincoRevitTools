@@ -732,7 +732,7 @@ def ejecutar_cotas(uidoc):
 
     creadas = 0
 
-    with Transaction(doc, u"BIMTools: Cotas zapata de muro en planta") as t:
+    with Transaction(doc, u"Arainco: Cotas zapata de muro en planta") as t:
         t.Start()
         for wf in wfs:
             tangent = _tangente_wall_foundation(wf, doc)

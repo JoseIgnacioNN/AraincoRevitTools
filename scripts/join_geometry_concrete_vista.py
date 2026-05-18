@@ -462,7 +462,7 @@ def _recoger_hormigon_en_vista(doc, view, pbar_cats=None):
             pass
         if pbar_cats is not None and n_cat > 0:
             _pbar_step(
-                pbar_cats, i, n_cat, u"BIMTools — 1/3 Leyendo (categorías)"
+                pbar_cats, i, n_cat, u"Arainco: 1/3 Leyendo (categorías)"
             )
     return out
 
@@ -488,7 +488,7 @@ def _pares_unicos_por_caja(doc, view, elements_concrete, pbar_cajas=None):
     for idx, e in enumerate(elements_concrete):
         if pbar_cajas is not None:
             _pbar_step(
-                pbar_cajas, idx, n_el, u"BIMTools — 2/3 Candidatos (cajas)"
+                pbar_cajas, idx, n_el, u"Arainco: 2/3 Candidatos (cajas)"
             )
         if e is None:
             continue
@@ -607,7 +607,7 @@ def run(revit):
     uidoc = revit.ActiveUIDocument
     if uidoc is None:
         TaskDialog.Show(
-            u"BIMTools — Unir geometría (hormigón, vista)",
+            u"Arainco: Unir geometría (hormigón, vista)",
             u"No hay documento activo.",
         )
         return
@@ -616,13 +616,13 @@ def run(revit):
     view = uidoc.ActiveView
     ok, msg = _vista_permitida(view)
     if not ok:
-        TaskDialog.Show(u"BIMTools — Unir geometría (hormigón, vista)", msg)
+        TaskDialog.Show(u"Arainco: Unir geometría (hormigón, vista)", msg)
         return
 
     with _BloquearComandosRevit(revit):
         n_cat = len(_CATS_ESCANEO_MATERIAL_ESTRUCTURAL) or 1
         _pb1 = _pbar_start(
-            u"BIMTools — 1/3 Leyendo: 0/{} (categorías)".format(n_cat), n_cat
+            u"Arainco: 1/3 Leyendo: 0/{} (categorías)".format(n_cat), n_cat
         )
         _ok1 = _pb1 is not None
         if _ok1:
@@ -640,14 +640,14 @@ def run(revit):
 
         if not elements_concrete:
             TaskDialog.Show(
-                u"BIMTools — Unir geometría (hormigón, vista)",
+                u"Arainco: Unir geometría (hormigón, vista)",
                 u"No se encontraron en la vista activa elementos de las categorías consideradas (muros, forjados, pilares, cimentación) con material estructural hormigón (Concrete).",
             )
             return
 
         n_el = len(elements_concrete)
         _pb2 = _pbar_start(
-            u"BIMTools — 2/3 Candidatos: 0/{} (elementos)".format(max(n_el, 1)), n_el
+            u"Arainco: 2/3 Candidatos: 0/{} (elementos)".format(max(n_el, 1)), n_el
         )
         _ok2 = _pb2 is not None
         if _ok2:
@@ -667,7 +667,7 @@ def run(revit):
 
         if not pairs:
             TaskDialog.Show(
-                u"BIMTools — Unir geometría (hormigón, vista)",
+                u"Arainco: Unir geometría (hormigón, vista)",
                 u"Hay ejemplares de hormigón en la vista, pero no se detectaron pares (cajas) candidatos a unir.",
             )
             return
@@ -681,7 +681,7 @@ def run(revit):
 
         n_pairs = len(pairs)
         _pb = _pbar_start(
-            u"BIMTools — 3/3 Uniendo: 0/{} (pares)".format(max(n_pairs, 1)),
+            u"Arainco: 3/3 Uniendo: 0/{} (pares)".format(max(n_pairs, 1)),
             max(n_pairs, 1),
         )
         _pb_ok = _pb is not None
@@ -693,7 +693,7 @@ def run(revit):
                 _pb = None
 
         tx = Transaction(
-            doc, u"BIMTools: Unir geometría hormigón (vista activa)"
+            doc, u"Arainco: Unir geometría hormigón (vista activa)"
         )
         try:
             _fho = tx.GetFailureHandlingOptions()
@@ -709,7 +709,7 @@ def run(revit):
                         _pb,
                         idx,
                         n_pairs,
-                        u"BIMTools — 3/3 Uniendo (vista)",
+                        u"Arainco: 3/3 Uniendo (vista)",
                     )
                 a = doc.GetElement(ida)
                 b = doc.GetElement(idb)
@@ -753,7 +753,7 @@ def run(revit):
             except Exception:
                 pass
             TaskDialog.Show(
-                u"BIMTools — Unir geometría (hormigón, vista)",
+                u"Arainco: Unir geometría (hormigón, vista)",
                 u"Error en la transacción: {0}".format(ex),
             )
             return
@@ -794,6 +794,6 @@ def run(revit):
         )
 
     TaskDialog.Show(
-        u"BIMTools — Unir geometría (hormigón, vista)",
+        u"Arainco: Unir geometría (hormigón, vista)",
         resumen,
     )

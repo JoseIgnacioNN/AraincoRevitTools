@@ -149,7 +149,7 @@ def crear_hook_type_en_doc(documento, largo_hook_mm, nombre="Rebar Hook", angulo
     nombres_existentes = [ht.Name for ht in FilteredElementCollector(documento).OfClass(RebarHookType) if ht and ht.Name]
     angulo_str = str(int(angulo_grados)) if angulo_grados == int(angulo_grados) else str(angulo_grados)
 
-    t = Transaction(documento, "Crear Rebar Hook desde espesor losa") if en_transaccion else None
+    t = Transaction(documento, "Arainco: Crear Rebar Hook desde espesor losa") if en_transaccion else None
     if t:
         t.Start()
 
@@ -266,7 +266,7 @@ def main():
     # Asignar el gancho a los Area Reinforcements de la losa
     area_reins = obtener_area_reinforcements_de_losa(doc, losa.Id)
     if area_reins:
-        trans = Transaction(doc, "Asignar Hook a Area Reinforcements")
+        trans = Transaction(doc, "Arainco: Asignar Hook a Area Reinforcements")
         trans.Start()
         try:
             asignados = 0

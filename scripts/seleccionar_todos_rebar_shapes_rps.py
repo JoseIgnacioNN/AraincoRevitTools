@@ -1801,7 +1801,7 @@ def main():
     skipped_draw = []
 
     if DRAW_DETAIL_VIEWS:
-        t = Transaction(document, u"RebarShape: tabla en vista de dibujo")
+        t = Transaction(document, u"Arainco: RebarShape: tabla en vista de dibujo")
         t.Start()
         try:
             table_view = _create_or_get_table_view(document, vft, TABLE_VIEW_NAME)

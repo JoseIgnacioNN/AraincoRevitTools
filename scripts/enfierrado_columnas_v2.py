@@ -487,7 +487,7 @@ def _reemplazar_sketch_planes_pick_empalme_columnas_v2(document, win, empalme_co
 
     ids_sp = []
     ids_mk = []
-    t = Transaction(document, u"BIMTools sketch planes empalme columnas")
+    t = Transaction(document, u"Arainco: sketch planes empalme columnas")
     t.Start()
     try:
         _n_ml_pre_purge = len(list(getattr(win, "_model_line_ids", None) or []))
@@ -653,7 +653,7 @@ class PickEmpalmeElementosColumnasHandler(IExternalEventHandler):
         if not err_pl and troceo_diag:
             try:
                 _task_dialog_show(
-                    u"BIMTools — Diagnóstico troceo V2",
+                    u"Arainco: Diagnóstico troceo V2",
                     troceo_diag,
                     win._win,
                 )
@@ -882,7 +882,7 @@ def run_pyrevit(revit):
             existing = None
         if ok and existing is not None:
             _task_dialog_show(
-                u"BIMTools — Armadura Columnas V2",
+                u"Arainco: Armadura Columnas V2",
                 u"La herramienta ya está en ejecución.",
                 existing,
             )

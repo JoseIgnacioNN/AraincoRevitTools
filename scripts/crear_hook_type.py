@@ -75,7 +75,7 @@ def crear_hook_type(nombre, angulo_grados, multiplicador_extension, largo_hook_m
     nombres_existentes = obtener_nombres_hook_existentes(doc)
     angulo_str = str(int(angulo_grados)) if angulo_grados == int(angulo_grados) else str(angulo_grados)
 
-    t = Transaction(doc, "Crear tipo de gancho de armadura")
+    t = Transaction(doc, "Arainco: Crear tipo de gancho de armadura")
     t.Start()
 
     try:

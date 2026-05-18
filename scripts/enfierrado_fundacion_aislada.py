@@ -663,7 +663,7 @@ _ENFIERRADO_FUND_XAML = (
     x:Name="FundacionWin"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="BIMTools — Armadura Fundacion Aislada"
+    Title="Arainco: Armadura Fundacion Aislada"
     SizeToContent="Height"
     MaxHeight="920"
     WindowStartupLocation="Manual"
@@ -1022,7 +1022,7 @@ class ColocarArmaduraFundacionStubHandler(IExternalEventHandler):
         except Exception as ex:
             try:
                 msg = u"Error al colocar / evaluar:\n{0}".format(ex)
-                _task_dialog_show(u"BIMTools — Armadura Fundacion Aislada", msg, win._win)
+                _task_dialog_show(u"Arainco: Armadura Fundacion Aislada", msg, win._win)
             except Exception:
                 pass
             try:
@@ -1428,7 +1428,7 @@ class ColocarArmaduraFundacionStubHandler(IExternalEventHandler):
                     pass
         if err_ids_inf:
             _task_dialog_show(
-                u"BIMTools — Armadura Fundacion Aislada",
+                u"Arainco: Armadura Fundacion Aislada",
                 u"No se pudo extraer la cara inferior ni curva de borde (lado corto/largo) en: {0}.".format(
                     u", ".join(unicode(i) for i in err_ids_inf)
                 ),
@@ -1443,7 +1443,7 @@ class ColocarArmaduraFundacionStubHandler(IExternalEventHandler):
             return
         if err_ids_sup:
             _task_dialog_show(
-                u"BIMTools — Armadura Fundacion Aislada",
+                u"Arainco: Armadura Fundacion Aislada",
                 u"No se pudo extraer la cara superior ni curva de borde (lado corto/largo) en: {0}.".format(
                     u", ".join(unicode(i) for i in err_ids_sup)
                 ),
@@ -1458,7 +1458,7 @@ class ColocarArmaduraFundacionStubHandler(IExternalEventHandler):
             return
         if err_ids:
             _task_dialog_show(
-                u"BIMTools — Armadura Fundacion Aislada",
+                u"Arainco: Armadura Fundacion Aislada",
                 u"Active al menos un grupo de armadura (inferior, superior o lateral).",
                 win._win,
             )
@@ -1469,7 +1469,7 @@ class ColocarArmaduraFundacionStubHandler(IExternalEventHandler):
             return
         if ok == 0:
             _task_dialog_show(
-                u"BIMTools — Armadura Fundacion Aislada",
+                u"Arainco: Armadura Fundacion Aislada",
                 u"No se pudo resolver geometría para ninguna fundación seleccionada "
                 u"(según los grupos activados).",
                 win._win,
@@ -1710,12 +1710,12 @@ class ColocarArmaduraFundacionStubHandler(IExternalEventHandler):
         )
 
         _ultima_vista = None
-        t = Transaction(doc, u"BIMTools: Armadura fundacion aislada")
+        t = Transaction(doc, u"Arainco: Armadura fundacion aislada")
         try:
             t.Start()
         except Exception as ex:
             _task_dialog_show(
-                u"BIMTools — Armadura Fundacion Aislada",
+                u"Arainco: Armadura Fundacion Aislada",
                 u"No se pudo iniciar la transacción:\n{0}".format(ex),
                 win._win,
             )
@@ -2484,7 +2484,7 @@ class ColocarArmaduraFundacionStubHandler(IExternalEventHandler):
             except Exception:
                 pass
             _task_dialog_show(
-                u"BIMTools — Armadura Fundacion Aislada",
+                u"Arainco: Armadura Fundacion Aislada",
                 u"Error al crear armadura o detalle:\n{0}".format(ex),
                 win._win,
             )
@@ -3260,7 +3260,7 @@ class EnfierradoFundacionAisladaWindow(object):
             return
         if not self._foundation_ids:
             _task_dialog_show(
-                u"BIMTools — Armadura Fundacion Aislada",
+                u"Arainco: Armadura Fundacion Aislada",
                 u"Seleccione una fundación en el modelo.",
                 self._win,
             )
@@ -3276,7 +3276,7 @@ class EnfierradoFundacionAisladaWindow(object):
                 and chk_lat.IsChecked != True
             ):
                 _task_dialog_show(
-                    u"BIMTools — Armadura Fundacion Aislada",
+                    u"Arainco: Armadura Fundacion Aislada",
                     u"Active al menos un grupo de armadura (inferior, superior o lateral).",
                     self._win,
                 )
@@ -3344,7 +3344,7 @@ def run_pyrevit(revit):
             existing = None
         if ok and existing is not None:
             _task_dialog_show(
-                u"BIMTools — Armadura Fundacion Aislada",
+                u"Arainco: Armadura Fundacion Aislada",
                 u"La herramienta ya está en ejecución.",
                 existing,
             )

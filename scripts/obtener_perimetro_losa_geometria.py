@@ -172,7 +172,7 @@ def main():
 
     z_vista = vista.Origin.Z if vista.Origin else 0.0
     creadas = 0
-    t = Transaction(doc, "DetailCurves perímetro losa")
+    t = Transaction(doc, "Arainco: DetailCurves perímetro losa")
     t.Start()
     try:
         for cl, _ in loops_con_longitud:

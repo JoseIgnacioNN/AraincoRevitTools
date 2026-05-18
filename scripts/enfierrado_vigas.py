@@ -2024,7 +2024,7 @@ class ColocarArmaduraVigasStubHandler(IExternalEventHandler):
                 crear_ml = chk_ml is None or chk_ml.IsChecked == True
 
                 t_arm = Transaction(
-                    doc, u"BIMTools — Enfierrado vigas (detalle)"
+                    doc, u"Arainco: Enfierrado vigas (detalle)"
                 )
                 t_arm.Start()
                 try:
@@ -2182,7 +2182,7 @@ class ColocarArmaduraVigasStubHandler(IExternalEventHandler):
                 msg = msg[:15900] + u"\n\n… (mensaje truncado por longitud)."
         except Exception:
             pass
-        TaskDialog.Show(u"BIMTools — Enfierrado vigas — Resumen", msg)
+        TaskDialog.Show(u"Arainco: Enfierrado vigas — Resumen", msg)
         try:
             win._set_estado(
                 u"Model lines: {0}, Rebar: {1} (vigas: {2}).".format(
@@ -3706,7 +3706,7 @@ class EnfierradoVigasWindow(object):
     def _on_colocar(self, sender, args):
         if not self._selected_element_ids:
             _task_dialog_show(
-                u"BIMTools — Enfierrado vigas",
+                u"Arainco: Enfierrado vigas",
                 u"Seleccione al menos un elemento (viga, columna o muro) en el modelo.",
                 self._win,
             )
@@ -3717,14 +3717,14 @@ class EnfierradoVigasWindow(object):
         if chk_inf and chk_sup:
             if chk_inf.IsChecked != True and chk_sup.IsChecked != True:
                 _task_dialog_show(
-                    u"BIMTools — Enfierrado vigas",
+                    u"Arainco: Enfierrado vigas",
                     u"Active al menos un grupo de armadura (superior o inferior).",
                     self._win,
                 )
                 return
         if self._traslape_empalme_obligatorio_sin_vigas_definidas():
             _task_dialog_show(
-                u"BIMTools — Enfierrado vigas — Traslape / empalme",
+                u"Arainco: Enfierrado vigas — Traslape / empalme",
                 u"El trazo estimado supera 12 m (eje y ganchos). Debe definir las vigas de "
                 u"empalme antes de colocar la armadura.\n\n"
                 u"1) Pulse «Seleccionar vigas para realizar empalmes» (bloque visible bajo la selección).\n"
@@ -3827,7 +3827,7 @@ def run_pyrevit(revit):
             existing = None
         if ok and existing is not None:
             _task_dialog_show(
-                u"BIMTools — Enfierrado vigas",
+                u"Arainco: Enfierrado vigas",
                 u"La herramienta ya está en ejecución.",
                 existing,
             )

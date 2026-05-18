@@ -636,7 +636,7 @@ def _add_pata_90_fin_a_rebar(doc, rebar, largo_pata_mm, invertir, pos_idx=0):
             return None
 
     t = Transaction(
-        doc, u"BIMTools: pata 90° fin boceto — nueva + layout (sin borrar malla)"
+        doc, u"Arainco: pata 90° fin boceto — nueva + layout (sin borrar malla)"
     )
     t.Start()
     new_rb = None
@@ -660,7 +660,7 @@ def _add_pata_90_fin_a_rebar(doc, rebar, largo_pata_mm, invertir, pos_idx=0):
 
     out_eid = new_rb.Id
     t2 = Transaction(
-        doc, u"BIMTools: pata 90° fin boceto — eliminar rebar malla (original)"
+        doc, u"Arainco: pata 90° fin boceto — eliminar rebar malla (original)"
     )
     t2.Start()
     try:
@@ -706,7 +706,7 @@ def _add_pata_90_fin_a_rebar(doc, rebar, largo_pata_mm, invertir, pos_idx=0):
 
 def _run(doc, ar):
     t = Transaction(
-        doc, u"BIMTools: quitar area reinf. (vert. ext./int. pata 90° fin boceto)"
+        doc, u"Arainco: quitar area reinf. (vert. ext./int. pata 90° fin boceto)"
     )
     t.Start()
     try:

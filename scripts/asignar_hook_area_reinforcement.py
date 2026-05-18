@@ -99,7 +99,7 @@ def ejecutar():
         return
 
     # 3. Modificar en Transaction
-    t = Transaction(doc, "Asignar Rebar Hook a Area Reinforcements")
+    t = Transaction(doc, "Arainco: Asignar Rebar Hook a Area Reinforcements")
     t.Start()
     try:
         modificados = 0

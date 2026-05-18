@@ -221,8 +221,8 @@ def run(document, uidocument):
     sketch_plane = SketchPlane.Create(document, plano)
 
     # Transaccion: crear lineas de modelo para el bucle original y el offset.
-    _crear_lineas_desde_curveloop(document, curve_loop_original, sketch_plane, "RPS Lineas CurveLoop original")
-    _crear_lineas_desde_curveloop(document, curve_loop_offset, sketch_plane, "RPS Lineas CurveLoop offset")
+    _crear_lineas_desde_curveloop(document, curve_loop_original, sketch_plane, "Arainco: Líneas CurveLoop original")
+    _crear_lineas_desde_curveloop(document, curve_loop_offset, sketch_plane, "Arainco: Líneas CurveLoop offset")
 
     # Informacion en consola (unidades: metros para lectura).
     largo_orig = curve_loop_original.GetExactLength()

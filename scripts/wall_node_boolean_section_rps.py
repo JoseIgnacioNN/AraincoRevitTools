@@ -2657,7 +2657,7 @@ def main(__revit__):
 
     created = 0
     first_err = None
-    t = Transaction(doc, "Nodo muro: sección transversal → model lines")
+    t = Transaction(doc, "Arainco: Nodo muro: sección transversal → model lines")
     t.Start()
     try:
         sp = SketchPlane.Create(doc, plane_face)

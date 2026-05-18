@@ -98,8 +98,6 @@ def get_logo_paths(extension_root=None):
             os.path.join(panel, "02_NumerarFundaciones.pushbutton"),
             os.path.join(panel, "20_BordeLosaGanchoEmpotramiento.pushbutton"),
             os.path.join(panel, "23_EnfierradoVigas.pushbutton"),
-            os.path.join(panel, "24_EnfierradoColumnas.pushbutton"),
-            os.path.join(panel, "25_ArmaduraColumnasV2.pushbutton"),
             os.path.join(panel, "26_WallFoundationReinforcement.pushbutton"),
             os.path.join(panel, "09_CrearAreaReinforcementMuroRPS.pushbutton"),
             os.path.join(model, "01_SpotElevVerticesLosa.pushbutton"),

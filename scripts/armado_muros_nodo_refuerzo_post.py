@@ -260,7 +260,7 @@ def post_malla_nudo_tras_crear(
                         pass
         except Exception:  # noqa: BLE001
             pass
-    t = Transaction(doc, u"BIMTools: quitar area (nudo) → L+135 / pata 90 o vert. L+135")
+    t = Transaction(doc, u"Arainco: quitar area (nudo) → L+135 / pata 90 o vert. L+135")
     t.Start()
     try:
         new_ids = AreaReinforcement.RemoveAreaReinforcementSystem(doc, area_rein)
@@ -791,7 +791,7 @@ def post_malla_nudo_tras_crear(
             pass
         rebar_finales.append(_eid_cierre)
 
-    t_ex = Transaction(doc, u"BIMTools: malla nudo — excluir 1.ª y últ. barra (cada set)")
+    t_ex = Transaction(doc, u"Arainco: malla nudo — excluir 1.ª y últ. barra (cada set)")
     t_ex.Start()
     try:
         n_ex = 0

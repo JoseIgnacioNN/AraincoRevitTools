@@ -6022,7 +6022,7 @@ def etiquetar_rebars_creados_en_vista(
         return creadas, loc
 
     if use_transaction:
-        t = Transaction(doc, u"BIMTools: etiquetado barras shaft")
+        t = Transaction(doc, u"Arainco: etiquetado barras shaft")
         t.Start()
         try:
             creadas, loop_avis = _tag_loop()
@@ -6518,7 +6518,7 @@ def etiquetar_grupos_rebar_multihost_capas_en_vista(
         return creadas, loc
 
     if use_transaction:
-        t = Transaction(doc, u"BIMTools: etiquetado barras shaft (multihost capas)")
+        t = Transaction(doc, u"Arainco: etiquetado barras shaft (multihost capas)")
         t.Start()
         try:
             creadas, loop_avis = _tag_groups_loop()
@@ -7499,7 +7499,7 @@ def crear_detail_curves_tramos_shaft_hashtag(
     fallos = 0
     t = None
     if bool(use_transaction):
-        t = Transaction(doc, u"BIMTools: shaft — tramos (DetailCurve)")
+        t = Transaction(doc, u"Arainco: shaft — tramos (DetailCurve)")
         t.Start()
     try:
         for face_1based, rf_face, face, fk, segments in pending:
@@ -7971,7 +7971,7 @@ def crear_enfierrado_shaft_hashtag(
     lap_dim_skip_create = 0
     t = None
     if bool(use_transaction):
-        t = Transaction(doc, u"BIMTools: enfierrado shaft (barras)")
+        t = Transaction(doc, u"Arainco: enfierrado shaft (barras)")
         t.Start()
     try:
         # Cotas: solo en planta (según preferencia plan_only)
@@ -8825,7 +8825,7 @@ def run_pyrevit(revit, cover_mm=None, duplex_spacing_mm=None):
     creados = 0
     tags = 0
     avisos = []
-    t = Transaction(doc, u"BIMTools: shaft — detalle + barras + tags")
+    t = Transaction(doc, u"Arainco: shaft — detalle + barras + tags")
     t.Start()
     try:
         n_dc, avisos_dc, err_dc = crear_detail_curves_tramos_shaft_hashtag(

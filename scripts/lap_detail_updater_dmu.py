@@ -53,7 +53,7 @@ from lap_detail_overlap_geom import (
 
 UPDATER_GUID = Guid("b2c3d4e5-f6a7-4890-b123-456789abcdef")
 
-_TXN = u"BIMTools: sincronizar anotaciones armadura (DMU)"
+_TXN = u"Arainco: sincronizar anotaciones armadura (DMU)"
 
 _pending_ids_by_doc = {}
 _lap_detail_event = None
@@ -99,7 +99,7 @@ def _drain_pending():
 
 class _LapDetailExternalHandler(IExternalEventHandler):
     def GetName(self):
-        return u"BIMTools — DMU anotaciones armadura (diferido)"
+        return u"Arainco: DMU anotaciones armadura (diferido)"
 
     def Execute(self, uiapp):
         _subscribe_document_changed_if_needed(uiapp)
@@ -348,7 +348,7 @@ class LapDetailLinkUpdater(IUpdater):
         return self._updater_id
 
     def GetUpdaterName(self):
-        return u"BIMTools — Sincronizar anotaciones de armadura (empalme / empotramiento)"
+        return u"Arainco: Sincronizar anotaciones de armadura (empalme / empotramiento)"
 
     def GetAdditionalInformation(self):
         return (

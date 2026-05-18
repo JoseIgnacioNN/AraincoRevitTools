@@ -4167,7 +4167,7 @@ def _task_dialog_resumen_troceo_line(
                 lines.append(u"  • {0}".format(tx))
     try:
         TaskDialog.Show(
-            u"BIMTools — Troceo Line (eje columnas)",
+            u"Arainco: Troceo Line (eje columnas)",
             u"\n".join(lines),
         )
     except Exception:
@@ -5295,7 +5295,7 @@ def ejecutar_model_lines_eje_columnas(
     rebar_err_muestra = []
     rebar_err_visto = set()
     try:
-        with Transaction(document, u"BIMTools — Eje columnas (planos + Rebar)") as t:
+        with Transaction(document, u"Arainco: Eje columnas (planos + Rebar)") as t:
             t.Start()
             try:
                 ids_planos = []

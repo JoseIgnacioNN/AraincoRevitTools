@@ -117,7 +117,7 @@ def main(revit):
                         pass
 
     _APPDOMAIN_WINDOW_KEY = "BIMTools.SpotElevVerticesFloor.ActiveWindow"
-    _TOOL_DIALOG_TITLE = u"BIMTools — Spot elevation vértices losa"
+    _TOOL_DIALOG_TITLE = u"Arainco: Spot elevation vértices losa"
 
     # Desplazamiento del líder (pies internos) — mismo orden de magnitud que script RPS de referencia
     _OFFSET_X_FT = 0.5
@@ -1162,7 +1162,7 @@ def main(revit):
 
         creados = 0
         n = len(specs)
-        tg = TransactionGroup(doc, u"Spot elevation vértices losa")
+        tg = TransactionGroup(doc, u"Arainco: Spot elevation vértices losa")
         try:
             tg.Start()
             for i in range(0, n, _SPOT_BATCH_SIZE):
@@ -1170,7 +1170,7 @@ def main(revit):
                 i_end = min(i + _SPOT_BATCH_SIZE, n)
                 t = Transaction(
                     doc,
-                    u"Spot elevation vértices losa (lote {}–{})".format(
+                    u"Arainco: Spot elevation vértices losa (lote {}–{})".format(
                         i + 1,
                         i_end,
                     ),
@@ -1299,7 +1299,7 @@ def main(revit):
             self.show_top_elevation = False
 
         def GetName(self):
-            return u"BIMTools — Spot elev. vértices losa (generar)"
+            return u"Arainco: Spot elev. vértices losa (generar)"
 
         def Execute(self, uiapp):
             try:

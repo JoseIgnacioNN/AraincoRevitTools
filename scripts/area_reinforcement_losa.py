@@ -78,7 +78,7 @@ from Autodesk.Revit.UI.Selection import ObjectType
 
 # Misma línea de diseño que Refuerzo Borde Losa (barras_bordes_losa_gancho_empotramiento).
 _APPDOMAIN_WINDOW_KEY = "BIMTools.AreaReinforcementLosa.ActiveWindow"
-_TOOL_TASK_DIALOG_TITLE = u"BIMTools — Malla en Losa"
+_TOOL_TASK_DIALOG_TITLE = u"Arainco: Malla en Losa"
 _WINDOW_OPEN_MS = 180
 _WINDOW_CLOSE_MS = 180
 
@@ -622,7 +622,7 @@ def _crear_hook_desde_largo(document, largo_mm, en_transaccion=True):
             pass
     angulo_rad = math.radians(90.0)
     multiplicador = 12.0
-    t = Transaction(document, "Crear Rebar Hook desde espesor losa") if en_transaccion else None
+    t = Transaction(document, "Arainco: Crear Rebar Hook desde espesor losa") if en_transaccion else None
     if t:
         t.Start()
     try:
@@ -1640,7 +1640,7 @@ class ColocarAreaReinforcementHandler(IExternalEventHandler):
             errores = []
             area_rein_creados = []
             etiquetas_ok = 0
-            trans = Transaction(doc, "Area Reinforcement en losas")
+            trans = Transaction(doc, "Arainco: Area Reinforcement en losas")
             try:
                 trans.Start()
                 for floor_id in self.floor_ids:

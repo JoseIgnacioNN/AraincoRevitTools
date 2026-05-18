@@ -304,7 +304,7 @@ def _run_area_to_l(doc, ar):
     Quita el sistema, filtra, aplica l135. Devuelve (n_ok, n_skip, n_fail, [mensajes]).
     """
     msgs = []
-    t = Transaction(doc, u"BIMTools: quitar area reinforcement system")
+    t = Transaction(doc, u"Arainco: quitar area reinforcement system")
     t.Start()
     try:
         new_ids = AreaReinforcement.RemoveAreaReinforcementSystem(doc, ar)

@@ -39,7 +39,6 @@ from Autodesk.Revit.DB import (
 from Autodesk.Revit.DB.Structure import RebarBarType
 
 from revit_wpf_window_position import (
-    clamp_wpf_window_to_work_area,
     position_wpf_window_top_left_at_active_view,
     revit_main_hwnd,
 )
@@ -48,7 +47,7 @@ from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
 from bimtools_paths import get_logo_paths
 
 _APPDOMAIN_WINDOW_KEY = "BIMTools.BordeLosaGanchoEmpotramiento.ActiveWindow"
-_TOOL_TASK_DIALOG_TITLE = u"BIMTools — Refuerzo Borde Losa"
+_TOOL_TASK_DIALOG_TITLE = u"Arainco: Refuerzo Borde Losa"
 
 
 def _task_dialog_show(title, message, wpf_window=None):
@@ -227,8 +226,8 @@ _ENFIERRADO_SHAFT_PASADA_XAML = u"""
     SizeToContent="Height"
     MinWidth="424" MaxWidth="424"
     WindowStartupLocation="Manual"
-    Background="#0A1A2F"
-    AllowsTransparency="False"
+    Background="Transparent"
+    AllowsTransparency="True"
     FontFamily="Segoe UI"
     WindowStyle="None"
     ResizeMode="NoResize"
@@ -1803,7 +1802,7 @@ class EnfierradoShaftPasadaWindow(object):
     def _show_with_fade(self):
         """Muestra la ventana con fade-in y fallback seguro."""
         try:
-            from System import EventHandler, TimeSpan
+            from System import TimeSpan
             from System.Windows import Duration
             from System.Windows.Media.Animation import DoubleAnimation, QuadraticEase, EasingMode
 
@@ -1823,8 +1822,6 @@ class EnfierradoShaftPasadaWindow(object):
                 self._win.UpdateLayout()
             except Exception:
                 pass
-
-            clamp_wpf_window_to_work_area(self._win)
 
             try:
                 self._base_top = float(self._win.Top)
@@ -1847,18 +1844,6 @@ class EnfierradoShaftPasadaWindow(object):
             opacity_anim.Duration = Duration(TimeSpan.FromMilliseconds(float(_WINDOW_OPEN_MS)))
             opacity_anim.EasingFunction = ease_in
 
-            def _on_open_fade_completed(sender, args):
-                """RDP/driver: si la animación no aplica bien, igual se ve la ventana."""
-                try:
-                    self._win.BeginAnimation(self._win.OpacityProperty, None)
-                    self._win.BeginAnimation(self._win.TopProperty, None)
-                    self._win.Opacity = 1.0
-                    self._win.Top = float(self._base_top)
-                except Exception:
-                    pass
-
-            opacity_anim.Completed += EventHandler(_on_open_fade_completed)
-
             top_anim = DoubleAnimation()
             top_anim.From = start_top
             top_anim.To = float(self._base_top)
@@ -1877,15 +1862,12 @@ class EnfierradoShaftPasadaWindow(object):
             try:
                 if not self._win.IsVisible:
                     self._win.Show()
-                try:
-                    self._win.UpdateLayout()
-                except Exception:
-                    pass
-                clamp_wpf_window_to_work_area(self._win)
                 self._is_closing_with_fade = False
                 self._win.Activate()
             except Exception:
                 pass
+
+    def _set_seleccion_line(self, msg):
         try:
             txt = self._win.FindName("TxtSeleccionLine")
             if txt is not None:
@@ -2144,7 +2126,7 @@ class EnfierradoShaftPasadaWindow(object):
         try:
             from System.Windows.Interop import WindowInteropHelper
 
-            hwnd = revit_main_hwnd(self._revit.Application)
+            hwnd = _revit_main_hwnd(self._revit.Application)
             if hwnd:
                 helper = WindowInteropHelper(self._win)
                 helper.Owner = hwnd

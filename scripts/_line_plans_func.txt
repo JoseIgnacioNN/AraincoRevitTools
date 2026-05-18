@@ -1,0 +1,492 @@
+def _column_layout_line_plans_from_jobs(
+    doc,
+    columns_ordered,
+    jobs,
+    wizard_troceo_outcome,
+    troceo_segment_diams_mm_override=None,
+):
+    u"""
+    Construye ``line_plans`` (``seg_jobs`` con ``span_seg`` y patas) igual que antes
+    de ``create_longitudinal_rebar_with_optional_patas``.
+    """
+    curve_tol = doc.Application.ShortCurveTolerance
+
+    fused_world = fuse_vertical_world_intervals_from_jobs(jobs, curve_tol)
+
+    embed_extend_mm = _resolved_traslape_embed_mm(
+        LAYOUT_BAR_NOMINAL_DIAM_MM,
+        LAYOUT_EMBED_CONCRETE_GRADE,
+    )
+
+    dz_extend_top = 0.0
+    if embed_extend_mm is not None and float(embed_extend_mm) > 1e-9:
+        dz_extend_top = UnitUtils.ConvertToInternalUnits(
+            float(embed_extend_mm),
+            UnitTypeId.Millimeters,
+        )
+
+    revoke_shrink_mm_total = (
+        float(_REVOKE_EMBED_EXTRA_SHRINK_MM)
+        + float(LAYOUT_BAR_NOMINAL_DIAM_MM) / 2.0
+    )
+
+    dz_revoke_extra_shrink = 0.0
+    if dz_extend_top > 1e-12:
+        dz_revoke_extra_shrink = UnitUtils.ConvertToInternalUnits(
+            float(revoke_shrink_mm_total),
+            UnitTypeId.Millimeters,
+        )
+
+    if not fused_world:
+        return []
+
+    layout_bar_type, layout_bar_type_exact, layout_bar_type_delta_mm = (
+        _resolve_rebar_bar_type_by_diameter_mm(
+            doc,
+            float(LAYOUT_BAR_NOMINAL_DIAM_MM),
+        )
+    )
+    if layout_bar_type is None:
+        return []
+
+    a_bar_cut_planes = []
+    b_bar_cut_planes = []
+    cols_plane = []
+    n_reference_columns_cut_planes = 0
+    troceo_segment_diams = None
+    troceo_segment_bar_type_ids = None
+    outcome_tc = wizard_troceo_outcome
+    try:
+        if outcome_tc.skip_no_cut:
+            cols_plane = []
+            n_reference_columns_cut_planes = 0
+            a_bar_cut_planes = []
+            b_bar_cut_planes = []
+            troceo_segment_diams = None
+            troceo_segment_bar_type_ids = None
+        else:
+            cols_plane = (
+                list(outcome_tc.columns) if getattr(outcome_tc, "columns", None) else []
+            )
+            troceo_segment_bar_type_ids = getattr(
+                outcome_tc,
+                "segment_rebar_bar_type_ids",
+                None,
+            )
+            troceo_segment_diams = None
+            if troceo_segment_bar_type_ids:
+                troceo_segment_diams = []
+                for tid in troceo_segment_bar_type_ids:
+                    eid = _element_id_from_int(tid)
+                    el = doc.GetElement(eid) if eid is not None else None
+                    dm = _rebar_nominal_diameter_mm(el)
+                    troceo_segment_diams.append(
+                        float(dm)
+                        if dm is not None
+                        else float(LAYOUT_BAR_NOMINAL_DIAM_MM)
+                    )
+            n_reference_columns_cut_planes = len(cols_plane)
+            a_bar_cut_planes = []
+            b_bar_cut_planes = []
+            if cols_plane:
+                a_bar_cut_planes = build_column_cut_planes_from_elements(
+                    cols_plane,
+                    curve_tol,
+                )
+                b_bar_cut_planes = build_b_bar_cut_planes_from_elements(
+                    cols_plane,
+                    curve_tol,
+                    float(dz_extend_top),
+                )
+    except Exception:
+        pass
+        a_bar_cut_planes = []
+        b_bar_cut_planes = []
+        cols_plane = []
+        n_reference_columns_cut_planes = 0
+        troceo_segment_diams = None
+        troceo_segment_bar_type_ids = None
+
+    if troceo_segment_diams_mm_override:
+        try:
+            troceo_segment_diams = [
+                float(x) for x in troceo_segment_diams_mm_override
+            ]
+            troceo_segment_bar_type_ids = None
+        except Exception:
+            pass
+
+    if (
+        troceo_segment_diams
+        and cols_plane
+        and n_reference_columns_cut_planes > 0
+    ):
+        try:
+            d_max_mm = max(
+                float(x) for x in troceo_segment_diams if float(x) > 1e-9
+            )
+            emb_b = _resolved_traslape_embed_mm(
+                d_max_mm,
+                LAYOUT_EMBED_CONCRETE_GRADE,
+            )
+            dz_b = 0.0
+            if emb_b is not None and float(emb_b) > 1e-9:
+                dz_b = UnitUtils.ConvertToInternalUnits(
+                    float(emb_b),
+                    UnitTypeId.Millimeters,
+                )
+            b_bar_cut_planes = build_b_bar_cut_planes_from_elements(
+                cols_plane,
+                curve_tol,
+                float(dz_b),
+            )
+        except Exception:
+            pass
+
+    troceo_z_cuts_ft_sorted = _troceo_sorted_cut_z_ft_from_planes(a_bar_cut_planes)
+    troceo_n_ui_segs = 0
+    if troceo_segment_bar_type_ids:
+        troceo_n_ui_segs = len(troceo_segment_bar_type_ids)
+    elif troceo_segment_diams:
+        troceo_n_ui_segs = len(troceo_segment_diams)
+    troceo_use_z_mid_for_ui_seg = (
+        troceo_n_ui_segs > 0
+        and len(troceo_z_cuts_ft_sorted) + 1 == troceo_n_ui_segs
+    )
+
+    col_iv_fund_down_ft = build_selected_columns_foundation_down_ft(
+        doc,
+        columns_ordered,
+    )
+
+    pata_hook_mm = float(
+        _resolved_pata_hook_mm_for_revert(
+            LAYOUT_BAR_NOMINAL_DIAM_MM,
+            LAYOUT_EMBED_CONCRETE_GRADE,
+        )
+    )
+    pata_hook_ft = 0.0
+    if pata_hook_mm > 1e-6:
+        pata_hook_ft = UnitUtils.ConvertToInternalUnits(
+            float(pata_hook_mm),
+            UnitTypeId.Millimeters,
+        )
+
+    _sketch_plane_cache.clear()
+
+    try:
+        column_instances_embed = list(
+            FilteredElementCollector(doc)
+            .OfCategory(BuiltInCategory.OST_StructuralColumns)
+            .WhereElementIsNotElementType()
+        )
+    except Exception:
+        column_instances_embed = []
+
+    embed_geom_opts = _geometry_options_structure_solids()
+
+    hilos_totales_real = 0
+
+    n_kept_embed_collision = 0
+    n_reverted_embed_air = 0
+
+    n_kept_embed_start_collision = 0
+    n_reverted_embed_start_air = 0
+
+    n_hilos_foundation_down_stretch = 0
+
+    n_patitas_revert_embed = 0
+    n_patitas_foundation_down = 0
+
+    scheme_histogram = Counter()
+
+    vrf_marker_half_ft = 0.0
+    ls_scheme_corner_id = None
+    ls_scheme_edge_id = None
+    if _SCHEME_VERIFY_MARKER_ENABLED:
+        try:
+            vrf_marker_half_ft = UnitUtils.ConvertToInternalUnits(
+                float(_SCHEME_VERIFY_MARKER_HALF_MM),
+                UnitTypeId.Millimeters,
+            )
+        except Exception:
+            vrf_marker_half_ft = 0.0
+        ls_scheme_corner_id, ls_scheme_edge_id = (
+            _scheme_verify_resolve_pair_linestyle_ids(doc)
+        )
+
+    ls_cut_plane_id = None
+    if _CUT_PLANE_MARKER_ENABLED:
+        try:
+            ls_cut_plane_id = _resolve_cut_plane_linestyle_id(doc)
+        except Exception:
+            ls_cut_plane_id = None
+
+    n_scheme_verify_markers_drawn = 0
+
+    n_cut_plane_marker_elems = 0
+
+    n_a_bar_extra_segments_from_cut_planes = 0
+
+    n_b_bar_extra_segments_from_cut_planes = 0
+
+    bar_type_cache = {}
+    line_plans = []
+    _pb_layout = None
+    _pbar_layout_open = False
+    for line_idx, (base_xyz, span_z, contrib_ids, bar_enum_lab) in enumerate(
+        fused_world
+    ):
+        min_len_z = float(curve_tol) * 4.0
+        span_draw_after_top = float(span_z)
+        reverted_embed = False
+        kept_top_embed = False
+        if dz_extend_top > 1e-12:
+            if embed_stretch_collides_any_column_solids(
+                doc,
+                base_xyz,
+                float(span_z),
+                dz_extend_top,
+                float(LAYOUT_BAR_NOMINAL_DIAM_MM),
+                column_instances_embed,
+                embed_geom_opts,
+                contrib_ids,
+            ):
+                kept_top_embed = True
+                span_draw_after_top = float(span_z) + float(dz_extend_top)
+                n_kept_embed_collision += 1
+            else:
+                reverted_embed = True
+                n_reverted_embed_air += 1
+                span_draw_after_top = max(
+                    float(span_z) - float(dz_revoke_extra_shrink),
+                    min_len_z,
+                )
+
+        dz_fdown_ft = _contrib_max_foundation_down_ft(
+            contrib_ids,
+            col_iv_fund_down_ft,
+        )
+        if dz_fdown_ft > 1e-12:
+            n_hilos_foundation_down_stretch += 1
+
+        z_lo_core = float(base_xyz.Z) - float(dz_fdown_ft)
+        core_height = float(dz_fdown_ft) + float(span_z)
+        z_hi_core = z_lo_core + core_height
+
+        bx = float(base_xyz.X)
+        by = float(base_xyz.Y)
+        btag = str(bar_enum_lab or "").strip()
+
+        segments = [(z_lo_core, core_height)]
+        if a_bar_cut_planes and is_a_split_scheme(btag):
+            segs_try = _split_z_span_by_planes(
+                bx,
+                by,
+                z_lo_core,
+                z_hi_core,
+                a_bar_cut_planes,
+                float(curve_tol),
+            )
+            if segs_try:
+                segments = segs_try
+                if len(segs_try) > 1:
+                    n_a_bar_extra_segments_from_cut_planes += int(len(segs_try) - 1)
+
+        if b_bar_cut_planes and is_b_split_scheme(btag):
+            segs_b = _split_z_span_by_planes(
+                bx,
+                by,
+                z_lo_core,
+                z_hi_core,
+                b_bar_cut_planes,
+                float(curve_tol),
+            )
+            if segs_b:
+                segments = segs_b
+                if len(segs_b) > 1:
+                    n_b_bar_extra_segments_from_cut_planes += int(len(segs_b) - 1)
+
+        seg_list = [[float(s[0]), float(s[1])] for s in segments]
+
+        if dz_extend_top > 1e-12 and seg_list:
+            li = len(seg_list) - 1
+            zs_l = seg_list[li][0]
+            dsz_l = seg_list[li][1]
+            if kept_top_embed:
+                seg_list[li][1] = dsz_l + float(dz_extend_top)
+            elif reverted_embed:
+                delta_h = float(span_z) - float(span_draw_after_top)
+                if delta_h > 1e-12:
+                    seg_list[li][1] = max(dsz_l - delta_h, min_len_z)
+
+        if dz_extend_top > 1e-12 and dz_fdown_ft <= 1e-12 and seg_list:
+            if embed_start_collides_any_column_solids(
+                doc,
+                base_xyz,
+                dz_extend_top,
+                float(LAYOUT_BAR_NOMINAL_DIAM_MM),
+                column_instances_embed,
+                embed_geom_opts,
+                contrib_ids,
+            ):
+                seg_list[0][0] -= float(dz_extend_top)
+                seg_list[0][1] += float(dz_extend_top)
+                n_kept_embed_start_collision += 1
+            else:
+                span_draw_eff = float(span_draw_after_top)
+                span_draw_floor = max(
+                    span_draw_eff - float(dz_revoke_extra_shrink),
+                    min_len_z,
+                )
+                revoke_delta = span_draw_eff - span_draw_floor
+                if revoke_delta > 1e-12:
+                    seg_list[0][0] += revoke_delta
+                    seg_list[0][1] -= revoke_delta
+                n_reverted_embed_start_air += 1
+
+        if not seg_list:
+            continue
+        z_line_start = seg_list[0][0]
+        z_top_whole = seg_list[-1][0] + seg_list[-1][1]
+        span_vertical = z_top_whole - z_line_start
+
+        n_seg_total = len(seg_list)
+        seg_jobs = []
+        for seg_i, row in enumerate(seg_list):
+            zs = row[0]
+            dsz = row[1]
+            span_seg = float(dsz)
+            z_mid_seg = float(zs) + 0.5 * float(span_seg)
+            if troceo_use_z_mid_for_ui_seg:
+                troceo_ui_i = _troceo_ui_segment_index_for_z_mid(
+                    z_mid_seg,
+                    troceo_z_cuts_ft_sorted,
+                    troceo_n_ui_segs,
+                    seg_i,
+                )
+            else:
+                troceo_ui_i = int(seg_i)
+            if troceo_segment_bar_type_ids:
+                _tid = (
+                    troceo_segment_bar_type_ids[troceo_ui_i]
+                    if troceo_ui_i < len(troceo_segment_bar_type_ids)
+                    else troceo_segment_bar_type_ids[-1]
+                )
+                if _tid not in bar_type_cache:
+                    _eid = _element_id_from_int(_tid)
+                    _el = doc.GetElement(_eid) if _eid is not None else None
+                    bar_type_cache[_tid] = (
+                        _el if _el is not None else layout_bar_type
+                    )
+                layout_bar_type_seg = bar_type_cache[_tid]
+                d_mm_seg = _rebar_nominal_diameter_mm(layout_bar_type_seg)
+                if d_mm_seg is None:
+                    d_mm_seg = float(LAYOUT_BAR_NOMINAL_DIAM_MM)
+                else:
+                    d_mm_seg = float(d_mm_seg)
+            else:
+                d_mm_seg = _troceo_nominal_diam_mm_for_seg_index(
+                    troceo_segment_diams,
+                    troceo_ui_i,
+                    LAYOUT_BAR_NOMINAL_DIAM_MM,
+                )
+                if d_mm_seg not in bar_type_cache:
+                    bt_seg, _, _ = _resolve_rebar_bar_type_by_diameter_mm(
+                        doc,
+                        float(d_mm_seg),
+                    )
+                    bar_type_cache[d_mm_seg] = (
+                        bt_seg if bt_seg is not None else layout_bar_type
+                    )
+                layout_bar_type_seg = bar_type_cache[d_mm_seg]
+            embed_mm_seg = _resolved_traslape_embed_mm(
+                d_mm_seg,
+                LAYOUT_EMBED_CONCRETE_GRADE,
+            )
+            dz_extend_seg = 0.0
+            if embed_mm_seg is not None and float(embed_mm_seg) > 1e-9:
+                dz_extend_seg = UnitUtils.ConvertToInternalUnits(
+                    float(embed_mm_seg),
+                    UnitTypeId.Millimeters,
+                )
+            if (
+                n_seg_total > 1
+                and is_lap_extension_scheme(btag)
+                and dz_extend_seg > 1e-12
+                and seg_i < n_seg_total - 1
+            ):
+                span_seg += float(dz_extend_seg)
+            pata_hook_mm_seg = float(
+                _resolved_pata_hook_mm_for_revert(
+                    d_mm_seg,
+                    LAYOUT_EMBED_CONCRETE_GRADE,
+                )
+            )
+            pata_hook_ft_seg = 0.0
+            if pata_hook_mm_seg > 1e-6:
+                pata_hook_ft_seg = UnitUtils.ConvertToInternalUnits(
+                    float(pata_hook_mm_seg),
+                    UnitTypeId.Millimeters,
+                )
+            want_bot_pata = (
+                seg_i == 0
+                and dz_fdown_ft > 1e-12
+                and pata_hook_ft_seg > 1e-12
+            )
+            want_top_pata = (
+                seg_i == n_seg_total - 1
+                and reverted_embed
+                and pata_hook_ft_seg > 1e-12
+            )
+            z_for_host = float(zs) + float(span_seg) * 0.5
+            if want_bot_pata and want_top_pata:
+                pass
+            elif want_bot_pata:
+                _band = min(
+                    max(float(span_seg) * 0.12, float(curve_tol) * 24.0),
+                    float(span_seg) * 0.45,
+                )
+                z_for_host = float(zs) + _band
+            elif want_top_pata:
+                _band = min(
+                    max(float(span_seg) * 0.12, float(curve_tol) * 24.0),
+                    float(span_seg) * 0.45,
+                )
+                z_for_host = float(zs) + float(span_seg) - _band
+            host_col = _nearest_contrib_column_for_xyz(
+                doc,
+                bx,
+                by,
+                z_for_host,
+                contrib_ids,
+            )
+            seg_jobs.append(
+                {
+                    "troceo_ui_i": int(troceo_ui_i),
+                    "seg_i": int(seg_i),
+                    "zs": float(zs),
+                    "span_seg": float(span_seg),
+                    "host_col": host_col,
+                    "layout_bar_type_seg": layout_bar_type_seg,
+                    "bar_enum_lab": bar_enum_lab,
+                    "want_bot_pata": want_bot_pata,
+                    "want_top_pata": want_top_pata,
+                    "pata_hook_ft_seg": float(pata_hook_ft_seg),
+                    "contrib_ids": contrib_ids,
+                }
+            )
+        line_plans.append(
+            {
+                "line_idx": line_idx,
+                "bx": bx,
+                "by": by,
+                "z_line_start": z_line_start,
+                "span_vertical": span_vertical,
+                "n_seg_total": n_seg_total,
+                "btag": btag,
+                "bar_enum_lab": bar_enum_lab,
+                "seg_jobs": seg_jobs,
+            }
+        )
+    return line_plans

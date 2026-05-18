@@ -214,7 +214,7 @@ def save_recipe_segments(document, segments_dict_list):
     except Exception:
         return False
 
-    t = Transaction(document, u"BIMTools: receta nombres exportación")
+    t = Transaction(document, u"Arainco: receta nombres exportación")
     try:
         t.Start()
     except Exception:

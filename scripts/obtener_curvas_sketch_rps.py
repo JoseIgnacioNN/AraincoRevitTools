@@ -85,7 +85,7 @@ def _crear_model_curves_y_resaltar(document, uidocument, curves):
         origen = curves[0].GetEndPoint(0) if curves else XYZ(0, 0, 0)
         plano = Plane.CreateByNormalAndOrigin(XYZ(0, 0, 1), origen)
     ids_creados = []
-    with Transaction(document, "RPS Resaltar curvas sketch") as t:
+    with Transaction(document, "Arainco: Resaltar curvas sketch") as t:
         t.Start()
         try:
             sketch_plane = SketchPlane.Create(document, plano)

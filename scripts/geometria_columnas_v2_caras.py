@@ -1062,7 +1062,7 @@ def ejecutar_v2_model_lines_cara_ancho(
     ids_sp = []
     try:
         with Transaction(
-            document, u"BIMTools — Columnas V2 líneas por separación cara A/B"
+            document, u"Arainco: Columnas V2 líneas por separación cara A/B"
         ) as t:
             t.Start()
             try:

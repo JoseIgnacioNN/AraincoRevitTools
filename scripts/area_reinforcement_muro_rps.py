@@ -202,7 +202,7 @@ class ColocarAreaReinforcementMuroHandler(IExternalEventHandler):
 
             creados = 0
             errores = []
-            trans = Transaction(doc, "Area Reinforcement en muros")
+            trans = Transaction(doc, "Arainco: Area Reinforcement en muros")
             try:
                 trans.Start()
                 for wall_id in self.wall_ids:

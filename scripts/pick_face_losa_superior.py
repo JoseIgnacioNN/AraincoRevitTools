@@ -643,7 +643,7 @@ def mostrar_boundaries_openings_en_vista(document, uidoocument, opening_elements
         return 0
     z_vista = vista.Origin.Z if vista.Origin else 0.0
     creadas = 0
-    t = Transaction(document, "RPS Shaft Openings boundaries")
+    t = Transaction(document, "Arainco: Shaft openings boundaries")
     t.Start()
     try:
         for opening in opening_elements:

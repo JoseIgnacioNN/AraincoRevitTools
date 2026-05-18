@@ -444,7 +444,7 @@ def _add_curves_to_area_reinforcement_boundary(area_rein, shaft_curves, document
 
     sketch_plane = SketchPlane.Create(document, plane)
     created_ids = []
-    t = Transaction(document, "RPS: Model lines shafts (para editar boundary)")
+    t = Transaction(document, "Arainco: Model lines shafts (boundary)")
     t.Start()
     try:
         for c in shaft_curves:

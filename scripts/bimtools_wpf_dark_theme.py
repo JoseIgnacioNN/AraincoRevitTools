@@ -2,7 +2,7 @@
 """
 Recursos WPF compartidos (tema oscuro BIMTools) para ventanas embebidas en scripts IronPython.
 
-Incluye: Label, LabelSmall, GbParams, Combo, ComboItem, BtnPrimary, BtnSelectOutline,
+Incluye: Label, LabelSmall, GbParams, Combo, ComboStretch, ComboTroceoStretch, ComboItem, BtnPrimary, BtnSelectOutline,
 SpinRepeatBtn, CantSpinnerText, BtnCloseX_MinimalNoBg (linea visual Fundacion Aislada),
 BimToolsScrollBarCapButton + BimToolsScrollBarDark + estilo implícito ScrollBar (DataGrid / ScrollViewer / listas).
 
@@ -158,17 +158,38 @@ BIMTOOLS_DARK_STYLES_XML = u"""
     <Style x:Key="ComboItem" TargetType="ComboBoxItem">
       <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
       <Setter Property="Background"  Value="#050E18"/>
-      <Setter Property="Foreground"  Value="#FFFFFF"/>
-      <Setter Property="FontWeight"  Value="Bold"/>
-      <Setter Property="Padding"     Value="8,2"/>
+      <Setter Property="Foreground"  Value="#E8F4F8"/>
+      <Setter Property="FontWeight"  Value="SemiBold"/>
+      <Setter Property="Padding"     Value="8,5"/>
       <Style.Triggers>
         <Trigger Property="IsHighlighted" Value="True">
           <Setter Property="Background" Value="#1A3A4D"/>
+          <Setter Property="Foreground" Value="#FFFFFF"/>
         </Trigger>
         <Trigger Property="IsSelected" Value="True">
-          <Setter Property="Background" Value="#1A3A4D"/>
+          <Setter Property="Background" Value="#21465C"/>
+          <Setter Property="Foreground" Value="#FFFFFF"/>
         </Trigger>
       </Style.Triggers>
+    </Style>
+    <Style x:Key="ComboStretch" TargetType="ComboBox" BasedOn="{StaticResource Combo}">
+      <!-- Anula Width=110 del estilo Combo base (si no, el control no estira y corta texto/flecha). -->
+      <Setter Property="Width" Value="Auto"/>
+      <Setter Property="MinWidth" Value="160"/>
+      <Setter Property="MaxWidth" Value="100000"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="MinHeight" Value="26"/>
+      <!-- Altura automática coherente con padding y fuente (Combo forzaba Height=24). -->
+      <Setter Property="Height" Value="Auto"/>
+      <Setter Property="ItemContainerStyle" Value="{StaticResource ComboItem}"/>
+    </Style>
+    <Style x:Key="ComboTroceoStretch" TargetType="ComboBox" BasedOn="{StaticResource ComboStretch}">
+      <Setter Property="Foreground" Value="#F8FAFC"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Padding" Value="8,7,8,7"/>
+      <Setter Property="MinHeight" Value="40"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
     <Style x:Key="BtnPrimary" TargetType="Button">
       <Setter Property="Background"      Value="#5BC0DE"/>

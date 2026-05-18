@@ -94,7 +94,7 @@ def main():
             type_id = existing_type_id
         else:
             # 3) Si no hay instancias y no existe el tipo, crearlo.
-            with Transaction(document, "Crear RebarContainerType") as txn:
+            with Transaction(document, "Arainco: Crear RebarContainerType") as txn:
                 txn.Start()
                 type_id = get_type_id(document, type_name)
 

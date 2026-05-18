@@ -105,7 +105,7 @@ def main():
     total_procesados = 0
     total_omitidos = 0
 
-    with Transaction(doc, "Asignar Rebar Cover") as txn:
+    with Transaction(doc, "Arainco: Asignar Rebar Cover") as txn:
         txn.Start()
 
         for nombre_cat, (bic, mm_val) in CATEGORIAS_COVER.items():

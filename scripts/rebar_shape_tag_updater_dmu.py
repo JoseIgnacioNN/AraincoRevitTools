@@ -52,7 +52,7 @@ REBAR_TAG_FAMILY_NAME = (
     else u""
 )
 
-_TXN_REFRESH = u"BIMTools: tipo etiqueta según RebarShape (DMU)"
+_TXN_REFRESH = u"Arainco: tipo etiqueta según RebarShape (DMU)"
 
 _pending_rebar_by_doc = {}
 _tag_refresh_event = None
@@ -96,7 +96,7 @@ def _drain_pending():
 
 class _TagRefreshExternalHandler(IExternalEventHandler):
     def GetName(self):
-        return u"BIMTools — DMU tipo etiqueta = RebarShape (diferido)"
+        return u"Arainco: DMU tipo etiqueta = RebarShape (diferido)"
 
     def Execute(self, uiapp):
         pending = _drain_pending()
@@ -135,7 +135,7 @@ class RebarShapeTagRefresherUpdater(IUpdater):
         return self._updater_id
 
     def GetUpdaterName(self):
-        return u"BIMTools — Refrescar etiquetas al cambiar RebarShape"
+        return u"Arainco: Refrescar etiquetas al cambiar RebarShape"
 
     def GetAdditionalInformation(self):
         return (

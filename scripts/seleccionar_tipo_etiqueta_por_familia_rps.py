@@ -84,7 +84,7 @@ def _find_symbol_in_family(document, family, type_name_wanted):
 def _ensure_symbol_active(document, sym):
     if sym.IsActive:
         return True, None
-    trans = Transaction(document, u"Activar tipo de etiqueta")
+    trans = Transaction(document, u"Arainco: Activar tipo de etiqueta")
     trans.Start()
     try:
         sym.Activate()

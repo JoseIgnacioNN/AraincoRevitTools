@@ -130,7 +130,7 @@ def _normalize_concrete_grade(concrete_grade):
     if concrete_grade is None:
         return None
     try:
-        s = unicode(concrete_grade).strip().upper()
+        s = str(concrete_grade).strip().upper()
     except Exception:
         return None
     if s in (u"G25", u"G35", u"G45"):

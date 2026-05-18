@@ -43,7 +43,7 @@ from Autodesk.Revit.UI import TaskDialog
 # ---------------------------------------------------------------------------
 # Constantes
 # ---------------------------------------------------------------------------
-_TITULO = u"BIMTools \u2014 Cotas Fundaci\u00f3n"
+_TITULO = u"Arainco: Cotas Fundaci\u00f3n"
 _OFFSET_MM = 500.0   # desplazamiento de la linea de cota respecto al borde
 _MARGEN_MM = 100.0   # extension lateral de la linea de cota mas alla del borde
 _MM_POR_PIE = 304.8
@@ -467,7 +467,7 @@ def ejecutar(uidoc, doc):
     creadas = 0
     errores = []
 
-    with Transaction(doc, u"BIMTools: Cotas Fundaci\u00f3n en Planta") as t:
+    with Transaction(doc, u"Arainco: Cotas Fundaci\u00f3n en Planta") as t:
         t.Start()
         try:
             creadas, errores = _cotar_fundacion(doc, view, fi)

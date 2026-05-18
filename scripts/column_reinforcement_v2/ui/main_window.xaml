@@ -1,0 +1,653 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Name="WizardWindow"
+        Title="Armado de Columnas"
+        Height="700" Width="1140"
+        MinHeight="660" MinWidth="1060"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Background="#071018"
+        FontFamily="Segoe UI"
+        FontSize="12">
+
+  <Window.Resources>
+
+    <!-- ── Colores base ── -->
+    <SolidColorBrush x:Key="BgMain"        Color="#071018"/>
+    <SolidColorBrush x:Key="BgPanel"       Color="#0D1B2A"/>
+    <SolidColorBrush x:Key="BgHeader"      Color="#0A1828"/>
+    <SolidColorBrush x:Key="BgInput"       Color="#0A1E30"/>
+    <SolidColorBrush x:Key="BorderBase"    Color="#21465C"/>
+    <SolidColorBrush x:Key="BorderActive"  Color="#1B6CA8"/>
+    <SolidColorBrush x:Key="TextPrimary"   Color="#E8F4F8"/>
+    <SolidColorBrush x:Key="TextSecondary" Color="#95B8CC"/>
+    <SolidColorBrush x:Key="TextMuted"     Color="#4A7A94"/>
+    <SolidColorBrush x:Key="AccentBlue"    Color="#1B6CA8"/>
+    <SolidColorBrush x:Key="AccentGreen"   Color="#2A5C3D"/>
+
+    <!-- ── Estilos globales de texto ── -->
+    <Style TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+      <Setter Property="FontFamily" Value="Segoe UI"/>
+    </Style>
+
+    <!-- ── Botón primario ── -->
+    <Style x:Key="BtnPrimary" TargetType="Button">
+      <Setter Property="Background"   Value="#1B6CA8"/>
+      <Setter Property="Foreground"   Value="#E8F4F8"/>
+      <Setter Property="BorderBrush"  Value="#1B6CA8"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding"      Value="14,6"/>
+      <Setter Property="FontSize"     Value="12"/>
+      <Setter Property="FontWeight"   Value="SemiBold"/>
+      <Setter Property="Cursor"       Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="3" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="#2080C0"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Background" Value="#0D2D45"/>
+                <Setter Property="Foreground" Value="#4A7A94"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- ── Botón ghost / outline ── -->
+    <Style x:Key="BtnOutline" TargetType="Button">
+      <Setter Property="Background"   Value="Transparent"/>
+      <Setter Property="Foreground"   Value="#95B8CC"/>
+      <Setter Property="BorderBrush"  Value="#21465C"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding"      Value="14,6"/>
+      <Setter Property="FontSize"     Value="12"/>
+      <Setter Property="Cursor"       Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="3" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="#0D2D45"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Foreground" Value="#2A4A5C"/>
+                <Setter Property="BorderBrush" Value="#1A3040"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- ── Botón generar (verde) ── -->
+    <Style x:Key="BtnGenerate" TargetType="Button" BasedOn="{StaticResource BtnPrimary}">
+      <Setter Property="Background"  Value="#1E6B3A"/>
+      <Setter Property="BorderBrush" Value="#1E6B3A"/>
+      <Style.Triggers>
+        <Trigger Property="IsMouseOver" Value="True">
+          <Setter Property="Background" Value="#28844A"/>
+        </Trigger>
+        <Trigger Property="IsEnabled" Value="False">
+          <Setter Property="Background" Value="#0D2D1A"/>
+          <Setter Property="Foreground" Value="#2A5C3D"/>
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
+    <!-- ── Botón spinner pequeño (+/-) ── -->
+    <Style x:Key="BtnSpin" TargetType="Button">
+      <Setter Property="Background"      Value="#0D2D45"/>
+      <Setter Property="Foreground"      Value="#95B8CC"/>
+      <Setter Property="BorderBrush"     Value="#21465C"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Width"           Value="22"/>
+      <Setter Property="Height"          Value="22"/>
+      <Setter Property="FontSize"        Value="14"/>
+      <Setter Property="FontWeight"      Value="Bold"/>
+      <Setter Property="Cursor"          Value="Hand"/>
+      <Setter Property="Padding"         Value="0"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="2">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="#1B6CA8"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- ── ComboBox diámetros ── -->
+    <Style x:Key="ComboStyle" TargetType="ComboBox">
+      <Setter Property="Background"      Value="#0A1E30"/>
+      <Setter Property="Foreground"      Value="#E8F4F8"/>
+      <Setter Property="BorderBrush"     Value="#21465C"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Height"          Value="26"/>
+      <Setter Property="FontSize"        Value="12"/>
+    </Style>
+
+    <!-- ── CheckBox ── -->
+    <Style TargetType="CheckBox">
+      <Setter Property="Foreground"   Value="#E8F4F8"/>
+      <Setter Property="Margin"       Value="0,3"/>
+    </Style>
+
+    <!-- ── Separador vertical entre paneles ── -->
+    <Style x:Key="PanelDivider" TargetType="Rectangle">
+      <Setter Property="Fill"  Value="#21465C"/>
+      <Setter Property="Width" Value="1"/>
+    </Style>
+
+    <!-- ── Panel border normal ── -->
+    <Style x:Key="PanelBorder" TargetType="Border">
+      <Setter Property="Background"      Value="#0D1B2A"/>
+      <Setter Property="BorderBrush"     Value="#21465C"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius"    Value="4"/>
+    </Style>
+
+    <!-- ── Panel border activo (step en foco) ── -->
+    <Style x:Key="PanelBorderActive" TargetType="Border">
+      <Setter Property="Background"      Value="#0D1B2A"/>
+      <Setter Property="BorderBrush"     Value="#1B6CA8"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius"    Value="4"/>
+    </Style>
+
+    <!-- ── Texto de panel title ── -->
+    <Style x:Key="TxtPanelTitle" TargetType="TextBlock">
+      <Setter Property="Foreground"  Value="#E8F4F8"/>
+      <Setter Property="FontSize"    Value="11"/>
+      <Setter Property="FontWeight"  Value="SemiBold"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <!-- ── Texto de subtítulo ── -->
+    <Style x:Key="TxtSubtitle" TargetType="TextBlock">
+      <Setter Property="Foreground"   Value="#95B8CC"/>
+      <Setter Property="FontSize"     Value="10"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+      <Setter Property="Margin"       Value="0,2,0,8"/>
+    </Style>
+
+    <!-- ── Etiqueta de campo ── -->
+    <Style x:Key="TxtLabel" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="#95B8CC"/>
+      <Setter Property="FontSize"   Value="10"/>
+    </Style>
+
+    <!-- ── Valor de campo ── -->
+    <Style x:Key="TxtValue" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="#E8F4F8"/>
+      <Setter Property="FontSize"   Value="11"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+  </Window.Resources>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!--  LAYOUT PRINCIPAL                                                   -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="46"/>   <!-- Fila 0: header de herramienta -->
+      <RowDefinition Height="62"/>   <!-- Fila 1: barra de pasos (wizard nav) -->
+      <RowDefinition Height="*"/>    <!-- Fila 2: 4 paneles de contenido -->
+      <RowDefinition Height="46"/>   <!-- Fila 3: footer de resumen -->
+    </Grid.RowDefinitions>
+
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <!--  FILA 0 — Cabecera                                              -->
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <Border Grid.Row="0" Background="#0A1828"
+            BorderBrush="#21465C" BorderThickness="0,0,0,1">
+      <DockPanel Margin="16,0,12,0" VerticalAlignment="Center">
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+          <TextBlock Text="&#x25A3;" FontSize="18" Foreground="#1B6CA8" Margin="0,0,10,0" VerticalAlignment="Center"/>
+          <TextBlock Text="Armado de Columnas" FontSize="15" FontWeight="SemiBold"
+                     Foreground="#E8F4F8" VerticalAlignment="Center"/>
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button x:Name="BtnHelp" Content="?" Style="{StaticResource BtnOutline}"
+                  Width="28" Height="28" Margin="0,0,6,0" ToolTip="Ayuda"/>
+          <Button x:Name="BtnClose" Content="✕" Style="{StaticResource BtnOutline}"
+                  Width="28" Height="28" ToolTip="Cerrar"/>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <!--  FILA 1 — Barra de pasos wizard                                 -->
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <Border Grid.Row="1" Background="#0A1828"
+            BorderBrush="#21465C" BorderThickness="0,0,0,1">
+      <Grid Margin="20,0,20,0" VerticalAlignment="Center">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Paso 1 -->
+        <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+          <Border x:Name="StepCircle1" Width="30" Height="30" CornerRadius="15"
+                  Background="#1B6CA8" BorderBrush="#1B6CA8" BorderThickness="2"
+                  HorizontalAlignment="Center">
+            <TextBlock x:Name="StepNum1" Text="1" HorizontalAlignment="Center"
+                       VerticalAlignment="Center" FontWeight="Bold" FontSize="13"
+                       Foreground="#E8F4F8"/>
+          </Border>
+          <TextBlock x:Name="StepLabel1" Text="Seleccionar columnas"
+                     Style="{StaticResource TxtLabel}" HorizontalAlignment="Center"
+                     Margin="0,4,0,0" FontWeight="SemiBold" Foreground="#1B6CA8"/>
+        </StackPanel>
+
+        <!-- Línea 1-2 -->
+        <Rectangle Grid.Column="1" Height="2" Fill="#21465C"
+                   VerticalAlignment="Center" Margin="6,0"/>
+
+        <!-- Paso 2 -->
+        <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+          <Border x:Name="StepCircle2" Width="30" Height="30" CornerRadius="15"
+                  Background="#0D2D45" BorderBrush="#21465C" BorderThickness="2"
+                  HorizontalAlignment="Center">
+            <TextBlock x:Name="StepNum2" Text="2" HorizontalAlignment="Center"
+                       VerticalAlignment="Center" FontWeight="Bold" FontSize="13"
+                       Foreground="#4A7A94"/>
+          </Border>
+          <TextBlock x:Name="StepLabel2" Text="Definir troceo de barras"
+                     Style="{StaticResource TxtLabel}" HorizontalAlignment="Center"
+                     Margin="0,4,0,0" Foreground="#4A7A94"/>
+        </StackPanel>
+
+        <!-- Línea 2-3 -->
+        <Rectangle Grid.Column="3" Height="2" Fill="#21465C"
+                   VerticalAlignment="Center" Margin="6,0"/>
+
+        <!-- Paso 3 -->
+        <StackPanel Grid.Column="4" HorizontalAlignment="Center">
+          <Border x:Name="StepCircle3" Width="30" Height="30" CornerRadius="15"
+                  Background="#0D2D45" BorderBrush="#21465C" BorderThickness="2"
+                  HorizontalAlignment="Center">
+            <TextBlock x:Name="StepNum3" Text="3" HorizontalAlignment="Center"
+                       VerticalAlignment="Center" FontWeight="Bold" FontSize="13"
+                       Foreground="#4A7A94"/>
+          </Border>
+          <TextBlock x:Name="StepLabel3" Text="Repartición de barras"
+                     Style="{StaticResource TxtLabel}" HorizontalAlignment="Center"
+                     Margin="0,4,0,0" Foreground="#4A7A94"/>
+        </StackPanel>
+
+        <!-- Línea 3-4 -->
+        <Rectangle Grid.Column="5" Height="2" Fill="#21465C"
+                   VerticalAlignment="Center" Margin="6,0"/>
+
+        <!-- Paso 4 -->
+        <StackPanel Grid.Column="6" HorizontalAlignment="Center">
+          <Border x:Name="StepCircle4" Width="30" Height="30" CornerRadius="15"
+                  Background="#0D2D45" BorderBrush="#21465C" BorderThickness="2"
+                  HorizontalAlignment="Center">
+            <TextBlock x:Name="StepNum4" Text="4" HorizontalAlignment="Center"
+                       VerticalAlignment="Center" FontWeight="Bold" FontSize="13"
+                       Foreground="#4A7A94"/>
+          </Border>
+          <TextBlock x:Name="StepLabel4" Text="Diámetros de barras"
+                     Style="{StaticResource TxtLabel}" HorizontalAlignment="Center"
+                     Margin="0,4,0,0" Foreground="#4A7A94"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <!--  FILA 2 — 4 paneles de contenido                                -->
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <Grid Grid.Row="2" Margin="8,8,8,4">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="6"/>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="6"/>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="6"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
+
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <!--  PANEL 1 — Seleccionar columnas                             -->
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <Border Grid.Column="0" x:Name="Panel1Border" Style="{StaticResource PanelBorderActive}">
+        <Grid Margin="10,10,10,8">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>  <!-- título -->
+            <RowDefinition Height="*"/>     <!-- contenido scroll -->
+            <RowDefinition Height="Auto"/>  <!-- botones -->
+          </Grid.RowDefinitions>
+
+          <!-- Título -->
+          <StackPanel Grid.Row="0" Margin="0,0,0,8">
+            <TextBlock Text="1. Seleccionar columnas a armar"
+                       Style="{StaticResource TxtPanelTitle}"/>
+            <TextBlock Text="Selecciona las columnas contiguas en altura."
+                       Style="{StaticResource TxtSubtitle}"/>
+          </StackPanel>
+
+          <!-- Contenido -->
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                        HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+
+              <!-- Preview vertical de columnas (Canvas) -->
+              <Border Background="#050E18" BorderBrush="#21465C" BorderThickness="1"
+                      Height="200" Margin="0,0,0,8" CornerRadius="3">
+                <Canvas x:Name="BuildingPreviewCanvas" ClipToBounds="True"/>
+              </Border>
+
+              <!-- Tabla de información -->
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Columnas seleccionadas"
+                           Style="{StaticResource TxtLabel}" Margin="0,3"/>
+                <TextBlock Grid.Row="0" Grid.Column="1" x:Name="InfoSelCount"
+                           Text="0" Style="{StaticResource TxtValue}" Margin="0,3"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Altura total"
+                           Style="{StaticResource TxtLabel}" Margin="0,3"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" x:Name="InfoTotalHeight"
+                           Text="—" Style="{StaticResource TxtValue}" Margin="0,3"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Desde"
+                           Style="{StaticResource TxtLabel}" Margin="0,3"/>
+                <TextBlock Grid.Row="2" Grid.Column="1" x:Name="InfoFrom"
+                           Text="—" Style="{StaticResource TxtValue}" Margin="0,3"/>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Hasta"
+                           Style="{StaticResource TxtLabel}" Margin="0,3"/>
+                <TextBlock Grid.Row="3" Grid.Column="1" x:Name="InfoTo"
+                           Text="—" Style="{StaticResource TxtValue}" Margin="0,3"/>
+              </Grid>
+
+            </StackPanel>
+          </ScrollViewer>
+
+          <!-- Botones -->
+          <Button Grid.Row="2" x:Name="BtnNext1" Content="Siguiente  ›"
+                  Style="{StaticResource BtnPrimary}" HorizontalAlignment="Right"
+                  MinWidth="110" Margin="0,8,0,0"/>
+        </Grid>
+      </Border>
+
+      <!-- Divisor 1-2 -->
+      <Rectangle Grid.Column="1" Style="{StaticResource PanelDivider}"/>
+
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <!--  PANEL 2 — Definir troceo / traslapes                       -->
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <Border Grid.Column="2" x:Name="Panel2Border" Style="{StaticResource PanelBorder}">
+        <Grid Margin="10,10,10,8">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>  <!-- botones -->
+          </Grid.RowDefinitions>
+
+          <!-- Título -->
+          <StackPanel Grid.Row="0" Margin="0,0,0,8">
+            <TextBlock Text="2. Definir troceo de barras (traslapes)"
+                       Style="{StaticResource TxtPanelTitle}"/>
+            <TextBlock Text="Selecciona las columnas que definen los puntos de corte para los traslapes."
+                       Style="{StaticResource TxtSubtitle}"/>
+          </StackPanel>
+
+          <!-- Lista de niveles con checkboxes — poblada desde Python -->
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="SpliceCheckPanel"/>
+          </ScrollViewer>
+
+          <!-- Resumen segmentos -->
+          <Grid Grid.Row="2" Margin="0,6,0,4">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Segmentos de barra generados"
+                       Style="{StaticResource TxtLabel}" Margin="0,3"/>
+            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="InfoSegCount"
+                       Text="0" Style="{StaticResource TxtValue}" Margin="0,3"/>
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Altura promedio de traslape"
+                       Style="{StaticResource TxtLabel}" Margin="0,3"/>
+            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="InfoLapHeight"
+                       Text="—" Style="{StaticResource TxtValue}" Margin="0,3"/>
+          </Grid>
+
+          <!-- Botones -->
+          <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right"
+                      Margin="0,4,0,0">
+            <Button x:Name="BtnBack2" Content="‹  Atrás"
+                    Style="{StaticResource BtnOutline}" MinWidth="80" Margin="0,0,6,0"/>
+            <Button x:Name="BtnNext2" Content="Siguiente  ›"
+                    Style="{StaticResource BtnPrimary}" MinWidth="100" IsEnabled="False"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- Divisor 2-3 -->
+      <Rectangle Grid.Column="3" Style="{StaticResource PanelDivider}"/>
+
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <!--  PANEL 3 — Repartición de barras por grupo                  -->
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <Border Grid.Column="4" x:Name="Panel3Border" Style="{StaticResource PanelBorder}">
+        <Grid Margin="10,10,10,8">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+
+          <!-- Título -->
+          <StackPanel Grid.Row="0" Margin="0,0,0,6">
+            <TextBlock Text="3. Repartición de barras por grupo de sección"
+                       Style="{StaticResource TxtPanelTitle}"/>
+            <TextBlock Text="Define la cantidad de barras en cada lado (A y B) para cada grupo de secciones."
+                       Style="{StaticResource TxtSubtitle}"/>
+
+            <!-- Encabezado de tabla -->
+            <Grid Margin="0,4,0,2">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="32"/>   <!-- badge grupo -->
+                <ColumnDefinition Width="*"/>    <!-- sección -->
+                <ColumnDefinition Width="55"/>   <!-- columnas -->
+                <ColumnDefinition Width="60"/>   <!-- barras A -->
+                <ColumnDefinition Width="60"/>   <!-- barras B -->
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="Grupo" Style="{StaticResource TxtLabel}" FontSize="9"/>
+              <TextBlock Grid.Column="1" Text="Sección (mm)" Style="{StaticResource TxtLabel}" FontSize="9"/>
+              <TextBlock Grid.Column="2" Text="Columnas" Style="{StaticResource TxtLabel}" FontSize="9" TextAlignment="Center"/>
+              <TextBlock Grid.Column="3" Text="A" Style="{StaticResource TxtLabel}" FontSize="9" TextAlignment="Center"/>
+              <TextBlock Grid.Column="4" Text="B" Style="{StaticResource TxtLabel}" FontSize="9" TextAlignment="Center"/>
+            </Grid>
+            <Rectangle Height="1" Fill="#21465C" Margin="0,0,0,4"/>
+          </StackPanel>
+
+          <!-- Filas de grupos — poblado desde Python -->
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="GroupsPanel"/>
+          </ScrollViewer>
+
+          <!-- Botones -->
+          <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right"
+                      Margin="0,8,0,0">
+            <Button x:Name="BtnBack3" Content="‹  Atrás"
+                    Style="{StaticResource BtnOutline}" MinWidth="80" Margin="0,0,6,0"/>
+            <Button x:Name="BtnNext3" Content="Siguiente  ›"
+                    Style="{StaticResource BtnPrimary}" MinWidth="100" IsEnabled="False"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- Divisor 3-4 -->
+      <Rectangle Grid.Column="5" Style="{StaticResource PanelDivider}"/>
+
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <!--  PANEL 4 — Diámetros de barras por segmento                 -->
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <Border Grid.Column="6" x:Name="Panel4Border" Style="{StaticResource PanelBorder}">
+        <Grid Margin="10,10,10,8">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>  <!-- preview canvas -->
+            <RowDefinition Height="Auto"/>  <!-- botones -->
+          </Grid.RowDefinitions>
+
+          <!-- Título -->
+          <StackPanel Grid.Row="0" Margin="0,0,0,6">
+            <TextBlock Text="4. Diámetros de barras por segmento"
+                       Style="{StaticResource TxtPanelTitle}"/>
+            <TextBlock Text="Selecciona el diámetro de las barras longitudinales para cada segmento generado."
+                       Style="{StaticResource TxtSubtitle}"/>
+
+            <!-- Encabezado tabla segmentos -->
+            <Grid Margin="0,2,0,2">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="55"/>   <!-- badge segmento -->
+                <ColumnDefinition Width="*"/>    <!-- rango -->
+                <ColumnDefinition Width="75"/>   <!-- diámetro -->
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="Segmento" Style="{StaticResource TxtLabel}" FontSize="9"/>
+              <TextBlock Grid.Column="1" Text="Rango de altura" Style="{StaticResource TxtLabel}" FontSize="9"/>
+              <TextBlock Grid.Column="2" Text="Diámetro" Style="{StaticResource TxtLabel}" FontSize="9" TextAlignment="Center"/>
+            </Grid>
+            <Rectangle Height="1" Fill="#21465C" Margin="0,0,0,4"/>
+
+            <!-- Etiqueta segmentos generados -->
+            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+              <TextBlock Text="Segmentos generados: " Style="{StaticResource TxtLabel}" FontSize="10"/>
+              <TextBlock x:Name="InfoSegGenerated" Text="0"
+                         Foreground="#1B6CA8" FontWeight="SemiBold" FontSize="10"/>
+            </StackPanel>
+          </StackPanel>
+
+          <!-- Filas de segmentos con diámetros — poblado desde Python -->
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="SegmentsPanel"/>
+          </ScrollViewer>
+
+          <!-- Preview visual de segmentos coloreados -->
+          <Border Grid.Row="2" Background="#050E18" BorderBrush="#21465C"
+                  BorderThickness="1" Height="110" Margin="0,6,0,0"
+                  CornerRadius="3">
+            <Grid>
+              <TextBlock Text="Vista previa del armado" Style="{StaticResource TxtLabel}"
+                         FontSize="9" Margin="6,4,0,0" VerticalAlignment="Top"/>
+              <Canvas x:Name="SegmentPreviewCanvas" ClipToBounds="True" Margin="0,18,0,0"/>
+            </Grid>
+          </Border>
+
+          <!-- Botones finales -->
+          <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right"
+                      Margin="0,8,0,0">
+            <Button x:Name="BtnBack4" Content="‹  Atrás"
+                    Style="{StaticResource BtnOutline}" MinWidth="80" Margin="0,0,6,0"/>
+            <Button x:Name="BtnGenerate" Content="Generar armado  ✓"
+                    Style="{StaticResource BtnGenerate}" MinWidth="130" IsEnabled="False"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+    </Grid><!-- fin Grid 4 paneles -->
+
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <!--  FILA 3 — Footer de resumen                                     -->
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <Border Grid.Row="3" Background="#0A1828"
+            BorderBrush="#21465C" BorderThickness="0,1,0,0">
+      <DockPanel Margin="14,0,12,0" VerticalAlignment="Center">
+
+        <!-- Ícono + label izquierda -->
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+          <TextBlock Text="&#x2261;" FontSize="16" Foreground="#1B6CA8" Margin="0,0,6,0"/>
+          <TextBlock Text="Resumen del armado" Style="{StaticResource TxtLabel}"
+                     FontSize="10" VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- Botones derecha -->
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button x:Name="BtnExport" Content="&#x1F4CB; Exportar reporte"
+                  Style="{StaticResource BtnOutline}" FontSize="10"
+                  Padding="10,4" Margin="0,0,6,0" IsEnabled="False"/>
+          <Button x:Name="BtnSettings" Content="&#x2699;"
+                  Style="{StaticResource BtnOutline}" Width="28" Height="28"
+                  FontSize="14" ToolTip="Configuración"/>
+        </StackPanel>
+
+        <!-- Stats centradas -->
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+
+          <TextBlock Text="Columnas seleccionadas" Style="{StaticResource TxtLabel}"
+                     FontSize="10" Margin="0,0,4,0"/>
+          <TextBlock x:Name="FooterColCount" Text="0"
+                     Foreground="#1B6CA8" FontWeight="SemiBold" FontSize="11"
+                     Margin="0,0,20,0"/>
+
+          <TextBlock Text="Altura total" Style="{StaticResource TxtLabel}"
+                     FontSize="10" Margin="0,0,4,0"/>
+          <TextBlock x:Name="FooterTotalHeight" Text="0.00 m"
+                     Foreground="#1B6CA8" FontWeight="SemiBold" FontSize="11"
+                     Margin="0,0,20,0"/>
+
+          <TextBlock Text="Segmentos generados" Style="{StaticResource TxtLabel}"
+                     FontSize="10" Margin="0,0,4,0"/>
+          <TextBlock x:Name="FooterSegments" Text="0"
+                     Foreground="#1B6CA8" FontWeight="SemiBold" FontSize="11"/>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+  </Grid>
+</Window>

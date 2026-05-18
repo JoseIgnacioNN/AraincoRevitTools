@@ -80,7 +80,7 @@ def crear_hook_type_en_doc(documento, nombre, angulo_grados, multiplicador_exten
     nombres_existentes = obtener_nombres_hook_existentes(documento)
     angulo_str = str(int(angulo_grados)) if angulo_grados == int(angulo_grados) else str(angulo_grados)
 
-    t = Transaction(documento, "Crear tipo de gancho desde espesor losa") if en_transaccion else None
+    t = Transaction(documento, "Arainco: Crear tipo de gancho desde espesor losa") if en_transaccion else None
     if t:
         t.Start()
 

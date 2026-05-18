@@ -49,7 +49,7 @@ CREAR_SECCION_REVISION_WALL_FOUNDATION = True
 _FAR_CLIP_OFFSET_MM_DEFECTO = 100.0
 
 # Mismo prefijo que ``_asignar_nombre_vista_unico`` / creación (para limpieza por nombre).
-_NOMBRE_PREFIJO_SECCION_REVISION = u"BIMTools — Rev. enfierrado —"
+_NOMBRE_PREFIJO_SECCION_REVISION = u"Arainco: Rev. enfierrado —"
 
 # Muestreo de geometría para caja de sección alineada al elemento (no AABB mundo).
 _GEOM_SAMPLE_POINTS_MAX = 2048
@@ -2058,7 +2058,7 @@ def _crear_vistas_seccion_revision_para_hosts(
             try:
                 nombre_base = nombre_template.format(int(elem.Id.IntegerValue))
             except Exception:
-                nombre_base = u"BIMTools — Rev. enfierrado — {0}".format(
+                nombre_base = u"Arainco: Rev. enfierrado — {0}".format(
                     int(elem.Id.IntegerValue)
                 )
             try:
@@ -2123,8 +2123,8 @@ def crear_vistas_seccion_revision_enfierrado(
         document,
         elementos_framing,
         u"Viga",
-        u"BIMTools — Rev. enfierrado — {0}",
-        u"BIMTools — Sección revisión enfierrado vigas",
+        u"Arainco: Rev. enfierrado — {0}",
+        u"Arainco: Sección revisión enfierrado vigas",
         margen_mm,
         profundidad_eje_mm,
         far_clip_offset_mm,
@@ -2178,8 +2178,8 @@ def crear_vistas_seccion_revision_wall_foundation(
         document,
         elementos_wall_foundation,
         u"Zapata",
-        u"BIMTools — Rev. enfierrado — WF {0}",
-        u"BIMTools — Sección revisión Wall Foundation",
+        u"Arainco: Rev. enfierrado — WF {0}",
+        u"Arainco: Sección revisión Wall Foundation",
         margen_mm,
         profundidad_eje_mm,
         far_clip_offset_mm,
@@ -2230,8 +2230,8 @@ def crear_seccion_transversal_wall_foundation_desde_filtro_vista(
         document,
         elementos_wall_foundation,
         u"Zapata",
-        u"BIMTools — Rev. enfierrado — WF {0}",
-        u"BIMTools — Sección WF transversal al eje muro (Section Filter)",
+        u"Arainco: Rev. enfierrado — WF {0}",
+        u"Arainco: Sección WF transversal al eje muro (Section Filter)",
         margen_mm,
         profundidad_eje_mm,
         far_clip_offset_mm,
@@ -3407,7 +3407,7 @@ def crear_vista_planta_fundacion_aislada(
 
     if gestionar_transaccion:
         from Autodesk.Revit.DB import Transaction as _Tx
-        _tx1 = _Tx(document, u"BIMTools — Vista planta fundación aislada")
+        _tx1 = _Tx(document, u"Arainco: Vista planta fundación aislada")
         try:
             _tx1.Start()
         except Exception as ex:
@@ -3474,7 +3474,7 @@ def crear_vista_planta_fundacion_aislada(
 
     if gestionar_transaccion:
         from Autodesk.Revit.DB import Transaction as _Tx
-        _tx2 = _Tx(document, u"BIMTools — Crop box fundación aislada")
+        _tx2 = _Tx(document, u"Arainco: Crop box fundación aislada")
         try:
             _tx2.Start()
             _aplicar_config_vista()
@@ -3827,7 +3827,7 @@ def crear_secciones_fundacion_aislada(
 
     def _abrir_tx_sec():
         if gestionar_transaccion:
-            _tx = Transaction(document, u"BIMTools \u2014 Secciones fundaci\u00f3n aislada")
+            _tx = Transaction(document, u"Arainco: Secciones fundaci\u00f3n aislada")
         else:
             from Autodesk.Revit.DB import SubTransaction
             _tx = SubTransaction(document)
@@ -3835,7 +3835,7 @@ def crear_secciones_fundacion_aislada(
 
     def _abrir_tx_mra():
         if gestionar_transaccion:
-            _tx = Transaction(document, u"BIMTools \u2014 MRA secciones fundaci\u00f3n aislada")
+            _tx = Transaction(document, u"Arainco: MRA secciones fundaci\u00f3n aislada")
         else:
             from Autodesk.Revit.DB import SubTransaction
             _tx = SubTransaction(document)
@@ -3961,7 +3961,7 @@ def eliminar_vistas_seccion_revision_enfierrado(document, ids_vista, uidocument=
                             continue
         except Exception:
             pass
-    t = Transaction(document, u"BIMTools — Eliminar secciones revisión enfierrado")
+    t = Transaction(document, u"Arainco: Eliminar secciones revisión enfierrado")
     t.Start()
     try:
         try:

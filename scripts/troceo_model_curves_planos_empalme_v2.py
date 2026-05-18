@@ -1050,7 +1050,7 @@ def trocear_model_lines_con_planos_sketch_v2_en_transaccion(
     if document is None:
         return u"No hay documento.", [], [], u""
 
-    t = Transaction(document, u"BIMTools — Troceo V2 planos empalme")
+    t = Transaction(document, u"Arainco: Troceo V2 planos empalme")
     t.Start()
     try:
         msg, nuevos, viejos, diag = trocear_model_lines_con_planos_sketch_v2(

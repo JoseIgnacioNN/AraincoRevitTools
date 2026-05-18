@@ -502,7 +502,7 @@ class EliminarModelLinesColumnasHandler(IExternalEventHandler):
             return
         try:
             with Transaction(
-                doc, u"BIMTools — Quitar planos y líneas eje columnas"
+                doc, u"Arainco: Quitar planos y líneas eje columnas"
             ) as t:
                 t.Start()
                 try:
@@ -529,7 +529,7 @@ class EliminarModelLinesColumnasHandler(IExternalEventHandler):
             pass
 
     def GetName(self):
-        return u"BIMTools — Eliminar ModelLine columnas"
+        return u"Arainco: Eliminar ModelLine columnas"
 
 
 class EnfierradoColumnasWindow(ev.EnfierradoVigasWindow):
@@ -684,7 +684,7 @@ def run_pyrevit(revit):
             existing = None
         if ok and existing is not None:
             _task_dialog_show(
-                u"BIMTools — Enfierrado columnas",
+                u"Arainco: Enfierrado columnas",
                 u"La herramienta ya está en ejecución.",
                 existing,
             )

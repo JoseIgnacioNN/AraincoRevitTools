@@ -181,7 +181,7 @@ try:
                 type(elem).__name__
             ))
         else:
-            trans = Transaction(doc, "Editar Refuerzo de Área")
+            trans = Transaction(doc, "Arainco: Editar Refuerzo de Área")
             trans.Start()
             try:
                 # Ejemplo: editar espaciado a 150 mm (usa mm_a_internas para conversión)

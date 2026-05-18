@@ -35,7 +35,7 @@ from revit_wpf_window_position import position_wpf_window_top_left_at_active_vie
 from bimtools_paths import get_logo_paths
 
 _APPDOMAIN_WINDOW_KEY = "BIMTools.NumerarFundaciones.ActiveWindow"
-_TOOL_DIALOG_TITLE = u"BIMTools — Numerar Fundaciones"
+_TOOL_DIALOG_TITLE = u"Arainco: Numerar Fundaciones"
 
 
 def _get_active_window():
@@ -241,7 +241,7 @@ def execute_numerar_fundaciones(doc):
                     numero_por_grupo[dims] = num
                     break
 
-    trans = Transaction(doc, "Numerar fundaciones aisladas")
+    trans = Transaction(doc, "Arainco: Numerar fundaciones aisladas")
     try:
         trans.Start()
         numerados = 0

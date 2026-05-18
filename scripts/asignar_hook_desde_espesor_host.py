@@ -139,7 +139,7 @@ def crear_hook_type_en_doc(documento, largo_hook_mm, nombre="Rebar Hook", angulo
         raise Exception("No hay RebarBarType en el documento.")
     nombres_existentes = [ht.Name for ht in FilteredElementCollector(documento).OfClass(RebarHookType) if ht and ht.Name]
     angulo_str = str(int(angulo_grados)) if angulo_grados == int(angulo_grados) else str(angulo_grados)
-    t = Transaction(documento, "Crear Rebar Hook desde espesor host") if en_transaccion else None
+    t = Transaction(documento, "Arainco: Crear Rebar Hook desde espesor host") if en_transaccion else None
     if t:
         t.Start()
     try:
@@ -243,7 +243,7 @@ def ejecutar():
     if not pares:
         print("Error: Selecciona Area Reinforcements o losas (Floor) / muros (Wall) y vuelve a ejecutar.")
         return
-    trans = Transaction(doc, "Asignar Hook desde espesor host")
+    trans = Transaction(doc, "Arainco: Asignar Hook desde espesor host")
     trans.Start()
     try:
         asignados = 0

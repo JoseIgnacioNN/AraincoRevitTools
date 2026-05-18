@@ -818,7 +818,7 @@ def crear_lineas_detalle_evaluacion_recubrimiento(
                         avisos.append(unicode(ex))
 
     if use_transaction:
-        t = Transaction(document, u"BIMTools: detalle evaluación recubrimiento fundación")
+        t = Transaction(document, u"Arainco: detalle evaluación recubrimiento fundación")
         try:
             t.Start()
         except Exception as ex:
@@ -911,7 +911,7 @@ def crear_marcador_vector_norm_rebar(
         document.Create.NewDetailCurve(view, ln_draw)
 
     if use_transaction:
-        t = Transaction(document, u"BIMTools: marcador vector norm Rebar (CreateFromCurves)")
+        t = Transaction(document, u"Arainco: marcador vector norm Rebar (CreateFromCurves)")
         try:
             t.Start()
         except Exception as ex:

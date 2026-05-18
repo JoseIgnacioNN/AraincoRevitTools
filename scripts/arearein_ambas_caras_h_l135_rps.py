@@ -121,7 +121,7 @@ def _run_area_ambas_caras(doc, ar):
         return 0, 0, 0, 0, 0, [u"Import: {0}".format(_import_error_message())], 0
 
     msgs = []
-    t = Transaction(doc, u"BIMTools: quitar area reinforcement system (ext+int L+135)")
+    t = Transaction(doc, u"Arainco: quitar area reinforcement system (ext+int L+135)")
     t.Start()
     try:
         new_ids = AreaReinforcement.RemoveAreaReinforcementSystem(doc, ar)
