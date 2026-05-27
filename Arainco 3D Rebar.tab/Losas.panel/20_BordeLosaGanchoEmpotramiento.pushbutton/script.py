@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Boton: borde losa gancho y empotramiento."""
+"""Refuerzo borde losa — entrada pyRevit (copia portable).
+
+Resuelve ``<pushbutton>/scripts/`` en primer lugar; si no existe, sube directorios
+hasta encontrar ``scripts/barras_bordes_losa_gancho_empotramiento.py`` (extensión BIMTools).
+"""
 
 import os
+import sys
 import imp
 
 import clr
@@ -9,15 +14,24 @@ import clr
 clr.AddReference("RevitAPIUI")
 from Autodesk.Revit.UI import TaskDialog
 
-_TOOL_DIALOG_TITLE = u"Refuerzo borde losa"
+_TOOL_DIALOG_TITLE = u"Arainco: Refuerzo Borde Losa"
+_MAIN_MODULE = "barras_bordes_losa_gancho_empotramiento.py"
 
 
-def _find_module(start_dir):
-    cursor = start_dir
+def _find_scripts_dir(pushbutton_dir):
+    """
+    1) ``<pushbutton>/scripts/barras_bordes_losa_gancho_empotramiento.py`` (portable).
+    2) ``.../scripts/`` subiendo hasta 10 niveles (extensión clásica).
+    """
+    local = os.path.join(pushbutton_dir, "scripts")
+    if os.path.isfile(os.path.join(local, _MAIN_MODULE)):
+        return os.path.abspath(local)
+
+    cursor = pushbutton_dir
     for _ in range(10):
-        candidate = os.path.join(cursor, "scripts", "barras_bordes_losa_gancho_empotramiento.py")
-        if os.path.isfile(candidate):
-            return candidate
+        candidate = os.path.join(cursor, "scripts")
+        if os.path.isfile(os.path.join(candidate, _MAIN_MODULE)):
+            return os.path.abspath(candidate)
         parent = os.path.dirname(cursor)
         if parent == cursor:
             break
@@ -25,28 +39,41 @@ def _find_module(start_dir):
     return None
 
 
-_pushbutton_dir = os.path.dirname(os.path.abspath(__file__))
-_module_path = _find_module(_pushbutton_dir)
+def _ensure_scripts_on_path(scripts_dir):
+    if scripts_dir and scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
 
-if not _module_path:
+
+_pushbutton_dir = os.path.dirname(os.path.abspath(__file__))
+_scripts_dir = _find_scripts_dir(_pushbutton_dir)
+
+if not _scripts_dir:
     TaskDialog.Show(
         _TOOL_DIALOG_TITLE,
-        u"No se encontro scripts/barras_bordes_losa_gancho_empotramiento.py",
+        u"No se encontró scripts/{0}".format(_MAIN_MODULE),
     )
-    raise Exception(u"No se encontro scripts/barras_bordes_losa_gancho_empotramiento.py")
+    raise Exception(u"No se encontró scripts/{0}".format(_MAIN_MODULE))
 
-import sys as _sys
-
-_scripts_dir = os.path.dirname(_module_path)
-if _scripts_dir not in _sys.path:
-    _sys.path.insert(0, _scripts_dir)
-import bimtools_paths
-
-bimtools_paths.set_pushbutton_dir(_pushbutton_dir)
-_sys.modules.pop("enfierrado_shaft_hashtag", None)
-_sys.modules.pop("barras_bordes_losa_gancho_empotramiento", None)
+_ensure_scripts_on_path(_scripts_dir)
 
 try:
+    import bimtools_paths
+
+    bimtools_paths.set_pushbutton_dir(_pushbutton_dir)
+except Exception:
+    pass
+
+for _mod_name in (
+    "enfierrado_shaft_hashtag",
+    "barras_bordes_losa_gancho_empotramiento",
+    "seleccion_caras_elemento",
+    "lap_detail_link_schema",
+    "embed_anchorage_link_schema",
+):
+    sys.modules.pop(_mod_name, None)
+
+try:
+    _module_path = os.path.join(_scripts_dir, _MAIN_MODULE)
     _mod = imp.load_source("barras_bordes_losa_gancho_empotramiento", _module_path)
     _mod.run_pyrevit(__revit__)
 except Exception as ex:

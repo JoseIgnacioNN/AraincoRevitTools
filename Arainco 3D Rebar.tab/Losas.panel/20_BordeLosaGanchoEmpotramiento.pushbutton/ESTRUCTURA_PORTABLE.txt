@@ -1,0 +1,45 @@
+20_BordeLosaGanchoEmpotramiento.pushbutton
+├── bundle.yaml
+├── script.py              Arranque pyRevit (prioriza scripts/ local)
+├── ESTRUCTURA_PORTABLE.txt
+├── icon.png               Opcional (icono cinta + respaldo cabecera WPF)
+├── empresa_logo.png       Opcional (logo cabecera; mismo criterio que otros botones)
+└── scripts/
+    ├── barras_bordes_losa_gancho_empotramiento.py   UI WPF + ExternalEvents
+    ├── enfierrado_shaft_hashtag.py                  Motor geométrico (barras, ganchos, troceo)
+    ├── seleccion_caras_elemento.py                  Pick host + caras
+    ├── bimtools_paths.py                            Logos / rutas pushbutton
+    ├── bimtools_wpf_dark_theme.py                   Estilos WPF compartidos
+    ├── revit_wpf_window_position.py                 Posición ventana respecto a Revit
+    ├── bimtools_rebar_hook_lengths.py               Tabla traslapes / ganchos por Ø
+    ├── lap_detail_link_schema.py                    Extensible Storage empalmes
+    └── embed_anchorage_link_schema.py               Extensible Storage cotas empotramiento
+
+Copie solo esta carpilla .pushbutton a la pestaña de otra extensión pyRevit.
+
+-----------------------------------------------------------------------------
+Fuente canónica (BIMTools.extension)
+-----------------------------------------------------------------------------
+
+El código compartido vive en ``BIMTools.extension/scripts/``. Esta carpilla portable
+debe sincronizarse desde ahí cuando se publique o entregue el botón suelto.
+
+Tras editar la herramienta en ``scripts/``, copie de nuevo los .py listados arriba
+a ``<pushbutton>/scripts/`` para no divergir.
+
+Prioridad en tiempo de ejecución: ``<pushbutton>/scripts/`` tiene precedencia sobre
+``.../BIMTools.extension/scripts`` si ambos existen (script.py inserta primero la ruta local).
+
+-----------------------------------------------------------------------------
+Dependencias de proyecto Revit (no incluidas en el paquete)
+-----------------------------------------------------------------------------
+
+El modelo debe tener, según el flujo:
+
+  - RebarBarType
+  - RebarHookType (p. ej. "Standard - 90 deg.")
+  - Familias de tag según capas (EST_A_STRUCTURAL REBAR TAG, ..._DOUBLE QUANTITY, etc.)
+  - Detail line-based de empalme: EST_D_DEATIL ITEM_EMPALME / tipo Empalme (opcional;
+    si falta, se crean barras sin detalle de empalme)
+
+Revit 2024–2026 | pyRevit (IronPython 2.7).
