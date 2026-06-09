@@ -1,0 +1,50 @@
+35_DividirRebarSetMaxSpacing.pushbutton
+├── bundle.yaml
+├── script.py                              Arranque pyRevit (solo scripts/ local)
+├── ESTRUCTURA_PORTABLE.txt
+├── icon.png                               Opcional (icono cinta)
+└── scripts/                               Paquete autocontenido (copiar completo)
+    ├── dividir_rebar_set_max_spacing.py   Selección + división Rebar Maximum Spacing
+    ├── dividir_rebar_set_instruction_dialog.py  Diálogos WPF inicio / resultado
+    ├── bimtools_wpf_dark_theme.py         Tema oscuro WPF
+    └── revit_wpf_window_position.py       Centrado modal sobre Revit
+
+Copie solo esta carpeta .pushbutton a otra extensión pyRevit.
+
+  - No requiere bimtools_paths ni módulos de la raíz de BIMTools.extension
+  - No busca scripts/ en carpetas padre (sin fallback de desarrollo)
+  - script.py valida que los cuatro .py de scripts/ existan antes de ejecutar
+
+-----------------------------------------------------------------------------
+Arquitectura
+-----------------------------------------------------------------------------
+
+  script.py          Entrada pyRevit, validación del paquete y recarga IronPython
+       ↓
+  dividir_rebar_set_max_spacing.py   Orquestación: selección, Transaction Arainco:
+       ↓
+  dividir_rebar_set_instruction_dialog.py   WPF modal (inicio OK/Cancelar, resultado)
+
+Transacciones: prefijo ``Arainco: Dividir rebar set Maximum Spacing``.
+
+-----------------------------------------------------------------------------
+Fuente canónica (BIMTools.extension, solo desarrollo)
+-----------------------------------------------------------------------------
+
+Respaldo en ``BIMTools.extension/scripts/dividir_rebar_set_max_spacing.py``.
+Tras editar la lógica principal, sincronice ese .py con
+``<pushbutton>/scripts/dividir_rebar_set_max_spacing.py`` antes de entregar
+el paquete portable.
+
+Los diálogos WPF y el tema viven solo en ``<pushbutton>/scripts/``; no hay
+copia canónica externa obligatoria.
+
+-----------------------------------------------------------------------------
+Requisitos
+-----------------------------------------------------------------------------
+
+  - Rebar shape-driven con layout Maximum Spacing y al menos dos barras
+  - Revit 2024–2026: división manual (copia + SetLayoutAsMaximumSpacing)
+  - Revit 2027+: API SplitRebar cuando esté disponible
+
+pyRevit (IronPython 2.7).
