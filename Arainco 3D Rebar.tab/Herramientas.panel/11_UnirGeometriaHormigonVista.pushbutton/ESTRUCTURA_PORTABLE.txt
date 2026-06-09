@@ -1,0 +1,53 @@
+11_UnirGeometriaHormigonVista.pushbutton
+├── bundle.yaml
+├── script.py                              Arranque pyRevit (solo scripts/ local)
+├── ESTRUCTURA_PORTABLE.txt
+├── icon.png                               Opcional (icono cinta)
+└── scripts/                               Paquete autocontenido (copiar completo)
+    ├── join_geometry_concrete_vista.py    Lectura, candidatos, JoinGeometry
+    ├── join_geometry_instruction_dialog.py  Diálogo WPF inicio (OK/Cancelar)
+    ├── join_geometry_material_concrete.py Detección material Concrete
+    ├── bimtools_wpf_dark_theme.py         Tema oscuro WPF
+    └── revit_wpf_window_position.py       Centrado modal sobre Revit
+
+Copie solo esta carpeta .pushbutton a otra extensión pyRevit.
+
+  - No requiere bimtools_paths ni módulos de la raíz de BIMTools.extension
+  - No busca scripts/ en carpetas padre (sin fallback de desarrollo)
+  - script.py valida que los cinco .py de scripts/ existan antes de ejecutar
+
+-----------------------------------------------------------------------------
+Arquitectura
+-----------------------------------------------------------------------------
+
+  script.py          Entrada pyRevit, validación del paquete y recarga IronPython
+       ↓
+  join_geometry_concrete_vista.py   Orquestación: barras de progreso, Transaction
+       ↓
+  join_geometry_instruction_dialog.py   WPF modal (inicio OK/Cancelar)
+  join_geometry_material_concrete.py    Categorías y filtro material Concrete
+
+Transacciones: prefijo ``Arainco: Unir geometría hormigón (vista activa)``.
+
+-----------------------------------------------------------------------------
+Fuente canónica (BIMTools.extension, solo desarrollo)
+-----------------------------------------------------------------------------
+
+Respaldo en ``BIMTools.extension/scripts/join_geometry_concrete_vista.py``.
+Tras editar la lógica principal, sincronice ese .py con
+``<pushbutton>/scripts/join_geometry_concrete_vista.py`` (y el diálogo / material
+si aplica) antes de entregar el paquete portable.
+
+Otros consumidores internos (p. ej. Siguiente Revisión) importan
+``_BloquearComandosRevit`` desde la copia en ``scripts/`` de la extensión, no
+desde este pushbutton.
+
+-----------------------------------------------------------------------------
+Requisitos
+-----------------------------------------------------------------------------
+
+  - Revit 2024–2026 (JoinGeometryUtils)
+  - Vista de modelo activa (no hoja ni cuadro de planificación)
+  - Elementos estructurales con material Concrete en la vista
+
+pyRevit (IronPython 2.7).
