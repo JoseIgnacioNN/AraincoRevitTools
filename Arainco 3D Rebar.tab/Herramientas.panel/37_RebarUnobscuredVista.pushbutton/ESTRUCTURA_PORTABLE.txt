@@ -1,0 +1,66 @@
+37_RebarUnobscuredVista.pushbutton
+├── bundle.yaml
+├── script.py                              Arranque pyRevit (prioriza scripts/ local)
+├── ESTRUCTURA_PORTABLE.txt
+├── icon.png                               Opcional (icono cinta)
+└── scripts/
+    ├── run.py                             Orquestación (vista activa → acción → transacción)
+    ├── bimtools_wpf_dark_theme.py         Tema oscuro WPF compartido (copia)
+    ├── revit_wpf_window_position.py       Posicionamiento ventanas sobre Revit (copia)
+    ├── lib/
+    │   ├── __init__.py
+    │   └── rebar_3d_visibility.py         API Revit: collect / apply / summarize
+    └── ui/
+        ├── __init__.py
+        └── action_dialog.py               Diálogos modal apply / remove / status
+
+Copie solo esta carpeta .pushbutton a otra extensión pyRevit; no requiere
+bimtools_paths ni otros módulos de la raíz de BIMTools.extension.
+
+-----------------------------------------------------------------------------
+Arquitectura (capas)
+-----------------------------------------------------------------------------
+
+  script.py          Entrada pyRevit, resolución de ruta y recarga IronPython
+       ↓
+  run.py             Orquestación: validaciones, diálogo, Transaction Arainco:
+       ↓
+  lib/               Lógica Revit API (visibilidad unobscured / sólido en vista)
+       ↓
+  ui/                WPF modal (sin singleton; ShowDialog efímero)
+
+Transacciones: prefijo ``Arainco: `` (aplicar / quitar View Unobscured barras).
+
+-----------------------------------------------------------------------------
+Fuente canónica (BIMTools.extension)
+-----------------------------------------------------------------------------
+
+Desarrollo principal en ``<pushbutton>/scripts/`` (estructura en capas).
+
+Respaldo plano en ``BIMTools.extension/scripts/``:
+  - rebar_unobscured_vista_activa.py
+  - rebar_unobscured_action_dialog.py
+
+Módulo compartido (NO duplicar lógica en raíz; otros botones lo importan):
+  - scripts/bimtools_rebar_3d_visibility.py  ← armado_vigas, columnas, etc.
+
+La copia portable ``lib/rebar_3d_visibility.py`` es un vendor del módulo compartido
+(sincronizar manualmente si se amplía la API compartida).
+
+Prioridad en ejecución: ``<pushbutton>/scripts/`` precede a
+``.../BIMTools.extension/scripts/`` si ambos existen.
+
+En desarrollo dentro de la extensión, si falta la copia local,
+``script.py`` localiza ``scripts/rebar_unobscured_vista_activa.py`` subiendo
+directorios (fallback sin capas lib/ui).
+
+Tras editar la lógica, sincronice ``run.py`` + ``ui/action_dialog.py`` con los
+.py planos de ``BIMTools.extension/scripts/`` antes de entregar el paquete portable.
+
+-----------------------------------------------------------------------------
+Requisitos
+-----------------------------------------------------------------------------
+
+  - Vista de modelo activa (no lámina ni schedule)
+  - Rebar, RebarInSystem o AreaReinforcement visibles en la vista
+  - Revit 2024–2026 · pyRevit IronPython 2.7

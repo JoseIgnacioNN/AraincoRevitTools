@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Armado Muros — mockup elevación + tramos</title>
+  <style>
+    :root {
+      --bg: #1e1e1e;
+      --bg-elevated: #252526;
+      --bg-input: #3c3c3c;
+      --text: #cccccc;
+      --text-muted: #858585;
+      --text-dim: #6e6e6e;
+      --accent: #3794ff;
+      --accent-hover: #4da3ff;
+      --accent-text: #ffffff;
+      --border: #3e3e42;
+      --border-subtle: #333337;
+      --fill-wall: #2d2d30;
+      --fill-wall-selected: #37373d;
+      --success: #4ec9b0;
+      --radius: 6px;
+      --font: "Segoe UI", system-ui, -apple-system, sans-serif;
+      --mono: "Cascadia Code", "Consolas", monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+      min-height: 100vh;
+    }
+
+    .page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 20px 24px 40px;
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 16px;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .card-body { padding: 14px; }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .toolbar-spacer { flex: 1; }
+
+    .btn {
+      font-family: inherit;
+      font-size: 13px;
+      padding: 6px 12px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      color: var(--text);
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
+    }
+
+    .btn:hover:not(:disabled) {
+      background: #464647;
+      border-color: #555;
+    }
+
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--accent-text);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+
+    .btn-sm { padding: 4px 8px; font-size: 12px; }
+
+    .btn-group { display: flex; gap: 4px; }
+
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #094771;
+      color: #75beff;
+    }
+
+    .badge-neutral {
+      background: #333;
+      color: var(--text-muted);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+    }
+
+    #elevation-svg {
+      width: 100%;
+      display: block;
+      max-height: 420px;
+    }
+
+    .panel-section {
+      margin-bottom: 14px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .panel-section:last-child {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
+    .panel-title {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .panel-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .field-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .field-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      min-width: 72px;
+    }
+
+    select, input[type="number"] {
+      font-family: inherit;
+      font-size: 13px;
+      padding: 5px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      color: var(--text);
+    }
+
+    input[type="number"] { width: 52px; text-align: center; }
+
+    .layer-box {
+      background: var(--bg);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      margin-bottom: 10px;
+    }
+
+    .layer-box h4 {
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--text-muted);
+    }
+
+    .tramo-list { list-style: none; }
+
+    .tramo-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+
+    .tramo-item:hover { background: #2a2d2e; }
+
+    .tramo-item.selected { background: #37373d; }
+
+    .tramo-item .detail { color: var(--text-muted); font-size: 12px; }
+
+    .callout {
+      font-size: 12px;
+      color: var(--text-muted);
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #2a2a2b;
+    }
+
+    .empty-panel {
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+
+    .pie-btn {
+      cursor: pointer;
+    }
+
+    .pie-btn:hover rect { filter: brightness(1.15); }
+
+    .wall-rect, .tramo-bracket, .tramo-label { cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>Armado Muros — mockup elevación + tramos</h1>
+    <p class="subtitle">
+      Definición de tramo en el <strong>pie de cada muro</strong> (Z base), equivalente a
+      <code>troceo_por_muro</code> en Revit. Un controlador por tramo; Inicio y Final independientes.
+    </p>
+
+    <div class="card">
+      <div class="card-header">
+        <span>Configuración global</span>
+        <div class="toolbar">
+          <button type="button" class="btn btn-sm" id="btn-minus-wall">− muro</button>
+          <strong id="wall-count-label">4 muros</strong>
+          <button type="button" class="btn btn-sm" id="btn-plus-wall">+ muro</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="toolbar">
+          <label style="font-size:13px;color:var(--text-muted)">Escenario</label>
+          <select id="scenario-select" style="min-width:160px"></select>
+          <span id="scenario-hint" style="font-size:12px;color:var(--text-dim)"></span>
+        </div>
+        <div class="toolbar" style="margin-top:10px">
+          <span style="font-size:13px">Extremo</span>
+          <div class="btn-group">
+            <button type="button" class="btn btn-primary" id="btn-ext-inicio">Inicio</button>
+            <button type="button" class="btn" id="btn-ext-final">Final</button>
+          </div>
+          <div class="toolbar-spacer"></div>
+          <span id="stats-label" style="font-size:13px;color:var(--text-muted)"></span>
+          <button type="button" class="btn btn-sm" id="btn-reset">Un solo tramo</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="card">
+        <div class="card-header">Vista de elevación</div>
+        <div class="card-body">
+          <p class="hint">
+            Stack M1↓Mn. Clic en <strong>Def. tramo</strong> en el pie para iniciar un tramo en ese muro.
+          </p>
+          <svg id="elevation-svg" role="img" aria-label="Vista de elevación apilada"></svg>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header" id="panel-header">Panel tramo — Inicio</div>
+        <div class="card-body" id="panel-body"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Tramos activos</div>
+      <div class="card-body">
+        <ul class="tramo-list" id="tramo-list"></ul>
+      </div>
+    </div>
+
+    <p class="callout" id="callout"></p>
+  </div>
+
+  <script>
+    const DIAM_OPTIONS = [6, 8, 10, 12, 16, 18, 22, 25, 28, 32, 36];
+    const CONF_SPACING_MM = 100;
+    const TRAMO_COLORS = ["#3794ff", "#4ec9b0", "#ce9178", "#c586c0", "#dcdcaa"];
+    const STORAGE_KEY = "armado-muros-elevacion-mockup-v4";
+
+    const SCENARIOS = {
+      uniform: {
+        label: "Uniforme",
+        hint: "Mismo largo y altura en todos los pisos",
+        heights: [3000, 3000, 3000, 3000],
+        lengths: [12000, 12000, 12000, 12000],
+      },
+      alturas: {
+        label: "Alturas distintas",
+        hint: "Largo común; pisos con distinta altura (H)",
+        heights: [2800, 3200, 2600, 3000],
+        lengths: [12000, 12000, 12000, 12000],
+      },
+      voladizos: {
+        label: "Voladizos / retranqueos",
+        hint: "Misma altura; largos distintos alineados a Inicio",
+        heights: [3000, 3000, 3000, 3000],
+        lengths: [12000, 12000, 14000, 9500],
+      },
+      mixto: {
+        label: "Mixto (H + L)",
+        hint: "Alturas y largos variables — caso típico",
+        heights: [2800, 3200, 2600, 3000],
+        lengths: [12000, 12000, 13500, 9500],
+      },
+      escalinata: {
+        label: "Escalinata",
+        hint: "Retroceso progresivo en largo y altura hacia arriba",
+        heights: [3500, 3000, 2800, 2400],
+        lengths: [14000, 12000, 10000, 8000],
+      },
+    };
+
+    function sliceScenario(scenario, n) {
+      return {
+        heights: Array.from({ length: n }, (_, i) => scenario.heights[i % scenario.heights.length]),
+        lengths: Array.from({ length: n }, (_, i) => scenario.lengths[i % scenario.lengths.length]),
+      };
+    }
+
+    function formatLenMm(mm) {
+      return mm >= 1000 ? `${(mm / 1000).toFixed(1)} m` : `${mm} mm`;
+    }
+
+    function defaultLayer() {
+      return { nBars: 2, diamMm: 12 };
+    }
+
+    function defaultTramoConfig() {
+      return {
+        capas: 2,
+        layers: [defaultLayer(), defaultLayer()],
+        confDiamMm: 8,
+        confSpacingMm: CONF_SPACING_MM,
+      };
+    }
+
+    function confDiamForLayer0(d0) {
+      const min = d0 / 3;
+      return DIAM_OPTIONS.find((d) => d >= min) ?? DIAM_OPTIONS[DIAM_OPTIONS.length - 1];
+    }
+
+    function buildTramos(nWalls, tramoDefs) {
+      const E = tramoDefs
+        .map((on, i) => (on ? i : -1))
+        .filter((i) => i >= 0 && i < nWalls)
+        .sort((a, b) => a - b);
+
+      if (E.length === 0) {
+        return [{
+          id: 0,
+          label: "T1",
+          wallIndices: Array.from({ length: nWalls }, (_, i) => i),
+          ownerIndex: 0,
+        }];
+      }
+
+      const segs = [];
+      let sid = 0;
+
+      if (E[0] > 0) {
+        segs.push({
+          id: sid,
+          label: `T${sid + 1}`,
+          wallIndices: Array.from({ length: E[0] }, (_, i) => i),
+          ownerIndex: 0,
+        });
+        sid++;
+      }
+
+      for (let j = 0; j < E.length; j++) {
+        const start = E[j];
+        const end = j + 1 < E.length ? E[j + 1] : nWalls;
+        const wallIndices = Array.from({ length: end - start }, (_, k) => start + k);
+        if (wallIndices.length > 0) {
+          segs.push({
+            id: sid,
+            label: `T${sid + 1}`,
+            wallIndices,
+            ownerIndex: E[j],
+          });
+          sid++;
+        }
+      }
+
+      return segs;
+    }
+
+    function tramoKey(extremo, tramoId) {
+      return `${extremo}:${tramoId}`;
+    }
+
+    function resizeTramoDefs(prev, nWalls) {
+      return Array.from({ length: nWalls }, (_, i) => (i < prev.length ? prev[i] : false));
+    }
+
+    function migrateTramoDefs(state) {
+      if (state.tramoDefInicio) return state;
+      if (state.empalmesInicio) {
+        state.tramoDefInicio = state.empalmesInicio;
+        state.tramoDefFinal = state.empalmesFinal || [];
+      }
+      return state;
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch (_) { /* ignore */ }
+      return {
+        nWalls: 4,
+        scenarioId: "mixto",
+        heightsMm: sliceScenario(SCENARIOS.mixto, 4).heights,
+        lengthsMm: sliceScenario(SCENARIOS.mixto, 4).lengths,
+        extremo: "inicio",
+        tramoDefInicio: [false, false, false, false],
+        tramoDefFinal: [false, false, false, false],
+        selectedInicio: 0,
+        selectedFinal: 0,
+        configs: {},
+      };
+    }
+
+    function saveState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    let state = migrateTramoDefs(loadState());
+    if (!state.scenarioId || !SCENARIOS[state.scenarioId]) {
+      state.scenarioId = "mixto";
+    }
+    if (!state.heightsMm || !state.lengthsMm) {
+      const sliced = sliceScenario(SCENARIOS[state.scenarioId], state.nWalls || 4);
+      state.heightsMm = sliced.heights;
+      state.lengthsMm = sliced.lengths;
+    }
+
+    function getTramoDefs() {
+      return state.extremo === "inicio" ? state.tramoDefInicio : state.tramoDefFinal;
+    }
+
+    function setTramoDefs(arr) {
+      if (state.extremo === "inicio") state.tramoDefInicio = arr;
+      else state.tramoDefFinal = arr;
+    }
+
+    function getSelectedId() {
+      return state.extremo === "inicio" ? state.selectedInicio : state.selectedFinal;
+    }
+
+    function setSelectedId(id) {
+      if (state.extremo === "inicio") state.selectedInicio = id;
+      else state.selectedFinal = id;
+    }
+
+    function ensureConfigs(extremo, tramos) {
+      for (const t of tramos) {
+        const key = tramoKey(extremo, t.id);
+        if (!state.configs[key]) state.configs[key] = defaultTramoConfig();
+      }
+    }
+
+    function diamOptionsHtml(selected) {
+      return DIAM_OPTIONS.map(
+        (d) => `<option value="${d}"${d === selected ? " selected" : ""}>ø${d}</option>`,
+      ).join("");
+    }
+
+    function renderPanel(tramo, config) {
+      const panelBody = document.getElementById("panel-body");
+      const panelHeader = document.getElementById("panel-header");
+      panelHeader.textContent = `Panel tramo — ${state.extremo === "inicio" ? "Inicio" : "Final"}`;
+
+      if (!tramo) {
+        panelBody.innerHTML = '<p class="empty-panel">Seleccione un tramo en la elevación (columna o etiqueta Tn).</p>';
+        return;
+      }
+
+      const wallLabel =
+        tramo.wallIndices.length === 1
+          ? `Muro M${tramo.wallIndices[0] + 1}`
+          : `Muros M${tramo.wallIndices[0] + 1}–M${tramo.wallIndices[tramo.wallIndices.length - 1] + 1}`;
+
+      const fusion =
+        tramo.wallIndices.length > 1 ? " · fusión colineal simulada" : "";
+
+      let layersHtml = config.layers
+        .map(
+          (layer, idx) => `
+        <div class="layer-box" data-layer="${idx}">
+          <h4>Capa L${idx}${idx === 0 ? " (exterior)" : ""}</h4>
+          <div class="field-row">
+            <span class="field-label">n barras</span>
+            <button type="button" class="btn btn-sm layer-n-minus">−</button>
+            <input type="number" class="layer-n-input" min="1" value="${layer.nBars}" />
+            <button type="button" class="btn btn-sm layer-n-plus">+</button>
+          </div>
+          <div class="field-row">
+            <span class="field-label">ø (mm)</span>
+            <select class="layer-diam-select">${diamOptionsHtml(layer.diamMm)}</select>
+          </div>
+        </div>`,
+        )
+        .join("");
+
+      panelBody.innerHTML = `
+        <div class="panel-section">
+          <div class="panel-title">
+            <span class="badge">${tramo.label}</span>
+            Controlador del tramo
+          </div>
+          <p class="panel-meta">${wallLabel} · propietario M${tramo.ownerIndex + 1}${fusion}</p>
+          <div class="field-row">
+            <span class="field-label">CAPAS</span>
+            <button type="button" class="btn btn-sm" id="capas-minus">−</button>
+            <strong id="capas-val">${config.capas}</strong>
+            <button type="button" class="btn btn-sm" id="capas-plus">+</button>
+          </div>
+        </div>
+        ${layersHtml}
+        <div class="panel-section">
+          <div class="panel-title">Confinamiento</div>
+          <div class="field-row">
+            <span class="field-label">ø estribo</span>
+            <select id="conf-diam">${diamOptionsHtml(config.confDiamMm)}</select>
+            <span style="font-size:12px;color:var(--text-dim)">
+              (auto ≥ L0/3: ø${confDiamForLayer0(config.layers[0]?.diamMm ?? 12)})
+            </span>
+          </div>
+          <p style="font-size:12px;color:var(--text-muted);margin-top:6px">@ fijo ${config.confSpacingMm} mm</p>
+        </div>`;
+
+      const key = tramoKey(state.extremo, tramo.id);
+
+      function updateConfig(patch) {
+        Object.assign(state.configs[key], patch);
+        saveState();
+        render();
+      }
+
+      document.getElementById("capas-minus").onclick = () => {
+        const c = Math.max(1, config.capas - 1);
+        const layers = config.layers.slice(0, c);
+        while (layers.length < c) layers.push(defaultLayer());
+        const d0 = layers[0]?.diamMm ?? 12;
+        updateConfig({ capas: c, layers, confDiamMm: confDiamForLayer0(d0) });
+      };
+
+      document.getElementById("capas-plus").onclick = () => {
+        const c = Math.min(4, config.capas + 1);
+        const layers = [...config.layers];
+        while (layers.length < c) layers.push(defaultLayer());
+        updateConfig({ capas: c, layers });
+      };
+
+      document.getElementById("conf-diam").onchange = (e) => {
+        updateConfig({ confDiamMm: parseInt(e.target.value, 10) });
+      };
+
+      panelBody.querySelectorAll(".layer-box").forEach((box) => {
+        const idx = parseInt(box.dataset.layer, 10);
+        box.querySelector(".layer-n-minus").onclick = () => {
+          const layers = config.layers.map((l, i) =>
+            i === idx ? { ...l, nBars: Math.max(1, l.nBars - 1) } : l,
+          );
+          updateConfig({ layers });
+        };
+        box.querySelector(".layer-n-plus").onclick = () => {
+          const layers = config.layers.map((l, i) =>
+            i === idx ? { ...l, nBars: l.nBars + 1 } : l,
+          );
+          updateConfig({ layers });
+        };
+        box.querySelector(".layer-n-input").onchange = (e) => {
+          const n = Math.max(1, parseInt(e.target.value, 10) || 1);
+          const layers = config.layers.map((l, i) =>
+            i === idx ? { ...l, nBars: n } : l,
+          );
+          updateConfig({ layers });
+        };
+        box.querySelector(".layer-diam-select").onchange = (e) => {
+          const d = parseInt(e.target.value, 10);
+          const layers = config.layers.map((l, i) =>
+            i === idx ? { ...l, diamMm: d } : l,
+          );
+          const patch = { layers };
+          if (idx === 0) patch.confDiamMm = confDiamForLayer0(d);
+          updateConfig(patch);
+        };
+      });
+    }
+
+    function renderElevation(nWalls, tramoDefs, tramos, selectedId, heightsMm, lengthsMm) {
+      const svg = document.getElementById("elevation-svg");
+      const isInicio = state.extremo === "inicio";
+      const extremoLabel = isInicio ? "Inicio" : "Final";
+
+      const W = 560;
+      const H = 440;
+      const padL = 52;
+      const padR = 72;
+      const padT = 36;
+      const padB = 28;
+      const drawW = W - padL - padR;
+      const drawH = H - padT - padB;
+      const yBase = padT + drawH;
+      const totalH = heightsMm.reduce((a, b) => a + b, 0);
+      const scaleH = drawH / totalH;
+      const maxL = Math.max(...lengthsMm);
+      const scaleL = drawW / maxL;
+      const maxWidthPx = maxL * scaleL;
+
+      const tramoByWall = new Map();
+      for (const t of tramos) {
+        for (const wi of t.wallIndices) tramoByWall.set(wi, t);
+      }
+
+      let yCursor = yBase;
+      const wallRects = [];
+      for (let wi = 0; wi < nWalls; wi++) {
+        const hPx = heightsMm[wi] * scaleH;
+        const wPx = lengthsMm[wi] * scaleL;
+        yCursor -= hPx;
+        wallRects.push({
+          wi,
+          x: padL,
+          y: yCursor,
+          w: wPx,
+          h: hPx,
+          pieY: yCursor + hPx - 1,
+          lengthMm: lengthsMm[wi],
+          heightMm: heightsMm[wi],
+          tramo: tramoByWall.get(wi),
+        });
+      }
+
+      let html = "";
+      html += `<rect x="${padL}" y="${padT}" width="${drawW}" height="${drawH}" fill="#1e1e1e" stroke="#3e3e42"/>`;
+      html += `<text x="${padL + drawW / 2}" y="16" text-anchor="middle" fill="#ccc" font-size="11" font-weight="600">Elevación apilada (Z) — extremo ${extremoLabel}</text>`;
+      html += `<text x="${padL}" y="28" fill="#6e6e6e" font-size="9">${isInicio ? "← Inicio" : ""}</text>`;
+      html += `<text x="${padL + drawW}" y="28" text-anchor="end" fill="#6e6e6e" font-size="9">${isInicio ? "" : "Final →"}</text>`;
+      html += `<line x1="${padL}" y1="${yBase}" x2="${padL + drawW}" y2="${yBase}" stroke="#555" stroke-width="1.5"/>`;
+      html += `<text x="${padL + drawW / 2}" y="${yBase + 12}" text-anchor="middle" fill="#858585" font-size="9">Cota 0 · pie M1 · alineado a Inicio</text>`;
+      html += `<line x1="${padL + maxWidthPx}" y1="${padT}" x2="${padL + maxWidthPx}" y2="${yBase}" stroke="#444" stroke-width="1" stroke-dasharray="4 3" opacity="0.6"/>`;
+      html += `<text x="${padL + maxWidthPx + 2}" y="${padT + 10}" fill="#555" font-size="8">L máx</text>`;
+
+      tramos.forEach((t, ti) => {
+        const rects = wallRects.filter((r) => r.tramo.id === t.id);
+        if (!rects.length) return;
+        const yMin = Math.min(...rects.map((r) => r.y));
+        const yMax = Math.max(...rects.map((r) => r.y + r.h));
+        const xMax = Math.max(...rects.map((r) => r.x + r.w));
+        const selected = t.id === selectedId;
+        const color = TRAMO_COLORS[ti % TRAMO_COLORS.length];
+        html += `<g data-tramo="${t.id}">
+          <rect x="${xMax + 4}" y="${yMin - 2}" width="6" height="${yMax - yMin + 4}" fill="${color}" opacity="${selected ? 1 : 0.45}" class="tramo-bracket"/>
+          <text x="${xMax + 10}" y="${(yMin + yMax) / 2}" dominant-baseline="middle" fill="${selected ? "#ccc" : "#6e6e6e"}" font-size="10" font-weight="${selected ? 700 : 400}" class="tramo-label">${t.label}</text>
+        </g>`;
+      });
+
+      wallRects.forEach((r) => {
+        const selected = r.tramo.id === selectedId;
+        const ti = tramos.findIndex((t) => t.id === r.tramo.id);
+        const color = TRAMO_COLORS[ti % TRAMO_COLORS.length];
+        const xEdge = isInicio ? r.x + 6 : r.x + r.w - 6;
+        const active = tramoDefs[r.wi];
+        const ownedTramo = tramos.find((t) => t.ownerIndex === r.wi);
+
+        html += `<g class="wall-group" data-tramo="${r.tramo.id}">
+          <rect class="wall-rect" x="${r.x + 4}" y="${r.y + 2}" width="${r.w - 8}" height="${r.h - 4}"
+            fill="${selected ? "#37373d" : "#2d2d30"}" stroke="${selected ? color : "#555"}" stroke-width="${selected ? 2 : 1}"/>
+          <text x="${r.x + r.w / 2}" y="${r.y + r.h / 2 - 2}" text-anchor="middle" dominant-baseline="middle" fill="#aaa" font-size="10" font-weight="600">M${r.wi + 1}</text>
+          <text x="${r.x + r.w / 2}" y="${r.y + r.h / 2 + 10}" text-anchor="middle" dominant-baseline="middle" fill="#6e6e6e" font-size="8">L ${formatLenMm(r.lengthMm)}</text>
+          <text x="${r.x + r.w / 2}" y="${r.y + r.h / 2 + 21}" text-anchor="middle" dominant-baseline="middle" fill="#555" font-size="8">H ${r.heightMm} mm</text>
+        </g>`;
+
+        if (r.w < maxWidthPx - 2) {
+          html += `<rect x="${r.x + r.w}" y="${r.y + 2}" width="${maxWidthPx - r.w}" height="${r.h - 4}"
+            fill="#333" opacity="0.35" stroke="#555" stroke-width="0.5" stroke-dasharray="3 2"/>`;
+        }
+
+        if (selected) {
+          [0.32, 0.58].forEach((frac, li) => {
+            const yBar = r.y + r.h * frac;
+            html += `<line x1="${xEdge - (isInicio ? 0 : 10)}" y1="${yBar}" x2="${xEdge + (isInicio ? 10 : 0)}" y2="${yBar}"
+              stroke="${li === 0 ? "#3794ff" : "#4ec9b0"}" stroke-width="2.5"/>`;
+          });
+        }
+
+        html += `<line x1="${r.x + 4}" y1="${r.pieY}" x2="${r.x + r.w - 4}" y2="${r.pieY}" stroke="#444" stroke-width="1" stroke-dasharray="3 2"/>`;
+
+        if (active) {
+          html += `<line x1="${isInicio ? xEdge : xEdge - 14}" y1="${r.pieY}" x2="${isInicio ? xEdge + 14 : xEdge}" y2="${r.pieY}" stroke="#dc323c" stroke-width="2.5"/>`;
+        }
+
+        html += `<g class="pie-btn" data-wall="${r.wi}">
+          <rect x="${padL + drawW + 6}" y="${r.pieY - 11}" width="${active ? 72 : 68}" height="22" rx="4"
+            fill="${active ? "#3794ff" : "#3c3c3c"}" stroke="${active ? "#3794ff" : "#555"}"/>
+          <text x="${padL + drawW + (active ? 42 : 40)}" y="${r.pieY + 1}" text-anchor="middle" dominant-baseline="middle"
+            fill="${active ? "#fff" : "#aaa"}" font-size="8" font-weight="600" pointer-events="none">${active ? `Tramo ${ownedTramo?.label ?? "?"}` : "Def. tramo"}</text>
+        </g>`;
+      });
+
+      html += `<text x="${padL + drawW / 2}" y="${H - 6}" text-anchor="middle" fill="#6e6e6e" font-size="9">${nWalls} muros · L máx ${formatLenMm(maxL)} · ΣH ${(totalH / 1000).toFixed(1)} m</text>`;
+
+      svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+      svg.innerHTML = html;
+
+      svg.querySelectorAll("[data-tramo]").forEach((el) => {
+        el.addEventListener("click", () => {
+          setSelectedId(parseInt(el.dataset.tramo, 10));
+          saveState();
+          render();
+        });
+      });
+
+      svg.querySelectorAll(".pie-btn").forEach((el) => {
+        el.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const wi = parseInt(el.dataset.wall, 10);
+          const defs = resizeTramoDefs(getTramoDefs(), nWalls);
+          defs[wi] = !defs[wi];
+          setTramoDefs(defs);
+          saveState();
+          render();
+        });
+      });
+    }
+
+    function renderTramoList(tramos, selectedId) {
+      const list = document.getElementById("tramo-list");
+      list.innerHTML = tramos
+        .map((t) => {
+          const key = tramoKey(state.extremo, t.id);
+          const cfg = state.configs[key] ?? defaultTramoConfig();
+          const selected = t.id === selectedId;
+          const walls = t.wallIndices.map((i) => i + 1).join(", ");
+          return `<li class="tramo-item${selected ? " selected" : ""}" data-tramo="${t.id}">
+            <span class="badge${selected ? "" : " badge-neutral"}">${t.label}</span>
+            <span class="detail">M${walls} · ${cfg.capas} capas · L0 ø${cfg.layers[0]?.diamMm} n${cfg.layers[0]?.nBars}</span>
+          </li>`;
+        })
+        .join("");
+
+      list.querySelectorAll(".tramo-item").forEach((el) => {
+        el.addEventListener("click", () => {
+          setSelectedId(parseInt(el.dataset.tramo, 10));
+          saveState();
+          render();
+        });
+      });
+    }
+
+    function render() {
+      const nWalls = Math.max(2, Math.min(10, state.nWalls));
+      state.nWalls = nWalls;
+
+      if (!state.scenarioId || !SCENARIOS[state.scenarioId]) {
+        state.scenarioId = "mixto";
+      }
+      const sliced = sliceScenario(SCENARIOS[state.scenarioId], nWalls);
+      state.heightsMm = sliced.heights;
+      state.lengthsMm = sliced.lengths;
+
+      const tramoDefs = resizeTramoDefs(getTramoDefs(), nWalls);
+      setTramoDefs(tramoDefs);
+
+      const tramos = buildTramos(nWalls, tramoDefs);
+      ensureConfigs(state.extremo, tramos);
+
+      let selectedId = getSelectedId();
+      if (!tramos.some((t) => t.id === selectedId)) {
+        selectedId = tramos[0]?.id ?? 0;
+        setSelectedId(selectedId);
+      }
+
+      const selectedTramo = tramos.find((t) => t.id === selectedId) ?? null;
+      const configKey = selectedTramo ? tramoKey(state.extremo, selectedTramo.id) : "";
+      const config = state.configs[configKey] ?? defaultTramoConfig();
+
+      document.getElementById("wall-count-label").textContent = `${nWalls} muros`;
+      document.getElementById("btn-minus-wall").disabled = nWalls <= 2;
+      document.getElementById("btn-plus-wall").disabled = nWalls >= 10;
+
+      const tramoDefCount = tramoDefs.filter(Boolean).length;
+      document.getElementById("stats-label").textContent =
+        `${tramoDefCount} def. tramo${tramoDefCount !== 1 ? "s" : ""} · ${tramos.length} tramo${tramos.length !== 1 ? "s" : ""}`;
+
+      document.getElementById("btn-ext-inicio").className =
+        state.extremo === "inicio" ? "btn btn-primary" : "btn";
+      document.getElementById("btn-ext-final").className =
+        state.extremo === "final" ? "btn btn-primary" : "btn";
+
+      document.getElementById("scenario-hint").textContent =
+        SCENARIOS[state.scenarioId].hint;
+      document.getElementById("scenario-select").value = state.scenarioId;
+
+      document.getElementById("callout").textContent =
+        `Escenario «${SCENARIOS[state.scenarioId].label}»: ancho = largo en planta (L), alto = altura (H). ` +
+        `Sin definiciones: un tramo por extremo. Cada Def. tramo en el pie inicia un tramo longitudinal (propietario = muro en pie).`;
+
+      renderElevation(
+        nWalls,
+        tramoDefs,
+        tramos,
+        selectedId,
+        state.heightsMm,
+        state.lengthsMm,
+      );
+      renderPanel(selectedTramo, config);
+      renderTramoList(tramos, selectedId);
+    }
+
+    document.getElementById("btn-minus-wall").onclick = () => {
+      state.nWalls = Math.max(2, state.nWalls - 1);
+      const sliced = sliceScenario(SCENARIOS[state.scenarioId], state.nWalls);
+      state.heightsMm = sliced.heights;
+      state.lengthsMm = sliced.lengths;
+      state.tramoDefInicio = resizeTramoDefs(state.tramoDefInicio, state.nWalls);
+      state.tramoDefFinal = resizeTramoDefs(state.tramoDefFinal, state.nWalls);
+      ensureConfigs("inicio", buildTramos(state.nWalls, state.tramoDefInicio));
+      ensureConfigs("final", buildTramos(state.nWalls, state.tramoDefFinal));
+      saveState();
+      render();
+    };
+
+    document.getElementById("btn-plus-wall").onclick = () => {
+      state.nWalls = Math.min(10, state.nWalls + 1);
+      const sliced = sliceScenario(SCENARIOS[state.scenarioId], state.nWalls);
+      state.heightsMm = sliced.heights;
+      state.lengthsMm = sliced.lengths;
+      state.tramoDefInicio = resizeTramoDefs(state.tramoDefInicio, state.nWalls);
+      state.tramoDefFinal = resizeTramoDefs(state.tramoDefFinal, state.nWalls);
+      ensureConfigs("inicio", buildTramos(state.nWalls, state.tramoDefInicio));
+      ensureConfigs("final", buildTramos(state.nWalls, state.tramoDefFinal));
+      saveState();
+      render();
+    };
+
+    document.getElementById("btn-ext-inicio").onclick = () => {
+      state.extremo = "inicio";
+      saveState();
+      render();
+    };
+
+    document.getElementById("btn-ext-final").onclick = () => {
+      state.extremo = "final";
+      saveState();
+      render();
+    };
+
+    document.getElementById("btn-reset").onclick = () => {
+      const zeros = Array.from({ length: state.nWalls }, () => false);
+      if (state.extremo === "inicio") state.tramoDefInicio = zeros;
+      else state.tramoDefFinal = zeros;
+      setSelectedId(0);
+      saveState();
+      render();
+    };
+
+    const scenarioSelect = document.getElementById("scenario-select");
+    scenarioSelect.innerHTML = Object.entries(SCENARIOS)
+      .map(([id, s]) => `<option value="${id}">${s.label}</option>`)
+      .join("");
+    scenarioSelect.value = state.scenarioId || "mixto";
+    scenarioSelect.onchange = () => {
+      state.scenarioId = scenarioSelect.value;
+      const sliced = sliceScenario(SCENARIOS[state.scenarioId], state.nWalls);
+      state.heightsMm = sliced.heights;
+      state.lengthsMm = sliced.lengths;
+      saveState();
+      render();
+    };
+
+    render();
+  </script>
+</body>
+</html>
