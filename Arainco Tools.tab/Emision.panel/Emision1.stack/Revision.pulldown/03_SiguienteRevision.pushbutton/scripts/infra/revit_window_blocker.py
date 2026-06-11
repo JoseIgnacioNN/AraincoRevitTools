@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Subconjunto empaquetado con Revisiones: bloqueo de la ventana principal durante ProgressBar.
-
-Evita importar el módulo completo join_geometry_concrete_vista (~800 líneas).
+Bloqueo de la ventana principal de Revit durante ProgressBar (autocontenido en el pushbutton).
 """
 
 from __future__ import print_function
@@ -31,7 +29,7 @@ def _revit_main_window_set_enabled(revit, enable):
     if revit is None:
         return
     try:
-        from revit_wpf_window_position import revit_main_hwnd
+        from infra.revit_wpf_window_position import revit_main_hwnd
     except Exception:
         return
     hwnd = revit_main_hwnd(revit)
@@ -48,7 +46,7 @@ def _revit_main_window_set_enabled(revit, enable):
         pass
 
 
-class _BloquearComandosRevit(object):
+class BloquearComandosRevit(object):
     """Deshabilita la ventana principal de Revit durante el bloque with."""
 
     def __init__(self, revit):

@@ -277,3 +277,327 @@ def position_wpf_window_center_on_active_view(win, uidoc, hwnd, width_dip, heigh
         win.Top = cy - fh * 0.5
     except Exception:
         pass
+
+
+def _hwnd_to_int(hwnd):
+    if hwnd is None:
+        return 0
+    try:
+        return int(hwnd.ToInt64())
+    except Exception:
+        try:
+            return int(hwnd)
+        except Exception:
+            return 0
+
+
+def _wpf_window_hwnd(win):
+    try:
+        from System import IntPtr
+        from System.Windows.Interop import WindowInteropHelper
+
+        h = WindowInteropHelper(win).Handle
+        if h == IntPtr.Zero:
+            return 0
+        return _hwnd_to_int(h)
+    except Exception:
+        return 0
+
+
+def _primary_work_area_px():
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", wintypes.LONG),
+                ("top", wintypes.LONG),
+                ("right", wintypes.LONG),
+                ("bottom", wintypes.LONG),
+            ]
+
+        rect = RECT()
+        if not ctypes.windll.user32.SystemParametersInfoW(
+            0x0030, 0, ctypes.byref(rect), 0,
+        ):
+            return None
+        return (
+            float(rect.left),
+            float(rect.top),
+            float(rect.right - rect.left),
+            float(rect.bottom - rect.top),
+        )
+    except Exception:
+        return None
+
+
+def _monitor_work_area_px(hwnd):
+    if hwnd is not None:
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+            MONITOR_DEFAULTTONEAREST = 2
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", wintypes.LONG),
+                    ("top", wintypes.LONG),
+                    ("right", wintypes.LONG),
+                    ("bottom", wintypes.LONG),
+                ]
+
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.DWORD),
+                    ("rcMonitor", RECT),
+                    ("rcWork", RECT),
+                    ("dwFlags", wintypes.DWORD),
+                ]
+
+            MonitorFromWindow = user32.MonitorFromWindow
+            MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+            MonitorFromWindow.restype = wintypes.HMONITOR
+            GetMonitorInfoW = user32.GetMonitorInfoW
+            GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.POINTER(MONITORINFO)]
+            GetMonitorInfoW.restype = wintypes.BOOL
+
+            h = _hwnd_to_int(hwnd)
+            if h:
+                hmon = MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST)
+                if hmon:
+                    mi = MONITORINFO()
+                    mi.cbSize = ctypes.sizeof(MONITORINFO)
+                    if GetMonitorInfoW(hmon, ctypes.byref(mi)):
+                        rc = mi.rcWork
+                        return (
+                            float(rc.left),
+                            float(rc.top),
+                            float(rc.right - rc.left),
+                            float(rc.bottom - rc.top),
+                        )
+        except Exception:
+            pass
+    return None
+
+
+def _work_area_dip_rect(left_px, top_px, width_px, height_px, hwnd_ref=None):
+    left_dip, top_dip = _screen_pixels_to_wpf_dip(left_px, top_px, hwnd_ref)
+    right_dip, bottom_dip = _screen_pixels_to_wpf_dip(
+        left_px + width_px, top_px + height_px, hwnd_ref,
+    )
+    return (
+        left_dip,
+        top_dip,
+        max(1.0, right_dip - left_dip),
+        max(1.0, bottom_dip - top_dip),
+    )
+
+
+def position_wpf_window_center_work_area(win):
+    try:
+        from System.Windows import SystemParameters, WindowStartupLocation
+
+        wa = SystemParameters.WorkArea
+        win.WindowStartupLocation = WindowStartupLocation.Manual
+        w = float(win.Width)
+        h = float(win.Height)
+        if w <= 1.0:
+            try:
+                fw = float(win.ActualWidth)
+                if fw > 1.0:
+                    w = fw
+            except Exception:
+                pass
+        if h <= 1.0:
+            try:
+                fh = float(win.ActualHeight)
+                if fh > 1.0:
+                    h = fh
+            except Exception:
+                pass
+        wa_left = float(wa.Left)
+        wa_top = float(wa.Top)
+        wa_width = float(wa.Width)
+        wa_height = float(wa.Height)
+        left = wa_left + (wa_width - w) / 2.0
+        top = wa_top + (wa_height - h) / 2.0
+        if left < wa_left:
+            left = wa_left
+        if top < wa_top:
+            top = wa_top
+        max_left = wa_left + wa_width - w
+        max_top = wa_top + wa_height - h
+        if max_left < wa_left:
+            max_left = wa_left
+        if max_top < wa_top:
+            max_top = wa_top
+        if left > max_left:
+            left = max_left
+        if top > max_top:
+            top = max_top
+        win.Left = left
+        win.Top = top
+    except Exception:
+        pass
+
+
+def position_wpf_window_center_on_monitor(win, hwnd=None):
+    if win is None:
+        return False
+    area = _monitor_work_area_px(hwnd)
+    if area is None:
+        area = _primary_work_area_px()
+    if area is None:
+        position_wpf_window_center_work_area(win)
+        return False
+    left_px, top_px, width_px, height_px = area
+    left_dip, top_dip, wa_w_dip, wa_h_dip = _work_area_dip_rect(
+        left_px, top_px, width_px, height_px, hwnd,
+    )
+    try:
+        from System.Windows import WindowStartupLocation
+
+        w = float(win.Width)
+        h = float(win.Height)
+        if w <= 1.0:
+            try:
+                fw = float(win.ActualWidth)
+                if fw > 1.0:
+                    w = fw
+            except Exception:
+                w = 400.0
+        if h <= 1.0:
+            try:
+                fh = float(win.ActualHeight)
+                if fh > 1.0:
+                    h = fh
+            except Exception:
+                h = 180.0
+        win.WindowStartupLocation = WindowStartupLocation.Manual
+        left = left_dip + max(0.0, (wa_w_dip - w) * 0.5)
+        top = top_dip + max(0.0, (wa_h_dip - h) * 0.5)
+        max_left = left_dip + max(0.0, wa_w_dip - w)
+        max_top = top_dip + max(0.0, wa_h_dip - h)
+        win.Left = min(left, max_left)
+        win.Top = min(top, max_top)
+        return True
+    except Exception:
+        return False
+
+
+def bind_center_wpf_on_revit_monitor(win, hwnd_revit=None):
+    if win is None:
+        return
+
+    def _apply(sender, args):
+        position_wpf_window_center_on_monitor(win, hwnd_revit)
+
+    try:
+        from System.Windows import RoutedEventHandler
+
+        h = RoutedEventHandler(_apply)
+        win.Loaded += h
+        try:
+            win.ContentRendered += h
+        except Exception:
+            pass
+    except Exception:
+        position_wpf_window_center_on_monitor(win, hwnd_revit)
+
+
+def _revit_monitor_work_area(hwnd_revit=None):
+    area = _monitor_work_area_px(hwnd_revit)
+    if area is None:
+        area = _primary_work_area_px()
+    return area
+
+
+def _fill_wpf_window_work_area_wpf(win, left_px, top_px, width_px, height_px, hwnd_ref=None):
+    if win is None:
+        return False
+    try:
+        from System.Windows import WindowStartupLocation, WindowState
+
+        try:
+            from System import Double
+
+            win.MaxWidth = Double.PositiveInfinity
+            win.MaxHeight = Double.PositiveInfinity
+        except Exception:
+            pass
+        left_dip, top_dip, w_dip, h_dip = _work_area_dip_rect(
+            left_px, top_px, width_px, height_px, hwnd_ref,
+        )
+        win.WindowStartupLocation = WindowStartupLocation.Manual
+        win.WindowState = WindowState.Normal
+        win.Left = left_dip
+        win.Top = top_dip
+        win.Width = w_dip
+        win.Height = h_dip
+        return True
+    except Exception:
+        return False
+
+
+def bind_maximize_wpf_on_revit_monitor(win, hwnd_revit=None):
+    if win is None:
+        return False
+
+    def _on_state_changed(sender, args):
+        try:
+            from System import Double
+            from System.Windows import WindowStartupLocation, WindowState
+        except Exception:
+            return
+        try:
+            if win.WindowState != WindowState.Maximized:
+                return
+        except Exception:
+            return
+        area = _revit_monitor_work_area(hwnd_revit)
+        if area is None:
+            return
+        left_px, top_px, width_px, height_px = area
+        try:
+            win.MaxWidth = Double.PositiveInfinity
+            win.MaxHeight = Double.PositiveInfinity
+            win.WindowStartupLocation = WindowStartupLocation.Manual
+        except Exception:
+            pass
+        wh = _wpf_window_hwnd(win)
+        if wh:
+            try:
+                import ctypes
+
+                user32 = ctypes.windll.user32
+                SWP_NOZORDER = 0x0004
+                if user32.SetWindowPos(
+                    wh,
+                    0,
+                    int(round(left_px)),
+                    int(round(top_px)),
+                    max(320, int(round(width_px))),
+                    max(200, int(round(height_px))),
+                    SWP_NOZORDER,
+                ):
+                    return
+            except Exception:
+                pass
+        if _fill_wpf_window_work_area_wpf(
+            win, left_px, top_px, width_px, height_px, hwnd_revit,
+        ):
+            try:
+                win.WindowState = WindowState.Maximized
+            except Exception:
+                pass
+
+    try:
+        from System import EventHandler
+
+        win.StateChanged += EventHandler(_on_state_changed)
+        return True
+    except Exception:
+        return False

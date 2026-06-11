@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Rutas de logo corporativo para WPF — versión empaquetada en el pushbutton.
+Rutas de logo corporativo para WPF — copia local en ``scripts/infra/``.
 
 Prioridad:
-  1) Carpeta del pushbutton registrada con set_pushbutton_dir (desde script.py)
+  1) Carpeta del pushbutton registrada con set_pushbutton_dir (desde run.py)
   2) <raíz de extensión *.extension>/assets/ y /branding/
   3) icon.png al final como último recurso visual
 
-Este archivo vive junto a script.py del botón Revisiones; al copiar la carpeta
-.pushbutton a otra extensión, coloque logo.png / empresa_logo.png / icon.png aquí.
+Coloque logo.png / empresa_logo.png / icon.png en la raíz del pushbutton.
 """
 
 import os

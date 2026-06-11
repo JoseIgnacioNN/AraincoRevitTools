@@ -18,11 +18,6 @@ TX_NAME = u"Arainco: Revisiones"
 PBAR_TITLE_BASE = u"Arainco - Revisiones"
 PBAR_ACCENT_RGB = (91, 192, 222)
 
-# --- Animaciones WPF (ms) ---
-CHROME_MS = 260
-EXIT_FALLBACK_MS = 380
-ENTER_FALLBACK_MS = 400
-
 # --- personas.json ---
 ISSUES_DIR = u"Y:\\00_SERVIDOR DE INCIDENCIAS"
 PERSONAS_FILE_NAME = u"personas.json"

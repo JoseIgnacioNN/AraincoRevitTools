@@ -1,23 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Ventana modal para gestionar personas.json (misma UX que botón Personas / Crear incidencia).
-Usado desde Revisiones y reutilizable por otras herramientas bajo scripts/.
+Ventana modal para gestionar personas.json (desde Revisiones).
 """
 
 from __future__ import print_function
 
 import json
 import os
-import sys
 
 try:
     unicode
 except NameError:
     unicode = str
-
-_script_dir = os.path.dirname(os.path.abspath(__file__))
-if _script_dir not in sys.path:
-    sys.path.insert(0, _script_dir)
 
 import clr
 
@@ -35,13 +29,13 @@ from System.Windows import RoutedEventHandler
 
 import System.IO as sio
 
-from revit_wpf_window_position import (  # noqa: E402
+from infra.revit_wpf_window_position import (  # noqa: E402
     position_wpf_window_top_left_at_active_view,
     revit_main_hwnd,
 )
 
 try:
-    from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML  # noqa: E402
+    from infra.bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML  # noqa: E402
 except ImportError:
     BIMTOOLS_DARK_STYLES_XML = u""
 
@@ -482,7 +476,7 @@ def _personas_apply_title_chrome(win):
     except Exception:
         pass
     try:
-        import bimtools_paths
+        import infra.bimtools_paths as bimtools_paths
 
         img = win.FindName("ImgLogo")
         if img is not None:

@@ -1,16 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Revisiones — botón autocontenido.
+Arainco: Revisiones — emisión de revisión en láminas.
 
-Toda la lógica vive en esta carpeta (subcarpeta ``siguiente_revision/`` y módulos
-auxiliares junto a ``script.py``). Puede copiarse a otra extensión sin depender
-de ``scripts/`` de BIMTools.
-
-Logos: coloque ``logo.png``, ``empresa_logo.png`` o ``logo_empresa.png`` aquí;
-``icon.png`` sirve como icono de la cinta y como último recurso para la cabecera WPF.
+Versión portable: dependencias en ``<pushbutton>/scripts/`` (siguiente_revision, lib, ui, infra).
+Ver ESTRUCTURA_PORTABLE.txt para despliegue.
 """
-
-from __future__ import print_function
 
 __title__ = u"Arainco: Revisiones"
 __author__ = "BIMTools"
@@ -21,36 +15,20 @@ __doc__ = (
 
 import os
 import sys
+import imp
 
-_pb = os.path.dirname(os.path.abspath(__file__))
+_PUSHBUTTON_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.join(_PUSHBUTTON_DIR, "scripts")
+_MAIN_MODULE = "run.py"
 
-# Primero el pushbutton: resuelve siguient_revision y módulos empaquetados
-# antes que cualquier otro ``scripts/`` de la extensión.
-if _pb not in sys.path:
-    sys.path.insert(0, _pb)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
 
-_pkg_init = os.path.join(_pb, "siguiente_revision", "__init__.py")
-if not os.path.isfile(_pkg_init):
-    try:
-        from pyrevit import forms
+from bootstrap import purge_siguiente_revision_modules, setup_siguiente_revision_paths
 
-        forms.alert(
-            u"Falta la carpeta siguiente_revision junto a este script.",
-            title=u"Revisiones",
-        )
-    except Exception:
-        pass
-    sys.exit(1)
+setup_siguiente_revision_paths()
+purge_siguiente_revision_modules()
 
-try:
-    import bimtools_paths  # noqa: E402
-
-    bimtools_paths.set_pushbutton_dir(_pb)
-except Exception:
-    pass
-
-import siguiente_revision  # noqa: E402
-
-reload(siguiente_revision)  # noqa: E402
-
-siguiente_revision.main(__revit__)
+_module_path = os.path.join(_SCRIPTS_DIR, _MAIN_MODULE)
+_mod = imp.load_source("run", _module_path)
+_mod.main(__revit__)

@@ -495,9 +495,9 @@ def apply(doc, sheets, form_data, revit_uiapp=None):
     try:
         if revit_uiapp is not None and ntot > 0:
             try:
-                from join_geometry_concrete_vista import _BloquearComandosRevit
-                if _BloquearComandosRevit is not None:
-                    blocker = _BloquearComandosRevit(revit_uiapp)
+                from infra.revit_window_blocker import BloquearComandosRevit
+                if BloquearComandosRevit is not None:
+                    blocker = BloquearComandosRevit(revit_uiapp)
                     blocker.__enter__()
                     blocker_ok = True
             except Exception:

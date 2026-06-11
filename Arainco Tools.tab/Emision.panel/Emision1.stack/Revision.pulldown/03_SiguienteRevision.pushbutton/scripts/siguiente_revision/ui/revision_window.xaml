@@ -2,51 +2,18 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:sys="clr-namespace:System;assembly=mscorlib"
     x:Name="SigRevWin"
-    Title="Revisiones"
-    Height="1060" Width="1040" MinHeight="920" MinWidth="800"
-    Background="Transparent"
-    AllowsTransparency="True"
-    WindowStyle="None"
-    ResizeMode="NoResize"
-    WindowStartupLocation="CenterScreen"
-    Topmost="True"
-    Opacity="1"
-    UseLayoutRounding="True"
-    FontFamily="Segoe UI" FontSize="12">
+    Title="Arainco: Revisiones"
+    Height="900" Width="1040" MinHeight="640" MinWidth="800"
+    ResizeMode="CanResize"
+    WindowStartupLocation="Manual"
+    Background="#071018"
+    FontFamily="Segoe UI" FontSize="12"
+    ShowInTaskbar="False">
   <Window.Resources>
-    <!-- Revisiones: animación solo sobre SigRevAnimShell. SigRevRootChrome permanece opaco. -->
-    <Storyboard x:Key="SigRevEnterStoryboard">
-      <DoubleAnimation Storyboard.TargetName="SigRevAnimShell" Storyboard.TargetProperty="Opacity"
-                       From="0" To="1" Duration="__WPF_STORYBOARD_DUR__" FillBehavior="HoldEnd">
-        <DoubleAnimation.EasingFunction>
-          <QuadraticEase EasingMode="EaseOut"/>
-        </DoubleAnimation.EasingFunction>
-      </DoubleAnimation>
-      <DoubleAnimation Storyboard.TargetName="SigRevEnterTranslate" Storyboard.TargetProperty="Y"
-                       From="22" To="0" Duration="__WPF_STORYBOARD_DUR__" FillBehavior="HoldEnd">
-        <DoubleAnimation.EasingFunction>
-          <QuadraticEase EasingMode="EaseOut"/>
-        </DoubleAnimation.EasingFunction>
-      </DoubleAnimation>
-    </Storyboard>
-    <Storyboard x:Key="SigRevExitStoryboard">
-      <DoubleAnimation Storyboard.TargetName="SigRevAnimShell" Storyboard.TargetProperty="Opacity"
-                       From="1" To="0" Duration="__WPF_STORYBOARD_DUR__" FillBehavior="HoldEnd">
-        <DoubleAnimation.EasingFunction>
-          <QuadraticEase EasingMode="EaseIn"/>
-        </DoubleAnimation.EasingFunction>
-      </DoubleAnimation>
-      <DoubleAnimation Storyboard.TargetName="SigRevEnterTranslate" Storyboard.TargetProperty="Y"
-                       From="0" To="22" Duration="__WPF_STORYBOARD_DUR__" FillBehavior="HoldEnd">
-        <DoubleAnimation.EasingFunction>
-          <QuadraticEase EasingMode="EaseIn"/>
-        </DoubleAnimation.EasingFunction>
-      </DoubleAnimation>
-    </Storyboard>
 __BIMTOOLS_DARK_STYLES__
     <Style x:Key="SigRevComboItem" TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}">
       <Setter Property="Padding" Value="10,8"/>
-      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="FontSize" Value="12"/>
     </Style>
     <Style x:Key="SigRevComboStretch" TargetType="ComboBox" BasedOn="{StaticResource Combo}">
       <Setter Property="Width" Value="{x:Static sys:Double.NaN}"/>
@@ -54,21 +21,17 @@ __BIMTOOLS_DARK_STYLES__
       <Setter Property="HorizontalAlignment" Value="Stretch"/>
       <Setter Property="MinWidth" Value="0"/>
       <Setter Property="MaxWidth" Value="99999"/>
-      <Setter Property="MinHeight" Value="34"/>
+      <Setter Property="MinHeight" Value="32"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
-      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="FontSize" Value="12"/>
       <Setter Property="Foreground" Value="#F2F8FC"/>
       <Setter Property="Margin" Value="0,0,0,0"/>
       <Setter Property="ItemContainerStyle" Value="{StaticResource SigRevComboItem}"/>
     </Style>
-    <!-- Misma geometría en columnas pareadas del formulario de emisión (sin anchos fijos). -->
     <Style x:Key="SigRevComboHalf" TargetType="ComboBox" BasedOn="{StaticResource SigRevComboStretch}">
       <Setter Property="Margin" Value="0,0,0,0"/>
     </Style>
-    <Style x:Key="StepBadge" TargetType="TextBlock">
-      <Setter Property="Foreground" Value="#5BC0DE"/>
-      <Setter Property="FontSize" Value="11"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
+    <Style x:Key="StepBadge" TargetType="TextBlock" BasedOn="{StaticResource Label}">
       <Setter Property="Margin" Value="0,0,0,8"/>
     </Style>
     <Style x:Key="SigRevFormLabel" TargetType="TextBlock" BasedOn="{StaticResource Label}">
@@ -80,7 +43,7 @@ __BIMTOOLS_DARK_STYLES__
       <Setter Property="Margin" Value="0,0,0,10"/>
     </Style>
     <Style x:Key="SigRevRadio" TargetType="RadioButton">
-      <Setter Property="Foreground" Value="#E8F4F8"/>
+      <Setter Property="Foreground" Value="#B8D4E5"/>
       <Setter Property="FontSize" Value="12"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="Margin" Value="0,8,0,0"/>
@@ -88,20 +51,20 @@ __BIMTOOLS_DARK_STYLES__
       <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
     <Style x:Key="PanelInset" TargetType="Border">
-      <Setter Property="Background" Value="#071018"/>
-      <Setter Property="BorderBrush" Value="#1E3F55"/>
+      <Setter Property="Background" Value="#0a1620"/>
+      <Setter Property="BorderBrush" Value="#21465C"/>
       <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="CornerRadius" Value="4"/>
       <Setter Property="Padding" Value="12,10"/>
       <Setter Property="Margin" Value="0,0,0,12"/>
     </Style>
     <Style x:Key="BtnGhost" TargetType="Button">
       <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="Foreground" Value="#9BC4D6"/>
+      <Setter Property="Foreground" Value="#95B8CC"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="FontSize" Value="11"/>
       <Setter Property="Padding" Value="12,7"/>
-      <Setter Property="BorderBrush" Value="#2A4A5E"/>
+      <Setter Property="BorderBrush" Value="#21465C"/>
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Template">
@@ -114,8 +77,8 @@ __BIMTOOLS_DARK_STYLES__
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="R" Property="Background" Value="#0D1E2E"/>
-                <Setter TargetName="R" Property="BorderBrush" Value="#5BC0DE"/>
+                <Setter TargetName="R" Property="Background" Value="#0F2035"/>
+                <Setter TargetName="R" Property="BorderBrush" Value="#21465C"/>
                 <Setter Property="Foreground" Value="#E8F4F8"/>
               </Trigger>
             </ControlTemplate.Triggers>
@@ -124,25 +87,25 @@ __BIMTOOLS_DARK_STYLES__
       </Setter>
     </Style>
     <Style TargetType="DataGrid" BasedOn="{StaticResource {x:Type DataGrid}}">
-      <Setter Property="Background" Value="#040A12"/>
+      <Setter Property="Background" Value="#0a1620"/>
       <Setter Property="Foreground" Value="#E8F4F8"/>
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="RowBackground" Value="#0B1726"/>
-      <Setter Property="AlternatingRowBackground" Value="#071420"/>
-      <Setter Property="HorizontalGridLinesBrush" Value="#152A3D"/>
-      <Setter Property="VerticalGridLinesBrush" Value="#152A3D"/>
+      <Setter Property="AlternatingRowBackground" Value="#071018"/>
+      <Setter Property="HorizontalGridLinesBrush" Value="#21465C"/>
+      <Setter Property="VerticalGridLinesBrush" Value="#21465C"/>
       <Setter Property="HeadersVisibility" Value="Column"/>
       <Setter Property="RowHeight" Value="34"/>
       <Setter Property="GridLinesVisibility" Value="All"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
     <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
-      <Setter Property="Background" Value="#0F2840"/>
-      <Setter Property="Foreground" Value="#C8E4EF"/>
+      <Setter Property="Background" Value="#11253D"/>
+      <Setter Property="Foreground" Value="#95B8CC"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="FontSize" Value="11"/>
       <Setter Property="Padding" Value="12,10"/>
-      <Setter Property="BorderBrush" Value="#1A3A50"/>
+      <Setter Property="BorderBrush" Value="#21465C"/>
       <Setter Property="BorderThickness" Value="0,0,1,1"/>
     </Style>
     <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
@@ -152,7 +115,7 @@ __BIMTOOLS_DARK_STYLES__
           <Setter Property="Background" Value="#0B1726"/>
         </Trigger>
         <Trigger Property="AlternationIndex" Value="1">
-          <Setter Property="Background" Value="#071420"/>
+          <Setter Property="Background" Value="#071018"/>
         </Trigger>
         <MultiTrigger>
           <MultiTrigger.Conditions>
@@ -205,7 +168,7 @@ __BIMTOOLS_DARK_STYLES__
     <Style TargetType="TextBox">
       <Setter Property="Background" Value="#050E18"/>
       <Setter Property="Foreground" Value="#FFFFFF"/>
-      <Setter Property="BorderBrush" Value="#284760"/>
+      <Setter Property="BorderBrush" Value="#1A3A4D"/>
       <Setter Property="Padding" Value="8,6"/>
       <Setter Property="FontSize" Value="11"/>
     </Style>
@@ -217,13 +180,8 @@ __BIMTOOLS_DARK_STYLES__
     </Style>
     <Style x:Key="ExpLamScrollBarDark" TargetType="ScrollBar" BasedOn="{StaticResource BimToolsScrollBarDark}"/>
   </Window.Resources>
-  <Border x:Name="SigRevRootChrome" Opacity="1" CornerRadius="8" Background="#0E1B32" Padding="14"
-          BorderBrush="#5BC0DE" BorderThickness="1" ClipToBounds="True">
-    <Border x:Name="SigRevAnimShell" Background="Transparent" Opacity="0">
-      <Border.RenderTransform>
-        <TranslateTransform x:Name="SigRevEnterTranslate" Y="22"/>
-      </Border.RenderTransform>
-      <Grid>
+  <Border Background="#071018" BorderBrush="#21465C" BorderThickness="1" Padding="18">
+    <Grid>
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="Auto"/>
@@ -231,65 +189,12 @@ __BIMTOOLS_DARK_STYLES__
         <RowDefinition Height="*"/>
         <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
-      <Border x:Name="TitleBar" Grid.Row="0" Background="#0D1E2E" CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
-              BorderBrush="#5BC0DE" BorderThickness="1" HorizontalAlignment="Stretch">
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="Auto"/>
-            <ColumnDefinition Width="*"/>
-          </Grid.ColumnDefinitions>
-          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
-                      ToolTip="Emisión en láminas: nueva entrada de revisión por lámina seleccionada.">
-            <Image x:Name="ImgLogo" Width="40" Height="40"
-                   Stretch="Uniform" Margin="0,0,10,0" VerticalAlignment="Center"
-                   RenderOptions.BitmapScalingMode="HighQuality"/>
-            <TextBlock Text="Revisiones" FontSize="14" FontWeight="Bold"
-                       Foreground="#FFFFFF" TextWrapping="NoWrap" VerticalAlignment="Center"
-                       TextAlignment="Left"/>
-          </StackPanel>
-          <Button x:Name="BtnClose" Grid.Column="2"
-                  Style="{StaticResource BtnCloseX_MinimalNoBg}"
-                  VerticalAlignment="Center" HorizontalAlignment="Right" ToolTip="Cerrar"/>
-        </Grid>
-      </Border>
-      <Border Grid.Row="2" Style="{StaticResource PanelInset}" Margin="0,0,0,10" Padding="10,8">
-        <StackPanel>
-          <Grid VerticalAlignment="Center">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*"/>
-              <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <Border Grid.Column="0" Margin="0,0,10,0" Background="#050E18" BorderBrush="#355973" BorderThickness="1" CornerRadius="5" Padding="0" MinHeight="32">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="Auto"/>
-                  <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="15"
-                           Foreground="#6B94AA" VerticalAlignment="Center" Margin="10,0,4,0" IsHitTestVisible="False"/>
-                <Grid Grid.Column="1" MinHeight="28">
-                  <TextBox x:Name="TxtBuscar" Background="Transparent" BorderThickness="0"
-                           VerticalContentAlignment="Center" Padding="0,6,10,6"
-                           ToolTip="Filtrar por número, nombre, revisión actual o nueva revisión"/>
-                  <TextBlock x:Name="TxtBuscarWatermark" Text="Buscar" IsHitTestVisible="False"
-                             Foreground="#5C7A8F" FontSize="12" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                </Grid>
-              </Grid>
-            </Border>
-            <Button x:Name="BtnRefrescar" Grid.Column="1" Style="{StaticResource BtnGhost}" Padding="8,5" FontSize="10"
-                    ToolTip="Actualizar la lista desde el proyecto">
-              <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="13"
-                           VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <TextBlock Text="Actualizar" VerticalAlignment="Center" FontSize="10" FontWeight="SemiBold"/>
-              </StackPanel>
-            </Button>
-          </Grid>
-        </StackPanel>
-      </Border>
+      <StackPanel Grid.Row="0" Margin="0,0,0,10">
+        <TextBlock x:Name="TxtTitle" Text="Arainco: Revisiones" Foreground="#E8F4F8" FontSize="18" FontWeight="Bold"/>
+        <TextBlock x:Name="TxtSubtitle" Margin="0,6,0,0" Foreground="#95B8CC" TextWrapping="Wrap"
+                   Text="Emite una nueva revisión en las láminas seleccionadas (descripción, firmas y fecha)."/>
+      </StackPanel>
       <Border Grid.Row="1" Style="{StaticResource PanelInset}" Margin="0,0,0,10" Padding="14,14">
-        <!-- Descripción ancha · parejas Dibujó/Revisó y Aprobó/Fecha · modo revisión. -->
         <Grid>
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -337,7 +242,40 @@ __BIMTOOLS_DARK_STYLES__
           </StackPanel>
         </Grid>
       </Border>
-      <Border Grid.Row="3" Background="#040A12" BorderBrush="#1E3F55" BorderThickness="1" CornerRadius="8" Padding="0" Margin="0,0,0,12">
+      <Border Grid.Row="2" Style="{StaticResource PanelInset}" Margin="0,0,0,10" Padding="10,8">
+        <Grid VerticalAlignment="Center">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <Border Grid.Column="0" Margin="0,0,10,0" Background="#050E18" BorderBrush="#1A3A4D" BorderThickness="1" CornerRadius="5" Padding="0" MinHeight="32">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                         Foreground="#6B94AA" VerticalAlignment="Center" Margin="10,0,4,0" IsHitTestVisible="False"/>
+              <Grid Grid.Column="1" MinHeight="28">
+                <TextBox x:Name="TxtBuscar" Background="Transparent" BorderThickness="0"
+                         VerticalContentAlignment="Center" Padding="0,6,10,6"
+                         ToolTip="Filtrar por número, nombre, revisión actual o nueva revisión"/>
+                <TextBlock x:Name="TxtBuscarWatermark" Text="Buscar" IsHitTestVisible="False"
+                           Foreground="#64748b" FontSize="12" VerticalAlignment="Center" Margin="0,0,10,0"/>
+              </Grid>
+            </Grid>
+          </Border>
+          <Button x:Name="BtnRefrescar" Grid.Column="1" Style="{StaticResource BtnGhost}" Padding="8,5" FontSize="10"
+                  ToolTip="Actualizar la lista desde el proyecto">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+              <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                         VerticalAlignment="Center" Margin="0,0,6,0"/>
+              <TextBlock Text="Actualizar" VerticalAlignment="Center" FontSize="10" FontWeight="SemiBold"/>
+            </StackPanel>
+          </Button>
+        </Grid>
+      </Border>
+      <Border Grid.Row="3" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1" CornerRadius="4,4,0,0" Padding="0" Margin="0,0,0,0">
         <DataGrid x:Name="GridSheets" MinHeight="396"
                   AutoGenerateColumns="False" CanUserAddRows="False" CanUserResizeRows="False"
                   RowHeaderWidth="0" SelectionMode="Extended" SelectionUnit="FullRow"
@@ -411,23 +349,16 @@ __BIMTOOLS_DARK_STYLES__
           </DataGrid.Columns>
         </DataGrid>
       </Border>
-      <Border Grid.Row="4" Background="#050E18" BorderBrush="#1E3F55" BorderThickness="1" CornerRadius="6"
-              Padding="14,12">
-        <Border.Effect>
-          <DropShadowEffect BlurRadius="18" ShadowDepth="0" Opacity="0.2" Color="#000000"/>
-        </Border.Effect>
+      <Border Grid.Row="4" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1"
+              CornerRadius="4" Padding="14,12" Margin="0,10,0,0">
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*"/>
             <ColumnDefinition Width="Auto"/>
           </Grid.ColumnDefinitions>
-          <StackPanel Grid.Column="0" VerticalAlignment="Center" Orientation="Vertical"
-                      ToolTip="Columnas Revisión actual / Nueva revisión: última en índice vs la que se emitiría con el modo elegido. Primera columna: incluir en la emisión.">
-            <TextBlock x:Name="TxtEstadoLaminas" Foreground="#E8F4F8" FontSize="12" FontWeight="SemiBold"
-                       TextWrapping="Wrap" Text="0 láminas  |  0 seleccionadas"/>
-            <TextBlock Foreground="#6B94AA" FontSize="10" Margin="0,4,0,0"
-                       Text="Estado del listado · listo para emitir"/>
-          </StackPanel>
+          <TextBlock x:Name="TxtEstadoLaminas" Grid.Column="0" VerticalAlignment="Center"
+                     Foreground="#64748b" FontSize="10" TextWrapping="Wrap" Margin="0,0,12,0"
+                     Text="0 láminas  |  0 seleccionadas"/>
           <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
             <Button x:Name="BtnCancel" Content="Cancelar" Style="{StaticResource BtnGhost}" MinWidth="100" Margin="0,0,10,0"/>
             <Button x:Name="BtnOk" Content="Iniciar" Style="{StaticResource BtnPrimary}" MinWidth="132" MinHeight="38"/>
@@ -435,6 +366,5 @@ __BIMTOOLS_DARK_STYLES__
         </Grid>
       </Border>
     </Grid>
-    </Border>
   </Border>
 </Window>

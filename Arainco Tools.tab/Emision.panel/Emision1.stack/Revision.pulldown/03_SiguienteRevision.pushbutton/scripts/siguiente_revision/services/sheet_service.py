@@ -46,9 +46,9 @@ def sheet_display(sheet):
 def sheet_revision_cell(sheet, doc):
     """Revisión actual formateada para la celda de la tabla."""
     try:
-        from exportar_laminas_pdf_dwg import _sheet_revision_display
-        if _sheet_revision_display is not None:
-            return (unicode(_sheet_revision_display(sheet, doc)).strip())
+        from lib.sheet_revision_display import sheet_revision_display
+        if sheet_revision_display is not None:
+            return (unicode(sheet_revision_display(sheet, doc)).strip())
     except Exception:
         pass
     return u""

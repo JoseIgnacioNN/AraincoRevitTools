@@ -1,0 +1,55 @@
+03_SiguienteRevision.pushbutton
+├── bundle.yaml
+├── script.py                              Arranque pyRevit (scripts/ + purge + run.main)
+├── ESTRUCTURA_PORTABLE.txt
+├── icon.png                               Opcional (icono cinta)
+│
+└── scripts/
+    ├── run.py                             Composition root (singleton + MVVM)
+    ├── bootstrap.py                       sys.path + purge de módulos
+    ├── bootstrap_path.py                  pushbutton_dir() → carpeta .pushbutton
+    │
+    ├── siguiente_revision/                Paquete MVVM principal
+    │   ├── constants.py
+    │   ├── commands/                      RelayCommand
+    │   ├── infrastructure/                Singleton, transacciones, versión Revit
+    │   ├── services/                      Revisión, láminas, parámetros, personas
+    │   ├── viewmodels/                    RevisionViewModel
+    │   └── ui/                            revision_window.py + revision_window.xaml
+    │
+    ├── lib/
+    │   └── sheet_revision_display.py      Texto «Revisión actual» para el DataGrid
+    │
+    ├── ui/
+    │   └── gestionar_personas_wpf.py      Diálogo directorio personas.json
+    │
+    └── infra/                             Utilidades BIMTools (copia local)
+        ├── bimtools_paths.py              Resolución logo/icono (opcional)
+        ├── bimtools_wpf_dark_theme.py     Recursos WPF tema oscuro
+        ├── revit_wpf_window_position.py   Posicionamiento HWND / monitores
+        └── revit_window_blocker.py        EnableWindow durante ProgressBar
+
+Copie solo esta carpeta .pushbutton a la pestaña de otra extensión pyRevit.
+No requiere scripts/ del repositorio ni rutas absolutas de máquina.
+
+-----------------------------------------------------------------------------
+Despliegue
+-----------------------------------------------------------------------------
+
+1. Copie la carpeta completa ``03_SiguienteRevision.pushbutton`` (todos los .py,
+   bundle.yaml e icon.png opcional en la raíz del pushbutton).
+2. No incluya artefactos de desarrollo.
+3. Recargue pyRevit en las estaciones destino.
+4. Revit 2024–2026 (min_revit_ver / max_revit_ver en bundle.yaml).
+
+Prioridad en tiempo de ejecución: ``script.py`` inserta ``scripts/`` al frente de
+``sys.path``; ``purge_siguiente_revision_modules()`` fuerza recarga limpia en cada
+ejecución del botón.
+
+-----------------------------------------------------------------------------
+Arquitectura
+-----------------------------------------------------------------------------
+
+- Patrón MVVM en la ventana principal; el diálogo de personas es modal independiente.
+- Instancia única: clave AppDomain ``BIMTools.SiguienteRevision.ActiveWindow``.
+- Transacciones Revit con prefijo ``Arainco: Revisiones``.

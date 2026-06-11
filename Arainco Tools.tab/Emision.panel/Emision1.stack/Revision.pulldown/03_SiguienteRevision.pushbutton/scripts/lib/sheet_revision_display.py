@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Subconjunto empaquetado con Revisiones (botón autocontenido).
-
-Solo expone _sheet_revision_display para la columna «Revisión actual» del grid.
-No depende del módulo completo de exportación PDF/DWG.
+Texto de revisión actual de una lámina para el DataGrid de Revisiones.
 """
 
 from __future__ import print_function
@@ -46,7 +43,7 @@ def _param_by_bip_name(elem, bip_name):
         return u""
 
 
-def _sheet_revision_display(sheet, doc):
+def sheet_revision_display(sheet, doc):
     """
     Texto de revisión para la grilla: GetCurrentRevision primero, luego parámetro de lámina.
     """

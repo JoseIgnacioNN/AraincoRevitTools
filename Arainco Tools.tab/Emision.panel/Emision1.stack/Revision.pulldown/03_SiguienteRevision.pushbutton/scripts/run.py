@@ -1,47 +1,24 @@
 # -*- coding: utf-8 -*-
 """
-siguiente_revision — Entry point del paquete MVVM de Revisiones.
+Composition root — Revisiones (MVVM).
 
-Este módulo es el único punto de entrada desde el pushbutton pyRevit:
-
-    import siguiente_revision
-    reload(siguiente_revision)
-    siguiente_revision.main(__revit__)
-
-Los sub-módulos se importan explícitamente aquí para que un reload() en
-pyRevit propague correctamente los cambios a las capas de infraestructura,
-servicios y UI.
+Capas en ``scripts/``:
+  run.py                              Punto de entrada lógico (singleton + ventana)
+  siguiente_revision/                 Paquete MVVM (servicios, VM, UI)
+  ui/gestionar_personas_wpf.py        Diálogo directorio de personas
+  lib/sheet_revision_display.py       Texto revisión actual para el DataGrid
+  infra/                              Tema WPF, rutas, posicionamiento, bloqueo Revit
 """
 
 from __future__ import print_function
 
-try:
-    unicode
-except NameError:
-    unicode = str
+import os
 
-# ---------------------------------------------------------------------------
-# Re-imports de sub-módulos con imports relativos (IronPython safe).
-# Imports relativos evitan el problema chicken-and-egg donde el módulo
-# padre no está totalmente inicializado al ejecutar __init__.py.
-# ---------------------------------------------------------------------------
+from infra.bimtools_paths import set_pushbutton_dir  # noqa: E402
 
-from . import constants
-from .infrastructure import transaction as _tx
-from .infrastructure import revit_version as _rv
-from .infrastructure import singleton as _sg
-from .services import parameter_service as _ps
-from .services import people_service as _peo
-from .services import sheet_service as _sht
-from .services import revision_service as _rev
-from .viewmodels import base_vm as _bvm
-from .viewmodels import revision_vm as _rvm
-from .ui import revision_window as _win
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+_PB = os.path.dirname(_SCRIPTS_DIR)
 
-
-# ---------------------------------------------------------------------------
-# main()
-# ---------------------------------------------------------------------------
 
 def main(revit_app):
     """
@@ -52,13 +29,15 @@ def main(revit_app):
     """
     from Autodesk.Revit.UI import TaskDialog
 
+    set_pushbutton_dir(_PB)
+
     # --- Resolución de doc / uidoc ---
     try:
         uidoc = revit_app.ActiveUIDocument
-        doc   = uidoc.Document
+        doc = uidoc.Document
     except Exception:
         try:
-            doc   = revit_app.ActiveUIDocument.Document
+            doc = revit_app.ActiveUIDocument.Document
             uidoc = revit_app.ActiveUIDocument
         except Exception:
             TaskDialog.Show(u"Revisiones", u"No hay un documento activo.")
@@ -66,6 +45,7 @@ def main(revit_app):
 
     # --- Singleton: evitar doble apertura ---
     from siguiente_revision.infrastructure import singleton
+
     if singleton.try_activate_existing():
         TaskDialog.Show(u"Revisiones", u"La herramienta ya está en ejecución.")
         return
@@ -74,7 +54,7 @@ def main(revit_app):
     from siguiente_revision.services import revision_service, sheet_service
     from siguiente_revision.infrastructure.revit_version import RevitVersionAdapter
 
-    ver = RevitVersionAdapter(revit_app.Application)
+    RevitVersionAdapter(revit_app.Application)
     ordered = revision_service.get_ordered_revision_ids(doc)
     if not ordered:
         TaskDialog.Show(
@@ -89,6 +69,7 @@ def main(revit_app):
 
     # --- ViewModel ---
     from siguiente_revision.viewmodels.revision_vm import RevisionViewModel
+
     vm = RevisionViewModel(doc)
 
     # --- Ventana ---
@@ -113,20 +94,11 @@ def main(revit_app):
         sheets_all,
     )
 
-    # --- Posición de ventana ---
-    try:
-        from revit_wpf_window_position import center_on_revit
-        center_on_revit(win, revit_app.Application)
-    except Exception:
-        pass
-
-    # --- Registro singleton + ShowDialog ---
     singleton.register(win)
     try:
         win.ShowDialog()
     finally:
         singleton.clear()
-        # Detach row change handler
         try:
             d = vm._row_delegate
             tbl = vm.sheet_table
@@ -142,11 +114,13 @@ def main(revit_app):
     sel = vm.selected_sheets
     if not sel:
         from pyrevit import forms
+
         forms.alert(u"Marque al menos una lámina.", title=u"Revisiones")
         return
 
     if not vm.description:
         from pyrevit import forms
+
         forms.alert(u"Seleccione una descripción.", title=u"Revisiones")
         return
 
@@ -157,6 +131,7 @@ def main(revit_app):
         DateTime.ParseExact(vm.fecha_str, u"dd.MM.yy", CultureInfo.InvariantCulture)
     except Exception:
         from pyrevit import forms
+
         forms.alert(
             u"No se interpretó la fecha. Use formato dd.MM.yy.",
             title=u"Revisiones",
@@ -176,4 +151,5 @@ def main(revit_app):
         msg += u"\n\nAdvertencias:\n" + result.error_text
 
     from pyrevit import forms
+
     forms.alert(msg, title=u"Revisiones")

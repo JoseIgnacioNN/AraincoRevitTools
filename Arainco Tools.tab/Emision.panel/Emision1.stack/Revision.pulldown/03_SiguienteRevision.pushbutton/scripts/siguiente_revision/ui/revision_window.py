@@ -3,10 +3,9 @@
 RevisionWindow — carga y gestión del XAML de la ventana Revisiones.
 
 Responsabilidades:
-- Cargar revision_window.xaml desde disco, inyectar BIMTOOLS_DARK_STYLES_XML y
-  el placeholder de duración de animación.
+- Cargar revision_window.xaml desde disco e inyectar BIMTOOLS_DARK_STYLES_XML.
 - Conectar todos los event handlers de la UI al ViewModel.
-- Manejar las animaciones de entrada/salida de la ventana.
+- Posicionar la ventana en el monitor de Revit (misma línea visual que Exportar Láminas).
 - Gestionar el DataGrid (scrollbars, filtro, selección por rango).
 """
 
@@ -27,17 +26,14 @@ clr.AddReference("WindowsBase")
 clr.AddReference("System")
 clr.AddReference("System.Data")
 
-from System import (
-    AppDomain, Boolean, DateTime, EventHandler, Int32, Int64, String
-)
+from System import Boolean, DateTime, Int32, Int64
 from System.Collections.Generic import List as ClrList
 from System.Data import DataRowChangeEventHandler
 from System.Globalization import CultureInfo
-from System.Windows import Duration, RoutedEventHandler, Visibility, WindowState
+from System.Windows import RoutedEventHandler, Visibility
 from System.Windows.Markup import XamlReader
 
 from siguiente_revision.constants import (
-    CHROME_MS, EXIT_FALLBACK_MS, ENTER_FALLBACK_MS,
     DESCRIPCIONES, DATE_FORMAT, DATE_DAYS_BEFORE, DATE_DAYS_AFTER,
     ISSUES_DIR,
 )
@@ -46,17 +42,6 @@ from siguiente_revision.services.people_service import PERSONAS_FILE
 
 _XAML_DIR = os.path.dirname(os.path.abspath(__file__))
 _XAML_PATH = os.path.join(_XAML_DIR, "revision_window.xaml")
-
-_WPF_STORYBOARD_DUR = u"0:0:{0:.3f}".format(CHROME_MS / 1000.0)
-
-# --- Guards de cierre animado (globales por ejecución) ---
-_CLOSE_GUARD = {"busy": False, "finalized": False}
-
-
-def _reset_close_guard():
-    global _CLOSE_GUARD
-    _CLOSE_GUARD = {"busy": False, "finalized": False}
-
 
 # ---------------------------------------------------------------------------
 # Carga del XAML
@@ -68,39 +53,16 @@ def load_xaml():
     e instancia la Window con XamlReader.Parse().
     """
     try:
-        from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
+        from infra.bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
     except Exception:
         BIMTOOLS_DARK_STYLES_XML = u""
 
     with codecs.open(_XAML_PATH, "r", "utf-8") as f:
         xaml_str = f.read()
 
-    xaml_str = xaml_str.replace(u"__WPF_STORYBOARD_DUR__", _WPF_STORYBOARD_DUR)
     xaml_str = xaml_str.replace(u"__BIMTOOLS_DARK_STYLES__", BIMTOOLS_DARK_STYLES_XML)
 
     return XamlReader.Parse(xaml_str)
-
-
-# ---------------------------------------------------------------------------
-# Logo
-# ---------------------------------------------------------------------------
-
-def _load_logo(win):
-    try:
-        import bimtools_paths
-        img = win.FindName(u"ImgLogo")
-        if img is None:
-            return
-        bmp = bimtools_paths.load_logo_bitmap_image()
-        if bmp is None:
-            return
-        img.Source = bmp
-        try:
-            win.Icon = bmp
-        except Exception:
-            pass
-    except Exception:
-        pass
 
 
 # ---------------------------------------------------------------------------
@@ -196,219 +158,55 @@ def _schedule_grid_scrollbars(win, dg):
 
 
 # ---------------------------------------------------------------------------
-# Animaciones de ventana
+# Posición y propietario de ventana (Exportar Láminas)
 # ---------------------------------------------------------------------------
 
-def _force_outer_chrome_visible(win):
+def _attach_revit_owner(win, revit_app):
     try:
-        ch = win.FindName("SigRevRootChrome")
-        if ch is not None:
-            ch.Opacity = 1.0
-        win.Opacity = 1.0
+        from System.Windows.Interop import WindowInteropHelper
+        from infra.revit_wpf_window_position import revit_main_hwnd
+
+        uiapp = None
+        try:
+            uiapp = revit_app if revit_app is not None else None
+        except Exception:
+            uiapp = None
+        hwnd = revit_main_hwnd(uiapp)
+        if hwnd is not None:
+            try:
+                if hwnd.ToInt64() != 0:
+                    WindowInteropHelper(win).Owner = hwnd
+            except Exception:
+                WindowInteropHelper(win).Owner = hwnd
     except Exception:
         pass
 
 
-def _snap_anim_shell_visible(win):
+def _prepare_window_bounds(win):
     try:
-        from System.Windows import UIElement
-        from System.Windows.Media import TranslateTransform
+        from System import Double
 
-        shell = win.FindName("SigRevAnimShell")
-        tt    = win.FindName("SigRevEnterTranslate")
-        if shell is not None:
-            try:
-                shell.BeginAnimation(UIElement.OpacityProperty, None)
-            except Exception:
-                pass
-            shell.Opacity = 1.0
-        if tt is not None:
-            try:
-                tt.BeginAnimation(TranslateTransform.YProperty, None)
-            except Exception:
-                pass
-            tt.Y = 0.0
+        win.MaxWidth = Double.PositiveInfinity
+        win.MaxHeight = Double.PositiveInfinity
     except Exception:
         pass
 
 
-def _begin_open_storyboard(win):
-    if getattr(win, "_sigrev_open_sb_done", False):
-        return
-    win._sigrev_open_sb_done = True
+def _position_window(win, revit_app):
     try:
-        win.Opacity = 1.0
+        from infra.revit_wpf_window_position import (
+            bind_center_wpf_on_revit_monitor,
+            bind_maximize_wpf_on_revit_monitor,
+            position_wpf_window_center_on_monitor,
+            revit_main_hwnd,
+        )
+
+        hwnd = revit_main_hwnd(revit_app)
+        bind_center_wpf_on_revit_monitor(win, hwnd)
+        bind_maximize_wpf_on_revit_monitor(win, hwnd)
+        position_wpf_window_center_on_monitor(win, hwnd)
     except Exception:
         pass
-    _force_outer_chrome_visible(win)
-
-    try:
-        from System import TimeSpan
-        from System.Windows import UIElement
-        from System.Windows.Media import TranslateTransform
-        from System.Windows.Threading import DispatcherTimer
-
-        shell = win.FindName("SigRevAnimShell")
-        tt    = win.FindName("SigRevEnterTranslate")
-        sb    = win.TryFindResource("SigRevEnterStoryboard")
-        if shell is None or tt is None or sb is None:
-            _snap_anim_shell_visible(win)
-            return
-
-        try:
-            shell.BeginAnimation(UIElement.OpacityProperty, None)
-            tt.BeginAnimation(TranslateTransform.YProperty, None)
-        except Exception:
-            pass
-        shell.Opacity = 0.0
-        tt.Y = 22.0
-
-        dur = Duration(TimeSpan.FromMilliseconds(float(CHROME_MS)))
-        try:
-            for i in range(int(sb.Children.Count)):
-                sb.Children[i].Duration = dur
-        except Exception:
-            pass
-
-        win._sigrev_enter_anim_done = False
-
-        def _enter_finish(_s=None, _e=None):
-            if getattr(win, "_sigrev_enter_anim_done", False):
-                return
-            win._sigrev_enter_anim_done = True
-            try:
-                tm = getattr(win, "_sigrev_enter_fallback_timer", None)
-                if tm is not None:
-                    try:
-                        tm.Stop()
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            _snap_anim_shell_visible(win)
-
-        sb.Completed += EventHandler(_enter_finish)
-        sb.Begin(win, True)
-
-        try:
-            tm = DispatcherTimer()
-            tm.Interval = TimeSpan.FromMilliseconds(float(ENTER_FALLBACK_MS))
-            tm.Tick += EventHandler(lambda _snd, _evt: _enter_finish())
-            win._sigrev_enter_fallback_timer = tm
-            tm.Start()
-        except Exception:
-            pass
-    except Exception:
-        _snap_anim_shell_visible(win)
-
-
-def close_with_fade(win):
-    """
-    Fade-out + slide-down sobre SigRevAnimShell antes de Close().
-    Completed + DispatcherTimer garantizan que Close() se ejecuta.
-    """
-    global _CLOSE_GUARD
-    if _CLOSE_GUARD.get("busy"):
-        return
-    _CLOSE_GUARD["busy"] = True
-    _CLOSE_GUARD["finalized"] = False
-
-    def _cleanup_anims():
-        try:
-            from System.Windows import UIElement
-            from System.Windows.Media import TranslateTransform
-
-            for name in ("SigRevRootChrome",):
-                el = win.FindName(name)
-                if el is not None:
-                    try:
-                        el.BeginAnimation(UIElement.OpacityProperty, None)
-                    except Exception:
-                        pass
-            shell = win.FindName("SigRevAnimShell")
-            if shell is not None:
-                try:
-                    shell.BeginAnimation(UIElement.OpacityProperty, None)
-                except Exception:
-                    pass
-            tt = win.FindName("SigRevEnterTranslate")
-            if tt is not None:
-                try:
-                    tt.BeginAnimation(TranslateTransform.YProperty, None)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-    def _do_close():
-        if _CLOSE_GUARD.get("finalized"):
-            return
-        _CLOSE_GUARD["finalized"] = True
-        _cleanup_anims()
-        try:
-            win.Close()
-        except Exception:
-            pass
-        finally:
-            try:
-                _CLOSE_GUARD["busy"] = False
-            except Exception:
-                pass
-
-    done = {"ok": False}
-
-    def _finish_once(_s=None, _e=None):
-        if done["ok"]:
-            return
-        done["ok"] = True
-        try:
-            tm = getattr(win, "_sigrev_exit_fallback_timer", None)
-            if tm is not None:
-                try:
-                    tm.Stop()
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        _do_close()
-
-    try:
-        from System import TimeSpan
-        from System.Windows import UIElement
-        from System.Windows.Media import TranslateTransform
-        from System.Windows.Threading import DispatcherTimer
-
-        _snap_anim_shell_visible(win)
-        sb_ex = win.TryFindResource("SigRevExitStoryboard")
-        shell = win.FindName("SigRevAnimShell")
-        tt    = win.FindName("SigRevEnterTranslate")
-        if sb_ex is None or shell is None or tt is None:
-            _finish_once()
-            return
-
-        try:
-            shell.BeginAnimation(UIElement.OpacityProperty, None)
-            tt.BeginAnimation(TranslateTransform.YProperty, None)
-        except Exception:
-            pass
-
-        dur = Duration(TimeSpan.FromMilliseconds(float(CHROME_MS)))
-        try:
-            for i in range(int(sb_ex.Children.Count)):
-                sb_ex.Children[i].Duration = dur
-        except Exception:
-            pass
-
-        sb_ex.Completed += EventHandler(_finish_once)
-        sb_ex.Begin(win, True)
-
-        tm = DispatcherTimer()
-        tm.Interval = TimeSpan.FromMilliseconds(float(EXIT_FALLBACK_MS))
-        tm.Tick += EventHandler(lambda _snd, _evt: _finish_once())
-        win._sigrev_exit_fallback_timer = tm
-        tm.Start()
-    except Exception:
-        _finish_once()
 
 
 # ---------------------------------------------------------------------------
@@ -1090,12 +888,8 @@ def build_and_wire(win, vm, doc, uidoc, revit_app, idx_rev0, sheets_all):
         idx_rev0:   Índice de revisión 0 en el proyecto (-1 si no existe).
         sheets_all: Lista de ViewSheet inicial.
     """
-    _reset_close_guard()
     vm._win = win
     vm._has_revision_zero = idx_rev0 >= 0
-
-    # --- Logo ---
-    _load_logo(win)
 
     # --- Combos formulario ---
     for d in DESCRIPCIONES:
@@ -1130,7 +924,7 @@ def build_and_wire(win, vm, doc, uidoc, revit_app, idx_rev0, sheets_all):
     # --- Gestionar personas ---
     def _on_gestionar_personas(_s, _e):
         try:
-            from gestionar_personas_wpf import GestionarPersonasDialog, load_personas_list
+            from ui.gestionar_personas_wpf import GestionarPersonasDialog, load_personas_list
             from System.Collections.ObjectModel import ObservableCollection
             from System.IO import Directory
         except Exception:
@@ -1217,11 +1011,7 @@ def build_and_wire(win, vm, doc, uidoc, revit_app, idx_rev0, sheets_all):
     except Exception:
         pass
 
-    # --- Botones OK / Cancelar / Cerrar ---
-    btn_close = win.FindName("BtnClose")
-    if btn_close is not None:
-        btn_close.Click += RoutedEventHandler(lambda s, e: vm.cancel(win))
-
+    # --- Botones OK / Cancelar ---
     btn_cancel = win.FindName("BtnCancel")
     if btn_cancel is not None:
         btn_cancel.Click += RoutedEventHandler(lambda s, e: vm.cancel(win))
@@ -1252,34 +1042,10 @@ def build_and_wire(win, vm, doc, uidoc, revit_app, idx_rev0, sheets_all):
     except Exception:
         pass
 
-    # --- Arrastrar titlebar ---
-    try:
-        from System.Windows.Input import MouseButtonEventHandler as MBH
-        title_bar = win.FindName("TitleBar")
-        if title_bar is not None:
-            title_bar.MouseLeftButtonDown += MBH(lambda _s, e: win.DragMove())
-        if btn_close is not None:
-            btn_close.MouseLeftButtonDown += MBH(
-                lambda _s, e: setattr(e, "Handled", True)
-            )
-    except Exception:
-        pass
-
-    # --- Animación de entrada ---
     def _on_loaded_all(_s, _e):
-        try:
-            hwnd_owner = None
-            try:
-                from revit_wpf_window_position import revit_main_hwnd
-                hwnd_owner = revit_main_hwnd(revit_app)
-            except Exception:
-                pass
-            if hwnd_owner:
-                from System.Windows.Interop import WindowInteropHelper
-                WindowInteropHelper(win).Owner = hwnd_owner
-        except Exception:
-            pass
-        _force_outer_chrome_visible(win)
+        _attach_revit_owner(win, revit_app)
+        _prepare_window_bounds(win)
+        _position_window(win, revit_app)
         try:
             _schedule_scrollbars(win)
         except Exception:
@@ -1290,15 +1056,5 @@ def build_and_wire(win, vm, doc, uidoc, revit_app, idx_rev0, sheets_all):
                 _schedule_grid_scrollbars(win, gd)
         except Exception:
             pass
-        try:
-            _begin_open_storyboard(win)
-        except Exception:
-            _force_outer_chrome_visible(win)
-            _snap_anim_shell_visible(win)
 
     win.Loaded += RoutedEventHandler(_on_loaded_all)
-
-    def _on_content_rendered(_s, _e):
-        _force_outer_chrome_visible(win)
-
-    win.ContentRendered += EventHandler(_on_content_rendered)
