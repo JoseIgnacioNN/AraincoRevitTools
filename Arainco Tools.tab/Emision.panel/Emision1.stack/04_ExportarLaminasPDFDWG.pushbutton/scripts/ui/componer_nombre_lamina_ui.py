@@ -7,10 +7,6 @@ información del proyecto) para reutilizarla al abrir el mismo modelo en otra se
 tras sincronizar (worksharing / ACC).
 """
 
-import imp
-import os
-import sys
-
 import clr
 
 clr.AddReference("PresentationFramework")
@@ -36,48 +32,8 @@ from System.Windows.Controls import (  # noqa: E402
 )
 from System.Windows.Markup import XamlReader  # noqa: E402
 
-_pb = os.path.dirname(os.path.abspath(__file__))
-if _pb not in sys.path:
-    sys.path.insert(0, _pb)
-_d = _pb
-for _ in range(24):
-    _sp = os.path.join(_d, "scripts")
-    if os.path.isfile(os.path.join(_sp, "bimtools_wpf_dark_theme.py")):
-        if _sp not in sys.path:
-            sys.path.insert(0, _sp)
-        break
-    _p = os.path.dirname(_d)
-    if _p == _d:
-        break
-    _d = _p
-else:
-    _sp = os.path.abspath(
-        os.path.join(_pb, os.pardir, os.pardir, os.pardir, os.pardir, "scripts")
-    )
-    if os.path.isdir(_sp) and _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
-bimtools_paths = None
 try:
-    _bimtools_paths_fp = os.path.join(
-        os.path.abspath(os.path.join(_pb, os.pardir, os.pardir, os.pardir)),
-        "scripts",
-        "bimtools_paths.py",
-    )
-    if os.path.isfile(_bimtools_paths_fp):
-        bimtools_paths = imp.load_source(
-            "bimtools_paths__ComponerNombreLamina", _bimtools_paths_fp
-        )
-    else:
-        import bimtools_paths as _bimtools_paths_std
-
-        bimtools_paths = _bimtools_paths_std
-    bimtools_paths.set_pushbutton_dir(_pb)
-except Exception:
-    bimtools_paths = None
-
-try:
-    from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
+    from infra.bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
 except Exception:
     BIMTOOLS_DARK_STYLES_XML = u""
 
@@ -165,23 +121,26 @@ def _sample_sheet(doc, main_table):
     return None
 
 
-def _load_bimtools_logo_into_window(win):
-    """Misma resolución de logo que en el resto de herramientas BIMTools (`bimtools_paths`)."""
+def _show_tool_message(doc, title, instruction, content=u""):
+    """Diálogo informativo WPF (tema BIMTools), centrado en el monitor de Revit."""
     try:
-        if bimtools_paths is None:
-            return
+        from ui.export_laminas_instruction_dialog import show_message_dialog
+        from infra.revit_wpf_window_position import revit_main_hwnd
 
-        img_ctrl = win.FindName(u"ImgLogo")
-        if not img_ctrl:
-            return
-        bmp = bimtools_paths.load_logo_bitmap_image()
-        if bmp is None:
-            return
-        img_ctrl.Source = bmp
+        uiapp = None
         try:
-            win.Icon = bmp
+            uiapp = doc.Application if doc is not None else None
         except Exception:
-            pass
+            uiapp = None
+        hwnd = revit_main_hwnd(uiapp)
+        show_message_dialog(
+            title,
+            instruction,
+            content,
+            ok_text=u"Entendido",
+            hwnd_revit=hwnd,
+            uiapp=uiapp,
+        )
     except Exception:
         pass
 
@@ -224,17 +183,14 @@ XAML = (
 """
     + BIMTOOLS_DARK_STYLES_XML
     + u"""
-    <Style x:Key="StepBadge" TargetType="TextBlock">
-      <Setter Property="Foreground" Value="#7ED8ED"/>
-      <Setter Property="FontSize" Value="11"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
+    <Style x:Key="StepBadge" TargetType="TextBlock" BasedOn="{StaticResource Label}">
       <Setter Property="Margin" Value="0,0,0,8"/>
     </Style>
     <Style x:Key="PanelInset" TargetType="Border">
-      <Setter Property="Background" Value="#071018"/>
-      <Setter Property="BorderBrush" Value="#1E3F55"/>
+      <Setter Property="Background" Value="#0a1620"/>
+      <Setter Property="BorderBrush" Value="#21465C"/>
       <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="CornerRadius" Value="4"/>
       <Setter Property="Padding" Value="12,10"/>
       <Setter Property="Margin" Value="0,0,0,12"/>
     </Style>
@@ -429,13 +385,10 @@ XAML = (
       </Style.Triggers>
     </Style>
   </Window.Resources>
-  <Border x:Name="NbRootChrome" Opacity="0" CornerRadius="8" Background="#0E1B32" Padding="14"
-          BorderBrush="#5BC0DE" BorderThickness="1" ClipToBounds="True" RenderTransformOrigin="0.5,0.5">
-    <Border.Effect>
-      <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="0" Opacity="0.35"/>
-    </Border.Effect>
+  <Border x:Name="NbRootChrome" Opacity="1" CornerRadius="8" Background="#071018" Padding="22,20"
+          BorderBrush="#21465C" BorderThickness="1" ClipToBounds="True" RenderTransformOrigin="0.5,0.5">
     <Border.RenderTransform>
-      <ScaleTransform x:Name="NbRootScale" ScaleX="0.88" ScaleY="0.88"/>
+      <ScaleTransform x:Name="NbRootScale" ScaleX="1" ScaleY="1"/>
     </Border.RenderTransform>
     <Grid>
     <Grid.RowDefinitions>
@@ -443,24 +396,11 @@ XAML = (
       <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
-    <Border x:Name="TitleBar" Grid.Row="0" Background="#0D1E2E" CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
-            BorderBrush="#5BC0DE" BorderThickness="1" HorizontalAlignment="Stretch">
-      <Grid>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*"/>
-          <ColumnDefinition Width="Auto"/>
-          <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
-        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-          <Image x:Name="ImgLogo" Width="40" Height="40"
-                 Stretch="Uniform" Margin="0,0,10,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
-          <TextBlock Text="Nombre Personalizado" FontSize="14" FontWeight="Bold" Foreground="#FFFFFF"
-                     VerticalAlignment="Center"/>
-        </StackPanel>
-        <Button x:Name="BtnClose" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Top"
-                Style="{StaticResource BtnCloseX_MinimalNoBg}" Padding="6" Margin="0,-4,-4,0"/>
-      </Grid>
-    </Border>
+    <StackPanel Grid.Row="0" Margin="0,0,0,14">
+      <TextBlock Text="Arainco: Nombre Personalizado" Foreground="#E8F4F8" FontSize="16" FontWeight="Bold"/>
+      <TextBlock Margin="0,6,0,0" Foreground="#95B8CC" TextWrapping="Wrap" FontSize="11"
+                 Text="Componer el nombre de archivo por parámetros de lámina."/>
+    </StackPanel>
     <Grid Grid.Row="1" VerticalAlignment="Stretch">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="290"/>
@@ -476,7 +416,7 @@ XAML = (
           </Grid.RowDefinitions>
           <TextBlock Grid.Row="0" Text="Parámetros disponibles" Style="{StaticResource StepBadge}"/>
           <TextBox x:Name="TxtFiltroOpciones" Grid.Row="1" Margin="0,0,0,8" ToolTip="Filtrar por nombre de parámetro"/>
-          <Border x:Name="BdOpcionesLista" Grid.Row="2" Background="#040A12" BorderBrush="#1E3F55" BorderThickness="1" CornerRadius="8"
+          <Border x:Name="BdOpcionesLista" Grid.Row="2" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1" CornerRadius="4"
                   MinHeight="200" VerticalAlignment="Stretch" SnapsToDevicePixels="True">
             <ListBox x:Name="LstOpciones" Style="{StaticResource OpcionesListBoxStyle}" DisplayMemberPath="Label"/>
           </Border>
@@ -559,9 +499,9 @@ XAML = (
             <Button x:Name="BtnLimpiar" Content="Limpiar secuencia" Style="{StaticResource BtnGhost}" MinWidth="132"/>
           </StackPanel>
           <TextBlock Grid.Row="3" Text="Vista previa" Style="{StaticResource StepBadge}"/>
-          <Border Grid.Row="4" Background="#040A12" BorderBrush="#1E3F55" BorderThickness="1" CornerRadius="8"
+          <Border Grid.Row="4" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1" CornerRadius="4"
                   Padding="14,12" MinHeight="88" VerticalAlignment="Stretch">
-            <TextBlock x:Name="TxtVistaPrevia" Foreground="#F2F8FC" FontSize="13" FontWeight="SemiBold"
+            <TextBlock x:Name="TxtVistaPrevia" Foreground="#E8F4F8" FontSize="13" FontWeight="SemiBold"
                        TextWrapping="Wrap" VerticalAlignment="Center"/>
           </Border>
         </Grid>
@@ -573,7 +513,7 @@ XAML = (
         <ColumnDefinition Width="Auto"/>
         <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
-      <TextBlock Grid.Column="0" Foreground="#92B4C9" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"
+      <TextBlock Grid.Column="0" Foreground="#64748b" FontSize="10" VerticalAlignment="Center" TextWrapping="Wrap"
                  Text="Aplicar reemplaza la columna «Nombre de archivo» en todas las filas del diálogo principal."/>
       <Button x:Name="BtnOk" Grid.Column="1" Content="Aplicar nombres" Style="{StaticResource BtnPrimary}" MinWidth="148" Margin="0,0,10,0"/>
       <Button x:Name="BtnCancel" Grid.Column="2" Content="Cancelar" Style="{StaticResource BtnSelectOutline}" MinWidth="100"/>
@@ -585,18 +525,16 @@ XAML = (
 ).replace(u"__NB_WPF_STORYBOARD_DUR__", _NB_WPF_STORYBOARD_DUR_STR)
 
 
-def _hydrate_recipe_table(recipe_dt, doc, opts_list):
+def _hydrate_recipe_table(recipe_dt, doc, opts_list, get_persisted_fn=None):
     """
     Rellena ``recipe_dt`` con la receta persistida en el documento (si hay y es válida).
     """
-    try:
-        import exportar_laminas_pdf_dwg as _ex_nm  # noqa: WPS433
-    except Exception:
-        return
-    try:
-        segs = _ex_nm.get_persisted_naming_recipe_segments(doc)
-    except Exception:
-        segs = []
+    segs = []
+    if get_persisted_fn is not None:
+        try:
+            segs = get_persisted_fn(doc) or []
+        except Exception:
+            segs = []
     if not segs:
         return
     label_by = {}
@@ -643,10 +581,21 @@ def _swap_recipe_rows(dt, i, j):
 
 
 class ComponerNombreLaminaDialog(object):
-    def __init__(self, owner_wpf, doc, main_datatable, list_options_fn, evaluate_fn):
+    def __init__(
+        self,
+        owner_wpf,
+        doc,
+        main_datatable,
+        list_options_fn,
+        evaluate_fn,
+        get_persisted_recipe_fn=None,
+        persist_recipe_fn=None,
+    ):
         self._doc = doc
         self._main = main_datatable
         self._evaluate = evaluate_fn
+        self._get_persisted_recipe = get_persisted_recipe_fn
+        self._persist_recipe = persist_recipe_fn
         self._opts_full = list_options_fn(doc)
         self._opts_dt = _build_options_datatable(self._opts_full)
         self._recipe = DataTable()
@@ -658,13 +607,17 @@ class ComponerNombreLaminaDialog(object):
         self._recipe.Columns.Add(DataColumn(u"Suffix", _clr.GetClrType(String)))
         self._recipe.Columns.Add(DataColumn(u"Separator", _clr.GetClrType(String)))
 
-        _hydrate_recipe_table(self._recipe, self._doc, self._opts_full)
+        _hydrate_recipe_table(
+            self._recipe,
+            self._doc,
+            self._opts_full,
+            get_persisted_fn=self._get_persisted_recipe,
+        )
 
         self._win = XamlReader.Parse(XAML)
         self._open_grow_storyboard_started = False
         self._is_closing_with_fade = False
         self._close_dialog_result = None
-        _load_bimtools_logo_into_window(self._win)
         self._lst_opciones = self._win.FindName(u"LstOpciones")
         self._bd_opciones = self._win.FindName(u"BdOpcionesLista")
         self._txt_filtro = self._win.FindName(u"TxtFiltroOpciones")
@@ -704,17 +657,6 @@ class ComponerNombreLaminaDialog(object):
             self._win.InputBindings.Add(
                 KeyBinding(ApplicationCommands.Close, Key.Escape, ModifierKeys.None)
             )
-            btn_close = self._win.FindName(u"BtnClose")
-            title_bar = self._win.FindName(u"TitleBar")
-            if title_bar is not None:
-                title_bar.MouseLeftButtonDown += MouseButtonEventHandler(
-                    lambda s, e: self._win.DragMove()
-                )
-            if btn_close is not None:
-                btn_close.Click += RoutedEventHandler(self._on_cancel)
-                btn_close.MouseLeftButtonDown += MouseButtonEventHandler(
-                    lambda s, e: setattr(e, "Handled", True)
-                )
         except Exception:
             pass
         self._grid.CellEditEnding += EventHandler[DataGridCellEditEndingEventArgs](
@@ -957,8 +899,6 @@ class ComponerNombreLaminaDialog(object):
     def _on_ok(self, sender, args):
         if self._is_closing_with_fade:
             return
-        from Autodesk.Revit.UI import TaskDialog
-
         try:
             self._grid.CommitEdit(DataGridEditingUnit.Row, True)
         except Exception:
@@ -966,8 +906,9 @@ class ComponerNombreLaminaDialog(object):
 
         segs = _recipe_segments_from_table(self._recipe)
         if not segs:
-            TaskDialog.Show(
-                u"Nombre Personalizado",
+            _show_tool_message(
+                self._doc,
+                u"Arainco: Nombre Personalizado",
                 u"Añada al menos un parámetro a la secuencia (flecha derecha).",
             )
             return
@@ -993,18 +934,19 @@ class ComponerNombreLaminaDialog(object):
                 continue
 
         if n_ok == 0:
-            TaskDialog.Show(
-                u"Nombre Personalizado",
-                u"No se actualizó ninguna fila. No hay láminas en el proyecto o no se pudieron leer como ViewSheet.",
+            _show_tool_message(
+                self._doc,
+                u"Arainco: Nombre Personalizado",
+                u"No se actualizó ninguna fila.",
+                u"No hay láminas en el proyecto o no se pudieron leer como ViewSheet.",
             )
             return
 
-        try:
-            import exportar_laminas_pdf_dwg as _ex_nm  # noqa: WPS433
-
-            _ex_nm.persist_naming_recipe_segments(self._doc, segs)
-        except Exception:
-            pass
+        if self._persist_recipe is not None:
+            try:
+                self._persist_recipe(self._doc, segs)
+            except Exception:
+                pass
 
         self._close_dialog_result = True
         self._close_with_fade()
@@ -1052,9 +994,25 @@ class ComponerNombreLaminaDialog(object):
             pass
 
 
-def show_componer_nombre_dialog(owner_wpf, doc, main_datatable, list_options_fn, evaluate_fn):
+def show_componer_nombre_dialog(
+    owner_wpf,
+    doc,
+    main_datatable,
+    list_options_fn,
+    evaluate_fn,
+    get_persisted_recipe_fn=None,
+    persist_recipe_fn=None,
+):
     """
     Muestra el diálogo Nombre Personalizado. Al confirmar, escribe CustomName en main_datatable.
     """
-    dlg = ComponerNombreLaminaDialog(owner_wpf, doc, main_datatable, list_options_fn, evaluate_fn)
+    dlg = ComponerNombreLaminaDialog(
+        owner_wpf,
+        doc,
+        main_datatable,
+        list_options_fn,
+        evaluate_fn,
+        get_persisted_recipe_fn=get_persisted_recipe_fn,
+        persist_recipe_fn=persist_recipe_fn,
+    )
     dlg.show_modal()

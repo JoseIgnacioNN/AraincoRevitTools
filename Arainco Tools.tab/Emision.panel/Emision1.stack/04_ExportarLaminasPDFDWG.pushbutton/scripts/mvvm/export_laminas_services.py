@@ -4,31 +4,23 @@ Capa de servicios para la herramienta Exportar Láminas.
 
 BloquearComandosRevit – context manager: EnableWindow(False/True) sobre la ventana de Revit
                        (copia autocontenida; no usa join_geometry_concrete_vista).
-RevitWindowService   – bloquea la ventana de Revit y muestra TaskDialogs sobre la
-                       ventana WPF (Topmost).
+RevitWindowService   – bloquea la ventana de Revit y muestra diálogos WPF BIMTools.
 FolderBrowserService – envuelve FolderBrowserDialog de WinForms con propietario Win32.
 ProgressService      – gestiona barras de progreso de pyRevit por fases de exportación.
 """
 
 import os
-import sys
-
-_pb = os.path.dirname(os.path.abspath(__file__))
-if _pb not in sys.path:
-    sys.path.insert(0, _pb)
 
 import clr  # noqa: E402
 
-clr.AddReference("RevitAPIUI")
 clr.AddReference("System.Windows.Forms")
 
-from Autodesk.Revit.UI import (  # noqa: E402
-    TaskDialog,
-    TaskDialogCommonButtons,
-    TaskDialogResult,
+from ui.export_laminas_instruction_dialog import (  # noqa: E402
+    show_message_dialog,
+    show_ok_cancel_dialog,
 )
 
-_TASK_TITLE = u"Exportar Láminas"
+_TASK_TITLE = u"Arainco: Exportar Láminas"
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +51,7 @@ def _revit_main_window_set_enabled(revit, enable):
     if revit is None:
         return
     try:
-        from revit_wpf_window_position import revit_main_hwnd
+        from infra.revit_wpf_window_position import revit_main_hwnd
     except Exception:
         return
     hwnd = revit_main_hwnd(revit)
@@ -110,7 +102,7 @@ class RevitWindowService(object):
     """
     Abstrae interacciones con la ventana principal de Revit:
     – Bloqueo durante exportación (_BloquearComandosRevit).
-    – Presentación de TaskDialogs por encima de la ventana WPF Topmost.
+    – Presentación de diálogos WPF BIMTools (mensajes y confirmaciones).
     """
 
     def __init__(self, revit, bloquear_cls):
@@ -145,14 +137,29 @@ class RevitWindowService(object):
             except Exception:
                 pass
 
-    # -- TaskDialogs sobre la ventana WPF ---------------------------------
+    # -- Diálogos WPF BIMTools --------------------------------------------
+
+    def _revit_dialog_context(self):
+        uiapp = None
+        hwnd = None
+        try:
+            from infra.revit_wpf_window_position import revit_main_hwnd
+
+            revit = self._revit
+            try:
+                uiapp = revit.Application if revit is not None else None
+            except Exception:
+                uiapp = None
+            if uiapp is None:
+                uiapp = revit
+            hwnd = revit_main_hwnd(uiapp)
+        except Exception:
+            pass
+        return uiapp, hwnd
 
     @staticmethod
     def run_above_wpf(callback, wpf_win=None):
-        """
-        Baja Topmost de la ventana WPF, ejecuta callback y lo restaura.
-        Garantiza que los TaskDialog de Revit queden visibles sobre la ventana.
-        """
+        """Ejecuta callback; baja Topmost de la ventana WPF si aplica."""
         top = None
         if wpf_win is not None:
             try:
@@ -170,54 +177,55 @@ class RevitWindowService(object):
                     pass
 
     def show_ok(self, main_instruction, wpf_win=None):
-        """TaskDialog informativo (botón OK) mostrado por encima de la ventana WPF."""
+        """Diálogo informativo (solo Aceptar), estilo BIMTools."""
+        uiapp, hwnd = self._revit_dialog_context()
+
         def _cb():
-            td = TaskDialog(_TASK_TITLE)
-            try:
-                td.TitleAutoPrefix = False
-            except Exception:
-                pass
-            td.MainInstruction = main_instruction
-            td.CommonButtons = TaskDialogCommonButtons.Ok
-            td.DefaultButton = TaskDialogResult.Ok
-            td.Show()
+            show_message_dialog(
+                _TASK_TITLE,
+                main_instruction,
+                u"",
+                ok_text=u"Entendido",
+                hwnd_revit=hwnd,
+                uiapp=uiapp,
+            )
+
         self.run_above_wpf(_cb, wpf_win)
 
     def show_errors(self, main_instruction, errors, wpf_win=None):
-        """TaskDialog con lista de errores (máximo 20 líneas)."""
+        """Diálogo con lista de errores (máximo 20 líneas), estilo BIMTools."""
+        uiapp, hwnd = self._revit_dialog_context()
+        err_txt = u"\n".join(errors[:20])
+        if len(errors) > 20:
+            err_txt += u"\n…"
+
         def _cb():
-            err_txt = u"\n".join(errors[:20])
-            if len(errors) > 20:
-                err_txt += u"\n…"
-            td = TaskDialog(_TASK_TITLE)
-            try:
-                td.TitleAutoPrefix = False
-            except Exception:
-                pass
-            td.MainInstruction = main_instruction
-            td.MainContent = err_txt
-            td.CommonButtons = TaskDialogCommonButtons.Ok
-            td.DefaultButton = TaskDialogResult.Ok
-            td.Show()
+            show_message_dialog(
+                _TASK_TITLE,
+                main_instruction,
+                err_txt,
+                ok_text=u"Entendido",
+                hwnd_revit=hwnd,
+                uiapp=uiapp,
+            )
+
         self.run_above_wpf(_cb, wpf_win)
 
     def ask_yes_no(self, main_instruction, content, wpf_win=None):
-        """TaskDialog Sí/No; devuelve True si el usuario elige Sí."""
+        """Diálogo Sí/No; devuelve True si el usuario confirma."""
+        uiapp, hwnd = self._revit_dialog_context()
         result = [False]
 
         def _cb():
-            td = TaskDialog(_TASK_TITLE)
-            try:
-                td.TitleAutoPrefix = False
-            except Exception:
-                pass
-            td.MainInstruction = main_instruction
-            td.MainContent = content
-            td.CommonButtons = (
-                TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No
+            result[0] = show_ok_cancel_dialog(
+                _TASK_TITLE,
+                main_instruction,
+                content,
+                ok_text=u"Sí",
+                cancel_text=u"No",
+                hwnd_revit=hwnd,
+                uiapp=uiapp,
             )
-            td.DefaultButton = TaskDialogResult.Yes
-            result[0] = td.Show() == TaskDialogResult.Yes
 
         self.run_above_wpf(_cb, wpf_win)
         return result[0]
@@ -247,7 +255,7 @@ class FolderBrowserService(object):
         Devuelve la ruta elegida como str, o None si se cancela.
         """
         from System.Windows.Forms import FolderBrowserDialog, NativeWindow
-        from revit_wpf_window_position import revit_main_hwnd
+        from infra.revit_wpf_window_position import revit_main_hwnd
 
         class _Win32FolderOwner(NativeWindow):
             """IWin32Window anónimo para modalizar el diálogo bajo la ventana WPF."""

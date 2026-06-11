@@ -31,11 +31,6 @@ Dependencias inyectadas en el constructor:
 """
 
 import os
-import sys
-
-_pb = os.path.dirname(os.path.abspath(__file__))
-if _pb not in sys.path:
-    sys.path.insert(0, _pb)
 
 import clr  # noqa: E402
 
@@ -147,9 +142,6 @@ class ExportarLaminasViewModel(object):
         self.export_command = relay_command_cls(
             execute_fn=self._execute_export,
             can_execute_fn=lambda: not self._is_exporting,
-        )
-        self.refresh_command = relay_command_cls(
-            execute_fn=self._refresh_sheets,
         )
 
     # -----------------------------------------------------------------------

@@ -1,44 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Exportación de láminas (ViewSheet) a PDF y DWG para BIMTools.
-Copia junto al pushbutton; tiene prioridad en sys.path sobre scripts/.
+Dominio Exportar Láminas: DataTable de láminas, filtros FCH, naming y persistencia.
 
-La receta de «Nombre personalizado» persistida vive en ``scripts/export_laminas_naming_schema.py``
-(Extensible Storage en el proyecto).
+Módulo autocontenido del pushbutton ``04_ExportarLaminasPDFDWG`` (sin dependencia de scripts/).
+La receta «Nombre personalizado» se persiste vía ``export_laminas_naming_schema.py`` local.
 """
-
-import os
-import sys
-
-_pushbutton_dir = os.path.dirname(os.path.abspath(__file__))
-if _pushbutton_dir not in sys.path:
-    sys.path.insert(0, _pushbutton_dir)
-
-
-def _find_repo_scripts_dir(start_dir):
-    """Sube directorios hasta encontrar ``scripts/`` con módulos BIMTools (cualquier profundidad de stack/pulldown)."""
-    d = os.path.abspath(start_dir)
-    for _ in range(16):
-        sp = os.path.join(d, "scripts")
-        if os.path.isdir(sp) and (
-            os.path.isfile(os.path.join(sp, "bimtools_wpf_dark_theme.py"))
-            or os.path.isfile(os.path.join(sp, "export_laminas_naming_schema.py"))
-        ):
-            return sp
-        parent = os.path.dirname(d)
-        if parent == d:
-            break
-        d = parent
-    return None
-
-
-_scripts_dir = _find_repo_scripts_dir(_pushbutton_dir)
-if _scripts_dir is None:
-    _scripts_dir = os.path.normpath(
-        os.path.join(_pushbutton_dir, os.pardir, os.pardir, os.pardir, "scripts")
-    )
-if os.path.isdir(_scripts_dir) and _scripts_dir not in sys.path:
-    sys.path.insert(0, _scripts_dir)
 
 import clr
 
@@ -56,10 +22,10 @@ from Autodesk.Revit.DB import (  # noqa: E402
 from System import Boolean, Int32, String  # noqa: E402
 from System.Data import DataColumn, DataTable  # noqa: E402
 
-from sheet_export_manager import SheetExportManager, sanitize_file_base  # noqa: E402
+from lib.sheet_export_manager import SheetExportManager, sanitize_file_base  # noqa: E402
 
 try:
-    import export_laminas_naming_schema as _lam_nm_store  # noqa: E402
+    import lib.export_laminas_naming_schema as _lam_nm_store  # noqa: E402
 except Exception:
     _lam_nm_store = None
 
@@ -645,7 +611,7 @@ def export_sheet_pdf(doc, folder, sheet_id, custom_base):
     :param doc: Documento de Revit.
     :param folder: Carpeta de salida.
     :param sheet_id: ``ElementId`` de la lámina.
-    :param custom_base: Nombre de archivo deseado (con o sin ``.pdf``).
+    :param custom_base: Nombre de archivo deseado sin extensión (Revit añade ``.pdf``).
     :returns: ``True`` si la exportación generó salida.
     """
     return SheetExportManager(doc, sanitize_file_base_fn=sanitize_file_base).export_pdf(

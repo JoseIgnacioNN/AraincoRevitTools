@@ -284,30 +284,30 @@ class SheetExportManager(object):
 
         :param folder: Carpeta de salida.
         :param sheet_id: ``ElementId`` de la ``ViewSheet``.
-        :param custom_base: Nombre deseado (con o sin ``.pdf``).
+        :param custom_base: Nombre deseado sin extensión (si incluye ``.pdf``, se ignora).
         :returns: ``True`` si ``Document.Export`` devolvió éxito (colección de nombres no vacía).
         """
         if self._doc is None or sheet_id is None:
             return False
-        base = self._sanitize(custom_base)
-        if not base.lower().endswith(u".pdf"):
-            base = base + u".pdf"
-        stem = base[:-4]
+        stem = self._sanitize(custom_base)
+        if stem.lower().endswith(u".pdf"):
+            stem = stem[:-4]
         stem = _make_unique_stem(folder, stem, u".pdf")
-        base = stem + u".pdf"
+        out_name = stem + u".pdf"
 
         opts = PDFExportOptions()
         try:
             opts.Combine = True
-            opts.FileName = base
+            # La API de Revit añade ".pdf" automáticamente a FileName (no incluir extensión).
+            opts.FileName = stem
             ids = List[ElementId]()
             ids.Add(sheet_id)
             result = self._doc.Export(folder, ids, opts)
             ok = _export_result_ok(result)
             if not ok:
-                _log_warning(u"[Exportar láminas] PDF sin salida para: {}".format(base))
+                _log_warning(u"[Exportar láminas] PDF sin salida para: {}".format(out_name))
             else:
-                _log_debug(u"[Exportar láminas] PDF OK año={} archivo={}".format(self._year, base))
+                _log_debug(u"[Exportar láminas] PDF OK año={} archivo={}".format(self._year, out_name))
             return ok
         except Exception as ex:
             _log_warning(u"[Exportar láminas] PDF error: {}".format(_unicode_safe(ex, u"error")))

@@ -1,0 +1,60 @@
+04_ExportarLaminasPDFDWG.pushbutton
+├── bundle.yaml
+├── script.py                              Arranque pyRevit (scripts/ + purge + run.main)
+├── ESTRUCTURA_PORTABLE.txt
+├── icon.png                               Opcional (icono cinta)
+├── TemplateListado.xlsx                   Requerido en runtime para listado Excel
+│
+└── scripts/
+    ├── run.py                             Composition root (singleton + MVVM)
+    ├── bootstrap.py                       sys.path + purge de módulos
+    ├── bootstrap_path.py                  pushbutton_dir() → carpeta .pushbutton
+    │
+    ├── lib/                               Dominio y exportación
+    │   ├── exportar_laminas_pdf_dwg.py    DataTable láminas, FCH, naming, filtros
+    │   ├── export_laminas_naming_schema.py Extensible Storage (receta nombre personalizado)
+    │   ├── sheet_export_manager.py        Motor Document.Export PDF/DWG (2024–2026)
+    │   └── listado_planos_excel_core.py   Generación Excel desde plantilla
+    │
+    ├── mvvm/                              Lógica de presentación
+    │   ├── export_laminas_vm.py           ViewModel
+    │   ├── export_laminas_commands.py     RelayCommand
+    │   ├── export_laminas_services.py     Bloqueo Revit, diálogos, carpetas, progreso
+    │   └── export_laminas_strategies.py   PDF / DWG / Listado Excel
+    │
+    ├── ui/                                Ventanas WPF
+    │   ├── export_laminas_view.py         Vista principal (XAML embebido)
+    │   ├── componer_nombre_lamina_ui.py   Diálogo «Nombre Personalizado»
+    │   └── export_laminas_instruction_dialog.py  Mensajes modales (tema BIMTools)
+    │
+    └── infra/                             Utilidades BIMTools (copia local)
+        ├── bimtools_paths.py              Resolución logo/icono (opcional)
+        ├── bimtools_wpf_dark_theme.py     Recursos WPF tema oscuro
+        └── revit_wpf_window_position.py   Posicionamiento HWND / monitores
+
+Copie solo esta carpeta .pushbutton a la pestaña de otra extensión pyRevit.
+No requiere scripts/ del repositorio ni rutas absolutas de máquina.
+
+-----------------------------------------------------------------------------
+Despliegue
+-----------------------------------------------------------------------------
+
+1. Copie la carpeta completa ``04_ExportarLaminasPDFDWG.pushbutton`` (todos los .py,
+   bundle.yaml y TemplateListado.xlsx en la raíz del pushbutton).
+2. No incluya artefactos de desarrollo.
+3. Recargue pyRevit en las estaciones destino.
+4. Revit 2024–2026 (min_revit_ver / max_revit_ver en bundle.yaml).
+
+Prioridad en tiempo de ejecución: ``script.py`` inserta ``scripts/`` al frente de
+``sys.path``; ``purge_export_laminas_modules()`` fuerza recarga limpia en cada
+ejecución del botón.
+
+-----------------------------------------------------------------------------
+Arquitectura
+-----------------------------------------------------------------------------
+
+- Patrón MVVM en la ventana principal; el diálogo Nombre Personalizado es modal
+  independiente inyectado desde ``scripts/run.py``.
+- Las estrategias de exportación delegan en ``lib/sheet_export_manager.py``.
+- Mensajes al usuario: diálogos WPF BIMTools (no TaskDialog nativo de Revit).
+- Instancia única: clave AppDomain ``BIMTools.ExportarLaminasPDFDWG.ActiveWindow``.

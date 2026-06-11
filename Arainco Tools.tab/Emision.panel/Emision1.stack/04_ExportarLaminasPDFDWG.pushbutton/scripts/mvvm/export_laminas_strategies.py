@@ -10,14 +10,7 @@ Cada estrategia encapsula la dependencia externa (SheetExportManager,
 listado_planos_excel_core) y expone una interfaz uniforme: execute().
 """
 
-import os
-import sys
-
-_pb = os.path.dirname(os.path.abspath(__file__))
-if _pb not in sys.path:
-    sys.path.insert(0, _pb)
-
-from sheet_export_manager import SheetExportManager  # noqa: E402
+from lib.sheet_export_manager import SheetExportManager  # noqa: E402
 
 # Nombre del setup DWG del proyecto utilizado por defecto.
 DWG_SETUP_DEFAULT = u"Default"

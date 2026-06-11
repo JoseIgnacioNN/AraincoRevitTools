@@ -13,13 +13,6 @@ La Vista:
   – Aplica utilidades de scrollbar y logo propias del proyecto BIMTools.
 """
 
-import os
-import sys
-
-_pb = os.path.dirname(os.path.abspath(__file__))
-if _pb not in sys.path:
-    sys.path.insert(0, _pb)
-
 import clr  # noqa: E402
 
 clr.AddReference("PresentationFramework")
@@ -36,7 +29,7 @@ from System.Windows.Markup import XamlReader  # noqa: E402
 import System  # noqa: E402
 
 try:
-    from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML as _DARK_STYLES
+    from infra.bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML as _DARK_STYLES
 except Exception:
     _DARK_STYLES = u""
 
@@ -50,16 +43,13 @@ _XAML = (
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:sys="clr-namespace:System;assembly=mscorlib"
     x:Name="ExpLamWin"
-    Title="Exportar Láminas"
+    Title="Arainco: Exportar Láminas"
     Height="810" Width="1040" MinHeight="640" MinWidth="800"
-    Background="Transparent"
-    AllowsTransparency="True"
-    WindowStyle="None"
-    ResizeMode="NoResize"
-    WindowStartupLocation="CenterScreen"
-    Topmost="True"
-    UseLayoutRounding="True"
-    FontFamily="Segoe UI" FontSize="12">
+    ResizeMode="CanResize"
+    WindowStartupLocation="Manual"
+    Background="#071018"
+    FontFamily="Segoe UI" FontSize="12"
+    ShowInTaskbar="False">
   <Window.Resources>
 """
     + _DARK_STYLES
@@ -80,27 +70,24 @@ _XAML = (
       <Setter Property="Foreground" Value="#F2F8FC"/>
       <Setter Property="ItemContainerStyle" Value="{StaticResource ExpLamFechaComboItem}"/>
     </Style>
-    <Style x:Key="StepBadge" TargetType="TextBlock">
-      <Setter Property="Foreground" Value="#5BC0DE"/>
-      <Setter Property="FontSize" Value="11"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
+    <Style x:Key="StepBadge" TargetType="TextBlock" BasedOn="{StaticResource Label}">
       <Setter Property="Margin" Value="0,0,0,8"/>
     </Style>
     <Style x:Key="PanelInset" TargetType="Border">
-      <Setter Property="Background" Value="#071018"/>
-      <Setter Property="BorderBrush" Value="#1E3F55"/>
+      <Setter Property="Background" Value="#0a1620"/>
+      <Setter Property="BorderBrush" Value="#21465C"/>
       <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="CornerRadius" Value="4"/>
       <Setter Property="Padding" Value="12,10"/>
       <Setter Property="Margin" Value="0,0,0,12"/>
     </Style>
     <Style x:Key="BtnGhost" TargetType="Button">
       <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="Foreground" Value="#9BC4D6"/>
+      <Setter Property="Foreground" Value="#95B8CC"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="FontSize" Value="11"/>
       <Setter Property="Padding" Value="12,7"/>
-      <Setter Property="BorderBrush" Value="#2A4A5E"/>
+      <Setter Property="BorderBrush" Value="#21465C"/>
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Template">
@@ -113,8 +100,8 @@ _XAML = (
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="R" Property="Background" Value="#0D1E2E"/>
-                <Setter TargetName="R" Property="BorderBrush" Value="#5BC0DE"/>
+                <Setter TargetName="R" Property="Background" Value="#0F2035"/>
+                <Setter TargetName="R" Property="BorderBrush" Value="#21465C"/>
                 <Setter Property="Foreground" Value="#E8F4F8"/>
               </Trigger>
             </ControlTemplate.Triggers>
@@ -169,25 +156,25 @@ _XAML = (
       </Setter>
     </Style>
     <Style TargetType="DataGrid" BasedOn="{StaticResource {x:Type DataGrid}}">
-      <Setter Property="Background" Value="#040A12"/>
+      <Setter Property="Background" Value="#0a1620"/>
       <Setter Property="Foreground" Value="#E8F4F8"/>
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="RowBackground" Value="#0B1726"/>
-      <Setter Property="AlternatingRowBackground" Value="#071420"/>
-      <Setter Property="HorizontalGridLinesBrush" Value="#152A3D"/>
-      <Setter Property="VerticalGridLinesBrush" Value="#152A3D"/>
+      <Setter Property="AlternatingRowBackground" Value="#071018"/>
+      <Setter Property="HorizontalGridLinesBrush" Value="#21465C"/>
+      <Setter Property="VerticalGridLinesBrush" Value="#21465C"/>
       <Setter Property="HeadersVisibility" Value="Column"/>
       <Setter Property="RowHeight" Value="34"/>
       <Setter Property="GridLinesVisibility" Value="All"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
     <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
-      <Setter Property="Background" Value="#0F2840"/>
-      <Setter Property="Foreground" Value="#C8E4EF"/>
+      <Setter Property="Background" Value="#11253D"/>
+      <Setter Property="Foreground" Value="#95B8CC"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="FontSize" Value="11"/>
       <Setter Property="Padding" Value="12,10"/>
-      <Setter Property="BorderBrush" Value="#1A3A50"/>
+      <Setter Property="BorderBrush" Value="#21465C"/>
       <Setter Property="BorderThickness" Value="0,0,1,1"/>
     </Style>
     <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
@@ -197,7 +184,7 @@ _XAML = (
           <Setter Property="Background" Value="#0B1726"/>
         </Trigger>
         <Trigger Property="AlternationIndex" Value="1">
-          <Setter Property="Background" Value="#071420"/>
+          <Setter Property="Background" Value="#071018"/>
         </Trigger>
         <MultiTrigger>
           <MultiTrigger.Conditions>
@@ -226,7 +213,7 @@ _XAML = (
     <Style TargetType="TextBox">
       <Setter Property="Background" Value="#050E18"/>
       <Setter Property="Foreground" Value="#FFFFFF"/>
-      <Setter Property="BorderBrush" Value="#284760"/>
+      <Setter Property="BorderBrush" Value="#1A3A4D"/>
       <Setter Property="Padding" Value="8,6"/>
       <Setter Property="FontSize" Value="11"/>
     </Style>
@@ -268,9 +255,9 @@ _XAML = (
       <Setter Property="HorizontalContentAlignment" Value="Left"/>
     </Style>
     <Style x:Key="BtnNombreArchivoHeader" TargetType="Button">
-      <Setter Property="Background" Value="#0D1829"/>
-      <Setter Property="Foreground" Value="#C8E4EF"/>
-      <Setter Property="BorderBrush" Value="#355973"/>
+      <Setter Property="Background" Value="#0A1627"/>
+      <Setter Property="Foreground" Value="#95B8CC"/>
+      <Setter Property="BorderBrush" Value="#5BC0DE"/>
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="FontSize" Value="11"/>
@@ -309,8 +296,7 @@ _XAML = (
     <!-- Misma barra que BIMTools (flechas rellenas, ~18px): la versión ExpLam 10px + trazos se leía mal. -->
     <Style x:Key="ExpLamScrollBarDark" TargetType="ScrollBar" BasedOn="{StaticResource BimToolsScrollBarDark}"/>
   </Window.Resources>
-  <Border x:Name="ExpLamRootChrome" Opacity="1" CornerRadius="8" Background="#0E1B32" Padding="14"
-          BorderBrush="#5BC0DE" BorderThickness="1" ClipToBounds="True">
+  <Border Background="#071018" BorderBrush="#21465C" BorderThickness="1" Padding="18">
     <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
@@ -319,26 +305,11 @@ _XAML = (
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
-    <Border x:Name="TitleBar" Grid.Row="0" Background="#0D1E2E" CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
-            BorderBrush="#5BC0DE" BorderThickness="1" HorizontalAlignment="Stretch">
-      <Grid>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*"/>
-          <ColumnDefinition Width="Auto"/>
-          <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
-        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-          <Image x:Name="ImgLogo" Width="40" Height="40"
-                 Stretch="Uniform" Margin="0,0,10,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
-          <TextBlock Text="Exportar Láminas" FontSize="14" FontWeight="Bold"
-                     Foreground="#FFFFFF" TextWrapping="NoWrap" VerticalAlignment="Center"
-                     TextAlignment="Left"/>
-        </StackPanel>
-        <Button x:Name="BtnClose" Grid.Column="2"
-                Style="{StaticResource BtnCloseX_MinimalNoBg}"
-                VerticalAlignment="Center" HorizontalAlignment="Right" ToolTip="Cerrar"/>
-      </Grid>
-    </Border>
+    <StackPanel Grid.Row="0" Margin="0,0,0,10">
+      <TextBlock x:Name="TxtTitle" Text="Arainco: Exportar Láminas" Foreground="#E8F4F8" FontSize="18" FontWeight="Bold"/>
+      <TextBlock x:Name="TxtSubtitle" Margin="0,6,0,0" Foreground="#95B8CC" TextWrapping="Wrap"
+                 Text="Selecciona láminas y exporta a PDF, DWG y/o listado Excel."/>
+    </StackPanel>
     <Border Grid.Row="1" Style="{StaticResource PanelInset}" Margin="0,0,0,10" Padding="10,8">
       <Grid VerticalAlignment="Center">
         <Grid.ColumnDefinitions>
@@ -353,7 +324,7 @@ _XAML = (
             <ColumnDefinition Width="*"/>
             <ColumnDefinition Width="*"/>
           </Grid.ColumnDefinitions>
-          <Border Grid.Column="0" Margin="0,0,6,0" Background="#050E18" BorderBrush="#355973" BorderThickness="1" CornerRadius="5" Padding="0" MinHeight="32">
+          <Border Grid.Column="0" Margin="0,0,6,0" Background="#050E18" BorderBrush="#1A3A4D" BorderThickness="1" CornerRadius="5" Padding="0" MinHeight="32">
             <Grid>
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
@@ -366,11 +337,11 @@ _XAML = (
                          VerticalContentAlignment="Center" Padding="0,6,10,6"
                          ToolTip="Filtrar por número, nombre o fecha de entrega (lista principal)"/>
                 <TextBlock x:Name="TxtBuscarWatermark" Text="Buscar" IsHitTestVisible="False"
-                           Foreground="#5C7A8F" FontSize="12" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                           Foreground="#64748b" FontSize="12" VerticalAlignment="Center" Margin="0,0,10,0"/>
               </Grid>
             </Grid>
           </Border>
-          <Border Grid.Column="1" Background="#050E18" BorderBrush="#355973" BorderThickness="1" CornerRadius="5"
+          <Border Grid.Column="1" Background="#050E18" BorderBrush="#1A3A4D" BorderThickness="1" CornerRadius="5"
                   Padding="0" MinHeight="32">
             <Grid>
               <Grid.ColumnDefinitions>
@@ -385,7 +356,7 @@ _XAML = (
                           VerticalAlignment="Center" VerticalContentAlignment="Center"
                           ToolTip="Al elegir una fecha se marcan automáticamente los planos con esa fecha en cualquier parámetro FCH."/>
                 <TextBlock x:Name="TxtFechaEntregaWatermark" Text="Fecha de entrega" IsHitTestVisible="False"
-                           Foreground="#5C7A8F" FontSize="12" VerticalAlignment="Center" Margin="6,0,10,0"/>
+                           Foreground="#64748b" FontSize="12" VerticalAlignment="Center" Margin="6,0,10,0"/>
               </Grid>
             </Grid>
           </Border>
@@ -406,7 +377,7 @@ _XAML = (
         </Button>
       </Grid>
     </Border>
-    <Border Grid.Row="2" Background="#040A12" BorderBrush="#1E3F55" BorderThickness="1" CornerRadius="8" Padding="0" Margin="0,0,0,12">
+    <Border Grid.Row="2" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1" CornerRadius="4,4,0,0" Padding="0" Margin="0,0,0,0">
       <DataGrid x:Name="GridSheets" MinHeight="396" AutoGenerateColumns="False" CanUserAddRows="False"
                 RowHeaderWidth="0" SelectionMode="Extended" SelectionUnit="FullRow"
                 AlternationCount="2"
@@ -486,14 +457,14 @@ _XAML = (
         </DataGrid.Columns>
       </DataGrid>
     </Border>
-    <TextBlock Grid.Row="3" Text="Carpeta de salida" Style="{StaticResource StepBadge}"/>
+    <TextBlock Grid.Row="3" Text="Carpeta de salida" Style="{StaticResource StepBadge}" Margin="0,12,0,8"/>
     <Border Grid.Row="4" Background="Transparent" Margin="0,0,0,0">
       <Grid>
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto"/>
           <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <Border Grid.Row="0" Panel.ZIndex="1" Style="{StaticResource PanelInset}" Margin="0,0,0,10">
+        <Border Grid.Row="0" Style="{StaticResource PanelInset}" Margin="0,0,0,0" Padding="10,8">
           <Grid>
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="*"/>
@@ -504,17 +475,15 @@ _XAML = (
                     MinWidth="132" MinHeight="38" Padding="18,9" FontSize="12"/>
           </Grid>
         </Border>
-        <Border Grid.Row="1" Panel.ZIndex="0" Background="#050E18" BorderBrush="#1E3F55" BorderThickness="1" CornerRadius="6"
-                Padding="14,12" Margin="0,0,0,0">
+        <Border Grid.Row="1" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1"
+                CornerRadius="4" Padding="14,12" Margin="0,10,0,0">
           <Grid>
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="*"/>
               <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <StackPanel Grid.Column="0" VerticalAlignment="Center" Orientation="Vertical">
-              <TextBlock x:Name="TxtEstado" Foreground="#E8F4F8" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"/>
-              <TextBlock Foreground="#6B94AA" FontSize="10" Margin="0,4,0,0" Text="Estado del listado · listo para exportar"/>
-            </StackPanel>
+            <TextBlock x:Name="TxtEstado" Grid.Column="0" VerticalAlignment="Center"
+                       Foreground="#64748b" FontSize="10" TextWrapping="Wrap" Margin="0,0,12,0"/>
             <Button x:Name="BtnExportar" Grid.Column="1" Content="Exportar" Style="{StaticResource BtnPrimary}" MinWidth="132" MinHeight="38"/>
           </Grid>
         </Border>
@@ -530,43 +499,6 @@ _XAML = (
 # ---------------------------------------------------------------------------
 # Utilidades de Vista
 # ---------------------------------------------------------------------------
-
-def _load_logo(win, bimtools_paths_mod):
-    """
-    Cabecera: solo logo corporativo (ver ``load_wpf_header_logo_bitmap_image``); no ``icon.png``.
-    Icono de ventana: logo corporativo si existe; si no, ``icon.png`` del pushbutton.
-    """
-    try:
-        if bimtools_paths_mod is None:
-            return
-        img_ctrl = win.FindName(u"ImgLogo")
-        if not img_ctrl:
-            return
-        bmp_header = None
-        try:
-            fn = getattr(bimtools_paths_mod, u"load_wpf_header_logo_bitmap_image", None)
-            if fn is not None:
-                bmp_header = fn()
-        except Exception:
-            bmp_header = None
-        if bmp_header is not None:
-            img_ctrl.Source = bmp_header
-        win_icon = bmp_header
-        if win_icon is None:
-            try:
-                fn_icon = getattr(bimtools_paths_mod, u"load_pushbutton_icon_bitmap_image", None)
-                if fn_icon is not None:
-                    win_icon = fn_icon()
-            except Exception:
-                win_icon = None
-        if win_icon is not None:
-            try:
-                win.Icon = win_icon
-            except Exception:
-                pass
-    except Exception:
-        pass
-
 
 def _apply_scrollbar_styles(root_visual, resources_owner):
     """Fuerza estilo oscuro BIMTools en todos los ScrollBar del árbol visual."""
@@ -696,17 +628,13 @@ class ExportarLaminasView(object):
         folder_svc,
         revit_svc,
         show_componer_nombre_fn,
-        bimtools_paths_mod,
         appdomain_win_key,
-        appdomain_ctrl_key,
     ):
         self._vm = view_model
         self._folder_svc = folder_svc
         self._revit_svc = revit_svc
         self._show_componer_fn = show_componer_nombre_fn
-        self._bimtools_paths = bimtools_paths_mod
         self._appdomain_win_key = appdomain_win_key
-        self._appdomain_ctrl_key = appdomain_ctrl_key
 
         # Estado de vista (no de negocio)
         self._syncing_select_all = False
@@ -715,7 +643,6 @@ class ExportarLaminasView(object):
 
         # Parsear ventana y encontrar controles
         self._win = XamlReader.Parse(_XAML)
-        _load_logo(self._win, bimtools_paths_mod)
         self._find_controls()
         self._wire_vm_callbacks()
         self._wire_events()
@@ -850,23 +777,7 @@ class ExportarLaminasView(object):
         except Exception:
             pass
 
-        # Ventana: título, cierre, Escape
-        btn_close = self._win.FindName("BtnClose")
-        if btn_close is not None:
-            btn_close.Click += RoutedEventHandler(lambda s, e: self._win.Close())
-        try:
-            from System.Windows.Input import MouseButtonEventHandler
-            title_bar = self._win.FindName("TitleBar")
-            if title_bar is not None:
-                title_bar.MouseLeftButtonDown += MouseButtonEventHandler(
-                    lambda s, e: self._win.DragMove()
-                )
-            if btn_close is not None:
-                btn_close.MouseLeftButtonDown += MouseButtonEventHandler(
-                    lambda s, e: setattr(e, "Handled", True)
-                )
-        except Exception:
-            pass
+        # Ventana: Escape para cerrar
         self._wire_close_keyboard_shortcut()
 
         self._win.Loaded += RoutedEventHandler(self._on_win_loaded)
@@ -911,7 +822,6 @@ class ExportarLaminasView(object):
             pass
         try:
             System.AppDomain.CurrentDomain.SetData(self._appdomain_win_key, None)
-            System.AppDomain.CurrentDomain.SetData(self._appdomain_ctrl_key, None)
         except Exception:
             pass
 
@@ -1044,8 +954,14 @@ class ExportarLaminasView(object):
         self._sync_fch_watermark()
 
     def _on_exporting_changed(self, is_exporting):
-        """Habilita/deshabilita controles durante la exportación."""
-        enabled = not is_exporting
+        """Al iniciar exportación cierra el formulario; al terminar reactiva controles si sigue abierto."""
+        if is_exporting:
+            try:
+                self._win.Close()
+            except Exception:
+                pass
+            return
+        enabled = True
         try:
             self._btn_export.IsEnabled = enabled
             self._chk_pdf.IsEnabled = enabled
@@ -1094,12 +1010,24 @@ class ExportarLaminasView(object):
             )
         except Exception as ex:
             try:
-                from Autodesk.Revit.UI import TaskDialog
-                TaskDialog.Show(
-                    u"Nombre Personalizado",
-                    u"Error al abrir Nombre Personalizado:\n\n{0}".format(
-                        unicode(str(ex))
-                    ),
+                from ui.export_laminas_instruction_dialog import show_message_dialog
+                from infra.revit_wpf_window_position import revit_main_hwnd
+
+                revit = self._vm.revit
+                uiapp = None
+                try:
+                    uiapp = revit.Application if revit is not None else None
+                except Exception:
+                    uiapp = None
+                if uiapp is None:
+                    uiapp = revit
+                show_message_dialog(
+                    u"Arainco: Nombre Personalizado",
+                    u"Error al abrir Nombre Personalizado.",
+                    unicode(str(ex)),
+                    ok_text=u"Entendido",
+                    hwnd_revit=revit_main_hwnd(uiapp),
+                    uiapp=uiapp,
                 )
             except Exception:
                 pass
@@ -1452,6 +1380,72 @@ class ExportarLaminasView(object):
     # Mostrar la ventana
     # -----------------------------------------------------------------------
 
+    def _attach_revit_owner(self):
+        """Ventana hija de Revit (mismo patrón que Armado Muros)."""
+        try:
+            from System.Windows.Interop import WindowInteropHelper
+            from infra.revit_wpf_window_position import revit_main_hwnd
+
+            revit = self._vm.revit
+            uiapp = None
+            try:
+                uiapp = revit.Application if revit is not None else None
+            except Exception:
+                uiapp = None
+            if uiapp is None:
+                uiapp = revit
+            hwnd = revit_main_hwnd(uiapp)
+            if hwnd is not None:
+                try:
+                    if hwnd.ToInt64() != 0:
+                        WindowInteropHelper(self._win).Owner = hwnd
+                except Exception:
+                    WindowInteropHelper(self._win).Owner = hwnd
+        except Exception:
+            pass
+
+    def _resolve_revit_hwnd(self):
+        revit = self._vm.revit
+        uiapp = None
+        try:
+            uiapp = revit.Application if revit is not None else None
+        except Exception:
+            uiapp = None
+        if uiapp is None:
+            uiapp = revit
+        try:
+            from infra.revit_wpf_window_position import revit_main_hwnd
+
+            return revit_main_hwnd(uiapp)
+        except Exception:
+            return None
+
+    def _prepare_window_bounds(self):
+        """Sin tope MaxWidth/MaxHeight para que maximizar use el monitor de Revit."""
+        try:
+            from System import Double
+
+            self._win.MaxWidth = Double.PositiveInfinity
+            self._win.MaxHeight = Double.PositiveInfinity
+        except Exception:
+            pass
+
+    def _position_window(self):
+        """Centra el formulario en el monitor donde corre Revit."""
+        try:
+            from infra.revit_wpf_window_position import (
+                bind_center_wpf_on_revit_monitor,
+                bind_maximize_wpf_on_revit_monitor,
+                position_wpf_window_center_on_monitor,
+            )
+
+            hwnd = self._resolve_revit_hwnd()
+            bind_center_wpf_on_revit_monitor(self._win, hwnd)
+            bind_maximize_wpf_on_revit_monitor(self._win, hwnd)
+            position_wpf_window_center_on_monitor(self._win, hwnd)
+        except Exception:
+            pass
+
     def show(self):
         """
         Muestra la ventana con ShowDialog() (bucle de mensajes anidado que garantiza
@@ -1459,21 +1453,14 @@ class ExportarLaminasView(object):
         """
         ExportarLaminasView._live_view_ref = self
         try:
-            ch = self._win.FindName("ExpLamRootChrome")
-            if ch is not None:
-                ch.Opacity = 1.0
-            self._win.Opacity = 1.0
-        except Exception:
-            pass
-        try:
             System.AppDomain.CurrentDomain.SetData(
                 self._appdomain_win_key, self._win
             )
-            System.AppDomain.CurrentDomain.SetData(
-                self._appdomain_ctrl_key, self
-            )
         except Exception:
             pass
+        self._attach_revit_owner()
+        self._prepare_window_bounds()
+        self._position_window()
         try:
             self._win.ShowDialog()
         except Exception:
