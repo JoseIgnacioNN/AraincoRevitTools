@@ -4864,6 +4864,9 @@ class ArmadoMurosPreviewWindow(object):
         cabezal._migrate_tramo_to_segment_bar_type_ids(
             ex_cfg, segs, ex_cfg.get(u"bar_type_id"),
         )
+        cabezal.sync_segment_bar_type_ids_from_layers(
+            ex_cfg, segs, ex_cfg.get(u"bar_type_id"),
+        )
         self._cabezal_refresh_encuentro_pitch(owner_wid, extremo)
         self._cabezal_propagate_segment_armado_from_owner(extremo, owner_wid)
 
@@ -8286,6 +8289,10 @@ class ArmadoMurosPreviewWindow(object):
         )
         ex_cfg[u"layers"] = layers
         cabezal._normalize_cabezal_extremo_layers(ex_cfg)
+        segs = self._cabezal_segments_for_extremo(extremo)
+        cabezal.sync_segment_bar_type_ids_from_layers(
+            ex_cfg, segs, ex_cfg.get(u"bar_type_id"),
+        )
         ui = self._cabezal_ui_ext(wid, extremo)
         diam_cbs = ui.get(u"layer_diam_cbs") or []
         if li < len(diam_cbs) and diam_cbs[li] is not None:
@@ -11675,6 +11682,9 @@ class ArmadoMurosPreviewWindow(object):
                         cabezal._migrate_tramo_to_segment_bar_type_ids(
                             ex_cfg, segs, ex_cfg.get(u"bar_type_id"),
                         )
+                        cabezal.sync_segment_bar_type_ids_from_layers(
+                            ex_cfg, segs, ex_cfg.get(u"bar_type_id"),
+                        )
                         if cabezal.cabezal_extremo_armado_activo(ex_cfg):
                             conf_val = self._read_cabezal_confinement_combo(wid, ex)
                             cabezal.cabezal_stamp_confinement_type(
@@ -11762,6 +11772,9 @@ class ArmadoMurosPreviewWindow(object):
                             ),
                         )
                         cabezal._migrate_tramo_to_segment_bar_type_ids(
+                            ex_cfg, segs, ex_cfg.get(u"bar_type_id"),
+                        )
+                        cabezal.sync_segment_bar_type_ids_from_layers(
                             ex_cfg, segs, ex_cfg.get(u"bar_type_id"),
                         )
                         if cabezal.cabezal_extremo_armado_activo(ex_cfg):

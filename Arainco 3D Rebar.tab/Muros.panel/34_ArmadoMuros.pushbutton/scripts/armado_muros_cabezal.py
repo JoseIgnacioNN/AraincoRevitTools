@@ -1126,6 +1126,66 @@ def _normalize_segment_layer_bar_ids(
     return out
 
 
+def _bar_type_ids_per_layer_for_segment(
+    ex_cfg, seg_id, n_layers, fallback_bar_type_id=None,
+):
+    """Lista de ``ElementId`` por capa para un tramo/segmento (longitud ``n_layers``)."""
+    layers = (ex_cfg or {}).get(u"layers") or []
+    n_layers = max(1, int(n_layers or 1))
+    fb_ext = (ex_cfg or {}).get(u"bar_type_id")
+    if fb_ext is None or fb_ext == ElementId.InvalidElementId:
+        fb_ext = fallback_bar_type_id
+    per_layer = []
+    for li, ly in enumerate(layers):
+        ly = ly or {}
+        bid = None
+        try:
+            from bimtools_clr_collections import list_get_or_last
+
+            tramo_ids = ly.get(u"tramo_bar_type_ids") or []
+            bid = list_get_or_last(tramo_ids, int(seg_id), default=None)
+        except Exception:
+            tramo_ids = ly.get(u"tramo_bar_type_ids") or []
+            ti = int(seg_id)
+            if tramo_ids and len(tramo_ids) > 0:
+                if ti < len(tramo_ids):
+                    bid = tramo_ids[ti]
+                else:
+                    bid = tramo_ids[-1]
+        if bid is None or bid == ElementId.InvalidElementId:
+            bid = ly.get(u"bar_type_id")
+        if bid is None or bid == ElementId.InvalidElementId:
+            bid = fb_ext
+        if bid is None or bid == ElementId.InvalidElementId:
+            bid = fallback_bar_type_id
+        per_layer.append(bid)
+    while len(per_layer) < n_layers:
+        per_layer.append(fallback_bar_type_id)
+    return per_layer[:n_layers]
+
+
+def sync_segment_bar_type_ids_from_layers(ex_cfg, segments, fallback_bar_type_id=None):
+    """
+    Refresca ``segment_bar_type_ids`` desde ``layers`` (ø UI por capa).
+
+    Debe invocarse tras cada cambio de diámetro en la UI; de lo contrario
+    ``_bar_type_for_cabezal_stack`` sigue usando los ids S.I.C. iniciales.
+    """
+    if not ex_cfg or not isinstance(ex_cfg, dict) or not segments:
+        return
+    raw_map = ex_cfg.setdefault(u"segment_bar_type_ids", {})
+    if not isinstance(raw_map, dict):
+        raw_map = {}
+        ex_cfg[u"segment_bar_type_ids"] = raw_map
+    layers = ex_cfg.get(u"layers") or []
+    n_layers = max(1, len(layers))
+    for seg in segments:
+        seg_id = seg[u"id"]
+        raw_map[seg_id] = _bar_type_ids_per_layer_for_segment(
+            ex_cfg, seg_id, n_layers, fallback_bar_type_id,
+        )
+
+
 def _migrate_tramo_to_segment_bar_type_ids(ex_cfg, segments, fallback_bar_type_id=None):
     """Copia ``tramo_bar_type_ids`` legacy a ``segment_bar_type_ids`` si hace falta."""
     if not ex_cfg or not isinstance(ex_cfg, dict) or not segments:
@@ -1140,33 +1200,9 @@ def _migrate_tramo_to_segment_bar_type_ids(ex_cfg, segments, fallback_bar_type_i
         seg_id = seg[u"id"]
         if _segment_bar_type_ids_key(raw_map, seg_id) is not None:
             continue
-        per_layer = []
-        for li, ly in enumerate(layers):
-            ly = ly or {}
-            try:
-                from bimtools_clr_collections import list_get_or_last
-
-                tramo_ids = ly.get(u"tramo_bar_type_ids") or []
-                bid = list_get_or_last(tramo_ids, int(seg_id), default=None)
-            except Exception:
-                tramo_ids = ly.get(u"tramo_bar_type_ids") or []
-                bid = None
-                ti = int(seg_id)
-                if tramo_ids and len(tramo_ids) > 0:
-                    if ti < len(tramo_ids):
-                        bid = tramo_ids[ti]
-                    else:
-                        bid = tramo_ids[-1]
-            if bid is None or bid == ElementId.InvalidElementId:
-                bid = ly.get(u"bar_type_id")
-            if bid is None or bid == ElementId.InvalidElementId:
-                bid = ex_cfg.get(u"bar_type_id")
-            if bid is None or bid == ElementId.InvalidElementId:
-                bid = fallback_bar_type_id
-            per_layer.append(bid)
-        while len(per_layer) < n_layers:
-            per_layer.append(fallback_bar_type_id)
-        raw_map[seg_id] = per_layer
+        raw_map[seg_id] = _bar_type_ids_per_layer_for_segment(
+            ex_cfg, seg_id, n_layers, fallback_bar_type_id,
+        )
 
 
 def resolve_segment_context_for_extremo(
@@ -1202,6 +1238,9 @@ def resolve_segment_context_for_extremo(
         if not owner_ex:
             owner_ex = {}
         _migrate_tramo_to_segment_bar_type_ids(
+            owner_ex, [seg], fallback_bar_type_id,
+        )
+        sync_segment_bar_type_ids_from_layers(
             owner_ex, [seg], fallback_bar_type_id,
         )
         seg_bar_type_ids[seg_id] = _normalize_segment_layer_bar_ids(
