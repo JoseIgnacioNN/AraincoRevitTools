@@ -1,0 +1,60 @@
+38_SeleccionarCorridaGUID.pushbutton
+├── bundle.yaml
+├── script.py                              Arranque pyRevit (prioriza scripts/ local)
+├── ESTRUCTURA_PORTABLE.txt
+├── icon.png                               Opcional (icono cinta)
+└── scripts/
+    ├── run.py                             Orquestación (validaciones → UI)
+    ├── bimtools_wpf_dark_theme.py         Tema oscuro WPF compartido (copia)
+    ├── revit_wpf_window_position.py       Posicionamiento ventanas sobre Revit (copia)
+    ├── lib/
+    │   ├── __init__.py
+    │   └── corrida_guid.py                API Revit: leer / recolectar por GUID
+    └── ui/
+        ├── __init__.py
+        ├── corrida_guid_window.py         Ventana WPF (instancia única AppDomain)
+        └── ok_cancel_dialog.py            Diálogo confirmación eliminar corrida
+
+Copie solo esta carpilla .pushbutton a otra extensión pyRevit; no requiere
+``34_ArmadoMuros.pushbutton`` ni otros módulos de la raíz de BIMTools.extension.
+
+-----------------------------------------------------------------------------
+Arquitectura (capas)
+-----------------------------------------------------------------------------
+
+  script.py          Entrada pyRevit, resolución de ruta y recarga IronPython
+       ↓
+  run.py             Orquestación: delega en la ventana principal
+       ↓
+  lib/               Lógica Revit API (Armadura_Conjunto_GUID)
+       ↓
+  ui/                WPF + ExternalEvents (singleton por AppDomain)
+
+Transacciones: prefijo ``Arainco: `` (eliminar corrida GUID).
+
+-----------------------------------------------------------------------------
+Fuente canónica (BIMTools.extension)
+-----------------------------------------------------------------------------
+
+Desarrollo principal en ``<pushbutton>/scripts/`` (estructura en capas).
+
+``lib/corrida_guid.py`` es un vendor mínimo de las funciones equivalentes en
+``34_ArmadoMuros.pushbutton/armado_muros_rebar_params.py``. Si se amplía la
+lectura de GUID en Armado Muros, sincronice manualmente ambas copias.
+
+Los módulos WPF compartidos se copian desde ``BIMTools.extension/scripts/``:
+  - bimtools_wpf_dark_theme.py
+  - revit_wpf_window_position.py
+
+Prioridad en ejecución: ``<pushbutton>/scripts/`` precede a
+``.../BIMTools.extension/scripts/`` si ambos existen en sys.path.
+
+Esta herramienta no modifica ni importa módulos de otras herramientas en
+tiempo de ejecución; el aislamiento evita efectos colaterales al copiar el botón.
+
+-----------------------------------------------------------------------------
+Requisitos
+-----------------------------------------------------------------------------
+
+  - Parámetro compartido «Armadura_Conjunto_GUID» en barras y detail items
+  - Revit 2024–2026 · pyRevit IronPython 2.7
