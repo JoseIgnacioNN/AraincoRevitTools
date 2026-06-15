@@ -83,17 +83,33 @@ if _missing:
 _ensure_scripts_on_path(_scripts_dir)
 _purge_modules()
 
-try:
-    _module_path = os.path.join(_scripts_dir, _MAIN_MODULE)
-    _mod = imp.load_source(u"join_geometry_concrete_vista", _module_path)
-    _mod.run(__revit__)
-except Exception as ex:
+# --- Validación acceso corporativo (RECURSOS COMPARTIDOS) ---
+import os as _os_ac
+import sys as _sys_ac
+_tab_ac = _os_ac.path.dirname(_os_ac.path.abspath(__file__))
+for _iac in range(16):
+    if _os_ac.path.basename(_tab_ac) == u"BIMTools.tab":
+        break
+    _parent_ac = _os_ac.path.dirname(_tab_ac)
+    if _parent_ac == _tab_ac:
+        _tab_ac = None
+        break
+    _tab_ac = _parent_ac
+if _tab_ac and _tab_ac not in _sys_ac.path:
+    _sys_ac.path.insert(0, _tab_ac)
+import bimtools_access_bootstrap as _bimtools_access
+if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
     try:
-        msg = unicode(ex)
-    except NameError:
-        msg = str(ex)
-    TaskDialog.Show(
-        _DIALOG_TITLE,
-        u"Error al ejecutar la herramienta:\n\n{}".format(msg),
-    )
-    raise
+        _module_path = os.path.join(_scripts_dir, _MAIN_MODULE)
+        _mod = imp.load_source(u"join_geometry_concrete_vista", _module_path)
+        _mod.run(__revit__)
+    except Exception as ex:
+        try:
+            msg = unicode(ex)
+        except NameError:
+            msg = str(ex)
+        TaskDialog.Show(
+            _DIALOG_TITLE,
+            u"Error al ejecutar la herramienta:\n\n{}".format(msg),
+        )
+        raise

@@ -27,13 +27,18 @@ _MAIN_MODULES = (
     ("run.py", "run"),
     ("rebar_unobscured_vista_activa.py", "rebar_unobscured_vista_activa"),
 )
+# Nombre único: evita colisión con otros pushbuttons que usan imp.load_source("run", ...)
+_MAIN_MODULE_ID = u"rebar_unobscured_vista_run"
 _RELOAD_PREFIXES = (
+    _MAIN_MODULE_ID,
     "run",
     "rebar_unobscured_vista_activa",
     "rebar_unobscured_action_dialog",
     "bimtools_rebar_3d_visibility",
     "bimtools_wpf_dark_theme",
     "revit_wpf_window_position",
+    "lib",
+    "ui",
     "lib.rebar_3d_visibility",
     "ui.action_dialog",
 )
@@ -62,9 +67,16 @@ def _find_scripts_dir(pushbutton_dir):
     return None, None
 
 
-def _ensure_scripts_on_path(scripts_dir):
-    if scripts_dir and scripts_dir not in sys.path:
-        sys.path.insert(0, scripts_dir)
+def _pin_scripts_first(scripts_dir):
+    """Prioriza ``scripts/`` del botón para resolver ``lib.*`` y ``ui.*`` locales."""
+    if not scripts_dir:
+        return
+    try:
+        while scripts_dir in sys.path:
+            sys.path.remove(scripts_dir)
+    except Exception:
+        pass
+    sys.path.insert(0, scripts_dir)
 
 
 def _purge_modules():
@@ -85,21 +97,43 @@ if not _scripts_dir:
     )
     raise Exception(u"No se encontró módulo principal de View Unobscured")
 
-_ensure_scripts_on_path(_scripts_dir)
+_pin_scripts_first(_scripts_dir)
 _purge_modules()
 
-try:
-    _module_path = os.path.join(_scripts_dir, _main_module)
-    _mod_name = os.path.splitext(_main_module)[0]
-    _mod = imp.load_source(_mod_name, _module_path)
-    _mod.run(__revit__)
-except Exception as ex:
+# --- Validación acceso corporativo (RECURSOS COMPARTIDOS) ---
+import os as _os_ac
+import sys as _sys_ac
+_tab_ac = _os_ac.path.dirname(_os_ac.path.abspath(__file__))
+for _iac in range(16):
+    if _os_ac.path.basename(_tab_ac) == u"BIMTools.tab":
+        break
+    _parent_ac = _os_ac.path.dirname(_tab_ac)
+    if _parent_ac == _tab_ac:
+        _tab_ac = None
+        break
+    _tab_ac = _parent_ac
+if _tab_ac and _tab_ac not in _sys_ac.path:
+    _sys_ac.path.insert(0, _tab_ac)
+import bimtools_access_bootstrap as _bimtools_access
+if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
+    _pin_scripts_first(_scripts_dir)
+    _purge_modules()
     try:
-        msg = unicode(ex)
-    except NameError:
-        msg = str(ex)
-    TaskDialog.Show(
-        _DIALOG_TITLE,
-        u"Error al ejecutar la herramienta:\n\n{0}".format(msg),
-    )
-    raise
+        _module_path = os.path.join(_scripts_dir, _main_module)
+        _mod_name = (
+            _MAIN_MODULE_ID
+            if _main_module == "run.py"
+            else os.path.splitext(_main_module)[0]
+        )
+        _mod = imp.load_source(_mod_name, _module_path)
+        _mod.run(__revit__)
+    except Exception as ex:
+        try:
+            msg = unicode(ex)
+        except NameError:
+            msg = str(ex)
+        TaskDialog.Show(
+            _DIALOG_TITLE,
+            u"Error al ejecutar la herramienta:\n\n{0}".format(msg),
+        )
+        raise

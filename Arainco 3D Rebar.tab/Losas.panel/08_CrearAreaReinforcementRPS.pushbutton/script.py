@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Crear Area Reinforcement RPS — Usa la interfaz gráfica de Area Reinforcement Losa.
+Crear Area Reinforcement RPS ? entrada pyRevit (copia portable).
+
+Todo el c?digo vive en ``<pushbutton>/scripts/``. Copie solo esta carpeta
+.pushbutton; no depende de BIMTools.extension ni de rutas externas.
 """
 
 __title__ = "Crear Area\nReinf. RPS"
@@ -9,64 +12,109 @@ __doc__ = "Abre la interfaz de Area Reinforcement Losa para crear mallas en losa
 
 import os
 import sys
+import imp
 
-# Cargar el módulo compartido desde `extension/scripts` para evitar duplicación
-# (esta carpeta del pushbutton contiene una copia local, pero el botón debe usar
-# el módulo centralizado).
-_pushbutton_dir = os.path.dirname(os.path.abspath(__file__))
-#
-# Estructura (desde este script):
-#   <ext_root>/BIMTools.tab/Armadura.panel/08_CrearAreaReinforcementRPS.pushbutton/script.py
-# Entonces `scripts/` queda en:
-#   <ext_root>/scripts/
-#
-_ext_root = os.path.dirname(os.path.dirname(os.path.dirname(_pushbutton_dir)))
-_shared_scripts_dir = os.path.join(_ext_root, "scripts")
+import clr
 
-# IronPython mantiene módulos en sys.modules: sin esto, cambios (p. ej. ganchos espesor−60) no se aplican hasta reiniciar Revit.
-try:
-    if "area_reinforcement_losa" in sys.modules:
-        del sys.modules["area_reinforcement_losa"]
-except Exception:
-    pass
+clr.AddReference("RevitAPIUI")
 
-# Preferir módulo compartido, pero mantener fallback a la copia local
-# (para poder migrar solo la carpeta del pushbutton).
-_added_shared = False
-if os.path.isdir(_shared_scripts_dir) and _shared_scripts_dir not in sys.path:
-    sys.path.insert(0, _shared_scripts_dir)
-    _added_shared = True
+from Autodesk.Revit.UI import TaskDialog
 
-try:
-    import bimtools_paths
+_DIALOG_TITLE = u"Arainco: Malla en Losa"
+_MAIN_MODULE = "area_reinforcement_losa.py"
+_REQUIRED_MODULES = (
+    _MAIN_MODULE,
+    "area_reinforcement_losa_instruction_dialog.py",
+    "bimtools_paths.py",
+    "bimtools_wpf_dark_theme.py",
+    "revit_wpf_window_position.py",
+)
+_MODULES_TO_PURGE = (
+    "area_reinforcement_losa",
+    "area_reinforcement_losa_instruction_dialog",
+    "bimtools_paths",
+    "bimtools_wpf_dark_theme",
+    "revit_wpf_window_position",
+)
 
-    bimtools_paths.set_pushbutton_dir(_pushbutton_dir)
-    from area_reinforcement_losa import run  # shared module
-except ImportError:
-    # Limpiar posible entrada parcial y hacer fallback a la copia local.
-    try:
-        if "area_reinforcement_losa" in sys.modules:
-            del sys.modules["area_reinforcement_losa"]
-    except Exception:
-        pass
 
-    if _pushbutton_dir not in sys.path:
-        sys.path.insert(0, _pushbutton_dir)
-    if os.path.isdir(_shared_scripts_dir) and _shared_scripts_dir not in sys.path:
-        sys.path.insert(0, _shared_scripts_dir)
-    import bimtools_paths
+def _scripts_dir(pushbutton_dir):
+    """?nica fuente: ``<pushbutton>/scripts/`` (sin fallback externo)."""
+    return os.path.abspath(os.path.join(pushbutton_dir, "scripts"))
 
-    bimtools_paths.set_pushbutton_dir(_pushbutton_dir)
-    from area_reinforcement_losa import run  # local module
-finally:
-    # Si no logramos importar desde shared (o ya no es necesario), no dejamos
-    # rutas “basura” en sys.path.
-    # (No es destructivo: reinsertar no es necesario en PyRevit/IronPython.)
-    if _added_shared:
+
+def _missing_modules(scripts_dir):
+    missing = []
+    for name in _REQUIRED_MODULES:
+        if not os.path.isfile(os.path.join(scripts_dir, name)):
+            missing.append(name)
+    return missing
+
+
+def _ensure_scripts_on_path(scripts_dir):
+    if scripts_dir and scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+
+
+def _purge_modules():
+    for mod_name in _MODULES_TO_PURGE:
         try:
-            if _shared_scripts_dir in sys.path:
-                sys.path.remove(_shared_scripts_dir)
+            if mod_name in sys.modules:
+                del sys.modules[mod_name]
         except Exception:
             pass
 
-run(__revit__, close_on_finish=True)
+
+_pushbutton_dir = os.path.dirname(os.path.abspath(__file__))
+_scripts_dir = _scripts_dir(_pushbutton_dir)
+_missing = _missing_modules(_scripts_dir)
+
+if _missing:
+    TaskDialog.Show(
+        _DIALOG_TITLE,
+        u"Paquete portable incompleto. Faltan en scripts/:\n\n- {0}".format(
+            u"\n- ".join(_missing)
+        ),
+    )
+    raise Exception(u"Paquete portable incompleto: {0}".format(u", ".join(_missing)))
+
+_ensure_scripts_on_path(_scripts_dir)
+_purge_modules()
+
+try:
+    import bimtools_paths
+
+    bimtools_paths.set_pushbutton_dir(_pushbutton_dir)
+except Exception:
+    pass
+
+# --- Validaci?n acceso corporativo (RECURSOS COMPARTIDOS) ---
+import os as _os_ac
+import sys as _sys_ac
+_tab_ac = _os_ac.path.dirname(_os_ac.path.abspath(__file__))
+for _iac in range(16):
+    if _os_ac.path.basename(_tab_ac) == u"BIMTools.tab":
+        break
+    _parent_ac = _os_ac.path.dirname(_tab_ac)
+    if _parent_ac == _tab_ac:
+        _tab_ac = None
+        break
+    _tab_ac = _parent_ac
+if _tab_ac and _tab_ac not in _sys_ac.path:
+    _sys_ac.path.insert(0, _tab_ac)
+import bimtools_access_bootstrap as _bimtools_access
+if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
+    try:
+        _module_path = os.path.join(_scripts_dir, _MAIN_MODULE)
+        _mod = imp.load_source("area_reinforcement_losa", _module_path)
+        _mod.run(__revit__, close_on_finish=True)
+    except Exception as ex:
+        try:
+            msg = unicode(ex)
+        except NameError:
+            msg = str(ex)
+        TaskDialog.Show(
+            _DIALOG_TITLE,
+            u"Error al ejecutar la herramienta:\n\n{}".format(msg),
+        )
+        raise

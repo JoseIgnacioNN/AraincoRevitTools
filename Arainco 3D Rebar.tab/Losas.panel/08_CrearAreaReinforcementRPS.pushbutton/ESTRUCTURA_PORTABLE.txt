@@ -1,0 +1,59 @@
+08_CrearAreaReinforcementRPS.pushbutton
+├── bundle.yaml
+├── script.py                              Arranque pyRevit (solo scripts/ local)
+├── ESTRUCTURA_PORTABLE.txt
+├── icon.png                               Opcional (icono cinta + respaldo cabecera WPF)
+├── logo.png / empresa_logo.png            Opcional (logo cabecera WPF)
+└── scripts/                               Paquete autocontenido (copiar completo)
+    ├── area_reinforcement_losa.py         UI WPF + ExternalEvents + AreaReinforcement losa
+    ├── area_reinforcement_losa_instruction_dialog.py  Diálogo WPF inicio (Aceptar/Cancelar)
+    ├── bimtools_paths.py                  Logos / rutas pushbutton
+    ├── bimtools_wpf_dark_theme.py         Tema oscuro WPF
+    └── revit_wpf_window_position.py       Posición ventana respecto a Revit
+
+Copie solo esta carpilla .pushbutton a otra extensión pyRevit.
+
+  - No requiere módulos de la raíz de BIMTools.extension
+  - No busca scripts/ en carpetas padre (sin fallback de desarrollo)
+  - script.py valida que los cinco .py de scripts/ existan antes de ejecutar
+
+-----------------------------------------------------------------------------
+Arquitectura
+-----------------------------------------------------------------------------
+
+  script.py          Entrada pyRevit, validación del paquete y recarga IronPython
+       ↓
+  area_reinforcement_losa_instruction_dialog.py   WPF modal inicio (Aceptar/Cancelar)
+       ↓
+  area_reinforcement_losa.py   Selección losas → formulario → Transaction Arainco: Malla en Losa
+
+Transacciones: prefijo ``Arainco: Malla en Losa``.
+
+Formulario: instancia única vía AppDomain (``BIMTools.AreaReinforcementLosa.ActiveWindow``).
+
+-----------------------------------------------------------------------------
+Fuente canónica (BIMTools.extension, solo desarrollo)
+-----------------------------------------------------------------------------
+
+Respaldo en ``BIMTools.extension/scripts/area_reinforcement_losa.py``.
+Tras editar la lógica principal, sincronice ese .py con
+``<pushbutton>/scripts/area_reinforcement_losa.py`` antes de entregar
+el paquete portable.
+
+Utilidades WPF (``bimtools_paths``, ``bimtools_wpf_dark_theme``,
+``revit_wpf_window_position``): sincronice desde ``BIMTools.extension/scripts/``
+si cambian en la extensión.
+
+Otros módulos del repositorio importan funciones de ``area_reinforcement_losa``
+desde ``BIMTools.extension/scripts/`` (p. ej. ``crear_area_reinforcement_rps``).
+Esas dependencias no forman parte de este paquete.
+
+-----------------------------------------------------------------------------
+Requisitos
+-----------------------------------------------------------------------------
+
+  - Losas (Floor) de hormigón armado
+  - AreaReinforcementType, RebarBarType, RebarHookType en el proyecto
+  - Familias de tag según capas (EST_A_STRUCTURAL REBAR TAG, etc.)
+
+Revit 2024–2026 | pyRevit (IronPython 2.7).

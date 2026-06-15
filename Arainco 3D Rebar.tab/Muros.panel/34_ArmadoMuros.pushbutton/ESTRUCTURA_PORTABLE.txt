@@ -1,0 +1,115 @@
+34_ArmadoMuros.pushbutton
+├── bundle.yaml
+├── script.py                              Arranque pyRevit (valida scripts/ + purge + run_unificado)
+├── ESTRUCTURA_PORTABLE.txt
+├── armado_muros_run.py                    Bootstrap: sys.path + purge de módulos
+├── armado_muros_portable_path.py          Resolución pushbutton + scripts/
+├── icon.png                               Opcional (icono cinta; pyRevit usa default si falta)
+│
+└── scripts/                               Paquete autocontenido (copiar completo)
+    │
+    ├── Flujo unificado
+    │   ├── armado_muros_lineales.py           Orquestación cabezal + mallas + etiquetas
+    │   ├── armado_muros_preview_ui.py         UI WPF (instancia única AppDomain)
+    │   ├── armado_muros_instruction_dialog.py Diálogo inicial
+    │   └── armado_muros_rebar_params.py       Parámetros / defaults de armado
+    │
+    ├── Cabezal
+    │   ├── armado_muros_cabezal.py            Longitudinales + confinamiento
+    │   ├── armado_muros_cabezal_tags.py       Etiquetas longitudinales / confinamiento
+    │   ├── armado_muros_cabezal_empalme_markers.py  Marcadores empalme (detail items)
+    │   ├── armado_muros_cabezal_encuentro_l.py      Encuentro en L
+    │   ├── armado_muros_coronamiento.py       Coronamiento (U en fundación)
+    │   ├── armado_muros_horizontales_retraida.py    Retracción horizontales
+    │   ├── armado_muros_verticales_embed_colision.py  Colisión embed / retracción vertical
+    │   ├── armado_muros_vecinos_extremos.py   Vecinos / extremos de muro
+    │   ├── armado_muros_nodo_shared.py        Utilidades nodo muro
+    │   └── armado_muros_lap_detail_shared.py  Familia detail empalme (lap detail)
+    │
+    ├── Mallas (Area Reinforcement + post-proceso RPS)
+    │   ├── armado_muros_etiqueta_malla.py     Etiquetas TextNote de malla
+    │   ├── armado_muros_malla_rebar_tags.py   Etiquetas Structural Rebar de malla
+    │   ├── arearein_exterior_h_l135_rps.py    Post-proceso cara exterior
+    │   ├── arearein_interior_h_l135_rps.py    Post-proceso cara interior
+    │   ├── arearein_verticales_empotramiento_rps.py  Verticales + empotramiento
+    │   └── rebar_extender_l_ganchos_135_rps.py Ganchos 135° en malla
+    │
+    ├── Geometría fundación / shaft (bundled, requerido en runtime)
+    │   ├── geometria_fundacion_cara_inferior.py
+    │   ├── rebar_fundacion_cara_inferior.py
+    │   ├── enfierrado_shaft_hashtag.py        Referencias tag, detail empalme, helpers shaft
+    │   └── wall_node_boolean_section_rps.py   Sección nodo muro (import opcional vecinos)
+    │
+    └── Infra BIMTools (copia local en scripts/)
+        ├── bootstrap_paths.py               Prioridad ``scripts/`` del botón vs extensión
+        ├── bimtools_runtime.py                Revit 2024 IP2 vs 2025+ CPython 3
+        ├── bimtools_element_id.py
+        ├── bimtools_clr_collections.py
+        ├── bimtools_joined_geometry.py
+        ├── bimtools_wpf_dark_theme.py
+        ├── bimtools_rebar_hook_lengths.py     Tabla traslapes / ganchos por Ø
+        ├── bimtools_rebar_3d_visibility.py    Visibilidad 3D barras
+        ├── revit_wpf_window_position.py
+        ├── embed_anchorage_link_schema.py     Extensible Storage cotas empotramiento
+        └── lap_detail_link_schema.py          Extensible Storage empalmes
+
+Copie solo esta carpilla .pushbutton a la pestaña de otra extensión pyRevit.
+No requiere ``_armado_muros_lib`` del panel ni rutas absolutas de máquina.
+
+-----------------------------------------------------------------------------
+Arquitectura (capas)
+-----------------------------------------------------------------------------
+
+  script.py              Entrada pyRevit, validación del paquete y recarga IronPython
+       ↓
+  armado_muros_run       Prioriza ``scripts/`` en sys.path + purge módulos
+       ↓
+  armado_muros_lineales  Selección muros → preview UI → creación armadura + etiquetas
+       ↓
+  armado_muros_preview_ui  WPF + ExternalEvents (singleton por AppDomain)
+
+Transacciones: prefijo ``Arainco:`` en historial de deshacer.
+
+-----------------------------------------------------------------------------
+Despliegue
+-----------------------------------------------------------------------------
+
+1. Copie la carpeta completa ``34_ArmadoMuros.pushbutton`` (raíz + ``scripts/`` + bundle.yaml).
+2. No incluya artefactos de desarrollo (``debug-*.log``, ``mockups/``, etc.).
+3. Recargue pyRevit en las estaciones destino.
+4. Revit 2024–2026 (``min_revit_ver`` / ``max_revit_ver`` en bundle.yaml).
+
+Prioridad en tiempo de ejecución: ``armado_muros_portable_path`` antepone ``scripts/``
+a ``sys.path``; ``purge_armado_muros_modules()`` fuerza recarga limpia en cada ejecución.
+
+Scripts RPS (``arearein_*_rps.py``) resuelven dependencias vía ``__file__`` (directorio
+``scripts/``). ``RPS_SCRIPTS_DIR_OVERRIDE`` puede dejarse vacío; solo usarlo si la consola
+RPS no expone ``__file__``.
+
+-----------------------------------------------------------------------------
+Fuente canónica (BIMTools.extension)
+-----------------------------------------------------------------------------
+
+Esta carpilla es autocontenida. No depende de ``Armadura.panel/_armado_muros_lib``
+(ese lib solo usa el botón 33 Mallas).
+
+Al publicar cambios, sincronice todos los .py listados arriba desde el repositorio
+BIMTools; no mezcle versiones sueltas de módulos entre carpetas.
+
+Botón en cinta Armadura:
+  - 34 ArmadoMuros: flujo unificado cabezal + mallas (este botón).
+
+-----------------------------------------------------------------------------
+Dependencias de proyecto Revit (no incluidas en el paquete)
+-----------------------------------------------------------------------------
+
+El modelo debe tener, según el flujo:
+
+  - RebarBarType y RebarShape (p. ej. forma «03» para U de coronamiento)
+  - RebarHookType según capas (Standard 90°, 135°, etc.)
+  - Familias de tag estructural según capas del proyecto
+  - Detail line-based de empalme (EST_D_DETAIL ITEM_EMPALME / tipo Empalme;
+    si falta, se crean barras sin detalle de empalme)
+  - Hosts válidos: muros tradicionales + fundaciones para coronamiento embed
+
+Revit 2024–2026 | pyRevit (IronPython 2.7 en 2024; CPython 3 en 2025+).

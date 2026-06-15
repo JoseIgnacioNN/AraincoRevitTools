@@ -2,10 +2,14 @@
 """
 Recursos WPF compartidos (tema oscuro BIMTools) para ventanas embebidas en scripts IronPython.
 
-Incluye: Label, LabelSmall, GbParams, Combo, ComboStretch, ComboTroceoStretch, ComboItem, BimToolsStepperZoneBtn,
-BtnPrimary, BtnSelectOutline,
-SpinRepeatBtn, CantSpinnerText, BtnCloseX_MinimalNoBg (linea visual Fundacion Aislada),
-BimToolsScrollBarCapButton + BimToolsScrollBarDark + estilo implícito ScrollBar (DataGrid / ScrollViewer / listas).
+Referencia visual: ``34_ArmadoMuros.pushbutton`` (``armado_muros_preview_ui.py``).
+Fuente canónica: ``scripts/bimtools_wpf_dark_theme.py``; copiar a pushbuttons autocontenidos al empaquetar.
+
+Incluye: Label, LabelSmall, GbParams, Combo, ComboDiam, ComboStretch, ComboTroceoStretch, ComboItem,
+BimToolsStepperZoneBtn, BtnPrimary, BtnSelectOutline, BimToolsTextBoxDark, BimToolsToggleMini,
+SpinRepeatBtn, CantSpinnerText, BtnCloseX_MinimalNoBg,
+BimToolsScrollBarCapButton + BimToolsScrollBarDark + estilo implícito ScrollBar (DataGrid / ScrollViewer / listas),
+BimToolsSliderCompact.
 
 Uso: dentro de Window.Resources, tras Storyboard si aplica, concatenar BIMTOOLS_DARK_STYLES_XML.
 """
@@ -210,6 +214,99 @@ BIMTOOLS_DARK_STYLES_XML = u"""
         </Setter.Value>
       </Setter>
     </Style>
+    <Style x:Key="ComboDiam" TargetType="ComboBox" BasedOn="{StaticResource Combo}">
+      <Setter Property="Width" Value="56"/>
+      <Setter Property="MinWidth" Value="56"/>
+      <Setter Property="MaxWidth" Value="56"/>
+      <Setter Property="FontSize" Value="10"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBox">
+            <Grid SnapsToDevicePixels="True">
+              <Border x:Name="Border" CornerRadius="4" Background="#050E18"
+                      BorderBrush="#1A3A4D" BorderThickness="1" SnapsToDevicePixels="True">
+                <Grid TextElement.Foreground="{TemplateBinding Foreground}"
+                      TextElement.FontWeight="{TemplateBinding FontWeight}">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="12"/>
+                  </Grid.ColumnDefinitions>
+                  <ContentPresenter x:Name="ContentSite" Grid.Column="0"
+                                    Content="{TemplateBinding SelectionBoxItem}"
+                                    ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                    Margin="3,0,1,0" VerticalAlignment="Center"
+                                    HorizontalAlignment="Center" IsHitTestVisible="False"/>
+                  <TextBox x:Name="PART_EditableTextBox"
+                           Grid.Column="0" Visibility="Collapsed"
+                           Background="#050E18" Foreground="{TemplateBinding Foreground}"
+                           BorderThickness="0" Margin="3,0,1,0" VerticalAlignment="Center"
+                           FontSize="{TemplateBinding FontSize}" FontFamily="{TemplateBinding FontFamily}"
+                           CaretBrush="#7AA3B8" Padding="0" VerticalContentAlignment="Center"
+                           SelectionBrush="#2A4A5C" SelectionOpacity="0.95"
+                           FocusVisualStyle="{x:Null}"/>
+                  <Border Grid.Column="1" Background="#11253D" BorderBrush="#1A3A4D"
+                          BorderThickness="1,0,0,0" CornerRadius="0,4,4,0" ClipToBounds="True">
+                    <TextBlock Text="&#9660;" FontSize="6" Foreground="#7AA3B8"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               IsHitTestVisible="False"/>
+                  </Border>
+                  <ToggleButton Grid.Column="0" Grid.ColumnSpan="2"
+                                IsChecked="{Binding Path=IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                Focusable="False" FocusVisualStyle="{x:Null}"
+                                HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                Background="Transparent" BorderThickness="0">
+                    <ToggleButton.Template>
+                      <ControlTemplate TargetType="ToggleButton">
+                        <Border Background="Transparent" BorderThickness="0"/>
+                      </ControlTemplate>
+                    </ToggleButton.Template>
+                  </ToggleButton>
+                </Grid>
+              </Border>
+              <Popup x:Name="PART_Popup"
+                     IsOpen="{TemplateBinding IsDropDownOpen}"
+                     AllowsTransparency="True" Focusable="False"
+                     PopupAnimation="Fade" Placement="Bottom"
+                     PlacementTarget="{Binding ElementName=Border}">
+                <Border Background="#050E18" BorderBrush="#1A3A4D" BorderThickness="1"
+                        CornerRadius="5"
+                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                  <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
+                    <ItemsPresenter/>
+                  </ScrollViewer>
+                </Border>
+              </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsEditable" Value="True">
+                <Setter TargetName="ContentSite" Property="Visibility" Value="Collapsed"/>
+                <Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible"/>
+              </Trigger>
+              <Trigger Property="IsEditable" Value="False">
+                <Setter TargetName="ContentSite" Property="Visibility" Value="Visible"/>
+                <Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Collapsed"/>
+              </Trigger>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Border" Property="Background" Value="#0B1728"/>
+                <Setter TargetName="Border" Property="BorderBrush" Value="#4C7383"/>
+              </Trigger>
+              <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                <Setter TargetName="Border" Property="Background" Value="#0B1728"/>
+                <Setter TargetName="Border" Property="BorderBrush" Value="#4C7383"/>
+                <Setter TargetName="Border" Property="BorderThickness" Value="2"/>
+              </Trigger>
+              <Trigger Property="IsDropDownOpen" Value="True">
+                <Setter TargetName="Border" Property="Background" Value="#0B1728"/>
+                <Setter TargetName="Border" Property="BorderBrush" Value="#4C7383"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
     <Style x:Key="ComboStretch" TargetType="ComboBox" BasedOn="{StaticResource Combo}">
       <!-- Anula Width=110 del estilo Combo base (si no, el control no estira y corta texto/flecha). -->
       <Setter Property="Width" Value="Auto"/>
@@ -335,6 +432,62 @@ BIMTOOLS_DARK_STYLES_XML = u"""
       <Setter Property="Padding" Value="4,0,1,0"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
       <Setter Property="CaretBrush" Value="#7AA3B8"/>
+    </Style>
+    <Style x:Key="BimToolsTextBoxDark" TargetType="TextBox">
+      <Setter Property="Background" Value="#050E18"/>
+      <Setter Property="Foreground" Value="#E8F4F8"/>
+      <Setter Property="BorderBrush" Value="#21465C"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="FontSize" Value="10"/>
+      <Setter Property="Padding" Value="4,3,4,3"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="CaretBrush" Value="#7AA3B8"/>
+      <Setter Property="SelectionBrush" Value="#2A4A5C"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="4" SnapsToDevicePixels="True">
+              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                            VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Bd" Property="BorderBrush" Value="#5BC0DE"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Bd" Property="Opacity" Value="0.45"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="BimToolsToggleMini" TargetType="CheckBox">
+      <Setter Property="Foreground" Value="#95B8CC"/>
+      <Setter Property="FontSize" Value="10"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True"/>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+      <Style.Triggers>
+        <Trigger Property="IsMouseOver" Value="True">
+          <Setter Property="Foreground" Value="#E8F4F8"/>
+        </Trigger>
+        <Trigger Property="IsEnabled" Value="False">
+          <Setter Property="Opacity" Value="0.45"/>
+        </Trigger>
+      </Style.Triggers>
     </Style>
     <Style x:Key="BtnCloseX_MinimalNoBg" TargetType="Button">
       <Setter Property="Width" Value="32"/>

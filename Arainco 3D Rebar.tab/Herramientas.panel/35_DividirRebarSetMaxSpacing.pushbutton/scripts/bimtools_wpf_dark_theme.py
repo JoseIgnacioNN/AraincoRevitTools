@@ -2,10 +2,14 @@
 """
 Recursos WPF compartidos (tema oscuro BIMTools) para ventanas embebidas en scripts IronPython.
 
-Incluye: Label, LabelSmall, GbParams, Combo, ComboStretch, ComboTroceoStretch, ComboItem, BimToolsStepperZoneBtn,
-BtnPrimary, BtnSelectOutline, BimToolsTextBoxDark, BimToolsToggleMini,
-SpinRepeatBtn, CantSpinnerText, BtnCloseX_MinimalNoBg (linea visual Fundacion Aislada),
-BimToolsScrollBarCapButton + BimToolsScrollBarDark + estilo implícito ScrollBar (DataGrid / ScrollViewer / listas).
+Referencia visual: ``34_ArmadoMuros.pushbutton`` (``armado_muros_preview_ui.py``).
+Fuente canónica: ``scripts/bimtools_wpf_dark_theme.py``; copiar a pushbuttons autocontenidos al empaquetar.
+
+Incluye: Label, LabelSmall, GbParams, Combo, ComboDiam, ComboStretch, ComboTroceoStretch, ComboItem,
+BimToolsStepperZoneBtn, BtnPrimary, BtnSelectOutline, BimToolsTextBoxDark, BimToolsToggleMini,
+SpinRepeatBtn, CantSpinnerText, BtnCloseX_MinimalNoBg,
+BimToolsScrollBarCapButton + BimToolsScrollBarDark + estilo implícito ScrollBar (DataGrid / ScrollViewer / listas),
+BimToolsSliderCompact.
 
 Uso: dentro de Window.Resources, tras Storyboard si aplica, concatenar BIMTOOLS_DARK_STYLES_XML.
 """
