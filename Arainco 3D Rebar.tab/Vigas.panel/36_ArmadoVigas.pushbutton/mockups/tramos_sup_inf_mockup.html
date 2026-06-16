@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mockup — Tramos y controladores Sup / Inf · Armado vigas</title>
+  <style>
+    :root {
+      --bg-app: #071018;
+      --bg-panel: #0a1620;
+      --border: #21465c;
+      --fg-hi: #e8f4f8;
+      --fg-mid: #95b8cc;
+      --fg-lo: #64748b;
+      --input-bg: #071018;
+      --input-border: #1e3344;
+      --btn-outline: #2d4455;
+      --btn-primary: #5bb8d4;
+      --btn-primary-fg: #071018;
+      --ok: #4ade80;
+      --warn: #fbbf24;
+      --sup: #22d3ee;
+      --sup-dim: rgba(34, 211, 238, 0.18);
+      --inf: #fb7185;
+      --inf-dim: rgba(251, 113, 133, 0.18);
+      --col: #94a3b8;
+      --beam: #1e3344;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #050c14;
+      color: var(--fg-mid);
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .dev-bar {
+      background: #0f1c28;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      align-items: center;
+      font-size: 11px;
+      z-index: 10;
+    }
+    .dev-bar h1 { font-size: 13px; color: var(--fg-hi); font-weight: 600; }
+    .dev-bar label { display: flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
+    .dev-bar select {
+      background: var(--input-bg);
+      color: var(--fg-hi);
+      border: 1px solid var(--input-border);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+    .pill {
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .pill.draft { background: rgba(251, 191, 36, 0.15); color: var(--warn); }
+    .pill.sup { background: var(--sup-dim); color: var(--sup); }
+    .pill.inf { background: var(--inf-dim); color: var(--inf); }
+    .sep { width: 1px; height: 20px; background: var(--border); }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      min-height: 0;
+      overflow: hidden;
+    }
+    @media (max-width: 980px) {
+      main { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+      .eval-panel { border-left: none; border-top: 1px solid var(--border); max-height: 320px; }
+    }
+
+    .workspace {
+      overflow: auto;
+      padding: 16px 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .intro {
+      max-width: 860px;
+      width: 100%;
+      font-size: 11px;
+      line-height: 1.55;
+      color: var(--fg-lo);
+    }
+    .intro strong { color: var(--fg-hi); }
+    .intro em { font-style: normal; color: var(--sup); }
+    .intro em.inf { color: var(--inf); }
+
+    /* ── Stack alzado + tramos sup/inf ── */
+    .elev-stack {
+      border: 1px solid rgba(33, 70, 92, 0.55);
+      border-radius: 4px;
+      background: rgba(7, 16, 24, 0.45);
+      overflow: hidden;
+    }
+    .elev-stack .face-block.sup {
+      margin: 0;
+      padding: 10px 0 2px;
+      border-bottom: 1px dashed rgba(34, 211, 238, 0.2);
+      background: rgba(34, 211, 238, 0.03);
+    }
+    .elev-stack .face-block.inf {
+      margin: 0;
+      padding: 2px 0 10px;
+      border-top: 1px dashed rgba(251, 113, 133, 0.2);
+      background: rgba(251, 113, 133, 0.03);
+    }
+    .elev-stack .elev-wrap {
+      border: none;
+      border-radius: 0;
+      background: radial-gradient(ellipse at 50% 20%, rgba(30, 52, 68, 0.35), rgba(7, 16, 24, 0.92));
+    }
+
+    .win {
+      width: 100%;
+      max-width: 860px;
+      background: var(--bg-app);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+    }
+    .win-title { color: var(--fg-hi); font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+    .win-sub { font-size: 11px; margin-bottom: 10px; }
+
+    .scope-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .scope-chip {
+      font-size: 10px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: rgba(10, 22, 32, 0.8);
+    }
+    .scope-chip strong { color: var(--fg-hi); }
+
+    /* ── Alzado ── */
+    .elev-wrap {
+      position: relative;
+      padding: 12px 8px 8px;
+      min-height: 140px;
+    }
+    .elev-hdr {
+      font-size: 9px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--fg-lo);
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .elev-canvas {
+      position: relative;
+      height: 88px;
+      margin: 0 8px;
+    }
+    .col-pillar {
+      position: absolute;
+      bottom: 0;
+      width: 14px;
+      background: rgba(148, 163, 184, 0.35);
+      border: 1px solid rgba(148, 163, 184, 0.55);
+      border-radius: 2px 2px 0 0;
+    }
+    .beam-block {
+      position: absolute;
+      bottom: 0;
+      border-radius: 2px;
+      border: 1px solid rgba(91, 184, 212, 0.35);
+      background: linear-gradient(180deg, rgba(30, 52, 68, 0.95) 0%, rgba(15, 28, 40, 0.98) 100%);
+      cursor: pointer;
+      transition: box-shadow 0.12s, border-color 0.12s;
+    }
+    .beam-block:hover { border-color: var(--btn-primary); }
+    .beam-block.selected {
+      border-color: var(--btn-primary);
+      box-shadow: 0 0 0 1px rgba(91, 184, 212, 0.45);
+      z-index: 2;
+    }
+    .beam-block .sec-lbl {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--fg-hi);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .beam-block .emp-btn {
+      position: absolute;
+      left: 50%;
+      bottom: -22px;
+      transform: translateX(-50%);
+      font-size: 8px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      border: 1px solid var(--input-border);
+      background: var(--input-bg);
+      color: var(--fg-lo);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .beam-block .emp-btn.on {
+      border-color: var(--warn);
+      color: var(--warn);
+      background: rgba(251, 191, 36, 0.1);
+    }
+    .fiber-line {
+      position: absolute;
+      height: 2px;
+      border-radius: 1px;
+      pointer-events: none;
+      opacity: 0.85;
+    }
+    .fiber-line.sup { background: var(--sup); box-shadow: 0 0 6px rgba(34, 211, 238, 0.5); }
+    .fiber-line.inf { background: var(--inf); box-shadow: 0 0 6px rgba(251, 113, 133, 0.45); }
+
+    /* ── Franjas tramo por cara ── */
+    .face-block { margin-top: 14px; }
+    .elev-stack .face-block { margin-top: 0; }
+
+    .face-hdr {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .face-hdr.sup { color: var(--sup); }
+    .face-hdr.inf { color: var(--inf); }
+    .face-hdr .count {
+      font-weight: 500;
+      text-transform: none;
+      letter-spacing: 0;
+      color: var(--fg-lo);
+      font-size: 9px;
+    }
+    .face-hdr .rule {
+      margin-left: auto;
+      font-size: 8px;
+      font-weight: 500;
+      color: var(--fg-lo);
+      text-transform: none;
+      letter-spacing: 0;
+      max-width: 280px;
+      text-align: right;
+      line-height: 1.3;
+    }
+
+    .bands-row {
+      position: relative;
+      height: 14px;
+      margin: 0 8px 6px;
+      border-radius: 3px;
+      background: rgba(7, 16, 24, 0.6);
+      overflow: hidden;
+    }
+    .tramo-band {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      border-radius: 2px;
+      cursor: pointer;
+      opacity: 0.75;
+      transition: opacity 0.12s, box-shadow 0.12s;
+      border: 1px solid transparent;
+    }
+    .tramo-band:hover { opacity: 0.95; }
+    .tramo-band.selected {
+      opacity: 1;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.35);
+      z-index: 2;
+    }
+    .tramo-band.has-warn::after {
+      content: "!";
+      position: absolute;
+      right: 3px;
+      top: 0;
+      font-size: 9px;
+      font-weight: 800;
+      color: var(--warn);
+    }
+    .face-block.sup .tramo-band { background: var(--sup-dim); border-color: rgba(34, 211, 238, 0.35); }
+    .face-block.sup .tramo-band.selected { border-color: var(--sup); }
+    .face-block.inf .tramo-band { background: var(--inf-dim); border-color: rgba(251, 113, 133, 0.35); }
+    .face-block.inf .tramo-band.selected { border-color: var(--inf); }
+
+    /* ── Controladores Tn ── */
+    .ctrl-row {
+      position: relative;
+      min-height: 118px;
+      margin: 0 8px;
+    }
+    .ctrl-row.has-many { min-height: 148px; }
+
+    /* Superior: paneles arriba, bandas Tn pegadas al alzado */
+    .face-block.sup .ctrl-row {
+      min-height: 124px;
+      margin-bottom: 4px;
+    }
+    .face-block.sup .ctrl-row.has-many { min-height: 154px; }
+    .face-block.sup .ctrl-row .cap-panel {
+      top: 0;
+      bottom: auto;
+    }
+    .face-block.sup .ctrl-row .cap-panel::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      bottom: -10px;
+      width: 1px;
+      height: 10px;
+      background: rgba(34, 211, 238, 0.45);
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+    .face-block.sup .ctrl-row .cap-panel.selected::after {
+      background: var(--sup);
+      height: 12px;
+      bottom: -12px;
+    }
+    .face-block.sup .bands-row {
+      margin-top: 0;
+      margin-bottom: 0;
+    }
+
+    .cap-panel {
+      position: absolute;
+      top: 0;
+      transform: translateX(-50%);
+      min-width: 168px;
+      max-width: 220px;
+      padding: 7px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: rgba(10, 22, 32, 0.92);
+      font-size: 10px;
+      cursor: pointer;
+      transition: border-color 0.12s, box-shadow 0.12s;
+    }
+    .cap-panel:hover { border-color: rgba(255,255,255,0.28); }
+    .cap-panel.selected {
+      z-index: 3;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+    }
+    .face-block.sup .cap-panel.selected { border-color: var(--sup); box-shadow: 0 0 0 1px rgba(34,211,238,0.35), 0 8px 20px rgba(0,0,0,0.35); }
+    .face-block.inf .cap-panel.selected { border-color: var(--inf); box-shadow: 0 0 0 1px rgba(251,113,133,0.35), 0 8px 20px rgba(0,0,0,0.35); }
+    .face-block.inf .ctrl-row .cap-panel::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: -10px;
+      width: 1px;
+      height: 10px;
+      background: rgba(251, 113, 133, 0.45);
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+    .face-block.inf .ctrl-row .cap-panel.selected::before {
+      background: var(--inf);
+      height: 12px;
+      top: -12px;
+    }
+    .cap-panel .bar-top { height: 2px; border-radius: 1px; margin: -7px -7px 6px; }
+    .face-block.sup .cap-panel .bar-top { background: var(--sup); }
+    .face-block.inf .cap-panel .bar-top { background: var(--inf); }
+
+    .tramo-lbl { font-size: 9px; font-weight: 700; color: var(--fg-hi); margin-bottom: 2px; }
+    .tramo-meta { font-size: 8px; color: var(--fg-lo); margin-bottom: 6px; line-height: 1.35; }
+    .capas-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 5px;
+      font-size: 8px;
+    }
+    .capas-lbl { min-width: 52px; color: var(--fg-lo); font-weight: 600; }
+    .layer-block {
+      border-top: 1px dashed rgba(33, 70, 92, 0.5);
+      padding-top: 5px;
+      margin-top: 4px;
+    }
+    .layer-hdr { font-size: 8px; color: var(--fg-lo); margin-bottom: 4px; font-weight: 700; }
+    .field-row { display: flex; align-items: center; gap: 4px; margin-bottom: 3px; font-size: 8px; }
+    .field-lbl { min-width: 32px; color: var(--fg-lo); font-weight: 700; }
+
+    .stepper-wrap { display: inline-flex; align-items: center; }
+    .stepper-btn {
+      width: 16px; height: 18px;
+      border: 1px solid var(--input-border);
+      background: var(--input-bg); color: var(--fg-mid);
+      font-size: 10px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .stepper-btn:hover { border-color: var(--btn-primary); color: var(--fg-hi); }
+    .stepper-val {
+      width: 26px; height: 18px;
+      border-top: 1px solid var(--input-border);
+      border-bottom: 1px solid var(--input-border);
+      background: var(--input-bg); color: var(--fg-hi);
+      font-size: 9px; font-weight: 600; text-align: center; line-height: 16px;
+    }
+    select.ctrl {
+      flex: 1;
+      height: 20px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 3px;
+      color: var(--fg-hi);
+      font-size: 9px;
+      padding: 0 4px;
+      min-width: 0;
+    }
+
+    /* ── Panel evaluación ── */
+    .eval-panel {
+      border-left: 1px solid var(--border);
+      background: var(--bg-panel);
+      padding: 14px;
+      overflow: auto;
+      font-size: 11px;
+    }
+    .eval-panel h2 { font-size: 12px; color: var(--fg-hi); margin-bottom: 10px; }
+    .eval-panel h3 {
+      font-size: 10px;
+      color: var(--btn-primary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 12px 0 6px;
+    }
+    .eval-panel ul { padding-left: 16px; line-height: 1.55; font-size: 10px; color: var(--fg-lo); }
+    .eval-panel li { margin-bottom: 4px; }
+    .diff-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9px;
+      margin-top: 6px;
+    }
+    .diff-table th, .diff-table td {
+      border: 1px solid rgba(33, 70, 92, 0.55);
+      padding: 5px 6px;
+      text-align: left;
+    }
+    .diff-table th { color: var(--fg-hi); background: rgba(7, 16, 24, 0.8); }
+    .state-box {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 8px;
+      line-height: 1.5;
+      color: var(--fg-lo);
+      background: rgba(7, 16, 24, 0.85);
+      border: 1px solid rgba(33, 70, 92, 0.45);
+      border-radius: 4px;
+      padding: 8px;
+      max-height: 160px;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+    .state-box .hi-sup { color: var(--sup); }
+    .state-box .hi-inf { color: var(--inf); }
+    .log {
+      margin-top: 8px;
+      max-height: 90px;
+      overflow: auto;
+      font-size: 8px;
+      color: var(--fg-lo);
+      border-top: 1px dashed var(--border);
+      padding-top: 6px;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 8px 16px;
+      font-size: 10px;
+      color: var(--fg-lo);
+      background: #0a1218;
+    }
+  </style>
+</head>
+<body>
+  <header class="dev-bar">
+    <h1>Tramos Sup / Inf — controladores separados</h1>
+    <span class="pill draft">Mockup · no implementado</span>
+    <span class="sep"></span>
+    <label>Escenario
+      <select id="scenarioSelect"></select>
+    </label>
+    <label><input type="checkbox" id="splitEmpalme" checked /> Trocear por empalme (&gt;12 m)</label>
+    <label><input type="checkbox" id="showFibers" checked /> Líneas fibra sup/inf</label>
+    <span class="sep"></span>
+    <span class="pill sup" id="pillSup">Sup: —</span>
+    <span class="pill inf" id="pillInf">Inf: —</span>
+  </header>
+
+  <main>
+    <div class="workspace">
+      <p class="intro">
+        <strong>Propuesta UX:</strong> dos pipelines independientes — <em>superior</em> e <em class="inf">inferior</em> —
+        cada uno con sus tramos Tn, bandas de color y controladores (capas, cantidad, ø).
+        La fusión colineal se evalúa <strong>por cara</strong>: mismo ancho en sup; sección completa en inf.
+        Layout: <strong>controladores sup</strong> sobre el alzado · <strong>controladores inf</strong> bajo el alzado.
+      </p>
+
+      <div class="win">
+        <div class="win-title">Arainco: Armado vigas</div>
+        <div class="win-sub" id="winSub">—</div>
+        <div class="scope-row">
+          <span class="scope-chip"><strong id="chipBeams">—</strong> vigas</span>
+          <span class="scope-chip">Estribos: <strong>compartidos</strong> (fuera de este mockup)</span>
+          <span class="scope-chip">Confin. E: <strong>1ª capa sup = inf</strong> (global)</span>
+        </div>
+
+        <div class="elev-stack">
+          <div class="face-block sup" id="faceSup">
+            <div class="face-hdr sup">
+              <span>Armadura superior · tramos Tn</span>
+              <span class="count" id="supSummary">—</span>
+              <span class="rule">Fusión: mismo ancho + colinealidad apoyos</span>
+            </div>
+            <div class="ctrl-row" id="supCtrls"></div>
+            <div class="bands-row" id="supBands"></div>
+          </div>
+
+          <div class="elev-wrap">
+            <div class="elev-hdr">
+              <span>Alzado · clic viga · Traslapo bajo cada viga</span>
+              <span id="elevHint">Top alineado entre vigas del escenario A</span>
+            </div>
+            <div class="elev-canvas" id="elevCanvas"></div>
+          </div>
+
+          <div class="face-block inf" id="faceInf">
+            <div class="face-hdr inf">
+              <span>Armadura inferior · tramos Tn</span>
+              <span class="count" id="infSummary">—</span>
+              <span class="rule">Fusión: sección ancho×alto + colinealidad apoyos</span>
+            </div>
+            <div class="bands-row" id="infBands"></div>
+            <div class="ctrl-row" id="infCtrls"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="eval-panel">
+      <h2>Evaluación</h2>
+      <h3>Reglas de corrida (propuesta)</h3>
+      <ul>
+        <li><span style="color:var(--sup)">Superior</span>: vigas consecutivas mismo <strong>ancho</strong> y <code>colEnd→colStart</code>.</li>
+        <li><span style="color:var(--inf)">Inferior</span>: misma etiqueta <strong>ancho×alto</strong> y apoyos encadenados.</li>
+        <li>Empalme @ mitad trocea <strong>por cara</strong> dentro de cada corrida.</li>
+        <li>Controladores editan solo la cara activa; capas 2ª/3ª independientes por cara.</li>
+        <li><strong>Layout:</strong> Tn superior <em>sobre</em> alzado · Tn inferior <em>bajo</em> alzado (simetría física).</li>
+      </ul>
+
+      <h3>Comparativa escenario</h3>
+      <table class="diff-table" id="diffTable">
+        <thead>
+          <tr><th>Cara</th><th>Corridas</th><th>Tramos Tn</th><th>Notas</th></tr>
+        </thead>
+        <tbody id="diffBody"></tbody>
+      </table>
+
+      <h3>Estado selección</h3>
+      <div class="state-box" id="stateBox">—</div>
+      <div class="log" id="log"></div>
+    </aside>
+  </main>
+
+  <footer>
+    Mockup interactivo · iterar aquí antes de implementar en <code>scripts/armado_vigas</code>.
+    Abrir en navegador: <code>mockups/tramos_sup_inf_mockup.html</code>
+  </footer>
+
+  <script>
+    const MAX_BAR_MM = 12000;
+    const CAPAS_MIN = 1;
+    const CAPAS_MAX = 3;
+    const BAR_MIN = 2;
+    const BAR_MAX = 6;
+    const DIAM_OPTS = [12, 16, 20, 25];
+    const TRAMO_ACCENTS_SUP = ["#22d3ee", "#38bdf8", "#67e8f9", "#06b6d4"];
+    const TRAMO_ACCENTS_INF = ["#fb7185", "#f472b6", "#fda4af", "#e879f9"];
+
+    const SCENARIOS = {
+      A: {
+        label: "A · Mismo ancho, distinta altura (30×60 + 30×50 + 30×60)",
+        hint: "Top alineado: sup fusiona 3 vigas; inf corta en cambio de altura",
+        cols: [{ id: "C1", u: 0 }, { id: "C2", u: 1 }],
+        beams: [
+          { id: "V1", type: "30×60", len: 4.2, colStart: "C1", colEnd: "mid" },
+          { id: "V2", type: "30×50", len: 3.8, colStart: "mid", colEnd: "mid" },
+          { id: "V3", type: "30×60", len: 4.0, colStart: "mid", colEnd: "C2" },
+        ],
+      },
+      B: {
+        label: "B · Cambio de ancho (30×60 → 25×60)",
+        hint: "Sup e inf cortan en V2 (ancho distinto)",
+        cols: [{ id: "C1", u: 0 }, { id: "C2", u: 1 }],
+        beams: [
+          { id: "V1", type: "30×60", len: 5.0, colStart: "C1", colEnd: "mid" },
+          { id: "V2", type: "25×60", len: 4.5, colStart: "mid", colEnd: "C2" },
+        ],
+      },
+      C: {
+        label: "C · Tres secciones en cadena",
+        hint: "Sup: 2 corridas (30+30 | 25); Inf: 3 tramos",
+        cols: [{ id: "C1", u: 0 }, { id: "C2", u: 1 }],
+        beams: [
+          { id: "V1", type: "30×60", len: 3.5, colStart: "C1", colEnd: "mid" },
+          { id: "V2", type: "30×50", len: 3.5, colStart: "mid", colEnd: "mid" },
+          { id: "V3", type: "25×50", len: 3.5, colStart: "mid", colEnd: "C2" },
+        ],
+      },
+      D: {
+        label: "D · Empalme @ mitad en V2 (escenario A + traslapo)",
+        hint: "Marcar traslapo en V2: troceo adicional por cara",
+        cols: [{ id: "C1", u: 0 }, { id: "C2", u: 1 }],
+        beams: [
+          { id: "V1", type: "30×60", len: 6.5, colStart: "C1", colEnd: "mid" },
+          { id: "V2", type: "30×50", len: 5.0, colStart: "mid", colEnd: "mid", empalmeDefault: true },
+          { id: "V3", type: "30×60", len: 6.5, colStart: "mid", colEnd: "C2" },
+        ],
+      },
+    };
+
+    let beams = [];
+    let empalmeBeams = new Set();
+    let selectedBeamIdx = 0;
+    let selectedTramo = { sup: null, inf: null };
+    let tramosSup = [];
+    let tramosInf = [];
+    let layoutMeta = { contentW: 700, layouts: [] };
+
+    const logEl = document.getElementById("log");
+    const stateBox = document.getElementById("stateBox");
+
+    function log(msg) {
+      const line = document.createElement("div");
+      line.textContent = new Date().toLocaleTimeString("es", { hour12: false }) + " · " + msg;
+      logEl.prepend(line);
+      while (logEl.children.length > 12) logEl.removeChild(logEl.lastChild);
+    }
+
+    function parseSection(typeStr) {
+      const m = String(typeStr || "30×60").match(/(\d+(?:\.\d+)?)\s*[×xX*]\s*(\d+(?:\.\d+)?)/);
+      if (m) return { w: parseFloat(m[1]), h: parseFloat(m[2]) };
+      return { w: 30, h: 60 };
+    }
+
+    function cloneBeamData(scenario) {
+      beams = scenario.beams.map((b, i) => {
+        const sec = parseSection(b.type);
+        return {
+          id: b.id,
+          type: b.type,
+          w: sec.w,
+          h: sec.h,
+          len: b.len,
+          colStart: b.colStart,
+          colEnd: b.colEnd,
+          u: i,
+          nCapasSup: 1,
+          nCapasInf: 1,
+          nSup: 2,
+          nInf: 2,
+          diamSup: 16,
+          diamInf: 16,
+          nSup2: 2, nInf2: 2, diamSup2: 16, diamInf2: 16,
+          nSup3: 2, nInf3: 2, diamSup3: 16, diamInf3: 16,
+        };
+      });
+      empalmeBeams = new Set(
+        scenario.beams.filter(b => b.empalmeDefault).map(b => b.id)
+      );
+      selectedBeamIdx = 0;
+      selectedTramo = { sup: null, inf: null };
+    }
+
+    function beamsShareRun(prev, cur, face) {
+      if (prev.colEnd !== cur.colStart) return false;
+      if (face === "inf") return prev.type === cur.type;
+      return Math.abs(prev.w - cur.w) < 0.05;
+    }
+
+    function buildBarRuns(sorted, face) {
+      const runs = [];
+      let current = null;
+      for (let i = 0; i < sorted.length; i++) {
+        if (!current || !beamsShareRun(sorted[i - 1], sorted[i], face)) {
+          if (current) runs.push(current);
+          current = { section: sorted[i].type, indices: [i] };
+        } else {
+          current.indices.push(i);
+        }
+      }
+      if (current) runs.push(current);
+      return runs;
+    }
+
+    function computeTramoLenMm(sorted, piece) {
+      const idxs = piece.beamIndices;
+      if (!idxs.length) return 0;
+      let mm = 0;
+      idxs.forEach((i, k) => {
+        const full = sorted[i].len * 1000;
+        if (idxs.length === 1) {
+          if (piece.edgeStart === "half" && piece.edgeEnd === "half") return;
+          if (piece.edgeStart === "half" || piece.edgeEnd === "half") mm += full * 0.5;
+          else mm += full;
+          return;
+        }
+        if (k === 0 && piece.edgeStart === "half") mm += full * 0.5;
+        else if (k === idxs.length - 1 && piece.edgeEnd === "half") mm += full * 0.5;
+        else mm += full;
+      });
+      return Math.round(mm);
+    }
+
+    function subdivideBarRun(sorted, run, splitEmp) {
+      const idxs = run.indices;
+      const splitIdxs = idxs.filter(i => splitEmp && empalmeBeams.has(sorted[i].id));
+      if (!splitIdxs.length) {
+        return [{ beamIndices: [...idxs], section: run.section, edgeStart: null, edgeEnd: null, fromEmpalme: false }];
+      }
+      const pieces = [];
+      let runPos = 0;
+      let startHalf = false;
+      splitIdxs.forEach(splitIdx => {
+        const pos = idxs.indexOf(splitIdx);
+        const seg = idxs.slice(runPos, pos + 1);
+        if (seg.length) {
+          pieces.push({
+            beamIndices: seg,
+            section: run.section,
+            edgeStart: startHalf ? "half" : null,
+            edgeEnd: "half",
+            fromEmpalme: true,
+          });
+        }
+        runPos = pos;
+        startHalf = true;
+      });
+      const tail = idxs.slice(runPos);
+      if (tail.length) {
+        pieces.push({
+          beamIndices: tail,
+          section: run.section,
+          edgeStart: startHalf ? "half" : null,
+          edgeEnd: null,
+          fromEmpalme: startHalf,
+        });
+      }
+      return pieces;
+    }
+
+    function buildTramosForFace(sorted, face) {
+      const accents = face === "sup" ? TRAMO_ACCENTS_SUP : TRAMO_ACCENTS_INF;
+      const splitEmp = document.getElementById("splitEmpalme").checked;
+      const out = [];
+      let tid = 1;
+      buildBarRuns(sorted, face).forEach(run => {
+        subdivideBarRun(sorted, run, splitEmp).forEach(piece => {
+          const ids = piece.beamIndices.map(i => sorted[i].id).join("+");
+          const suffix = piece.fromEmpalme ? " · traslapo" : "";
+          out.push({
+            face,
+            id: tid,
+            label: `T${tid} · ${ids}${suffix}`,
+            section: piece.section,
+            beamIndices: [...piece.beamIndices],
+            edgeStart: piece.edgeStart,
+            edgeEnd: piece.edgeEnd,
+            fromEmpalme: piece.fromEmpalme,
+            accent: accents[(tid - 1) % accents.length],
+            inferredLenMm: computeTramoLenMm(sorted, piece),
+          });
+          tid += 1;
+        });
+      });
+      return out;
+    }
+
+    function computeLayouts(sorted, contentW) {
+      const n = sorted.length;
+      const gap = 6;
+      const pad = 24;
+      const totalLen = sorted.reduce((s, b) => s + b.len, 0);
+      const pool = contentW - pad * 2 - gap * Math.max(n - 1, 0);
+      let cursor = pad;
+      const layouts = sorted.map((beam, idx) => {
+        const w = (beam.len / totalLen) * pool;
+        const lay = { idx, leftPx: cursor, widthPx: w, centerPx: cursor + w / 2 };
+        cursor += w + gap;
+        return lay;
+      });
+      return { layouts, contentW };
+    }
+
+    function tramoSpan(tramo) {
+      const first = layoutMeta.layouts[tramo.beamIndices[0]];
+      const last = layoutMeta.layouts[tramo.beamIndices[tramo.beamIndices.length - 1]];
+      let leftPx = first.leftPx;
+      let rightPx = last.leftPx + last.widthPx;
+      if (tramo.edgeStart === "half") leftPx = first.leftPx + first.widthPx / 2;
+      if (tramo.edgeEnd === "half") rightPx = last.leftPx + last.widthPx / 2;
+      const w = layoutMeta.contentW;
+      return {
+        leftPct: (leftPx / w) * 100,
+        widthPct: ((rightPx - leftPx) / w) * 100,
+        centerPct: ((leftPx + rightPx) / 2 / w) * 100,
+        widthPx: rightPx - leftPx,
+      };
+    }
+
+    function layerKeys(layerNum, face) {
+      const side = face === "sup" ? "Sup" : "Inf";
+      if (layerNum === 1) return { n: "n" + side, diam: "diam" + side, label: "1ª" };
+      return { n: "n" + side + layerNum, diam: "diam" + side + layerNum, label: layerNum === 2 ? "2ª" : "3ª" };
+    }
+
+    function nCapas(beam, face) {
+      return face === "sup" ? (beam.nCapasSup || 1) : (beam.nCapasInf || 1);
+    }
+
+    function ensureLayers(beam) {
+      beam.nCapasSup = Math.max(CAPAS_MIN, Math.min(CAPAS_MAX, beam.nCapasSup || 1));
+      beam.nCapasInf = Math.max(CAPAS_MIN, Math.min(CAPAS_MAX, beam.nCapasInf || 1));
+    }
+
+    function applyTramoToBeams(tramo, face, fn) {
+      tramo.beamIndices.forEach(idx => {
+        ensureLayers(beams[idx]);
+        fn(beams[idx]);
+      });
+    }
+
+    function formatSummary(tramos) {
+      if (!tramos.length) return "—";
+      return tramos.map(t => {
+        const ids = t.beamIndices.map(i => beams[i].id).join("+");
+        return `T${t.id}(${ids})`;
+      }).join(" · ");
+    }
+
+    function renderElevation() {
+      const canvas = document.getElementById("elevCanvas");
+      canvas.innerHTML = "";
+      const sorted = [...beams].sort((a, b) => a.u - b.u);
+      const contentW = canvas.clientWidth || 700;
+      layoutMeta = computeLayouts(sorted, contentW);
+
+      const maxH = Math.max(...sorted.map(b => b.h));
+      const scale = 72 / maxH;
+      const baseY = 82;
+
+      sorted.forEach((beam, idx) => {
+        const lay = layoutMeta.layouts[idx];
+        const hPx = beam.h * scale;
+        const el = document.createElement("div");
+        el.className = "beam-block" + (idx === selectedBeamIdx ? " selected" : "");
+        el.style.left = lay.leftPx + "px";
+        el.style.width = lay.widthPx + "px";
+        el.style.height = hPx + "px";
+        el.style.bottom = (baseY - hPx) + "px";
+        el.innerHTML = `<span class="sec-lbl">${beam.type}</span>`;
+        const emp = document.createElement("button");
+        emp.type = "button";
+        emp.className = "emp-btn" + (empalmeBeams.has(beam.id) ? " on" : "");
+        emp.textContent = empalmeBeams.has(beam.id) ? "Traslapo ✓" : "Traslapo";
+        emp.addEventListener("click", e => {
+          e.stopPropagation();
+          if (empalmeBeams.has(beam.id)) empalmeBeams.delete(beam.id);
+          else empalmeBeams.add(beam.id);
+          log(`Traslapo @ mitad · ${beam.id}`);
+          rebuild();
+        });
+        el.appendChild(emp);
+        el.addEventListener("click", () => {
+          selectedBeamIdx = idx;
+          log(`Viga ${beam.id} (${beam.type})`);
+          renderAll(false);
+        });
+        canvas.appendChild(el);
+      });
+
+      if (document.getElementById("showFibers").checked) {
+        renderFiberLines(sorted, "sup", baseY, scale, maxH);
+        renderFiberLines(sorted, "inf", baseY, scale, maxH);
+      }
+    }
+
+    function renderFiberLines(sorted, face, baseY, scale, maxH) {
+      const canvas = document.getElementById("elevCanvas");
+      const runs = buildBarRuns(sorted, face);
+      runs.forEach(run => {
+        const first = layoutMeta.layouts[run.indices[0]];
+        const last = layoutMeta.layouts[run.indices[run.indices.length - 1]];
+        let left = first.leftPx;
+        let right = last.leftPx + last.widthPx;
+        const refBeam = sorted[run.indices[0]];
+        const yOff = face === "sup" ? 4 : -4;
+        const y = baseY - refBeam.h * scale + yOff;
+        const line = document.createElement("div");
+        line.className = "fiber-line " + face;
+        line.style.left = left + "px";
+        line.style.width = (right - left) + "px";
+        line.style.bottom = (baseY - y) + "px";
+        canvas.appendChild(line);
+      });
+    }
+
+    function renderFace(face, tramos, bandsEl, ctrlsEl, summaryEl) {
+      bandsEl.innerHTML = "";
+      ctrlsEl.innerHTML = "";
+      summaryEl.textContent = `${tramos.length} tramo(s) · ${formatSummary(tramos)}`;
+
+      let hasMany = false;
+      tramos.forEach(tramo => {
+        const ref = beams[tramo.beamIndices[0]];
+        if (nCapas(ref, face) > 1) hasMany = true;
+      });
+      ctrlsEl.classList.toggle("has-many", hasMany);
+
+      tramos.forEach(tramo => {
+        const span = tramoSpan(tramo);
+        const band = document.createElement("div");
+        band.className = "tramo-band" +
+          (selectedTramo[face] === tramo.id ? " selected" : "") +
+          (tramo.inferredLenMm > MAX_BAR_MM ? " has-warn" : "");
+        band.style.left = span.leftPct + "%";
+        band.style.width = span.widthPct + "%";
+        band.title = tramo.label + " · " + tramo.inferredLenMm + " mm";
+        band.addEventListener("click", () => {
+          selectedTramo[face] = tramo.id;
+          log(`[${face}] ${tramo.label}`);
+          renderAll(false);
+        });
+        bandsEl.appendChild(band);
+
+        const panel = document.createElement("div");
+        panel.className = "cap-panel" + (selectedTramo[face] === tramo.id ? " selected" : "");
+        panel.style.left = span.centerPct + "%";
+        panel.style.width = Math.min(220, Math.max(168, span.widthPx - 4)) + "px";
+        panel.innerHTML = buildPanelHtml(tramo, face);
+        bindPanel(panel, tramo, face);
+        ctrlsEl.appendChild(panel);
+      });
+    }
+
+    function buildPanelHtml(tramo, face) {
+      const ref = beams[tramo.beamIndices[0]];
+      const capField = face === "sup" ? "nCapasSup" : "nCapasInf";
+      const nC = nCapas(ref, face);
+      const warn = tramo.inferredLenMm > MAX_BAR_MM ? ` · ⚠ ${(tramo.inferredLenMm / 1000).toFixed(1)} m` : "";
+      let html = `<div class="bar-top"></div>`;
+      html += `<div class="tramo-lbl">${tramo.label}</div>`;
+      html += `<div class="tramo-meta">${face === "sup" ? "Superior" : "Inferior"} · ${tramo.section}${warn}</div>`;
+      html += `<div class="capas-row">
+        <span class="capas-lbl">Nº capas</span>
+        <div class="stepper-wrap" data-cap="${capField}">
+          <button type="button" class="stepper-btn" data-d="-1">−</button>
+          <span class="stepper-val">${nC}</span>
+          <button type="button" class="stepper-btn" data-d="1">+</button>
+        </div>
+      </div>`;
+      for (let L = 1; L <= nC; L++) {
+        const k = layerKeys(L, face);
+        const n = ref[k.n] || 2;
+        const d = ref[k.diam] || 16;
+        html += `<div class="layer-block">
+          <div class="layer-hdr">Capa ${k.label}</div>
+          <div class="field-row">
+            <span class="field-lbl">Cant.</span>
+            <div class="stepper-wrap" data-field="${k.n}">
+              <button type="button" class="stepper-btn" data-d="-1">−</button>
+              <span class="stepper-val">${n}</span>
+              <button type="button" class="stepper-btn" data-d="1">+</button>
+            </div>
+          </div>
+          <div class="field-row">
+            <span class="field-lbl">ø mm</span>
+            <select class="ctrl" data-field="${k.diam}">${DIAM_OPTS.map(o =>
+              `<option value="${o}"${o === d ? " selected" : ""}>${o}</option>`).join("")}</select>
+          </div>
+        </div>`;
+      }
+      return html;
+    }
+
+    function bindPanel(panel, tramo, face) {
+      panel.addEventListener("click", e => {
+        if (e.target.closest(".stepper-btn") || e.target.closest("select")) return;
+        selectedTramo[face] = tramo.id;
+        renderAll(false);
+      });
+
+      panel.querySelectorAll(".stepper-wrap[data-cap]").forEach(wrap => {
+        wrap.querySelectorAll(".stepper-btn").forEach(btn => {
+          btn.addEventListener("click", e => {
+            e.stopPropagation();
+            const delta = parseInt(btn.dataset.d, 10);
+            applyTramoToBeams(tramo, face, b => {
+              const f = wrap.dataset.cap;
+              b[f] = Math.max(CAPAS_MIN, Math.min(CAPAS_MAX, (b[f] || 1) + delta));
+            });
+            log(`[${face}] ${tramo.label} · capas → ${nCapas(beams[tramo.beamIndices[0]], face)}`);
+            renderAll(false);
+          });
+        });
+      });
+
+      panel.querySelectorAll(".stepper-wrap[data-field]").forEach(wrap => {
+        wrap.querySelectorAll(".stepper-btn").forEach(btn => {
+          btn.addEventListener("click", e => {
+            e.stopPropagation();
+            const field = wrap.dataset.field;
+            const delta = parseInt(btn.dataset.d, 10);
+            applyTramoToBeams(tramo, face, b => {
+              b[field] = Math.max(BAR_MIN, Math.min(BAR_MAX, (b[field] || 2) + delta));
+              if (face === "sup" && field === "nSup") b.nInf = b.nSup;
+              if (face === "inf" && field === "nInf") b.nSup = b.nInf;
+            });
+            log(`[${face}] ${tramo.label} · ${field}`);
+            renderAll(false);
+          });
+        });
+      });
+
+      panel.querySelectorAll("select.ctrl").forEach(sel => {
+        sel.addEventListener("change", e => {
+          e.stopPropagation();
+          const field = sel.dataset.field;
+          const val = parseInt(sel.value, 10);
+          applyTramoToBeams(tramo, face, b => { b[field] = val; });
+          log(`[${face}] ${tramo.label} · ${field}=${val}`);
+          renderAll(false);
+        });
+      });
+    }
+
+    function updateEvalPanel() {
+      const sorted = beams;
+      const runsSup = buildBarRuns(sorted, "sup");
+      const runsInf = buildBarRuns(sorted, "inf");
+      document.getElementById("pillSup").textContent = `Sup: ${tramosSup.length} Tn · ${runsSup.length} corrida(s)`;
+      document.getElementById("pillInf").textContent = `Inf: ${tramosInf.length} Tn · ${runsInf.length} corrida(s)`;
+
+      const notes = id => {
+        const b = beams.find(x => x.id === id);
+        return b ? b.type : id;
+      };
+      const tbody = document.getElementById("diffBody");
+      tbody.innerHTML = "";
+      [
+        { face: "sup", tramos: tramosSup, runs: runsSup, note: "Mismo ancho → fusiona fibra superior" },
+        { face: "inf", tramos: tramosInf, runs: runsInf, note: "Corte en cambio de altura/ancho" },
+      ].forEach(row => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td style="color:${row.face === "sup" ? "var(--sup)" : "var(--inf)"}">${row.face === "sup" ? "Superior" : "Inferior"}</td>
+          <td>${row.runs.length}</td>
+          <td>${row.tramos.length}</td>
+          <td>${row.note}</td>`;
+        tbody.appendChild(tr);
+      });
+
+      const selSup = tramosSup.find(t => t.id === selectedTramo.sup);
+      const selInf = tramosInf.find(t => t.id === selectedTramo.inf);
+      const beam = beams[selectedBeamIdx];
+      stateBox.innerHTML =
+        `Viga: ${beam.id} (${beam.type})\n` +
+        `<span class="hi-sup">SUP tramos: ${formatSummary(tramosSup)}</span>\n` +
+        `<span class="hi-inf">INF tramos: ${formatSummary(tramosInf)}</span>\n` +
+        (selSup ? `\nSel SUP: ${selSup.label} · ${selSup.inferredLenMm} mm` : "") +
+        (selInf ? `\nSel INF: ${selInf.label} · ${selInf.inferredLenMm} mm` : "");
+    }
+
+    function renderAll(fullElev) {
+      const sorted = [...beams].sort((a, b) => a.u - b.u);
+      tramosSup = buildTramosForFace(sorted, "sup");
+      tramosInf = buildTramosForFace(sorted, "inf");
+
+      if (!selectedTramo.sup && tramosSup.length) selectedTramo.sup = tramosSup[0].id;
+      if (!selectedTramo.inf && tramosInf.length) selectedTramo.inf = tramosInf[0].id;
+
+      document.getElementById("chipBeams").textContent = beams.length;
+      document.getElementById("winSub").textContent =
+        `${beams.length} vigas · tramos sup/inf independientes · estribos compartidos (mockup)`;
+
+      if (fullElev !== false) renderElevation();
+      else {
+        document.querySelectorAll(".beam-block").forEach((el, i) => {
+          el.classList.toggle("selected", i === selectedBeamIdx);
+        });
+      }
+
+      renderFace("sup", tramosSup, document.getElementById("supBands"), document.getElementById("supCtrls"), document.getElementById("supSummary"));
+      renderFace("inf", tramosInf, document.getElementById("infBands"), document.getElementById("infCtrls"), document.getElementById("infSummary"));
+      updateEvalPanel();
+    }
+
+    function loadScenario(key) {
+      const sc = SCENARIOS[key];
+      cloneBeamData(sc);
+      document.getElementById("elevHint").textContent = sc.hint;
+      log(`Escenario ${key}: ${sc.label}`);
+      rebuild();
+    }
+
+    function rebuild() {
+      renderAll(true);
+    }
+
+    function init() {
+      const sel = document.getElementById("scenarioSelect");
+      Object.entries(SCENARIOS).forEach(([k, sc]) => {
+        const opt = document.createElement("option");
+        opt.value = k;
+        opt.textContent = sc.label;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener("change", () => loadScenario(sel.value));
+      document.getElementById("splitEmpalme").addEventListener("change", rebuild);
+      document.getElementById("showFibers").addEventListener("change", rebuild);
+      window.addEventListener("resize", () => renderAll(true));
+      loadScenario("A");
+    }
+
+    init();
+  </script>
+</body>
+</html>

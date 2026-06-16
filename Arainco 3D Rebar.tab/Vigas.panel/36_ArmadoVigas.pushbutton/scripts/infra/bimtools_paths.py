@@ -1,0 +1,152 @@
+# -*- coding: utf-8 -*-
+"""
+Rutas de logo corporativo para WPF, portables entre extensiones y carpetas de pushbutton.
+
+Prioridad (cada sección añade candidatos sin duplicar):
+  1) Carpeta del pushbutton registrada con :func:`set_pushbutton_dir` (desde script.py)
+  2) ``<raíz_extensión>/assets/`` y ``<raíz_extensión>/branding/`` (mismos nombres de archivo)
+  3) Si existe ``BIMTools.tab``, listas heredadas por botón (compatibilidad con el layout actual)
+
+``icon.png`` (icono del botón en la cinta) va **al final**: solo se usa como imagen de cabecera
+si no existe ningún logo corporativo (``logo.png``, etc.), para no confundirlo con el logo de empresa.
+
+``raíz_extensión`` se infiere de la ruta de este módulo (hijo de ``scripts/``). Cualquier
+herramienta que añada ``.../ExtensionName.extension/scripts`` al path puede
+``import bimtools_paths`` y recibir la raíz de esa extensión.
+"""
+
+import os
+
+_LOGO_NAMES = ("empresa_logo.png", "logo_empresa.png", "logo.png")
+_pushbutton_dir = None
+
+
+def set_pushbutton_dir(path):
+    """
+    Registrar el directorio del .pushbutton antes de abrir el formulario (o antes de
+    ``import`` si el módulo resuelve logos al importar).
+
+    Ejemplo en script.py:
+        _d = os.path.dirname(os.path.abspath(__file__))
+        bimtools_paths.set_pushbutton_dir(_d)
+    """
+    global _pushbutton_dir
+    if path and os.path.isdir(os.path.normpath(path)):
+        _pushbutton_dir = os.path.normpath(os.path.abspath(path))
+    else:
+        _pushbutton_dir = None
+
+
+def get_pushbutton_dir():
+    return _pushbutton_dir
+
+
+def default_extension_root():
+    """Raíz de la extensión asumiendo este archivo en ``.../extension/scripts/bimtools_paths.py``."""
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def get_logo_paths(extension_root=None):
+    """
+    Lista ordenada de rutas candidatas a probar (existencia se comprueba al cargar la imagen).
+    """
+    if extension_root is None:
+        extension_root = default_extension_root()
+    else:
+        extension_root = os.path.normpath(os.path.abspath(extension_root))
+
+    out = []
+    seen = set()
+    icon_last = []
+    icon_seen = set()
+
+    def _add(p):
+        p = os.path.normpath(os.path.abspath(p))
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+
+    def _queue_icon(p):
+        p = os.path.normpath(os.path.abspath(p))
+        if p not in icon_seen:
+            icon_seen.add(p)
+            icon_last.append(p)
+
+    if _pushbutton_dir:
+        for name in _LOGO_NAMES:
+            _add(os.path.join(_pushbutton_dir, name))
+        _queue_icon(os.path.join(_pushbutton_dir, "icon.png"))
+    for sub in ("assets", "branding"):
+        base = os.path.join(extension_root, sub)
+        for name in _LOGO_NAMES:
+            _add(os.path.join(base, name))
+        _queue_icon(os.path.join(base, "icon.png"))
+
+    bimtools_tab = os.path.join(extension_root, "BIMTools.tab")
+    if os.path.isdir(bimtools_tab):
+        panel = os.path.join(bimtools_tab, "Armadura.panel")
+        model = os.path.join(bimtools_tab, "Modelado.panel")
+        inc = os.path.join(
+            bimtools_tab,
+            "Incidencias.panel",
+            "Incidencias.stack",
+            "01_BIMIssue.pushbutton",
+        )
+        pushbuttons = (
+            os.path.join(panel, "08_CrearAreaReinforcementRPS.pushbutton"),
+            os.path.join(panel, "22_EnfierradoFundacionAislada.pushbutton"),
+            os.path.join(panel, "02_NumerarFundaciones.pushbutton"),
+            os.path.join(panel, "20_BordeLosaGanchoEmpotramiento.pushbutton"),
+            os.path.join(panel, "26_WallFoundationReinforcement.pushbutton"),
+            os.path.join(model, "01_SpotElevVerticesLosa.pushbutton"),
+            os.path.join(model, "04_ExportarLaminasPDFDWG.pushbutton"),
+        )
+        for pb in pushbuttons:
+            for name in _LOGO_NAMES:
+                _add(os.path.join(pb, name))
+        _add(os.path.join(inc, "logo.png"))
+
+    for p in icon_last:
+        _add(p)
+    return out
+
+
+def load_logo_bitmap_image():
+    """
+    Carga el primer logo existente como ``BitmapImage`` (WPF), vía ``FileStream``.
+
+    ``UriSource`` con rutas locales falla a menudo en IronPython/pyRevit; el patrón
+    de stream coincide con herramientas que ya muestran el logo correctamente.
+    """
+    try:
+        import clr
+
+        clr.AddReference("PresentationCore")
+        clr.AddReference("System")
+        from System.IO import FileAccess, FileMode, FileStream
+        from System.Windows.Media.Imaging import BitmapCacheOption, BitmapImage
+    except Exception:
+        return None
+
+    for path in get_logo_paths():
+        if not path or not os.path.isfile(path):
+            continue
+        stream = None
+        try:
+            stream = FileStream(path, FileMode.Open, FileAccess.Read)
+            bmp = BitmapImage()
+            bmp.BeginInit()
+            bmp.StreamSource = stream
+            bmp.CacheOption = BitmapCacheOption.OnLoad
+            bmp.EndInit()
+            bmp.Freeze()
+            return bmp
+        except Exception:
+            continue
+        finally:
+            if stream is not None:
+                try:
+                    stream.Dispose()
+                except Exception:
+                    pass
+    return None

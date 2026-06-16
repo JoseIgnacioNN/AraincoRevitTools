@@ -1,0 +1,1664 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mockup — Legibilidad UI · Armado vigas · Rediseño</title>
+  <style>
+    :root {
+      --bg-app: #071018;
+      --bg-panel: #0a1620;
+      --border: #21465c;
+      --fg-hi: #e8f4f8;
+      --fg-mid: #95b8cc;
+      --fg-lo: #64748b;
+      --input-bg: #071018;
+      --input-border: #1e3344;
+      --btn-outline: #2d4455;
+      --btn-primary: #5bb8d4;
+      --btn-primary-fg: #071018;
+      --ok: #4ade80;
+      --warn: #fbbf24;
+      --sup: #22d3ee;
+      --sup-dim: rgba(34, 211, 238, 0.18);
+      --inf: #fb7185;
+      --inf-dim: rgba(251, 113, 133, 0.18);
+      --traslape-sup: #06b6d4;
+      --traslape-inf: #f472b6;
+      --suple: #c084fc;
+      --right-panel-w: 268px;
+
+      /* Density tokens — comfortable (default) */
+      --gap-stack: 12px;
+      --gap-lane: 8px;
+      --traslape-row-h: 36px;
+      --band-row-h: 16px;
+      --panel-lane-h: 148px;
+      --panel-w: 172px;
+      --panel-pad: 8px;
+      --elev-min-h: 108px;
+      --face-block-pad: 12px;
+      --font-tramo: 10px;
+      --font-meta: 9px;
+    }
+
+    body.density-compact {
+      --gap-stack: 8px;
+      --gap-lane: 5px;
+      --traslape-row-h: 30px;
+      --band-row-h: 12px;
+      --panel-lane-h: 118px;
+      --panel-w: 156px;
+      --panel-pad: 6px;
+      --elev-min-h: 88px;
+      --face-block-pad: 8px;
+      --font-tramo: 9px;
+      --font-meta: 8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #050c14;
+      color: var(--fg-mid);
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .dev-bar {
+      background: #0f1c28;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      align-items: center;
+      font-size: 11px;
+      z-index: 10;
+    }
+    .dev-bar h1 { font-size: 13px; color: var(--fg-hi); font-weight: 600; }
+    .dev-bar label { display: flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
+    .dev-bar select {
+      background: var(--input-bg);
+      color: var(--fg-hi);
+      border: 1px solid var(--input-border);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+    .dev-bar input[type="radio"] { accent-color: var(--btn-primary); }
+    .pill {
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .pill.draft { background: rgba(251, 191, 36, 0.15); color: var(--warn); }
+    .pill.rec { background: rgba(74, 222, 128, 0.12); color: var(--ok); }
+    .pill.sup { background: var(--sup-dim); color: var(--sup); }
+    .pill.inf { background: var(--inf-dim); color: var(--inf); }
+    .sep { width: 1px; height: 20px; background: var(--border); }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      min-height: 0;
+      overflow: hidden;
+    }
+    @media (max-width: 1020px) {
+      main { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+      .eval-panel { border-left: none; border-top: 1px solid var(--border); max-height: 380px; }
+    }
+
+    .workspace {
+      overflow: auto;
+      padding: 16px 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .intro {
+      max-width: 960px;
+      width: 100%;
+      font-size: 11px;
+      line-height: 1.55;
+      color: var(--fg-lo);
+      border: 1px solid rgba(33, 70, 92, 0.55);
+      border-radius: 4px;
+      padding: 10px 12px;
+      background: rgba(7, 16, 24, 0.6);
+    }
+    .intro strong { color: var(--fg-hi); }
+    .intro em { font-style: normal; color: var(--sup); font-weight: 600; }
+    .intro em.inf { color: var(--inf); }
+
+    /* ── Window frame ── */
+    .win-frame {
+      width: 100%;
+      max-width: 960px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-app);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+      overflow: hidden;
+    }
+    .win-hdr {
+      padding: 12px 16px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-panel);
+    }
+    .win-hdr .title { font-size: 16px; font-weight: 700; color: var(--fg-hi); }
+    .win-hdr .sub { font-size: 11px; color: var(--fg-lo); margin-top: 3px; }
+    .scope-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .scope-chip {
+      font-size: 10px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: rgba(10, 22, 32, 0.8);
+    }
+    .scope-chip strong { color: var(--fg-hi); }
+
+    .split-body {
+      display: grid;
+      grid-template-columns: 1fr var(--right-panel-w);
+      min-height: 480px;
+    }
+    @media (max-width: 820px) {
+      .split-body { grid-template-columns: 1fr; }
+      .right-panel { border-left: none !important; border-top: 1px solid var(--border); }
+    }
+
+    .canvas-col { padding: 14px; min-width: 0; overflow: auto; }
+
+    /* ── elev-stack (Variant A) ── */
+    .elev-stack {
+      border: 1px solid rgba(33, 70, 92, 0.55);
+      border-radius: 4px;
+      background: rgba(7, 16, 24, 0.45);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .face-block {
+      padding: var(--face-block-pad) 0;
+      display: flex;
+      flex-direction: column;
+      gap: var(--gap-lane);
+    }
+    .face-block.sup {
+      border-bottom: 1px dashed rgba(34, 211, 238, 0.22);
+      background: rgba(34, 211, 238, 0.03);
+      min-height: calc(var(--traslape-row-h) + var(--band-row-h) + var(--panel-lane-h) + 52px);
+    }
+    .face-block.inf {
+      border-top: 1px dashed rgba(251, 113, 133, 0.22);
+      background: rgba(251, 113, 133, 0.03);
+      min-height: calc(var(--traslape-row-h) + var(--band-row-h) + var(--panel-lane-h) + 52px);
+    }
+
+    .face-hdr {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 0 12px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .face-hdr.sup { color: var(--sup); }
+    .face-hdr.inf { color: var(--inf); }
+    .tramo-chip {
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: none;
+      letter-spacing: 0;
+      padding: 3px 8px;
+      border-radius: 10px;
+      border: 1px solid;
+    }
+    .face-hdr.sup .tramo-chip {
+      color: var(--sup);
+      border-color: rgba(34, 211, 238, 0.35);
+      background: var(--sup-dim);
+    }
+    .face-hdr.inf .tramo-chip {
+      color: var(--inf);
+      border-color: rgba(251, 113, 133, 0.35);
+      background: var(--inf-dim);
+    }
+    .face-hdr .rule {
+      margin-left: auto;
+      font-size: 8px;
+      font-weight: 500;
+      color: var(--fg-lo);
+      text-transform: none;
+      letter-spacing: 0;
+      max-width: 240px;
+      text-align: right;
+      line-height: 1.35;
+    }
+
+    /* Lane labels */
+    .lane-label {
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--fg-lo);
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .lane-label .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+    }
+    .face-block.sup .lane-label .dot { background: var(--traslape-sup); }
+    .face-block.inf .lane-label .dot { background: var(--traslape-inf); }
+
+    /* Traslape strip — dedicated row, grid-aligned to beams */
+    .traslape-strip {
+      position: relative;
+      height: var(--traslape-row-h);
+      margin: 0 12px;
+      background: rgba(7, 16, 24, 0.5);
+      border: 1px solid rgba(33, 70, 92, 0.4);
+      border-radius: 4px;
+    }
+    .traslape-slot {
+      position: absolute;
+      top: 4px;
+      bottom: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .traslape-btn {
+      min-width: 72px;
+      padding: 5px 10px;
+      border-radius: 4px;
+      border: 1px solid var(--input-border);
+      background: var(--input-bg);
+      color: var(--fg-mid);
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 0.12s, background 0.12s, color 0.12s;
+      white-space: nowrap;
+    }
+    body.density-compact .traslape-btn { min-width: 64px; padding: 4px 8px; font-size: 9px; }
+    .traslape-btn:hover { border-color: var(--btn-primary); color: var(--fg-hi); }
+    .traslape-btn.on {
+      border-color: var(--warn);
+      color: var(--warn);
+      background: rgba(251, 191, 36, 0.1);
+    }
+    .face-block.sup .traslape-btn.on { box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.25); }
+    .face-block.inf .traslape-btn.on { box-shadow: 0 0 0 1px rgba(244, 114, 182, 0.25); }
+    .traslape-btn.selected {
+      outline: 2px solid var(--btn-primary);
+      outline-offset: 1px;
+    }
+
+    /* Band row — color only, no controls */
+    .bands-row {
+      position: relative;
+      height: var(--band-row-h);
+      margin: 0 12px;
+      border-radius: 3px;
+      background: rgba(7, 16, 24, 0.6);
+      overflow: hidden;
+    }
+    .tramo-band {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      border-radius: 2px;
+      cursor: pointer;
+      opacity: 0.8;
+      transition: opacity 0.12s, box-shadow 0.12s;
+      border: 1px solid transparent;
+    }
+    .tramo-band:hover { opacity: 0.95; }
+    .tramo-band.selected {
+      opacity: 1;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+      z-index: 2;
+    }
+    .tramo-band.has-warn::after {
+      content: "!";
+      position: absolute;
+      right: 4px;
+      top: -1px;
+      font-size: 9px;
+      font-weight: 800;
+      color: var(--warn);
+    }
+    .face-block.sup .tramo-band { background: var(--sup-dim); border-color: rgba(34, 211, 238, 0.35); }
+    .face-block.sup .tramo-band.selected { border-color: var(--sup); }
+    .face-block.inf .tramo-band { background: var(--inf-dim); border-color: rgba(251, 113, 133, 0.35); }
+    .face-block.inf .tramo-band.selected { border-color: var(--inf); }
+
+    /* Panel lane — horizontal scroll, NO overlap with elevation */
+    .panel-lane-wrap {
+      margin: 0 12px;
+      position: relative;
+    }
+    .panel-lane-wrap::before {
+      content: "";
+      position: absolute;
+      left: 0; right: 0; top: 0;
+      height: 1px;
+      background: rgba(33, 70, 92, 0.45);
+    }
+    .panel-lane {
+      display: flex;
+      gap: var(--gap-lane);
+      overflow-x: auto;
+      overflow-y: hidden;
+      height: var(--panel-lane-h);
+      padding: var(--gap-lane) 2px 4px;
+      scroll-snap-type: x proximity;
+      align-items: flex-start;
+    }
+    .panel-lane::-webkit-scrollbar { height: 6px; }
+    .panel-lane::-webkit-scrollbar-thumb { background: rgba(33, 70, 92, 0.7); border-radius: 3px; }
+
+    .cap-panel {
+      flex: 0 0 var(--panel-w);
+      width: var(--panel-w);
+      scroll-snap-align: start;
+      padding: var(--panel-pad);
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: rgba(10, 22, 32, 0.95);
+      font-size: var(--font-tramo);
+      cursor: pointer;
+      transition: border-color 0.12s, box-shadow 0.12s;
+      position: relative;
+    }
+    .cap-panel:hover { border-color: rgba(255, 255, 255, 0.28); }
+    .cap-panel.selected { z-index: 2; }
+    .face-block.sup .cap-panel.selected {
+      border-color: var(--sup);
+      box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.35), 0 6px 16px rgba(0, 0, 0, 0.3);
+    }
+    .face-block.inf .cap-panel.selected {
+      border-color: var(--inf);
+      box-shadow: 0 0 0 1px rgba(251, 113, 133, 0.35), 0 6px 16px rgba(0, 0, 0, 0.3);
+    }
+    .cap-panel .bar-top {
+      height: 2px;
+      border-radius: 1px;
+      margin: calc(-1 * var(--panel-pad)) calc(-1 * var(--panel-pad)) 6px;
+    }
+    .face-block.sup .cap-panel .bar-top { background: var(--sup); }
+    .face-block.inf .cap-panel .bar-top { background: var(--inf); }
+
+    .tramo-lbl { font-size: var(--font-tramo); font-weight: 700; color: var(--fg-hi); margin-bottom: 2px; }
+    .tramo-meta { font-size: var(--font-meta); color: var(--fg-lo); margin-bottom: 6px; line-height: 1.35; }
+    .capas-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 5px;
+      font-size: var(--font-meta);
+    }
+    .capas-lbl { min-width: 48px; color: var(--fg-lo); font-weight: 600; }
+    .layer-block {
+      border-top: 1px dashed rgba(33, 70, 92, 0.5);
+      padding-top: 5px;
+      margin-top: 4px;
+    }
+    .layer-hdr { font-size: var(--font-meta); color: var(--fg-lo); margin-bottom: 4px; font-weight: 700; }
+    .field-row { display: flex; align-items: center; gap: 4px; margin-bottom: 3px; font-size: var(--font-meta); }
+    .field-lbl { min-width: 30px; color: var(--fg-lo); font-weight: 700; }
+
+    .stepper-wrap { display: inline-flex; align-items: center; }
+    .stepper-btn {
+      width: 16px; height: 18px;
+      border: 1px solid var(--input-border);
+      background: var(--input-bg); color: var(--fg-mid);
+      font-size: 10px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .stepper-btn:hover { border-color: var(--btn-primary); color: var(--fg-hi); }
+    .stepper-val {
+      width: 26px; height: 18px;
+      border-top: 1px solid var(--input-border);
+      border-bottom: 1px solid var(--input-border);
+      background: var(--input-bg); color: var(--fg-hi);
+      font-size: 9px; font-weight: 600; text-align: center; line-height: 16px;
+    }
+    select.ctrl {
+      flex: 1;
+      height: 20px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 3px;
+      color: var(--fg-hi);
+      font-size: 9px;
+      padding: 0 4px;
+      min-width: 0;
+    }
+
+    /* Elevation — clean lane, no floating controls */
+    .elev-wrap {
+      padding: 10px 12px;
+      min-height: var(--elev-min-h);
+      background: radial-gradient(ellipse at 50% 30%, rgba(30, 52, 68, 0.35), rgba(7, 16, 24, 0.92));
+      border-top: 1px solid rgba(33, 70, 92, 0.45);
+      border-bottom: 1px solid rgba(33, 70, 92, 0.45);
+    }
+    .elev-hdr {
+      font-size: 9px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--fg-lo);
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .elev-hdr .clean-badge {
+      font-size: 8px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: rgba(74, 222, 128, 0.1);
+      color: var(--ok);
+      border: 1px solid rgba(74, 222, 128, 0.25);
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    .elev-canvas {
+      position: relative;
+      height: calc(var(--elev-min-h) - 28px);
+      margin: 0 4px;
+    }
+    .col-pillar {
+      position: absolute;
+      bottom: 0;
+      width: 14px;
+      background: rgba(148, 163, 184, 0.35);
+      border: 1px solid rgba(148, 163, 184, 0.55);
+      border-radius: 2px 2px 0 0;
+    }
+    .beam-block {
+      position: absolute;
+      bottom: 0;
+      border-radius: 2px;
+      border: 1px solid rgba(91, 184, 212, 0.35);
+      background: linear-gradient(180deg, rgba(30, 52, 68, 0.95) 0%, rgba(15, 28, 40, 0.98) 100%);
+      cursor: pointer;
+      transition: box-shadow 0.12s, border-color 0.12s;
+    }
+    .beam-block:hover { border-color: var(--btn-primary); }
+    .beam-block.selected {
+      border-color: var(--btn-primary);
+      box-shadow: 0 0 0 1px rgba(91, 184, 212, 0.45);
+      z-index: 2;
+    }
+    .beam-block .sec-lbl {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--fg-hi);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .beam-block .beam-id {
+      position: absolute;
+      top: 3px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 7px;
+      color: var(--fg-lo);
+      pointer-events: none;
+    }
+    .fiber-line {
+      position: absolute;
+      height: 2px;
+      border-radius: 1px;
+      pointer-events: none;
+      opacity: 0.85;
+    }
+    .fiber-line.sup { background: var(--sup); box-shadow: 0 0 6px rgba(34, 211, 238, 0.5); }
+    .fiber-line.inf { background: var(--inf); box-shadow: 0 0 6px rgba(251, 113, 133, 0.45); }
+    .emp-mark {
+      position: absolute;
+      bottom: -2px;
+      width: 2px;
+      height: 14px;
+      background: var(--warn);
+      border-radius: 1px;
+      pointer-events: none;
+    }
+
+    /* Labels row */
+    .labels-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      padding: 8px 12px;
+      font-size: 9px;
+      color: var(--fg-lo);
+      border-top: 1px solid rgba(33, 70, 92, 0.35);
+      background: rgba(7, 16, 24, 0.5);
+    }
+    .labels-row span { display: inline-flex; align-items: center; gap: 5px; }
+    .labels-row .sw { width: 10px; height: 10px; border-radius: 2px; }
+    .labels-row .sw.sup { background: var(--sup); }
+    .labels-row .sw.inf { background: var(--inf); }
+    .labels-row .sw.col {
+      width: 8px; height: 14px;
+      background: rgba(148, 163, 184, 0.35);
+      border: 1px solid rgba(148, 163, 184, 0.55);
+    }
+
+    /* Suple strip */
+    .suple-strip {
+      margin-top: 10px;
+      padding: 8px 12px;
+      border: 1px solid rgba(192, 132, 252, 0.25);
+      border-radius: 4px;
+      background: rgba(192, 132, 252, 0.05);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 10px;
+    }
+    .suple-strip .suple-title {
+      font-weight: 700;
+      color: var(--suple);
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .suple-field { display: flex; align-items: center; gap: 6px; font-size: 9px; color: var(--fg-lo); }
+    .suple-field strong { color: var(--fg-hi); }
+
+    /* ── Variant B: tabs layout ── */
+    .variant-b { display: none; }
+    body.layout-b .variant-a { display: none; }
+    body.layout-b .variant-b { display: block; }
+
+    .tab-bar {
+      display: flex;
+      gap: 0;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(10, 22, 32, 0.6);
+    }
+    .tab-btn {
+      padding: 10px 20px;
+      border: none;
+      background: transparent;
+      color: var(--fg-lo);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.12s, border-color 0.12s;
+    }
+    .tab-btn:hover { color: var(--fg-hi); }
+    .tab-btn.active.sup { color: var(--sup); border-bottom-color: var(--sup); }
+    .tab-btn.active.inf { color: var(--inf); border-bottom-color: var(--inf); }
+    .tab-content { padding: var(--face-block-pad) 0; }
+    .tab-content.sup { background: rgba(34, 211, 238, 0.03); }
+    .tab-content.inf { background: rgba(251, 113, 133, 0.03); }
+
+    .variant-b-stack {
+      border: 1px solid rgba(33, 70, 92, 0.55);
+      border-radius: 4px;
+      overflow: hidden;
+      background: rgba(7, 16, 24, 0.45);
+    }
+    .variant-b .elev-wrap { border: none; }
+
+    /* Right panel — section preview + estribos (unchanged OK) */
+    .right-panel {
+      border-left: 1px solid var(--border);
+      background: var(--bg-panel);
+      padding: 12px;
+      overflow: auto;
+      font-size: 10px;
+    }
+    .right-panel h3 {
+      font-size: 10px;
+      color: var(--btn-primary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    .section-preview-box {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(7, 16, 24, 0.8);
+      padding: 8px;
+      margin-bottom: 12px;
+    }
+    .section-preview-box .beam-name {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--fg-hi);
+      margin-bottom: 6px;
+    }
+    .section-svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .stirrup-block {
+      border: 1px solid rgba(33, 70, 92, 0.55);
+      border-radius: 4px;
+      padding: 8px;
+      margin-bottom: 8px;
+      background: rgba(7, 16, 24, 0.6);
+    }
+    .stirrup-block .st-hdr {
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--fg-hi);
+      margin-bottom: 6px;
+    }
+    .stirrup-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px;
+      font-size: 9px;
+    }
+    .stirrup-row label { min-width: 52px; color: var(--fg-lo); }
+
+    /* Eval panel */
+    .eval-panel {
+      border-left: 1px solid var(--border);
+      background: var(--bg-panel);
+      padding: 14px;
+      overflow: auto;
+      font-size: 11px;
+    }
+    .eval-panel h2 { font-size: 12px; color: var(--fg-hi); margin-bottom: 10px; }
+    .eval-panel h3 {
+      font-size: 10px;
+      color: var(--btn-primary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 12px 0 6px;
+    }
+    .eval-panel ul { padding-left: 16px; line-height: 1.55; font-size: 10px; color: var(--fg-lo); }
+    .eval-panel li { margin-bottom: 4px; }
+    .checklist { list-style: none; padding-left: 0 !important; }
+    .checklist li {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 5px 0;
+      border-bottom: 1px dashed rgba(33, 70, 92, 0.35);
+    }
+    .checklist li:last-child { border-bottom: none; }
+    .check-icon {
+      flex-shrink: 0;
+      width: 16px; height: 16px;
+      border-radius: 3px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 800;
+    }
+    .check-icon.ok { background: rgba(74, 222, 128, 0.15); color: var(--ok); }
+    .check-icon.fix { background: rgba(251, 191, 36, 0.12); color: var(--warn); }
+
+    .token-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9px;
+      margin-top: 6px;
+    }
+    .token-table th, .token-table td {
+      border: 1px solid rgba(33, 70, 92, 0.55);
+      padding: 5px 6px;
+      text-align: left;
+    }
+    .token-table th { color: var(--fg-hi); background: rgba(7, 16, 24, 0.8); }
+    .token-table code {
+      font-family: Consolas, monospace;
+      color: var(--sup);
+      font-size: 8px;
+    }
+
+    .diff-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9px;
+      margin-top: 6px;
+    }
+    .diff-table th, .diff-table td {
+      border: 1px solid rgba(33, 70, 92, 0.55);
+      padding: 5px 6px;
+      text-align: left;
+    }
+    .diff-table th { color: var(--fg-hi); background: rgba(7, 16, 24, 0.8); }
+    .before-after {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .ba-col {
+      border: 1px solid rgba(33, 70, 92, 0.45);
+      border-radius: 4px;
+      padding: 8px;
+      font-size: 9px;
+      line-height: 1.5;
+    }
+    .ba-col.bad { background: rgba(248, 113, 113, 0.06); border-color: rgba(248, 113, 113, 0.25); }
+    .ba-col.good { background: rgba(74, 222, 128, 0.06); border-color: rgba(74, 222, 128, 0.25); }
+    .ba-col h4 { font-size: 9px; margin-bottom: 4px; color: var(--fg-hi); }
+
+    .state-box {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 8px;
+      line-height: 1.5;
+      color: var(--fg-lo);
+      background: rgba(7, 16, 24, 0.85);
+      border: 1px solid rgba(33, 70, 92, 0.45);
+      border-radius: 4px;
+      padding: 8px;
+      max-height: 120px;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+    .state-box .hi-sup { color: var(--sup); }
+    .state-box .hi-inf { color: var(--inf); }
+    .log {
+      margin-top: 8px;
+      max-height: 80px;
+      overflow: auto;
+      font-size: 8px;
+      color: var(--fg-lo);
+      border-top: 1px dashed var(--border);
+      padding-top: 6px;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 8px 16px;
+      font-size: 10px;
+      color: var(--fg-lo);
+      background: #0a1218;
+    }
+  </style>
+</head>
+<body class="layout-a">
+  <header class="dev-bar">
+    <h1>Legibilidad UI — rediseño Armado vigas</h1>
+    <span class="pill draft">Mockup · evaluación</span>
+    <span class="pill rec" id="variantPill">Variante A recomendada</span>
+    <span class="sep"></span>
+    <label>Layout
+      <select id="variantSelect">
+        <option value="a">A · Stack limpio (recomendado)</option>
+        <option value="b">B · Tabs sup/inf</option>
+      </select>
+    </label>
+    <label>Densidad
+      <select id="densitySelect">
+        <option value="comfortable">Cómoda</option>
+        <option value="compact">Compacta</option>
+      </select>
+    </label>
+    <label>Escenario
+      <select id="scenarioSelect"></select>
+    </label>
+    <label><input type="checkbox" id="splitEmpalme" checked /> Trocear por empalme (&gt;12 m)</label>
+    <label><input type="checkbox" id="showFibers" checked /> Líneas fibra</label>
+    <span class="sep"></span>
+    <span class="pill sup" id="pillSup">Sup: —</span>
+    <span class="pill inf" id="pillInf">Inf: —</span>
+  </header>
+
+  <main>
+    <div class="workspace">
+      <p class="intro" id="introText">
+        <strong>Problema WPF actual:</strong> paneles Tn flotantes con <code>position:absolute</code> solapan botones Traslapo y el alzado.
+        <strong>Propuesta A</strong> — carriles apilados: Traslape → bandas → controladores (scroll) → alzado limpio → inf espejo.
+        <strong>Propuesta B</strong> — una zona de control con pestañas Sup|Inf para reducir altura vertical.
+      </p>
+
+      <div class="win-frame">
+        <div class="win-hdr">
+          <div class="title">Arainco: Armado vigas</div>
+          <div class="sub" id="winSub">—</div>
+          <div class="scope-row">
+            <span class="scope-chip"><strong id="chipBeams">—</strong> vigas seleccionadas</span>
+            <span class="scope-chip" id="chipIds">—</span>
+            <span class="scope-chip">Estribos: <strong>compartidos</strong></span>
+          </div>
+        </div>
+
+        <div class="split-body">
+          <div class="canvas-col">
+            <!-- ═══ VARIANT A ═══ -->
+            <div class="variant-a" id="variantA">
+              <div class="elev-stack">
+                <div class="face-block sup" id="faceSupA">
+                  <div class="face-hdr sup">
+                    <span>Armadura superior</span>
+                    <span class="tramo-chip" id="supChipA">—</span>
+                    <span class="rule">Fusión: mismo ancho + colinealidad</span>
+                  </div>
+                  <div class="lane-label"><span class="dot"></span> Carril Traslape</div>
+                  <div class="traslape-strip" id="supTraslapeA"></div>
+                  <div class="lane-label"><span class="dot" style="background:var(--sup)"></span> Bandas Tn</div>
+                  <div class="bands-row" id="supBandsA"></div>
+                  <div class="lane-label">Controladores Tn · scroll horizontal</div>
+                  <div class="panel-lane-wrap">
+                    <div class="panel-lane" id="supPanelsA"></div>
+                  </div>
+                </div>
+
+                <div class="elev-wrap">
+                  <div class="elev-hdr">
+                    <span>Alzado · vigas · fibras · marcas empalme</span>
+                    <span class="clean-badge">Sin paneles flotantes</span>
+                  </div>
+                  <div class="elev-canvas" id="elevCanvas"></div>
+                </div>
+
+                <div class="face-block inf" id="faceInfA">
+                  <div class="face-hdr inf">
+                    <span>Armadura inferior</span>
+                    <span class="tramo-chip" id="infChipA">—</span>
+                    <span class="rule">Fusión: sección ancho×alto</span>
+                  </div>
+                  <div class="lane-label"><span class="dot"></span> Carril Traslape</div>
+                  <div class="traslape-strip" id="infTraslapeA"></div>
+                  <div class="lane-label"><span class="dot" style="background:var(--inf)"></span> Bandas Tn</div>
+                  <div class="bands-row" id="infBandsA"></div>
+                  <div class="lane-label">Controladores Tn · scroll horizontal</div>
+                  <div class="panel-lane-wrap">
+                    <div class="panel-lane" id="infPanelsA"></div>
+                  </div>
+                </div>
+
+                <div class="labels-row">
+                  <span><span class="sw sup"></span> Fibra superior</span>
+                  <span><span class="sw inf"></span> Fibra inferior</span>
+                  <span><span class="sw col"></span> Columna / apoyo</span>
+                  <span id="labelsHint">—</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- ═══ VARIANT B ═══ -->
+            <div class="variant-b" id="variantB">
+              <div class="variant-b-stack">
+                <div class="tab-bar">
+                  <button type="button" class="tab-btn sup active" data-tab="sup">Superior · tramos Tn</button>
+                  <button type="button" class="tab-btn inf" data-tab="inf">Inferior · tramos Tn</button>
+                </div>
+                <div class="tab-content sup" id="tabContentSup">
+                  <div class="face-hdr sup" style="padding:0 12px 8px;">
+                    <span id="supChipB">—</span>
+                    <span class="rule">Fusión: mismo ancho</span>
+                  </div>
+                  <div class="lane-label"><span class="dot"></span> Traslape</div>
+                  <div class="traslape-strip" id="supTraslapeB"></div>
+                  <div class="lane-label"><span class="dot" style="background:var(--sup)"></span> Bandas</div>
+                  <div class="bands-row" id="supBandsB"></div>
+                  <div class="lane-label">Controladores</div>
+                  <div class="panel-lane-wrap">
+                    <div class="panel-lane" id="supPanelsB"></div>
+                  </div>
+                </div>
+                <div class="tab-content inf" id="tabContentInf" style="display:none;">
+                  <div class="face-hdr inf" style="padding:0 12px 8px;">
+                    <span id="infChipB">—</span>
+                    <span class="rule">Fusión: sección completa</span>
+                  </div>
+                  <div class="lane-label"><span class="dot"></span> Traslape</div>
+                  <div class="traslape-strip" id="infTraslapeB"></div>
+                  <div class="lane-label"><span class="dot" style="background:var(--inf)"></span> Bandas</div>
+                  <div class="bands-row" id="infBandsB"></div>
+                  <div class="lane-label">Controladores</div>
+                  <div class="panel-lane-wrap">
+                    <div class="panel-lane" id="infPanelsB"></div>
+                  </div>
+                </div>
+
+                <div class="elev-wrap">
+                  <div class="elev-hdr">
+                    <span>Alzado central · referencia geométrica</span>
+                    <span class="clean-badge">Pestaña activa ≠ alzado</span>
+                  </div>
+                  <div class="elev-canvas" id="elevCanvasB"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="suple-strip">
+              <span class="suple-title">Suple inferior</span>
+              <span class="suple-field">Cant. <strong>2</strong></span>
+              <span class="suple-field">ø <strong>16 mm</strong></span>
+              <span class="suple-field">Long. <strong>auto</strong></span>
+              <span style="margin-left:auto;font-size:8px;color:var(--fg-lo);">Compacto · fuera del elev-stack</span>
+            </div>
+          </div>
+
+          <aside class="right-panel">
+            <h3>Sección · viga activa</h3>
+            <div class="section-preview-box">
+              <div class="beam-name" id="previewBeamName">—</div>
+              <svg class="section-svg" id="sectionSvg" viewBox="0 0 120 80" aria-hidden="true"></svg>
+            </div>
+            <h3>Estribos (compartidos)</h3>
+            <div class="stirrup-block">
+              <div class="st-hdr">Zona central</div>
+              <div class="stirrup-row"><label>ø estribo</label><select class="ctrl" style="flex:0;width:60px;"><option>10</option><option selected>12</option></select></div>
+              <div class="stirrup-row"><label>@ separ.</label><span class="stepper-wrap"><button class="stepper-btn">−</button><span class="stepper-val">15</span><button class="stepper-btn">+</button></span><span>cm</span></div>
+            </div>
+            <div class="stirrup-block">
+              <div class="st-hdr">Extremos (E)</div>
+              <div class="stirrup-row"><label>@ separ.</label><span class="stepper-wrap"><button class="stepper-btn">−</button><span class="stepper-val">10</span><button class="stepper-btn">+</button></span><span>cm</span></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+
+    <aside class="eval-panel">
+      <h2>Evaluación de legibilidad</h2>
+
+      <h3>Checklist mejoras</h3>
+      <ul class="checklist" id="checklist">
+        <li><span class="check-icon ok">✓</span><span><strong>Sin solapamiento</strong> — paneles Tn en carril propio, nunca sobre alzado ni Traslape.</span></li>
+        <li><span class="check-icon ok">✓</span><span><strong>Traslape dedicado</strong> — fila full-width alineada a slots de viga; botones ≥72 px.</span></li>
+        <li><span class="check-icon ok">✓</span><span><strong>Bandas separadas</strong> — solo color/ámbito Tn; sin widgets embebidos.</span></li>
+        <li><span class="check-icon ok">✓</span><span><strong>Scroll horizontal</strong> — N tramos no comprimen altura ni invaden alzado.</span></li>
+        <li><span class="check-icon ok">✓</span><span><strong>Alzado limpio</strong> — vigas, fibras, marcas empalme; cero float panels.</span></li>
+        <li><span class="check-icon fix">→</span><span><strong>Variante B</strong> — menos altura vertical; requiere cambio de pestaña sup↔inf.</span></li>
+      </ul>
+
+      <h3>Antes / después (WPF actual)</h3>
+      <div class="before-after">
+        <div class="ba-col bad">
+          <h4>❌ Actual</h4>
+          Paneles Tn absolutos sobre bandas y alzado. Traslapo bajo viga (22 px) choca con inf. sup 1 tramo + inf 2 tramos ilegible. Densidad sin tokens.
+        </div>
+        <div class="ba-col good">
+          <h4>✓ Propuesta A</h4>
+          4 carriles por cara: header → traslape → bandas → paneles. Alzado aislado. Chips de resumen en header. Gaps tokenizados.
+        </div>
+      </div>
+
+      <h3>Tokens de espaciado</h3>
+      <table class="token-table" id="tokenTable">
+        <thead><tr><th>Token</th><th>Cómoda</th><th>Compacta</th></tr></thead>
+        <tbody id="tokenBody"></tbody>
+      </table>
+
+      <h3>Comparativa variantes</h3>
+      <table class="diff-table">
+        <thead><tr><th>Aspecto</th><th>A · Stack</th><th>B · Tabs</th></tr></thead>
+        <tbody>
+          <tr><td>Sup + Inf visibles</td><td style="color:var(--ok)">Simultáneo</td><td>Una cara a la vez</td></tr>
+          <tr><td>Altura vertical</td><td>Mayor (~2× caras)</td><td style="color:var(--ok)">~50% menos</td></tr>
+          <tr><td>Contexto cruzado</td><td style="color:var(--ok)">Comparar sup/inf</td><td>Clic pestaña</td></tr>
+          <tr><td>Traslape por cara</td><td style="color:var(--ok)">Siempre visible</td><td>Solo cara activa</td></tr>
+          <tr><td>Recomendación</td><td style="color:var(--ok)"><strong>Producción</strong></td><td>Pantallas bajas</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Escenario activo</h3>
+      <table class="diff-table" id="scenarioTable">
+        <thead><tr><th>Cara</th><th>Tramos</th><th>Notas</th></tr></thead>
+        <tbody id="scenarioBody"></tbody>
+      </table>
+
+      <h3>Selección</h3>
+      <div class="state-box" id="stateBox">—</div>
+      <div class="log" id="log"></div>
+    </aside>
+  </main>
+
+  <footer>
+    Mockup interactivo · solo evaluación UX · no modifica WPF.
+    Abrir: <code>mockups/ui_legibilidad_redesign_mockup.html</code>
+  </footer>
+
+  <script>
+    const MAX_BAR_MM = 12000;
+    const CAPAS_MIN = 1;
+    const CAPAS_MAX = 3;
+    const BAR_MIN = 2;
+    const BAR_MAX = 6;
+    const DIAM_OPTS = [12, 16, 20, 25];
+    const TRAMO_ACCENTS_SUP = ["#22d3ee", "#38bdf8", "#67e8f9", "#06b6d4"];
+    const TRAMO_ACCENTS_INF = ["#fb7185", "#f472b6", "#fda4af", "#e879f9"];
+
+    const TOKENS = [
+      { name: "--traslape-row-h", comfy: "36px", compact: "30px" },
+      { name: "--band-row-h", comfy: "16px", compact: "12px" },
+      { name: "--panel-lane-h", comfy: "148px", compact: "118px" },
+      { name: "--panel-w", comfy: "172px", compact: "156px" },
+      { name: "--gap-lane", comfy: "8px", compact: "5px" },
+      { name: "--gap-stack", comfy: "12px", compact: "8px" },
+      { name: "--elev-min-h", comfy: "108px", compact: "88px" },
+      { name: "--face-block-pad", comfy: "12px", compact: "8px" },
+    ];
+
+    const SCENARIOS = {
+      screenshot: {
+        label: "Screenshot · V-471546+545+544 (sup 1 · inf 2)",
+        hint: "Sup fusiona 3 vigas (mismo ancho); inf corta en 30×50",
+        beamIds: ["V-471546", "V-471545", "V-471544"],
+        cols: [{ id: "C1", u: 0 }, { id: "C2", u: 1 }],
+        beams: [
+          { id: "V-471546", type: "30×60", len: 4.2, colStart: "C1", colEnd: "mid" },
+          { id: "V-471545", type: "30×50", len: 3.8, colStart: "mid", colEnd: "mid" },
+          { id: "V-471544", type: "30×60", len: 4.0, colStart: "mid", colEnd: "C2" },
+        ],
+      },
+      empalme: {
+        label: "Empalme @ V-471545 (traslapo activo)",
+        hint: "Traslapo en viga central trocea por cara",
+        beamIds: ["V-471546", "V-471545", "V-471544"],
+        cols: [{ id: "C1", u: 0 }, { id: "C2", u: 1 }],
+        beams: [
+          { id: "V-471546", type: "30×60", len: 5.5, colStart: "C1", colEnd: "mid" },
+          { id: "V-471545", type: "30×50", len: 4.0, colStart: "mid", colEnd: "mid", empalmeDefault: true },
+          { id: "V-471544", type: "30×60", len: 5.5, colStart: "mid", colEnd: "C2" },
+        ],
+      },
+      twoBeams: {
+        label: "2 vigas · cambio ancho (25×60)",
+        hint: "Sup e inf cortan en cambio de ancho",
+        beamIds: ["V-471546", "V-471545"],
+        cols: [{ id: "C1", u: 0 }, { id: "C2", u: 1 }],
+        beams: [
+          { id: "V-471546", type: "30×60", len: 5.0, colStart: "C1", colEnd: "mid" },
+          { id: "V-471545", type: "25×60", len: 4.5, colStart: "mid", colEnd: "C2" },
+        ],
+      },
+    };
+
+    let beams = [];
+    let empalmeBeams = new Set();
+    let selectedBeamIdx = 0;
+    let selectedTramo = { sup: null, inf: null };
+    let selectedTraslape = { sup: null, inf: null };
+    let tramosSup = [];
+    let tramosInf = [];
+    let layoutMeta = { contentW: 700, layouts: [] };
+    let activeTab = "sup";
+    let currentVariant = "a";
+
+    const logEl = document.getElementById("log");
+    const stateBox = document.getElementById("stateBox");
+
+    function log(msg) {
+      const line = document.createElement("div");
+      line.textContent = new Date().toLocaleTimeString("es", { hour12: false }) + " · " + msg;
+      logEl.prepend(line);
+      while (logEl.children.length > 10) logEl.removeChild(logEl.lastChild);
+    }
+
+    function parseSection(typeStr) {
+      const m = String(typeStr || "30×60").match(/(\d+(?:\.\d+)?)\s*[×xX*]\s*(\d+(?:\.\d+)?)/);
+      if (m) return { w: parseFloat(m[1]), h: parseFloat(m[2]) };
+      return { w: 30, h: 60 };
+    }
+
+    function cloneBeamData(scenario) {
+      beams = scenario.beams.map((b, i) => {
+        const sec = parseSection(b.type);
+        return {
+          id: b.id,
+          type: b.type,
+          w: sec.w,
+          h: sec.h,
+          len: b.len,
+          colStart: b.colStart,
+          colEnd: b.colEnd,
+          u: i,
+          nCapasSup: 1,
+          nCapasInf: 1,
+          nSup: 2, nInf: 2, diamSup: 16, diamInf: 16,
+          nSup2: 2, nInf2: 2, diamSup2: 16, diamInf2: 16,
+          nSup3: 2, nInf3: 2, diamSup3: 16, diamInf3: 16,
+        };
+      });
+      empalmeBeams = new Set(scenario.beams.filter(b => b.empalmeDefault).map(b => b.id));
+      selectedBeamIdx = 0;
+      selectedTramo = { sup: null, inf: null };
+      selectedTraslape = { sup: null, inf: null };
+    }
+
+    function beamsShareRun(prev, cur, face) {
+      if (prev.colEnd !== cur.colStart) return false;
+      if (face === "inf") return prev.type === cur.type;
+      return Math.abs(prev.w - cur.w) < 0.05;
+    }
+
+    function buildBarRuns(sorted, face) {
+      const runs = [];
+      let current = null;
+      for (let i = 0; i < sorted.length; i++) {
+        if (!current || !beamsShareRun(sorted[i - 1], sorted[i], face)) {
+          if (current) runs.push(current);
+          current = { section: sorted[i].type, indices: [i] };
+        } else current.indices.push(i);
+      }
+      if (current) runs.push(current);
+      return runs;
+    }
+
+    function computeTramoLenMm(sorted, piece) {
+      const idxs = piece.beamIndices;
+      if (!idxs.length) return 0;
+      let mm = 0;
+      idxs.forEach((i, k) => {
+        const full = sorted[i].len * 1000;
+        if (idxs.length === 1) {
+          if (piece.edgeStart === "half" && piece.edgeEnd === "half") return;
+          if (piece.edgeStart === "half" || piece.edgeEnd === "half") mm += full * 0.5;
+          else mm += full;
+          return;
+        }
+        if (k === 0 && piece.edgeStart === "half") mm += full * 0.5;
+        else if (k === idxs.length - 1 && piece.edgeEnd === "half") mm += full * 0.5;
+        else mm += full;
+      });
+      return Math.round(mm);
+    }
+
+    function subdivideBarRun(sorted, run, splitEmp) {
+      const idxs = run.indices;
+      const splitIdxs = idxs.filter(i => splitEmp && empalmeBeams.has(sorted[i].id));
+      if (!splitIdxs.length) {
+        return [{ beamIndices: [...idxs], section: run.section, edgeStart: null, edgeEnd: null, fromEmpalme: false }];
+      }
+      const pieces = [];
+      let runPos = 0;
+      let startHalf = false;
+      splitIdxs.forEach(splitIdx => {
+        const pos = idxs.indexOf(splitIdx);
+        const seg = idxs.slice(runPos, pos + 1);
+        if (seg.length) {
+          pieces.push({ beamIndices: seg, section: run.section, edgeStart: startHalf ? "half" : null, edgeEnd: "half", fromEmpalme: true });
+        }
+        runPos = pos;
+        startHalf = true;
+      });
+      const tail = idxs.slice(runPos);
+      if (tail.length) {
+        pieces.push({ beamIndices: tail, section: run.section, edgeStart: startHalf ? "half" : null, edgeEnd: null, fromEmpalme: startHalf });
+      }
+      return pieces;
+    }
+
+    function buildTramosForFace(sorted, face) {
+      const accents = face === "sup" ? TRAMO_ACCENTS_SUP : TRAMO_ACCENTS_INF;
+      const splitEmp = document.getElementById("splitEmpalme").checked;
+      const out = [];
+      let tid = 1;
+      buildBarRuns(sorted, face).forEach(run => {
+        subdivideBarRun(sorted, run, splitEmp).forEach(piece => {
+          const ids = piece.beamIndices.map(i => sorted[i].id).join("+");
+          const suffix = piece.fromEmpalme ? " · traslapo" : "";
+          out.push({
+            face, id: tid,
+            label: `T${tid} · ${ids}${suffix}`,
+            section: piece.section,
+            beamIndices: [...piece.beamIndices],
+            edgeStart: piece.edgeStart, edgeEnd: piece.edgeEnd,
+            fromEmpalme: piece.fromEmpalme,
+            accent: accents[(tid - 1) % accents.length],
+            inferredLenMm: computeTramoLenMm(sorted, piece),
+          });
+          tid += 1;
+        });
+      });
+      return out;
+    }
+
+    function computeLayouts(sorted, contentW) {
+      const n = sorted.length;
+      const gap = 6;
+      const pad = 24;
+      const totalLen = sorted.reduce((s, b) => s + b.len, 0);
+      const pool = contentW - pad * 2 - gap * Math.max(n - 1, 0);
+      let cursor = pad;
+      const layouts = sorted.map((beam, idx) => {
+        const w = (beam.len / totalLen) * pool;
+        const lay = { idx, leftPx: cursor, widthPx: w, centerPx: cursor + w / 2 };
+        cursor += w + gap;
+        return lay;
+      });
+      return { layouts, contentW };
+    }
+
+    function tramoSpan(tramo) {
+      const first = layoutMeta.layouts[tramo.beamIndices[0]];
+      const last = layoutMeta.layouts[tramo.beamIndices[tramo.beamIndices.length - 1]];
+      let leftPx = first.leftPx;
+      let rightPx = last.leftPx + last.widthPx;
+      if (tramo.edgeStart === "half") leftPx = first.leftPx + first.widthPx / 2;
+      if (tramo.edgeEnd === "half") rightPx = last.leftPx + last.widthPx / 2;
+      const w = layoutMeta.contentW;
+      return {
+        leftPct: (leftPx / w) * 100,
+        widthPct: ((rightPx - leftPx) / w) * 100,
+        centerPct: ((leftPx + rightPx) / 2 / w) * 100,
+        widthPx: rightPx - leftPx,
+      };
+    }
+
+    function beamSlotStyle(idx) {
+      const lay = layoutMeta.layouts[idx];
+      const w = layoutMeta.contentW;
+      return {
+        leftPct: (lay.leftPx / w) * 100,
+        widthPct: (lay.widthPx / w) * 100,
+        centerPct: (lay.centerPx / w) * 100,
+      };
+    }
+
+    function layerKeys(layerNum, face) {
+      const side = face === "sup" ? "Sup" : "Inf";
+      if (layerNum === 1) return { n: "n" + side, diam: "diam" + side, label: "1ª" };
+      return { n: "n" + side + layerNum, diam: "diam" + side + layerNum, label: layerNum === 2 ? "2ª" : "3ª" };
+    }
+
+    function nCapas(beam, face) {
+      return face === "sup" ? (beam.nCapasSup || 1) : (beam.nCapasInf || 1);
+    }
+
+    function ensureLayers(beam) {
+      beam.nCapasSup = Math.max(CAPAS_MIN, Math.min(CAPAS_MAX, beam.nCapasSup || 1));
+      beam.nCapasInf = Math.max(CAPAS_MIN, Math.min(CAPAS_MAX, beam.nCapasInf || 1));
+    }
+
+    function applyTramoToBeams(tramo, face, fn) {
+      tramo.beamIndices.forEach(idx => { ensureLayers(beams[idx]); fn(beams[idx]); });
+    }
+
+    function formatSummary(tramos) {
+      if (!tramos.length) return "—";
+      return tramos.length + " tramo(s): " + tramos.map(t => `T${t.id}`).join(" · ");
+    }
+
+    function renderElevation(canvasId) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      canvas.innerHTML = "";
+      const sorted = [...beams].sort((a, b) => a.u - b.u);
+      const contentW = canvas.clientWidth || 700;
+      layoutMeta = computeLayouts(sorted, contentW);
+
+      const maxH = Math.max(...sorted.map(b => b.h));
+      const scale = (parseInt(getComputedStyle(document.documentElement).getPropertyValue("--elev-min-h")) - 40) / maxH;
+      const baseY = canvas.clientHeight - 8 || 72;
+
+      sorted.forEach((beam, idx) => {
+        const lay = layoutMeta.layouts[idx];
+        const hPx = beam.h * scale;
+        const el = document.createElement("div");
+        el.className = "beam-block" + (idx === selectedBeamIdx ? " selected" : "");
+        el.style.left = lay.leftPx + "px";
+        el.style.width = lay.widthPx + "px";
+        el.style.height = hPx + "px";
+        el.style.bottom = (baseY - hPx) + "px";
+        el.innerHTML = `<span class="beam-id">${beam.id.replace("V-", "")}</span><span class="sec-lbl">${beam.type}</span>`;
+        el.addEventListener("click", () => {
+          selectedBeamIdx = idx;
+          log(`Viga ${beam.id} (${beam.type})`);
+          renderAll(false);
+        });
+        canvas.appendChild(el);
+
+        if (empalmeBeams.has(beam.id)) {
+          const mark = document.createElement("div");
+          mark.className = "emp-mark";
+          mark.style.left = (lay.leftPx + lay.widthPx / 2) + "px";
+          mark.title = "Empalme @ mitad";
+          canvas.appendChild(mark);
+        }
+      });
+
+      if (document.getElementById("showFibers").checked) {
+        ["sup", "inf"].forEach(face => {
+          buildBarRuns(sorted, face).forEach(run => {
+            const first = layoutMeta.layouts[run.indices[0]];
+            const last = layoutMeta.layouts[run.indices[run.indices.length - 1]];
+            const refBeam = sorted[run.indices[0]];
+            const yOff = face === "sup" ? 4 : -4;
+            const y = baseY - refBeam.h * scale + yOff;
+            const line = document.createElement("div");
+            line.className = "fiber-line " + face;
+            line.style.left = first.leftPx + "px";
+            line.style.width = (last.leftPx + last.widthPx - first.leftPx) + "px";
+            line.style.bottom = (baseY - y) + "px";
+            canvas.appendChild(line);
+          });
+        });
+      }
+    }
+
+    function renderTraslapeStrip(stripEl, face) {
+      stripEl.innerHTML = "";
+      beams.forEach((beam, idx) => {
+        const slot = beamSlotStyle(idx);
+        const slotEl = document.createElement("div");
+        slotEl.className = "traslape-slot";
+        slotEl.style.left = slot.leftPct + "%";
+        slotEl.style.width = slot.widthPct + "%";
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "traslape-btn" +
+          (empalmeBeams.has(beam.id) ? " on" : "") +
+          (selectedTraslape[face] === idx ? " selected" : "");
+        btn.textContent = empalmeBeams.has(beam.id) ? "Traslapo ✓" : "Traslapo";
+        btn.title = `Traslapo @ mitad · ${beam.id}`;
+        btn.addEventListener("click", e => {
+          e.stopPropagation();
+          if (empalmeBeams.has(beam.id)) empalmeBeams.delete(beam.id);
+          else empalmeBeams.add(beam.id);
+          selectedTraslape[face] = idx;
+          log(`[${face}] Traslapo · ${beam.id}`);
+          rebuild();
+        });
+        slotEl.appendChild(btn);
+        stripEl.appendChild(slotEl);
+      });
+    }
+
+    function buildPanelHtml(tramo, face) {
+      const ref = beams[tramo.beamIndices[0]];
+      const capField = face === "sup" ? "nCapasSup" : "nCapasInf";
+      const nC = nCapas(ref, face);
+      const warn = tramo.inferredLenMm > MAX_BAR_MM ? ` · ⚠ ${(tramo.inferredLenMm / 1000).toFixed(1)} m` : "";
+      let html = `<div class="bar-top"></div>`;
+      html += `<div class="tramo-lbl">${tramo.label}</div>`;
+      html += `<div class="tramo-meta">${face === "sup" ? "Superior" : "Inferior"} · ${tramo.section}${warn}</div>`;
+      html += `<div class="capas-row"><span class="capas-lbl">Nº capas</span>
+        <div class="stepper-wrap" data-cap="${capField}">
+          <button type="button" class="stepper-btn" data-d="-1">−</button>
+          <span class="stepper-val">${nC}</span>
+          <button type="button" class="stepper-btn" data-d="1">+</button>
+        </div></div>`;
+      for (let L = 1; L <= nC; L++) {
+        const k = layerKeys(L, face);
+        html += `<div class="layer-block"><div class="layer-hdr">Capa ${k.label}</div>
+          <div class="field-row"><span class="field-lbl">Cant.</span>
+            <div class="stepper-wrap" data-field="${k.n}">
+              <button type="button" class="stepper-btn" data-d="-1">−</button>
+              <span class="stepper-val">${ref[k.n] || 2}</span>
+              <button type="button" class="stepper-btn" data-d="1">+</button>
+            </div></div>
+          <div class="field-row"><span class="field-lbl">ø mm</span>
+            <select class="ctrl" data-field="${k.diam}">${DIAM_OPTS.map(o =>
+              `<option value="${o}"${o === (ref[k.diam] || 16) ? " selected" : ""}>${o}</option>`).join("")}</select>
+          </div></div>`;
+      }
+      return html;
+    }
+
+    function bindPanel(panel, tramo, face) {
+      panel.addEventListener("click", e => {
+        if (e.target.closest(".stepper-btn") || e.target.closest("select")) return;
+        selectedTramo[face] = tramo.id;
+        log(`[${face}] Panel ${tramo.label}`);
+        renderAll(false);
+      });
+      panel.querySelectorAll(".stepper-wrap[data-cap]").forEach(wrap => {
+        wrap.querySelectorAll(".stepper-btn").forEach(btn => {
+          btn.addEventListener("click", e => {
+            e.stopPropagation();
+            const delta = parseInt(btn.dataset.d, 10);
+            applyTramoToBeams(tramo, face, b => {
+              const f = wrap.dataset.cap;
+              b[f] = Math.max(CAPAS_MIN, Math.min(CAPAS_MAX, (b[f] || 1) + delta));
+            });
+            renderAll(false);
+          });
+        });
+      });
+      panel.querySelectorAll(".stepper-wrap[data-field]").forEach(wrap => {
+        wrap.querySelectorAll(".stepper-btn").forEach(btn => {
+          btn.addEventListener("click", e => {
+            e.stopPropagation();
+            const field = wrap.dataset.field;
+            const delta = parseInt(btn.dataset.d, 10);
+            applyTramoToBeams(tramo, face, b => {
+              b[field] = Math.max(BAR_MIN, Math.min(BAR_MAX, (b[field] || 2) + delta));
+            });
+            renderAll(false);
+          });
+        });
+      });
+      panel.querySelectorAll("select.ctrl").forEach(sel => {
+        sel.addEventListener("change", e => {
+          e.stopPropagation();
+          applyTramoToBeams(tramo, face, b => { b[sel.dataset.field] = parseInt(sel.value, 10); });
+          renderAll(false);
+        });
+      });
+    }
+
+    function renderFace(face, tramos, bandsEl, panelsEl, traslapeEl, chipEl) {
+      bandsEl.innerHTML = "";
+      panelsEl.innerHTML = "";
+      renderTraslapeStrip(traslapeEl, face);
+      if (chipEl) chipEl.textContent = formatSummary(tramos);
+
+      tramos.forEach(tramo => {
+        const span = tramoSpan(tramo);
+        const band = document.createElement("div");
+        band.className = "tramo-band" +
+          (selectedTramo[face] === tramo.id ? " selected" : "") +
+          (tramo.inferredLenMm > MAX_BAR_MM ? " has-warn" : "");
+        band.style.left = span.leftPct + "%";
+        band.style.width = span.widthPct + "%";
+        band.title = tramo.label + " · " + tramo.inferredLenMm + " mm";
+        band.addEventListener("click", () => {
+          selectedTramo[face] = tramo.id;
+          log(`[${face}] Banda ${tramo.label}`);
+          renderAll(false);
+        });
+        bandsEl.appendChild(band);
+
+        const panel = document.createElement("div");
+        panel.className = "cap-panel" + (selectedTramo[face] === tramo.id ? " selected" : "");
+        panel.innerHTML = buildPanelHtml(tramo, face);
+        bindPanel(panel, tramo, face);
+        panelsEl.appendChild(panel);
+      });
+    }
+
+    function renderSectionPreview() {
+      const beam = beams[selectedBeamIdx];
+      if (!beam) return;
+      document.getElementById("previewBeamName").textContent = `${beam.id} · ${beam.type}`;
+      const sec = parseSection(beam.type);
+      const svg = document.getElementById("sectionSvg");
+      const pad = 10;
+      const rw = 120 - pad * 2;
+      const rh = 80 - pad * 2;
+      const scale = Math.min(rw / sec.w, rh / sec.h);
+      const bw = sec.w * scale;
+      const bh = sec.h * scale;
+      const x = (120 - bw) / 2;
+      const y = (80 - bh) / 2;
+      svg.innerHTML = `
+        <rect x="${x}" y="${y}" width="${bw}" height="${bh}" fill="rgba(30,52,68,0.9)" stroke="#5bb8d4" stroke-width="1.5" rx="1"/>
+        <circle cx="${x + 8}" cy="${y + 8}" r="3" fill="#22d3ee"/>
+        <circle cx="${x + bw - 8}" cy="${y + 8}" r="3" fill="#22d3ee"/>
+        <circle cx="${x + 8}" cy="${y + bh - 8}" r="3" fill="#fb7185"/>
+        <circle cx="${x + bw - 8}" cy="${y + bh - 8}" r="3" fill="#fb7185"/>
+        <rect x="${x + 2}" y="${y + 2}" width="${bw - 4}" height="${bh - 4}" fill="none" stroke="#c084fc" stroke-width="0.8" stroke-dasharray="3 2" rx="1"/>
+      `;
+    }
+
+    function updateEvalPanel() {
+      const runsSup = buildBarRuns(beams, "sup");
+      const runsInf = buildBarRuns(beams, "inf");
+      document.getElementById("pillSup").textContent = `Sup: ${tramosSup.length} Tn`;
+      document.getElementById("pillInf").textContent = `Inf: ${tramosInf.length} Tn`;
+
+      const tbody = document.getElementById("scenarioBody");
+      tbody.innerHTML = "";
+      [
+        { face: "sup", tramos: tramosSup, note: runsSup.length === 1 ? "1 corrida · fusiona ancho" : runsSup.length + " corridas" },
+        { face: "inf", tramos: tramosInf, note: tramosInf.length > tramosSup.length ? "Corte en cambio altura" : "Misma lógica corrida" },
+      ].forEach(row => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td style="color:${row.face === "sup" ? "var(--sup)" : "var(--inf)"}">${row.face === "sup" ? "Superior" : "Inferior"}</td>
+          <td>${row.tramos.length}</td><td>${row.note}</td>`;
+        tbody.appendChild(tr);
+      });
+
+      const selSup = tramosSup.find(t => t.id === selectedTramo.sup);
+      const selInf = tramosInf.find(t => t.id === selectedTramo.inf);
+      const beam = beams[selectedBeamIdx];
+      stateBox.innerHTML =
+        `Variante: ${currentVariant === "a" ? "A · Stack limpio" : "B · Tabs"}\n` +
+        `Viga: ${beam ? beam.id + " (" + beam.type + ")" : "—"}\n` +
+        `<span class="hi-sup">SUP: ${formatSummary(tramosSup)}</span>\n` +
+        `<span class="hi-inf">INF: ${formatSummary(tramosInf)}</span>` +
+        (selSup ? `\nSel SUP: ${selSup.label}` : "") +
+        (selInf ? `\nSel INF: ${selInf.label}` : "");
+    }
+
+    function updateTokenTable() {
+      const compact = document.body.classList.contains("density-compact");
+      document.getElementById("tokenBody").innerHTML = TOKENS.map(t =>
+        `<tr><td><code>${t.name}</code></td><td>${t.comfy}</td><td>${t.compact}</td></tr>`
+      ).join("");
+    }
+
+    function renderAll(fullElev) {
+      const sorted = [...beams].sort((a, b) => a.u - b.u);
+      tramosSup = buildTramosForFace(sorted, "sup");
+      tramosInf = buildTramosForFace(sorted, "inf");
+
+      if (!selectedTramo.sup && tramosSup.length) selectedTramo.sup = tramosSup[0].id;
+      if (!selectedTramo.inf && tramosInf.length) selectedTramo.inf = tramosInf[0].id;
+
+      document.getElementById("chipBeams").textContent = beams.length;
+      document.getElementById("chipIds").innerHTML = "<strong>" + beams.map(b => b.id).join("+") + "</strong>";
+      document.getElementById("winSub").textContent =
+        `${beams.map(b => b.type).join(" / ")} · evaluación legibilidad UI`;
+      document.getElementById("labelsHint").textContent =
+        `Sup ${tramosSup.length} tramo(s) · Inf ${tramosInf.length} tramo(s)`;
+
+      if (fullElev !== false) {
+        renderElevation("elevCanvas");
+        if (currentVariant === "b") renderElevation("elevCanvasB");
+      }
+
+      // Variant A
+      renderFace("sup", tramosSup,
+        document.getElementById("supBandsA"), document.getElementById("supPanelsA"),
+        document.getElementById("supTraslapeA"), document.getElementById("supChipA"));
+      renderFace("inf", tramosInf,
+        document.getElementById("infBandsA"), document.getElementById("infPanelsA"),
+        document.getElementById("infTraslapeA"), document.getElementById("infChipA"));
+
+      // Variant B
+      renderFace("sup", tramosSup,
+        document.getElementById("supBandsB"), document.getElementById("supPanelsB"),
+        document.getElementById("supTraslapeB"), document.getElementById("supChipB"));
+      renderFace("inf", tramosInf,
+        document.getElementById("infBandsB"), document.getElementById("infPanelsB"),
+        document.getElementById("infTraslapeB"), document.getElementById("infChipB"));
+
+      renderSectionPreview();
+      updateEvalPanel();
+      updateTokenTable();
+    }
+
+    function setVariant(v) {
+      currentVariant = v;
+      document.body.classList.toggle("layout-a", v === "a");
+      document.body.classList.toggle("layout-b", v === "b");
+      document.getElementById("variantPill").textContent =
+        v === "a" ? "Variante A recomendada" : "Variante B · tabs";
+      document.getElementById("variantPill").className = "pill " + (v === "a" ? "rec" : "draft");
+      if (v === "b") renderElevation("elevCanvasB");
+      renderAll(false);
+    }
+
+    function setDensity(d) {
+      document.body.classList.toggle("density-compact", d === "compact");
+      renderAll(true);
+    }
+
+    function setTab(tab) {
+      activeTab = tab;
+      document.querySelectorAll(".tab-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.tab === tab);
+        btn.classList.toggle("sup", btn.dataset.tab === "sup");
+        btn.classList.toggle("inf", btn.dataset.tab === "inf");
+      });
+      document.getElementById("tabContentSup").style.display = tab === "sup" ? "block" : "none";
+      document.getElementById("tabContentInf").style.display = tab === "inf" ? "block" : "none";
+      log(`Pestaña ${tab === "sup" ? "Superior" : "Inferior"}`);
+    }
+
+    function loadScenario(key) {
+      const sc = SCENARIOS[key];
+      cloneBeamData(sc);
+      log(`Escenario: ${sc.label}`);
+      rebuild();
+    }
+
+    function rebuild() {
+      renderAll(true);
+    }
+
+    function init() {
+      const scSel = document.getElementById("scenarioSelect");
+      Object.entries(SCENARIOS).forEach(([k, sc]) => {
+        const opt = document.createElement("option");
+        opt.value = k;
+        opt.textContent = sc.label;
+        scSel.appendChild(opt);
+      });
+      scSel.addEventListener("change", () => loadScenario(scSel.value));
+
+      document.getElementById("variantSelect").addEventListener("change", e => setVariant(e.target.value));
+      document.getElementById("densitySelect").addEventListener("change", e => setDensity(e.target.value));
+      document.getElementById("splitEmpalme").addEventListener("change", rebuild);
+      document.getElementById("showFibers").addEventListener("change", rebuild);
+      window.addEventListener("resize", () => renderAll(true));
+
+      document.querySelectorAll(".tab-btn").forEach(btn => {
+        btn.addEventListener("click", () => setTab(btn.dataset.tab));
+      });
+
+      loadScenario("screenshot");
+    }
+
+    init();
+  </script>
+</body>
+</html>

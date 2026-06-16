@@ -1,0 +1,98 @@
+36_ArmadoVigas.pushbutton
+├── bundle.yaml                            Metadatos pyRevit (cinta)
+├── script.py                              Entrada pyRevit (delgada)
+├── bimtools_access_bootstrap.py           Guardia corporativa (opcional)
+├── portable_layout.py                     Mapa de subcarpetas (sync + bootstrap)
+├── sync_portable_scripts.py               Dev: sincroniza scripts/ desde canónica
+├── ESTRUCTURA_PORTABLE.txt
+├── icon.png                               Opcional (icono cinta)
+├── mockups/                               Solo desarrollo UI (no copiar a producción)
+│   └── *.html
+└── scripts/                               Paquete autocontenido (copiar completo)
+    ├── bootstrap.py                       Purge + resolución paths + prepare_runtime
+    ├── pin_local_scripts.py               Antepone scripts/ + subcarpetas portable
+    ├── bootstrap_paths.py                 Alias compat. (armado_muros_cabezal_tags)
+    │
+    ├── armado_vigas/                        Paquete principal (fuente canónica)
+    │   ├── bootstrap_paths.py             Paths runtime dentro del paquete
+    │   ├── domain/                        Reglas de negocio
+    │   ├── geometry/                      Fibras, extremos, colisiones
+    │   ├── revit/                         Colocación, etiquetas, sesión
+    │   └── ui/                            WPF canvas, ventana, tema
+    │
+    ├── infra/                             Utilidades BIMTools
+    │   ├── bimtools_paths.py
+    │   ├── bimtools_rebar_hook_lengths.py
+    │   ├── bimtools_rebar_3d_visibility.py
+    │   ├── bimtools_wpf_dark_theme.py
+    │   └── revit_wpf_window_position.py
+    │
+    ├── shared/
+    │   ├── geometria/                     Colisión, empotramiento, estribos, curvas
+    │   ├── rebar/                         Capas, fundación, etiquetado shaft
+    │   ├── schemas/                       Extensible Storage + detail empalme
+    │   └── tags/                          armado_muros_cabezal_tags.py
+    │
+    └── (sin .py sueltos en la raíz de scripts/ salvo infra bootstrap)
+
+Los imports siguen siendo planos (``from geometria_* import …``): el bootstrap añade
+cada subcarpeta a ``sys.path``. La fuente canónica en ``BIMTools.extension/scripts/``
+permanece plana; solo el paquete empaquetado usa subcarpetas.
+
+Copie solo esta carpilla .pushbutton a la pestaña de otra extensión pyRevit.
+No requiere ``BIMTools.tab/bimtools_access_bootstrap.py`` ni rutas absolutas de máquina.
+
+Acceso corporativo (opcional): si la extensión destino incluye ``scripts/corporate_access.py``
+(p. ej. copiado desde BIMTools.extension), el botón valida ``bimtools_access.json`` en el
+servidor de incidencias. Sin ese archivo, el botón se ejecuta sin validación de licencia.
+
+-----------------------------------------------------------------------------
+Arquitectura (capas)
+-----------------------------------------------------------------------------
+
+  script.py                 Valida paquete, acceso corporativo, delega en bootstrap
+       ↓
+  scripts/bootstrap.py      sys.path + purge + prepare_runtime
+       ↓
+  armado_vigas.revit.run    Selección lote → sesión → overlay → UI WPF
+       ↓
+  armado_vigas.ui.window    Canvas + ExternalEvents (singleton AppDomain)
+
+Transacciones: prefijo ``Arainco:`` en historial de deshacer.
+
+-----------------------------------------------------------------------------
+Despliegue
+-----------------------------------------------------------------------------
+
+1. En el repositorio, ejecute ``python sync_portable_scripts.py`` en esta carpeta.
+2. Copie la carpilla completa ``36_ArmadoVigas.pushbutton`` (raíz + ``scripts/`` + bundle.yaml).
+3. No incluya artefactos de desarrollo (``mockups/``, logs, etc.).
+4. Recargue pyRevit en las estaciones destino.
+5. Revit 2024–2026 (``min_revit_ver`` / ``max_revit_ver`` en bundle.yaml).
+
+``sync_portable_scripts.py`` no sobrescribe ``bootstrap.py``, ``pin_local_scripts.py`` ni
+``bootstrap_paths.py``. Elimina copias planas obsoletas en ``scripts/``.
+
+-----------------------------------------------------------------------------
+Fuente canónica (BIMTools.extension)
+-----------------------------------------------------------------------------
+
+Desarrollo en ``BIMTools.extension/scripts/armado_vigas/`` y módulos raíz planos.
+Antes de entregar el botón suelto, sincronice con ``sync_portable_scripts.py``.
+
+En desarrollo, si falta ``<pushbutton>/scripts/armado_vigas/``, ``script.py`` resuelve
+``BIMTools.extension/scripts/`` subiendo directorios (layout plano).
+
+-----------------------------------------------------------------------------
+Dependencias de proyecto Revit (no incluidas en el paquete)
+-----------------------------------------------------------------------------
+
+El modelo debe tener, según el flujo:
+
+  - RebarBarType y RebarShape (estribos, longitudinales, laterales)
+  - RebarHookType según capas (Standard 90°, 135°, etc.)
+  - Familias de tag estructural (longitudinales, confinamiento viga, laterales)
+  - Detail line-based de empalme (EST_D_DETAIL ITEM_EMPALME / tipo Empalme)
+  - Hosts válidos: vigas estructurales (Framing) + apoyos del lote
+
+Revit 2024–2026 | pyRevit (IronPython 2.7 en 2024; CPython 3 en 2025+).

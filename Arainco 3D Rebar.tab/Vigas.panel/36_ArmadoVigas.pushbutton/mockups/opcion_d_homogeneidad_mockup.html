@@ -1,0 +1,1805 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Homogeneidad visual — Opción D · Armado vigas</title>
+  <!--
+  ═══════════════════════════════════════════════════════════════════════════
+  ANÁLISIS UI ACTUAL (WPF post Opción D) — problemas de homogeneidad
+  ═══════════════════════════════════════════════════════════════════════════
+  1. Paleta competidora: teal sup (#22d3ee), rosa inf (#fb7185), violeta suple
+     (#c084fc), ámbar traslape (#fbbf24), verde Cent (#34d399), amarillo Ext,
+     azul Confin (#5bb8d4) — 7+ acentos saturados simultáneos.
+  2. Bandas Tn: franjas de color llenas + caja flotante con sombra y gradiente
+     oscuro; peso visual desproporcionado vs alzado.
+  3. Rail derecho: traslape usa bloque ámbar con borde especial; estribos usan
+     barras laterales de color distinto por rol — no comparten componente.
+  4. Franja suple inferior: cabecera violeta + borde grueso + fondo #0c0814;
+     estilo distinto a bandas Tn y panel sección.
+  5. Tipografía: mezcla 7–17 px (título ventana 17, band-hdr 8, meta 7…).
+  6. Bordes: sólidos + dashed en toggles traslape; grosor 1–2 px arbitrario.
+  7. Selección: cyan viga, verde muro, colores tramo, violeta suple — sin ancla única.
+
+  REGLAS PROPUESTAS (design system)
+  ─────────────────────────────────
+  • Un acento primario: cyan #22d3ee → foco, selección, anillos activos.
+  • Semántica secundaria solo en badge/chip: empalme ámbar, suple violeta muted,
+    estribos neutros + badge pequeño por rol.
+  • Tramos Tn: franja tinte 6 px — sup al pie del controlador (junto fibra sup), inf al borde alzado (cabecera).
+  • Panel chrome único: bg #0a1620, border #21465C, radius 4px, pad 8px.
+  • Controles: stepper/combo/toggle/tab comparten input-bg + input-border.
+  • Bandas: colapsado = chip-resumen; expandido = fila inline compacta (sin caja flotante).
+  • Rail: traslape + estribos = mismo .panel-card + .panel-card__hdr.
+  • Tipografía: title 11 · body 10 · meta 9 (máx. 3 tamaños).
+  • Bordes: 1px sólido; sin dashed salvo estado deshabilitado.
+  ═══════════════════════════════════════════════════════════════════════════
+  -->
+  <style>
+    :root {
+      /* ── Surfaces ── */
+      --bg-app: #071018;
+      --bg-panel: #0a1620;
+      --bg-input: #071018;
+      --border: #21465c;
+      --border-input: #1e3344;
+      --border-muted: #2d4455;
+
+      /* ── Typography (3 sizes max) ── */
+      --fs-title: 11px;
+      --fs-body: 10px;
+      --fs-meta: 9px;
+      --fg-hi: #e8f4f8;
+      --fg-mid: #95b8cc;
+      --fg-lo: #64748b;
+
+      /* ── Primary accent (selection / focus) ── */
+      --accent: #22d3ee;
+      --accent-dim: rgba(34, 211, 238, 0.12);
+      --accent-ring: rgba(34, 211, 238, 0.45);
+
+      /* ── Semantic (badges & chips only) ── */
+      --sem-empalme: #fbbf24;
+      --sem-empalme-dim: rgba(251, 191, 36, 0.12);
+      --sem-suple: #a78bfa;
+      --sem-suple-dim: rgba(167, 139, 250, 0.10);
+      --sem-cent: #6ee7b7;
+      --sem-ext: #fcd34d;
+      --sem-confin: #7dd3fc;
+
+      /* ── Layout tokens ── */
+      --radius: 4px;
+      --pad-panel: 8px;
+      --border-w: 1px;
+      --right-w: 340px;
+      --elev-h: 200px;
+      --strip-h: 28px;
+      --band-tint-h: 6px;
+
+      /* ── Controls ── */
+      --btn-primary: #5bb8d4;
+      --btn-primary-fg: #071018;
+      --stepper-arrow-bg: rgba(17, 37, 61, 0.85);
+
+      /* ── Tramo tint (subtle) ── */
+      --tramo-fill: 0.14;
+      --tramo-fill-sel: 0.22;
+      --tramo-stroke: 0.55;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      font-size: var(--fs-body);
+      background: #050c14;
+      color: var(--fg-mid);
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      overflow: hidden;
+    }
+
+    /* ── Dev / eval bar ── */
+    .dev-bar {
+      background: #0f1c28;
+      border-bottom: var(--border-w) solid var(--border);
+      padding: 8px 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: center;
+      font-size: var(--fs-body);
+      z-index: 30;
+    }
+    .dev-bar h1 { font-size: 13px; color: var(--fg-hi); font-weight: 600; }
+    .dev-bar label { display: flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; font-size: var(--fs-body); }
+    .dev-bar select {
+      background: var(--bg-input);
+      color: var(--fg-hi);
+      border: var(--border-w) solid var(--border-input);
+      border-radius: var(--radius);
+      padding: 3px 7px;
+      font-size: var(--fs-body);
+    }
+    .sep { width: 1px; height: 18px; background: var(--border); }
+    .pill {
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: var(--fs-meta);
+      font-weight: 600;
+    }
+    .pill.ok { background: rgba(74, 222, 128, 0.12); color: #4ade80; }
+    .pill.warn { background: var(--sem-empalme-dim); color: var(--sem-empalme); }
+
+    /* View mode toggle */
+    .view-toggle {
+      display: inline-flex;
+      border: var(--border-w) solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .view-toggle button {
+      border: none;
+      background: var(--bg-panel);
+      color: var(--fg-lo);
+      padding: 4px 10px;
+      font-size: var(--fs-meta);
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .view-toggle button.active {
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+    .view-toggle button:hover:not(.active) { color: var(--fg-hi); }
+
+    /* ── Design notes (collapsible) ── */
+    .notes-panel {
+      border-bottom: var(--border-w) solid var(--border);
+      background: #0a1218;
+    }
+    .notes-panel summary {
+      padding: 6px 14px;
+      font-size: var(--fs-body);
+      font-weight: 600;
+      color: var(--fg-mid);
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .notes-panel summary::-webkit-details-marker { display: none; }
+    .notes-panel summary::before { content: "▸"; font-size: 10px; color: var(--fg-lo); }
+    .notes-panel[open] summary::before { content: "▾"; }
+    .notes-body {
+      padding: 0 14px 10px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      font-size: var(--fs-meta);
+      line-height: 1.5;
+    }
+    @media (max-width: 900px) { .notes-body { grid-template-columns: 1fr; } }
+    .notes-col h4 {
+      font-size: var(--fs-body);
+      color: var(--fg-hi);
+      margin-bottom: 4px;
+    }
+    .notes-col ul { padding-left: 16px; color: var(--fg-lo); }
+    .notes-col li { margin-bottom: 3px; }
+    .notes-col.proposed h4 { color: var(--accent); }
+    .token-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .token {
+      font-size: 8px;
+      padding: 2px 5px;
+      border-radius: 3px;
+      border: var(--border-w) solid var(--border);
+      font-family: Consolas, monospace;
+      color: var(--fg-mid);
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .workspace {
+      overflow: auto;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+    }
+
+    /* ── Comparison strip ── */
+    .compare-strip {
+      width: min(1180px, 100%);
+      display: none;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    body.mode-compare .compare-strip { display: grid; }
+    body.mode-compare .win-single { display: flex; margin-top: 8px; }
+
+    .mini-win {
+      border: var(--border-w) solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-app);
+      overflow: hidden;
+      position: relative;
+    }
+    .mini-win .tag {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      z-index: 5;
+      font-size: 8px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .mini-win.before .tag { background: rgba(251, 113, 133, 0.15); color: #fb7185; }
+    .mini-win.after .tag { background: var(--accent-dim); color: var(--accent); }
+    .mini-canvas {
+      padding: 8px;
+      pointer-events: none;
+      transform-origin: top left;
+    }
+
+    /* ── Main window ── */
+    .win {
+      width: min(1180px, 100%);
+      background: var(--bg-app);
+      border: var(--border-w) solid var(--border);
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      min-height: 560px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+    }
+    body:not(.mode-compare) .compare-strip { display: none; }
+
+    .win-hdr {
+      padding: var(--pad-panel) 12px;
+      border-bottom: var(--border-w) solid var(--border);
+      background: var(--bg-panel);
+    }
+    .win-hdr .title { font-size: 13px; font-weight: 700; color: var(--fg-hi); }
+    .scope-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; align-items: center; }
+    .scope-chip {
+      font-size: var(--fs-meta);
+      padding: 2px 7px;
+      border-radius: 10px;
+      background: rgba(33, 70, 92, 0.35);
+      color: var(--fg-mid);
+    }
+    .scope-chip strong { color: var(--fg-hi); }
+    .scope-chip.hint { margin-left: auto; color: var(--fg-lo); background: transparent; padding: 0; }
+
+    .split-body {
+      display: grid;
+      grid-template-columns: 1fr var(--right-w);
+      flex: 1;
+      min-height: 0;
+    }
+
+    .canvas-col {
+      padding: var(--pad-panel) 10px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    /* ── Unified panel card (rail + suple) ── */
+    .panel-card {
+      border: var(--border-w) solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg-panel);
+      padding: var(--pad-panel);
+      margin-bottom: 6px;
+    }
+    .panel-card.selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent-ring);
+    }
+    .panel-card__hdr {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .panel-card__title {
+      font-size: var(--fs-title);
+      font-weight: 700;
+      color: var(--fg-hi);
+      flex: 1;
+    }
+    .role-badge {
+      font-size: 8px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .role-badge.empalme { background: var(--sem-empalme-dim); color: var(--sem-empalme); }
+    .role-badge.suple { background: var(--sem-suple-dim); color: var(--sem-suple); }
+    .role-badge.cent { background: rgba(110, 231, 183, 0.12); color: var(--sem-cent); }
+    .role-badge.ext { background: rgba(252, 211, 77, 0.12); color: var(--sem-ext); }
+    .role-badge.confin { background: rgba(125, 211, 252, 0.12); color: var(--sem-confin); }
+
+    .panel-card__hint {
+      font-size: var(--fs-meta);
+      color: var(--fg-lo);
+      line-height: 1.45;
+      margin-bottom: 6px;
+    }
+
+    /* ── Tramo bands (proposed: thin tint + chip) ── */
+    .band-row {
+      display: flex;
+      gap: 2px;
+      min-height: var(--strip-h);
+      margin: 0 4px;
+    }
+    .band-seg {
+      flex: 1 1 0;
+      min-width: 0;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: box-shadow 0.12s, background 0.12s;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: var(--border-w) solid transparent;
+    }
+    .band-seg:hover { border-color: var(--border-muted); }
+    .band-seg.selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent-ring);
+    }
+    .band-row.sup { margin-bottom: 0; }
+    .band-row.inf { margin-top: 0; }
+    .band-tint {
+      height: var(--band-tint-h);
+      flex-shrink: 0;
+    }
+    /* Sup: tinte al pie → continúa hacia la fibra superior del alzado */
+    .band-row.sup .band-tint {
+      border-radius: 0 0 2px 2px;
+    }
+    /* Inf: tinte arriba → junto a la fibra inferior del alzado */
+    .band-row.inf .band-tint {
+      border-radius: 2px 2px 0 0;
+    }
+    .band-body {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3px 4px;
+      background: var(--bg-panel);
+      min-height: calc(var(--strip-h) - var(--band-tint-h));
+    }
+    .band-chip {
+      font-size: var(--fs-meta);
+      color: var(--fg-mid);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align: center;
+      width: 100%;
+    }
+    .band-chip strong { color: var(--fg-hi); font-size: var(--fs-title); }
+    .band-expanded {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      font-size: var(--fs-meta);
+    }
+    .band-expanded .lbl { color: var(--fg-lo); font-size: 8px; }
+    .band-layers { display: flex; flex-direction: column; gap: 2px; width: 100%; align-items: center; }
+    .band-layer-row { display: flex; gap: 3px; align-items: center; justify-content: center; flex-wrap: wrap; }
+    .band-layer-row .layer-tag { width: 14px; font-size: 8px; color: var(--fg-lo); text-align: right; }
+    .band-seg.selected .band-body { min-height: 52px; }
+    .band-seg .stepper-btn, .band-seg select, .suple-slot .stepper-btn, .suple-slot select, .suple-slot button {
+      cursor: pointer;
+    }
+    .elev-label-slot { cursor: pointer; }
+    .elev-label-slot:hover { background: rgba(34, 211, 238, 0.06); }
+
+    /* ── OLD band style (for "before" / compare) ── */
+    .band-seg.old-style {
+      min-height: 44px;
+      border: var(--border-w) solid rgba(0,0,0,0.28);
+      flex-direction: column;
+      justify-content: center;
+      position: relative;
+    }
+    .band-seg.old-style .band-float {
+      margin: 2px auto;
+      padding: 5px 8px;
+      border-radius: var(--radius);
+      background: linear-gradient(180deg, rgba(0,0,0,0.22), rgba(0,0,0,0.48));
+      box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+      text-align: center;
+      font-size: 8px;
+      color: rgba(255,255,255,0.9);
+    }
+
+    /* ── Elevation ── */
+    .elev-wrap {
+      border: var(--border-w) solid var(--border);
+      border-radius: var(--radius);
+      background: radial-gradient(ellipse at 50% 35%, rgba(30, 52, 68, 0.25), rgba(7, 16, 24, 0.95));
+      flex: 1;
+      min-height: var(--elev-h);
+      display: flex;
+      flex-direction: column;
+      margin: 2px 0;
+    }
+    .elev-hdr {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px var(--pad-panel);
+      font-size: var(--fs-meta);
+      color: var(--fg-lo);
+      border-bottom: var(--border-w) solid rgba(33, 70, 92, 0.45);
+    }
+    .elev-hdr .active-hint { color: var(--accent); font-weight: 600; font-size: var(--fs-meta); }
+    .elev-stage { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    .elev-canvas {
+      position: relative;
+      flex: 1;
+      min-height: calc(var(--elev-h) - 72px);
+      overflow: hidden;
+    }
+    .elev-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .elev-hits { position: absolute; inset: 0; z-index: 10; }
+
+    .beam-hit {
+      position: absolute;
+      cursor: pointer;
+      background: transparent;
+      border: 2px solid transparent;
+      border-radius: 2px;
+      transition: border-color 0.12s, background 0.12s;
+    }
+    .beam-hit:hover { background: var(--accent-dim); border-color: rgba(34, 211, 238, 0.3); }
+    .beam-hit.selected {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+      box-shadow: 0 0 0 1px var(--accent-ring);
+    }
+
+    .support-hit {
+      position: absolute;
+      cursor: pointer;
+      border: 2px solid transparent;
+      border-radius: 2px 2px 0 0;
+      z-index: 11;
+    }
+    .support-hit:hover { background: rgba(148, 163, 184, 0.1); }
+    .support-hit.selected {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+    }
+
+    .elev-labels {
+      border-top: var(--border-w) solid rgba(33, 70, 92, 0.45);
+      background: rgba(7, 16, 24, 0.55);
+      min-height: 44px;
+    }
+    .elev-labels-inner { position: relative; width: 100%; min-height: 44px; }
+    .elev-label-slot {
+      position: absolute;
+      text-align: center;
+      font-size: var(--fs-meta);
+      line-height: 1.35;
+      color: var(--fg-lo);
+      padding: 4px 2px;
+    }
+    .elev-label-slot.selected { color: var(--accent); }
+    .elev-label-slot .lbl-id { font-weight: 700; color: var(--fg-mid); display: block; }
+    .elev-label-slot.selected .lbl-id { color: var(--accent); }
+
+    /* ── Suple strip (proposed: band-aligned) ── */
+    .suple-canvas {
+      position: relative;
+      height: 74px;
+      margin-top: 4px;
+      overflow: visible;
+    }
+    .suple-strip {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .suple-slot {
+      flex: 1 1 0;
+      min-width: 120px;
+      border: var(--border-w) solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg-panel);
+      padding: 5px 6px;
+      cursor: pointer;
+      transition: border-color 0.12s, box-shadow 0.12s;
+    }
+    .suple-slot:hover { border-color: var(--border-muted); }
+    .suple-slot.selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent-ring);
+    }
+    .suple-slot__hdr {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-bottom: 4px;
+    }
+    .suple-slot__id {
+      font-size: var(--fs-meta);
+      font-weight: 600;
+      color: var(--fg-lo);
+    }
+    .suple-slot.selected .suple-slot__id { color: var(--accent); }
+    .suple-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-wrap: wrap;
+      font-size: var(--fs-meta);
+    }
+
+    /* OLD suple (purple card) */
+    .suple-slot.old-style {
+      border-color: #c084fc;
+      background: #0c0814;
+    }
+    .suple-slot.old-style .suple-hdr-purple {
+      font-size: var(--fs-meta);
+      font-weight: 700;
+      color: #c084fc;
+      text-transform: uppercase;
+      border-bottom: 1px solid rgba(192, 132, 252, 0.3);
+      padding-bottom: 3px;
+      margin-bottom: 4px;
+    }
+
+    /* ── Shared controls ── */
+    .stepper-wrap {
+      display: inline-flex;
+      align-items: stretch;
+      border: var(--border-w) solid var(--border-input);
+      border-radius: var(--radius);
+      background: var(--bg-input);
+      overflow: hidden;
+      height: 20px;
+      min-width: 48px;
+    }
+    .stepper-val {
+      flex: 1;
+      min-width: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--fg-hi);
+      font-size: var(--fs-meta);
+      font-weight: 600;
+    }
+    .stepper-arrows {
+      display: flex;
+      flex-direction: column;
+      width: 16px;
+      border-left: var(--border-w) solid var(--border-input);
+      background: var(--stepper-arrow-bg);
+    }
+    .stepper-btn {
+      flex: 1;
+      border: none;
+      background: transparent;
+      color: var(--fg-mid);
+      font-size: 7px;
+      cursor: pointer;
+    }
+    .stepper-btn.stepper-up { border-bottom: var(--border-w) solid var(--border-input); }
+    .stepper-btn:hover { background: rgba(33, 70, 92, 0.5); color: var(--fg-hi); }
+
+    select.ctrl, .ctrl-select {
+      height: 20px;
+      background: var(--bg-input);
+      border: var(--border-w) solid var(--border-input);
+      border-radius: var(--radius);
+      color: var(--fg-hi);
+      font-size: var(--fs-meta);
+      padding: 0 4px;
+      cursor: pointer;
+    }
+
+    .toggle-pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .toggle-btn {
+      padding: 6px;
+      border-radius: var(--radius);
+      font-size: var(--fs-meta);
+      font-weight: 600;
+      cursor: pointer;
+      border: var(--border-w) solid var(--border-input);
+      background: var(--bg-input);
+      color: var(--fg-lo);
+      transition: all 0.12s;
+    }
+    .toggle-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--fg-hi); }
+    .toggle-btn.on {
+      border-color: var(--sem-empalme);
+      background: var(--sem-empalme-dim);
+      color: var(--sem-empalme);
+    }
+    .toggle-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* OLD traslape (orange block + dashed) */
+    .panel-card.old-traslape {
+      border-color: rgba(251, 191, 36, 0.35);
+      background: rgba(22, 18, 10, 0.5);
+    }
+    .panel-card.old-traslape .panel-card__title { color: var(--sem-empalme); }
+    .toggle-btn.old-style {
+      border-style: dashed;
+      border-color: var(--border-muted);
+    }
+    .toggle-btn.old-style.on.sup { border-style: solid; border-color: #22d3ee; color: #22d3ee; background: rgba(34,211,238,0.12); }
+    .toggle-btn.old-style.on.inf { border-style: solid; border-color: #fb7185; color: #fb7185; background: rgba(251,113,133,0.12); }
+
+    .field-row {
+      display: grid;
+      grid-template-columns: 36px 1fr 1fr auto;
+      gap: 5px;
+      align-items: center;
+      margin: 4px 0;
+      font-size: var(--fs-meta);
+    }
+    .field-row label { color: var(--fg-lo); }
+    .len-hint {
+      font-size: var(--fs-meta);
+      font-weight: 600;
+      color: var(--fg-mid);
+      grid-column: span 3;
+    }
+    .len-hint .note { font-weight: 400; color: var(--fg-lo); font-size: 8px; }
+
+    /* OLD estribo blocks (colored bars) */
+    .panel-card.old-cent .panel-card__title { color: var(--sem-cent); }
+    .panel-card.old-cent { border-left: 3px solid var(--sem-cent); }
+    .panel-card.old-ext .panel-card__title { color: var(--sem-ext); }
+    .panel-card.old-ext { border-left: 3px solid var(--sem-ext); }
+    .panel-card.old-confin .panel-card__title { color: var(--sem-confin); }
+    .panel-card.old-confin { border-left: 3px solid var(--sem-confin); }
+
+    .tab-row {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 4px 6px;
+      border: var(--border-w) solid var(--border-input);
+      border-radius: var(--radius);
+      background: var(--bg-input);
+      color: var(--fg-lo);
+      font-size: var(--fs-meta);
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .tab-btn.active {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    /* ── Right rail ── */
+    .right-panel {
+      border-left: var(--border-w) solid var(--border);
+      padding: var(--pad-panel) 10px;
+      overflow-y: auto;
+      background: rgba(10, 22, 32, 0.5);
+    }
+    .right-panel h3 {
+      font-size: var(--fs-meta);
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--fg-lo);
+      margin-bottom: 6px;
+    }
+    .right-panel h3:not(:first-child) { margin-top: 10px; }
+
+    .section-preview {
+      border: var(--border-w) solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg-input);
+      padding: var(--pad-panel);
+      text-align: center;
+      margin-bottom: 6px;
+    }
+    .section-preview .beam-name {
+      font-size: var(--fs-body);
+      font-weight: 600;
+      color: var(--fg-hi);
+      text-align: left;
+      margin-bottom: 4px;
+    }
+    .section-svg { width: 100%; max-width: 200px; height: 100px; }
+    .section-meta {
+      font-size: var(--fs-meta);
+      color: var(--fg-mid);
+      margin-top: 6px;
+      line-height: 1.5;
+      text-align: left;
+    }
+
+    .legend-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: var(--fs-meta);
+      color: var(--fg-lo);
+      padding: 2px 0;
+    }
+    .legend-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+      margin-right: 3px;
+      vertical-align: middle;
+    }
+
+    .win-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: var(--pad-panel) 12px;
+      border-top: var(--border-w) solid var(--border);
+      background: var(--bg-panel);
+      font-size: var(--fs-body);
+    }
+    .win-footer .status { color: var(--fg-lo); max-width: 55%; font-size: var(--fs-meta); }
+    .btn-row { display: flex; gap: 6px; }
+    .btn {
+      padding: 6px 14px;
+      border-radius: var(--radius);
+      font-size: var(--fs-title);
+      cursor: pointer;
+      border: var(--border-w) solid var(--border-muted);
+      background: transparent;
+      color: var(--fg-mid);
+    }
+    .btn:hover { border-color: var(--accent); color: var(--fg-hi); }
+    .btn.primary {
+      background: var(--btn-primary);
+      color: var(--btn-primary-fg);
+      border-color: var(--btn-primary);
+      font-weight: 600;
+    }
+
+    /* Eval sidebar */
+    .eval-panel {
+      border-left: var(--border-w) solid var(--border);
+      padding: 10px 12px;
+      overflow-y: auto;
+      background: #0a1218;
+      font-size: var(--fs-body);
+      line-height: 1.5;
+    }
+    .eval-panel h2 { font-size: 12px; color: var(--fg-hi); margin-bottom: 6px; }
+    .eval-panel h3 { font-size: var(--fs-body); color: var(--fg-mid); margin: 10px 0 4px; font-weight: 600; }
+    .state-box {
+      background: var(--bg-panel);
+      border: var(--border-w) solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--pad-panel);
+      font-size: var(--fs-meta);
+      font-family: Consolas, monospace;
+      color: var(--fg-mid);
+      white-space: pre-wrap;
+    }
+    .log {
+      margin-top: 6px;
+      max-height: 120px;
+      overflow-y: auto;
+      font-size: var(--fs-meta);
+      color: var(--fg-lo);
+      font-family: Consolas, monospace;
+    }
+    .log div { padding: 2px 0; border-bottom: var(--border-w) solid rgba(33,70,92,0.25); }
+
+    .annot {
+      position: relative;
+    }
+    .annot::after {
+      content: attr(data-annot);
+      position: absolute;
+      top: -8px;
+      right: 4px;
+      font-size: 7px;
+      font-weight: 700;
+      padding: 1px 4px;
+      border-radius: 2px;
+      background: rgba(251, 113, 133, 0.2);
+      color: #fb7185;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    body.show-annot .annot::after { opacity: 1; }
+
+    footer.page-footer {
+      border-top: var(--border-w) solid var(--border);
+      padding: 5px 14px;
+      font-size: var(--fs-meta);
+      color: var(--fg-lo);
+      background: #0a1218;
+    }
+    footer code { color: var(--fg-mid); font-size: 8px; }
+
+    /* Skin: actual WPF problems */
+    body.skin-actual .band-seg:not(.old-style) { display: none; }
+    body.skin-actual .band-seg.old-style { display: flex; }
+    body.skin-proposed .band-seg.old-style { display: none; }
+
+    body.skin-actual #railTraslape { display: none; }
+    body.skin-actual #railTraslapeOld { display: block; }
+    body.skin-actual #railEstribos { display: none; }
+    body.skin-actual #railEstribosOld { display: block; }
+    body.skin-proposed #railTraslapeOld,
+    body.skin-proposed #railEstribosOld { display: none; }
+
+    body.skin-actual .suple-slot:not(.old-style) { display: none; }
+    body.skin-actual .suple-slot.old-style { display: block; }
+    body.skin-proposed .suple-slot.old-style { display: none; }
+  </style>
+</head>
+<body class="skin-proposed">
+  <header class="dev-bar">
+    <h1>Homogeneidad · Opción D</h1>
+    <span class="pill ok">Mockup evaluación</span>
+    <span class="sep"></span>
+    <div class="view-toggle" id="viewToggle">
+      <button type="button" data-mode="proposed" class="active">Propuesto</button>
+      <button type="button" data-mode="actual">Actual (WPF)</button>
+      <button type="button" data-mode="compare">Comparar</button>
+    </div>
+    <label><input type="checkbox" id="showAnnot" /> Anotaciones problema</label>
+    <span class="sep"></span>
+    <label>Escenario <select id="scenarioSelect"></select></label>
+    <span class="pill warn" id="pillState">—</span>
+  </header>
+
+  <details class="notes-panel" open>
+    <summary>Notas de diseño · reglas de homogeneidad</summary>
+    <div class="notes-body">
+      <div class="notes-col">
+        <h4>Problemas detectados (UI actual)</h4>
+        <ul>
+          <li>7+ acentos saturados compitiendo (teal, rosa, violeta, ámbar, verde, amarillo, azul)</li>
+          <li>Cajas flotantes en bandas Tn con sombra + gradiente — peso visual excesivo</li>
+          <li>Traslape (bloque ámbar) vs estribos (barras de color) — componentes distintos</li>
+          <li>Franja suple con cabecera violeta y fondo #0c0814 — desalineada de bandas</li>
+          <li>Toggles traslape con borde dashed; grosores 1–2 px inconsistentes</li>
+          <li>Tipografía dispersa (7–17 px); selección sin ancla única</li>
+        </ul>
+      </div>
+      <div class="notes-col proposed">
+        <h4>Sistema propuesto (tokens CSS)</h4>
+        <ul>
+          <li><strong>Acento único</strong> <code>--accent #22d3ee</code> → selección viga, tramo, panel</li>
+          <li><strong>Semántica</strong> solo en badges: empalme ámbar, suple violeta muted, estribos neutros</li>
+          <li><strong>Tramos sup</strong> → tinte 6 px al <em>pie</em> del controlador (pegado a fibra sup)</li>
+          <li><strong>Tramos inf</strong> → tinte 6 px en cabecera (pegado a fibra inf)</li>
+          <li><strong>Panel card</strong> unificado para traslape + estribos + suple</li>
+          <li><strong>Tipografía</strong> title 11 · body 10 · meta 9</li>
+        </ul>
+        <div class="token-row">
+          <span class="token">--bg-panel #0a1620</span>
+          <span class="token">--border #21465C</span>
+          <span class="token">--radius 4px</span>
+          <span class="token">--pad-panel 8px</span>
+          <span class="token">--accent #22d3ee</span>
+          <span class="token">--sem-empalme #fbbf24</span>
+          <span class="token">--sem-suple #a78bfa</span>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <main>
+    <div class="workspace">
+      <!-- Side-by-side comparison (mode compare) -->
+      <div class="compare-strip" id="compareStrip">
+        <div class="mini-win before">
+          <span class="tag">Actual</span>
+          <div class="mini-canvas" id="miniBefore"></div>
+        </div>
+        <div class="mini-win after">
+          <span class="tag">Propuesto</span>
+          <div class="mini-canvas" id="miniAfter"></div>
+        </div>
+      </div>
+
+      <!-- Full interactive window -->
+      <div class="win win-single" id="mainWin">
+        <div class="win-hdr">
+          <div class="title">Arainco: Armado vigas</div>
+          <div class="scope-row">
+            <span class="scope-chip"><strong id="chipBeams">—</strong> vigas</span>
+            <span class="scope-chip" id="chipTramos">—</span>
+            <span class="scope-chip hint">Traslape por viga · sup/inf independientes</span>
+          </div>
+        </div>
+
+        <div class="split-body">
+          <div class="canvas-col">
+            <div class="elev-wrap annot" data-annot="Sup: tinte al pie · Inf: tinte arriba">
+              <div class="elev-hdr">
+                <span>Alzado · corrida · fibras · apoyos</span>
+                <span class="active-hint" id="elevHint">—</span>
+              </div>
+              <div class="elev-stage">
+                <div class="band-row sup" id="bandsSup"></div>
+                <div class="elev-canvas" id="elevCanvas">
+                  <svg class="elev-svg" id="elevSvg" preserveAspectRatio="none"></svg>
+                  <div class="elev-hits" id="elevHits"></div>
+                </div>
+                <div class="band-row inf" id="bandsInf"></div>
+                <div class="elev-labels"><div class="elev-labels-inner" id="elevLabels"></div></div>
+              </div>
+            </div>
+
+            <div class="annot" data-annot="Suple: mismo chrome que bandas">
+              <div style="font-size:var(--fs-meta);color:var(--fg-lo);margin-bottom:3px;text-transform:uppercase;letter-spacing:0.05em;">Suple inferior · por viga</div>
+              <div class="suple-canvas" id="supleCanvas"></div>
+            </div>
+
+            <div class="legend-row" id="legendRow">—</div>
+          </div>
+
+          <aside class="right-panel">
+            <h3>Sección · viga activa</h3>
+            <div class="section-preview">
+              <div class="beam-name" id="previewBeamName">—</div>
+              <svg class="section-svg" id="sectionSvg" viewBox="0 0 120 80"></svg>
+              <div class="section-meta" id="sectionMeta">—</div>
+            </div>
+
+            <h3>Traslape · viga seleccionada</h3>
+            <!-- Proposed unified card -->
+            <div class="panel-card" id="railTraslape">
+              <div class="panel-card__hdr">
+                <span class="panel-card__title">Troceo @ mitad</span>
+                <span class="role-badge empalme">Empalme</span>
+              </div>
+              <p class="panel-card__hint" id="traslapeHint">Seleccione una viga en el alzado.</p>
+              <div class="toggle-pair">
+                <button type="button" class="toggle-btn" id="btnTraslapeSup" disabled>Superior</button>
+                <button type="button" class="toggle-btn" id="btnTraslapeInf" disabled>Inferior</button>
+              </div>
+            </div>
+            <!-- Old orange block -->
+            <div class="panel-card old-traslape annot" data-annot="Bloque ámbar aislado" id="railTraslapeOld" style="display:none">
+              <div class="panel-card__hdr">
+                <span class="panel-card__title">Traslape · viga seleccionada</span>
+              </div>
+              <p class="panel-card__hint" id="traslapeHintOld">—</p>
+              <div class="toggle-pair">
+                <button type="button" class="toggle-btn old-style" id="btnTraslapeSupOld" disabled>Superior</button>
+                <button type="button" class="toggle-btn old-style" id="btnTraslapeInfOld" disabled>Inferior</button>
+              </div>
+            </div>
+
+            <h3>Estribos · viga activa</h3>
+            <!-- Proposed: tabs + single card -->
+            <div id="railEstribos">
+              <div class="tab-row">
+                <button type="button" class="tab-btn active" data-tab="cent">Cent</button>
+                <button type="button" class="tab-btn" data-tab="ext">Ext</button>
+                <button type="button" class="tab-btn" data-tab="confin">Confin.</button>
+              </div>
+              <div class="panel-card" id="estriboCard">
+                <div class="panel-card__hdr">
+                  <span class="panel-card__title" id="estriboTitle">Zona central</span>
+                  <span class="role-badge cent" id="estriboBadge">Cant</span>
+                </div>
+                <div class="field-row" id="estriboLenRow">
+                  <label>Long.</label>
+                  <span class="len-hint" id="centLenHint">—</span>
+                </div>
+                <div class="field-row" id="estriboFields">
+                  <label>Estribo</label>
+                  <select class="ctrl" id="centDiam"><option value="8">ø8</option><option value="10" selected>ø10</option><option value="12">ø12</option></select>
+                  <div class="stepper-wrap" id="centSepStep"><span class="stepper-val" id="centSepVal">200</span><div class="stepper-arrows"><button type="button" class="stepper-btn stepper-up" data-st="centSep" data-d="25">▲</button><button type="button" class="stepper-btn stepper-down" data-st="centSep" data-d="-25">▼</button></div></div>
+                  <span style="color:var(--fg-lo);font-size:var(--fs-meta)">mm</span>
+                </div>
+                <div class="field-row" id="confinRow" style="display:none">
+                  <label>Tipo</label>
+                  <select class="ctrl" id="confinType" style="grid-column:span 3">
+                    <option value="perimetral" selected>Perimetral</option>
+                    <option value="u">En U</option>
+                    <option value="none">Sin confinamiento</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <!-- Old: 3 colored stacked blocks -->
+            <div id="railEstribosOld" style="display:none">
+              <div class="panel-card old-cent annot" data-annot="Verde Cent">
+                <div class="panel-card__title">Zona central (Cant)</div>
+                <div class="field-row"><label>Long.</label><span class="len-hint" id="centLenHintOld">—</span></div>
+                <div class="field-row"><label>Estribo</label><select class="ctrl"><option>ø10</option></select><div class="stepper-wrap"><span class="stepper-val">200</span></div></div>
+              </div>
+              <div class="panel-card old-ext annot" data-annot="Amarillo Ext">
+                <div class="panel-card__title">Extremos (Ext ×2)</div>
+                <div class="field-row"><label>Long.</label><span class="len-hint" id="extLenHintOld">—</span></div>
+                <div class="field-row"><label>Estribo</label><select class="ctrl"><option>ø10</option></select><div class="stepper-wrap"><span class="stepper-val">125</span></div></div>
+              </div>
+              <div class="panel-card old-confin annot" data-annot="Azul Confin">
+                <div class="panel-card__title">Confinamiento</div>
+                <div class="field-row"><label>Tipo</label><select class="ctrl" style="grid-column:span 3"><option>Perimetral</option></select></div>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <div class="win-footer">
+          <span class="status" id="footerStatus">—</span>
+          <div class="btn-row">
+            <button type="button" class="btn">Cancelar</button>
+            <button type="button" class="btn primary">Colocar armadura</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="eval-panel">
+      <h2>Evaluación interactiva</h2>
+      <div class="state-box" id="stateBox">—</div>
+      <div class="log" id="log"></div>
+      <h3>Probar</h3>
+      <ul style="font-size:var(--fs-meta);color:var(--fg-lo);padding-left:16px;line-height:1.6;">
+        <li>Clic banda Tn → expande editor capas/cant/ø (▲▼ y combos)</li>
+        <li>Clic viga o etiqueta alzado → sección + traslape</li>
+        <li>Traslape Superior/Inferior → marca empalme en alzado</li>
+        <li>Tabs Cent/Ext/Confin + stepper @ y ø estribos</li>
+        <li>Suple: Sí/No · ø · cantidad por viga alineada al alzado</li>
+        <li>Toggle Actual / Propuesto / Comparar (ventana sigue interactiva)</li>
+      </ul>
+    </aside>
+  </main>
+
+  <footer class="page-footer">
+    Mockup homogeneidad · <code>BIMTools.tab/Armadura.panel/36_ArmadoVigas.pushbutton/mockups/opcion_d_homogeneidad_mockup.html</code>
+  </footer>
+
+  <script>
+    const TRAMO_ACCENTS = ["#22d3ee", "#67e8f9", "#5eead4", "#7dd3fc", "#a5b4fc", "#c4b5fd"];
+    const DIAM_OPTS = [8, 10, 12, 16, 20, 25];
+    const CAPAS_MIN = 1, CAPAS_MAX = 3, BAR_MIN = 2, BAR_MAX = 8;
+
+    function accentRgba(hex, a) {
+      const h = String(hex || "#22d3ee").replace("#", "");
+      return `rgba(${parseInt(h.slice(0,2),16)},${parseInt(h.slice(2,4),16)},${parseInt(h.slice(4,6),16)},${a})`;
+    }
+
+    const SCENARIOS = {
+      screenshot: {
+        label: "Captura · 2 vigas",
+        beams: [
+          { id: "V-471545", type: "30×50", len: 5.2, colStart: "C1", colEnd: "C2" },
+          { id: "V-1058235", type: "30×50", len: 4.8, colStart: "C2", colEnd: "C3" },
+        ],
+      },
+      fiveBeams: {
+        label: "5 vigas · corrida continua",
+        beams: [
+          { id: "V-471545", type: "30×50", len: 5.2, colStart: "C1", colEnd: "C2" },
+          { id: "V-1058235", type: "30×50", len: 4.8, colStart: "C2", colEnd: "C3" },
+          { id: "V-471546", type: "30×60", len: 4.2, colStart: "C3", colEnd: "C4" },
+          { id: "V-471544", type: "30×60", len: 3.8, colStart: "C4", colEnd: "C5" },
+          { id: "V-471543", type: "30×50", len: 4.0, colStart: "C5", colEnd: "C6" },
+        ],
+      },
+    };
+
+    let beams = [], tramosSup = [], tramosInf = [], layoutMeta = { contentW: 700, layouts: [] };
+    let selectedBeamIdx = 0, selectedTramo = { sup: null, inf: null };
+    let empalmeSup = new Set(), empalmeInf = new Set();
+    let stirrups = { centSep: 200, centDiam: 10, extSep: 125, extDiam: 10, confin: "perimetral" };
+    let activeEstTab = "cent";
+    let viewMode = "proposed";
+
+    const logEl = document.getElementById("log");
+    function log(msg) {
+      const d = document.createElement("div");
+      d.textContent = new Date().toLocaleTimeString("es", { hour12: false }) + " · " + msg;
+      logEl.prepend(d);
+      while (logEl.children.length > 12) logEl.removeChild(logEl.lastChild);
+    }
+
+    function parseSection(t) {
+      const m = String(t || "30×60").match(/(\d+(?:\.\d+)?)\s*[×xX*]\s*(\d+(?:\.\d+)?)/);
+      return m ? { w: +m[1], h: +m[2] } : { w: 30, h: 60 };
+    }
+
+    function cloneScenario(key) {
+      beams = SCENARIOS[key].beams.map((b, i) => ({
+        ...b, u: i, nCapasSup: 2, nCapasInf: 2,
+        nSup: 2, nInf: 2, diamSup: 16, diamInf: 16,
+        nSup2: 2, nInf2: 2, diamSup2: 16, diamInf2: 16,
+        supleEnabled: i === 0, supleDiam: 12, supleN: 2,
+      }));
+      empalmeSup = new Set();
+      empalmeInf = new Set();
+      selectedBeamIdx = 0;
+      selectedTramo = { sup: null, inf: null };
+    }
+
+    function buildTramos(sorted, face) {
+      const out = [];
+      let tid = 1, cur = null;
+      for (let i = 0; i < sorted.length; i++) {
+        let share = false;
+        if (i > 0 && cur && sorted[i - 1].colEnd === sorted[i].colStart) {
+          share = face === "inf"
+            ? sorted[i - 1].type === sorted[i].type
+            : Math.abs(parseSection(sorted[i - 1].type).w - parseSection(sorted[i].type).w) < 0.05;
+        }
+        if (!share) {
+          if (cur) out.push(cur);
+          cur = { ids: [i], section: sorted[i].type };
+        } else {
+          cur.ids.push(i);
+        }
+      }
+      if (cur) out.push(cur);
+      return out.map((r, i) => ({
+        id: tid + i,
+        face,
+        beamIndices: r.ids,
+        beamIds: r.ids.map(j => sorted[j].id).join("+"),
+        section: r.section,
+        accent: TRAMO_ACCENTS[(tid + i - 1) % TRAMO_ACCENTS.length],
+      }));
+    }
+
+    function canvasContentWidth() {
+      const canvas = document.getElementById("elevCanvas");
+      const w = canvas ? canvas.clientWidth : 0;
+      return w > 40 ? w : 640;
+    }
+
+    function computeLayouts(sorted, w) {
+      const gap = 8, pad = 28, total = sorted.reduce((s, b) => s + b.len, 0);
+      const pool = w - pad * 2 - gap * Math.max(sorted.length - 1, 0);
+      let c = pad;
+      const layouts = sorted.map(b => {
+        const wp = (b.len / total) * pool;
+        const lay = { leftPx: c, widthPx: wp, leftPct: (c / w) * 100, widthPct: (wp / w) * 100 };
+        c += wp + gap;
+        return lay;
+      });
+      return { layouts, contentW: w };
+    }
+
+    function tramoSpan(tramo) {
+      const layouts = layoutMeta.layouts || [];
+      const fi = tramo.beamIndices[0];
+      const li = tramo.beamIndices[tramo.beamIndices.length - 1];
+      const f = layouts[fi];
+      const l = layouts[li];
+      if (!f || !l) return { leftPct: 0, widthPct: 100 / Math.max(tramosSup.length || tramosInf.length || 1, 1) };
+      return { leftPct: f.leftPct, widthPct: l.leftPct + l.widthPct - f.leftPct };
+    }
+
+    function layerKeys(L, face) {
+      const side = face === "sup" ? "Sup" : "Inf";
+      if (L === 1) return { n: "n" + side, diam: "diam" + side, label: "1ª" };
+      return { n: "n" + side + L, diam: "diam" + side + L, label: L === 2 ? "2ª" : "3ª" };
+    }
+
+    function nCapas(beam, face) {
+      return face === "sup" ? (beam.nCapasSup || 1) : (beam.nCapasInf || 1);
+    }
+
+    function applyTramoToBeams(tramo, fn) {
+      tramo.beamIndices.forEach(i => fn(beams[i]));
+    }
+
+    function tramoForBeamIdx(idx, face) {
+      const pool = face === "sup" ? tramosSup : tramosInf;
+      return pool.find(t => t.beamIndices.includes(idx)) || null;
+    }
+
+    function selectBeam(idx) {
+      selectedBeamIdx = idx;
+      const ts = tramoForBeamIdx(idx, "sup");
+      const ti = tramoForBeamIdx(idx, "inf");
+      if (ts) selectedTramo.sup = ts.id;
+      if (ti) selectedTramo.inf = ti.id;
+    }
+
+    function stepperHtml(val, dataAttrs) {
+      return `<div class="stepper-wrap"${dataAttrs ? " " + dataAttrs : ""}>` +
+        `<span class="stepper-val">${val}</span>` +
+        `<div class="stepper-arrows">` +
+        `<button type="button" class="stepper-btn stepper-up" data-d="1">▲</button>` +
+        `<button type="button" class="stepper-btn stepper-down" data-d="-1">▼</button>` +
+        `</div></div>`;
+    }
+
+    function layerSummary(beam, face) {
+      const chips = [];
+      const nC = nCapas(beam, face);
+      for (let L = 1; L <= nC; L++) {
+        const k = layerKeys(L, face);
+        chips.push(`${k.label} ${beam[k.n] || 2}ø${beam[k.diam] || 16}`);
+      }
+      return chips.join(" · ");
+    }
+
+    function buildBandExpandedHtml(tramo, face) {
+      const ref = beams[tramo.beamIndices[0]];
+      const capField = face === "sup" ? "nCapasSup" : "nCapasInf";
+      const nC = nCapas(ref, face);
+      let layers = "";
+      for (let L = 1; L <= nC; L++) {
+        const k = layerKeys(L, face);
+        layers += `<div class="band-layer-row">` +
+          `<span class="layer-tag">${k.label}</span>` +
+          `${stepperHtml(ref[k.n] || 2, `data-field="${k.n}" data-tid="${tramo.id}" data-face="${face}"`)}` +
+          `<select class="ctrl" data-field="${k.diam}" data-tid="${tramo.id}" data-face="${face}">` +
+          DIAM_OPTS.map(o => `<option value="${o}"${o === (ref[k.diam] || 16) ? " selected" : ""}>ø${o}</option>`).join("") +
+          `</select></div>`;
+      }
+      return `<div class="band-expanded">` +
+        `<span class="lbl">T${tramo.id}</span>` +
+        `<span class="lbl">Capas</span>` +
+        `${stepperHtml(nC, `data-cap="${capField}" data-tid="${tramo.id}" data-face="${face}"`)}` +
+        `<div class="band-layers">${layers}</div></div>`;
+    }
+
+    function bindBandControls(seg, tramo, face) {
+      seg.querySelectorAll(".stepper-wrap[data-cap]").forEach(wrap => {
+        wrap.querySelectorAll(".stepper-btn").forEach(btn => {
+          btn.addEventListener("click", e => {
+            e.stopPropagation();
+            const delta = parseInt(btn.dataset.d, 10);
+            const capField = wrap.dataset.cap;
+            applyTramoToBeams(tramo, b => {
+              b[capField] = Math.max(CAPAS_MIN, Math.min(CAPAS_MAX, (b[capField] || 1) + delta));
+            });
+            log(`[${face}] T${tramo.id} capas → ${nCapas(beams[tramo.beamIndices[0]], face)}`);
+            renderAll();
+          });
+        });
+      });
+      seg.querySelectorAll(".stepper-wrap[data-field]").forEach(wrap => {
+        wrap.querySelectorAll(".stepper-btn").forEach(btn => {
+          btn.addEventListener("click", e => {
+            e.stopPropagation();
+            const field = wrap.dataset.field;
+            const delta = parseInt(btn.dataset.d, 10);
+            applyTramoToBeams(tramo, b => {
+              b[field] = Math.max(BAR_MIN, Math.min(BAR_MAX, (b[field] || 2) + delta));
+            });
+            log(`[${face}] T${tramo.id} ${field} → ${beams[tramo.beamIndices[0]][field]}`);
+            renderAll();
+          });
+        });
+      });
+      seg.querySelectorAll("select[data-field]").forEach(sel => {
+        sel.addEventListener("change", e => {
+          e.stopPropagation();
+          const field = sel.dataset.field;
+          const val = parseInt(sel.value, 10);
+          applyTramoToBeams(tramo, b => { b[field] = val; });
+          log(`[${face}] T${tramo.id} ${field} → ø${val}`);
+          renderAll();
+        });
+      });
+    }
+
+    function bandSegHtml(tramo, face, sel, bodyHtml) {
+      const tint = `<div class="band-tint" style="background:${accentRgba(tramo.accent, sel ? 0.55 : 0.4)}"></div>`;
+      const body = `<div class="band-body">${bodyHtml}</div>`;
+      /* Sup: controles arriba, color tramo abajo (hacia fibra sup). Inf: color arriba (hacia fibra inf). */
+      return face === "sup" ? body + tint : tint + body;
+    }
+
+    function renderBands(container, tramos, face) {
+      if (!container) return;
+      container.innerHTML = "";
+      const isOld = viewMode === "actual";
+      tramos.forEach(tramo => {
+        const span = tramoSpan(tramo);
+        const sel = selectedTramo[face] === tramo.id;
+        const ref = beams[tramo.beamIndices[0]];
+        const seg = document.createElement("div");
+        seg.className = "band-seg" + (sel ? " selected" : "") + (isOld ? " old-style" : "");
+        seg.style.flex = span.widthPct + " 1 0";
+
+        if (isOld) {
+          seg.style.background = accentRgba(tramo.accent, 0.35);
+          seg.innerHTML = `<div class="band-float"><strong>T${tramo.id}</strong><br/>${layerSummary(ref, face)}</div>`;
+        } else {
+          const bodyHtml = sel ? buildBandExpandedHtml(tramo, face) :
+            `<div class="band-chip"><strong>T${tramo.id}</strong> ${layerSummary(ref, face)}</div>`;
+          seg.innerHTML = bandSegHtml(tramo, face, sel, bodyHtml);
+          if (sel) bindBandControls(seg, tramo, face);
+        }
+        seg.addEventListener("click", e => {
+          if (e.target.closest(".stepper-wrap, select, button")) return;
+          selectedTramo[face] = tramo.id;
+          log(`[${face}] Tramo T${tramo.id}`);
+          renderAll();
+        });
+        container.appendChild(seg);
+      });
+    }
+
+    function elevGeom(h) {
+      const beamTop = Math.round(h * 0.28), beamH = Math.round(h * 0.32);
+      return { h, beamTop, beamH, beamBot: beamTop + beamH, barSupY: beamTop + 10, barInfY: beamTop + beamH - 10, colTop: 4, colH: h - 8, colW: 14 };
+    }
+
+    function renderElevation() {
+      const canvas = document.getElementById("elevCanvas");
+      const svg = document.getElementById("elevSvg");
+      const hits = document.getElementById("elevHits");
+      const labels = document.getElementById("elevLabels");
+      if (!canvas || !svg || !hits || !labels) return;
+      hits.innerHTML = "";
+      labels.innerHTML = "";
+      const sorted = [...beams].sort((a, b) => a.u - b.u);
+      const w = canvasContentWidth();
+      const h = canvas.clientHeight > 40 ? canvas.clientHeight : 160;
+      layoutMeta = computeLayouts(sorted, w);
+      const G = elevGeom(h);
+      svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+      const parts = [];
+
+      if (layoutMeta.layouts.length) {
+        const l0 = layoutMeta.layouts[0], ln = layoutMeta.layouts[layoutMeta.layouts.length - 1];
+        const rl = l0.leftPx, rw = ln.leftPx + ln.widthPx - rl;
+        parts.push(`<rect x="${rl}" y="${G.beamTop}" width="${rw}" height="${G.beamH}" fill="rgba(226,232,240,0.06)"/>`);
+        parts.push(`<line x1="${rl}" y1="${G.beamTop}" x2="${rl+rw}" y2="${G.beamTop}" stroke="#94a3b8" stroke-width="2"/>`);
+        parts.push(`<line x1="${rl}" y1="${G.beamBot}" x2="${rl+rw}" y2="${G.beamBot}" stroke="#94a3b8" stroke-width="2"/>`);
+      }
+
+      tramosSup.forEach(t => {
+        const s = tramoSpan(t);
+        const x0 = s.leftPct / 100 * w, x1 = x0 + s.widthPct / 100 * w;
+        const col = accentRgba(t.accent, selectedTramo.sup === t.id ? 0.85 : 0.6);
+        parts.push(`<line x1="${x0}" y1="${G.barSupY}" x2="${x1}" y2="${G.barSupY}" stroke="${col}" stroke-width="${selectedTramo.sup === t.id ? 3 : 2}"/>`);
+        if (x1 - x0 >= 28) {
+          parts.push(`<text x="${(x0 + x1) / 2}" y="${G.barSupY - 5}" fill="${col}" font-size="8" font-weight="700" text-anchor="middle">T${t.id}</text>`);
+        }
+      });
+      tramosInf.forEach(t => {
+        const s = tramoSpan(t);
+        const x0 = s.leftPct / 100 * w, x1 = x0 + s.widthPct / 100 * w;
+        const col = accentRgba(t.accent, selectedTramo.inf === t.id ? 0.85 : 0.6);
+        parts.push(`<line x1="${x0}" y1="${G.barInfY}" x2="${x1}" y2="${G.barInfY}" stroke="${col}" stroke-width="${selectedTramo.inf === t.id ? 3 : 2}"/>`);
+        if (x1 - x0 >= 28) {
+          parts.push(`<text x="${(x0 + x1) / 2}" y="${G.barInfY + 13}" fill="${col}" font-size="8" font-weight="700" text-anchor="middle">T${t.id}</text>`);
+        }
+      });
+
+      sorted.forEach((beam, i) => {
+        const lay = layoutMeta.layouts[i];
+        if (!lay) return;
+        const chain = [
+          { id: beam.colStart, pct: lay.leftPct },
+          { id: beam.colEnd, pct: lay.leftPct + lay.widthPct },
+        ];
+        chain.forEach(pt => {
+          const x = pt.pct / 100 * w;
+          parts.push(`<rect x="${x - G.colW / 2}" y="${G.colTop}" width="${G.colW}" height="${G.colH}" fill="rgba(148,163,184,0.25)" stroke="#64748b" stroke-width="1"/>`);
+        });
+        const cx = lay.leftPx + lay.widthPx * 0.5;
+        const y = G.beamTop + G.beamH * 0.5;
+        parts.push(`<line x1="${cx - 20}" y1="${y}" x2="${cx + 14}" y2="${y}" stroke="#38bdf8" stroke-width="1.5" opacity="0.75"/>`);
+        parts.push(`<text x="${cx - 18}" y="${y - 8}" fill="#38bdf8" font-size="8" font-weight="700">${i + 1}</text>`);
+        const bid = beam.id;
+        if (empalmeSup.has(bid)) {
+          parts.push(`<line x1="${cx}" y1="${G.barSupY - 7}" x2="${cx}" y2="${G.barSupY + 7}" stroke="#fbbf24" stroke-width="2.5"/>`);
+        }
+        if (empalmeInf.has(bid)) {
+          parts.push(`<line x1="${cx}" y1="${G.barInfY - 7}" x2="${cx}" y2="${G.barInfY + 7}" stroke="#fbbf24" stroke-width="2.5"/>`);
+        }
+        if (beam.supleEnabled) {
+          const trim = lay.widthPx * 0.1;
+          const sx0 = lay.leftPx + trim, sx1 = lay.leftPx + lay.widthPx - trim;
+          const sy = G.barInfY + 14;
+          parts.push(`<line x1="${sx0}" y1="${sy}" x2="${sx1}" y2="${sy}" stroke="#a78bfa" stroke-width="2.5" stroke-dasharray="4 2"/>`);
+        }
+      });
+
+      svg.innerHTML = parts.join("");
+
+      sorted.forEach((beam, i) => {
+        const lay = layoutMeta.layouts[i];
+        if (!lay) return;
+        const hit = document.createElement("div");
+        hit.className = "beam-hit" + (i === selectedBeamIdx ? " selected" : "");
+        hit.style.cssText = `left:${lay.leftPx}px;width:${lay.widthPx}px;top:${G.beamTop}px;height:${G.beamH}px`;
+        hit.title = `${beam.id} · ${beam.type}`;
+        hit.addEventListener("click", e => {
+          e.stopPropagation();
+          selectBeam(i);
+          log(`Viga ${beam.id}`);
+          renderAll();
+        });
+        hits.appendChild(hit);
+
+        const slot = document.createElement("div");
+        slot.className = "elev-label-slot" + (i === selectedBeamIdx ? " selected" : "");
+        slot.style.cssText = `left:${lay.leftPx}px;width:${lay.widthPx}px;top:0`;
+        const empNotes = [];
+        if (empalmeSup.has(beam.id)) empNotes.push('<span style="color:#fbbf24;font-size:8px">Emp sup</span>');
+        if (empalmeInf.has(beam.id)) empNotes.push('<span style="color:#fbbf24;font-size:8px">Emp inf</span>');
+        if (beam.supleEnabled) empNotes.push('<span style="color:#a78bfa;font-size:8px">Suple</span>');
+        slot.innerHTML =
+          `<span class="lbl-id">${beam.id}</span>${beam.len.toFixed(1)} m · ${beam.type}` +
+          (empNotes.length ? `<br/>${empNotes.join(" · ")}` : "");
+        slot.addEventListener("click", e => {
+          e.stopPropagation();
+          selectBeam(i);
+          log(`Viga ${beam.id} (etiqueta)`);
+          renderAll();
+        });
+        labels.appendChild(slot);
+      });
+    }
+
+    function bindSupleControls(slot, beam, i) {
+      slot.querySelectorAll(".stepper-wrap[data-suple-n]").forEach(wrap => {
+        wrap.querySelectorAll(".stepper-btn").forEach(btn => {
+          btn.addEventListener("click", e => {
+            e.stopPropagation();
+            const d = parseInt(btn.dataset.d, 10);
+            beam.supleN = Math.max(BAR_MIN, Math.min(BAR_MAX, (beam.supleN || 2) + d));
+            log(`Suple ${beam.id} n → ${beam.supleN}`);
+            renderAll();
+          });
+        });
+      });
+      const diamSel = slot.querySelector("select[data-suple-diam]");
+      if (diamSel) {
+        diamSel.addEventListener("change", e => {
+          e.stopPropagation();
+          beam.supleDiam = parseInt(diamSel.value, 10);
+          log(`Suple ${beam.id} ø → ${beam.supleDiam}`);
+          renderAll();
+        });
+      }
+      const toggle = slot.querySelector("button[data-suple-toggle]");
+      if (toggle) {
+        toggle.addEventListener("click", e => {
+          e.stopPropagation();
+          beam.supleEnabled = !beam.supleEnabled;
+          log(`Suple ${beam.id}: ${beam.supleEnabled ? "ON" : "OFF"}`);
+          renderAll();
+        });
+      }
+    }
+
+    function renderSupleStrip() {
+      const canvas = document.getElementById("supleCanvas");
+      if (!canvas) return;
+      canvas.innerHTML = "";
+      const w = canvasContentWidth();
+      canvas.style.width = w + "px";
+      const isOld = viewMode === "actual";
+      const sorted = [...beams].sort((a, b) => a.u - b.u);
+
+      sorted.forEach((beam, i) => {
+        const lay = layoutMeta.layouts[i];
+        if (!lay) return;
+        const slot = document.createElement("div");
+        slot.className = "suple-slot" + (selectedBeamIdx === i ? " selected" : "") + (isOld ? " old-style" : "");
+        if (!isOld) {
+          slot.style.cssText = `position:absolute;left:${lay.leftPx}px;width:${Math.max(lay.widthPx, 88)}px;top:0;`;
+        } else {
+          slot.style.cssText = `position:absolute;left:${lay.leftPx}px;width:${Math.max(lay.widthPx, 100)}px;top:0;`;
+        }
+        if (isOld) {
+          slot.innerHTML = `
+            <div class="suple-hdr-purple">Suple · ${beam.id}</div>
+            <div class="suple-row">
+              <button type="button" class="toggle-btn${beam.supleEnabled ? " on" : ""}" data-suple-toggle>${beam.supleEnabled ? "Sí" : "No"}</button>
+              <select class="ctrl" data-suple-diam>${DIAM_OPTS.map(o => `<option value="${o}"${o === beam.supleDiam ? " selected" : ""}>ø${o}</option>`).join("")}</select>
+              ${stepperHtml(beam.supleN, "data-suple-n")}
+            </div>`;
+        } else {
+          slot.innerHTML = `
+            <div class="suple-slot__hdr">
+              <span class="suple-slot__id">${beam.id.split("-").pop()}</span>
+              <span class="role-badge suple">Suple</span>
+            </div>
+            <div class="suple-row">
+              <button type="button" class="toggle-btn${beam.supleEnabled ? " on" : ""}" data-suple-toggle style="flex:0 0 auto;padding:3px 8px;font-size:8px;${beam.supleEnabled ? "border-color:var(--sem-suple);background:var(--sem-suple-dim);color:var(--sem-suple)" : ""}">${beam.supleEnabled ? "Sí" : "No"}</button>
+              <select class="ctrl" data-suple-diam>${DIAM_OPTS.map(o => `<option value="${o}"${o === beam.supleDiam ? " selected" : ""}>ø${o}</option>`).join("")}</select>
+              ${stepperHtml(beam.supleN, "data-suple-n")}
+            </div>`;
+        }
+        bindSupleControls(slot, beam, i);
+        slot.addEventListener("click", e => {
+          if (e.target.closest(".stepper-wrap, select, button")) return;
+          selectBeam(i);
+          log(`Suple slot → viga ${beam.id}`);
+          renderAll();
+        });
+        canvas.appendChild(slot);
+      });
+    }
+
+    function renderTraslape() {
+      const beam = beams[selectedBeamIdx];
+      const onS = beam && empalmeSup.has(beam.id);
+      const onI = beam && empalmeInf.has(beam.id);
+      const hint = beam
+        ? `${beam.id} · ${beam.type} · ${beam.len.toFixed(1)} m — @ mitad de viga`
+        : "Seleccione una viga en el alzado.";
+      ["traslapeHint", "traslapeHintOld"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = hint;
+      });
+      [["btnTraslapeSup", "btnTraslapeSupOld", onS, "sup"], ["btnTraslapeInf", "btnTraslapeInfOld", onI, "inf"]].forEach(([id, idOld, on, face]) => {
+        [document.getElementById(id), document.getElementById(idOld)].forEach(btn => {
+          if (!btn) return;
+          btn.disabled = !beam;
+          btn.classList.toggle("on", !!on);
+          btn.textContent = (face === "sup" ? "Superior" : "Inferior") + (on ? " ✓" : "");
+          btn.onclick = () => {
+            if (!beam) return;
+            const set = face === "sup" ? empalmeSup : empalmeInf;
+            const currentlyOn = set.has(beam.id);
+            if (currentlyOn) set.delete(beam.id);
+            else set.add(beam.id);
+            log(`Traslape ${face}: ${currentlyOn ? "OFF" : "ON"} · ${beam.id}`);
+            renderAll();
+          };
+        });
+      });
+    }
+
+    function bindEstriboControls() {
+      const diamSel = document.getElementById("centDiam");
+      const sepField = activeEstTab === "ext" ? "extSep" : "centSep";
+      const diamField = activeEstTab === "ext" ? "extDiam" : "centDiam";
+      if (diamSel) {
+        diamSel.innerHTML = DIAM_OPTS.map(o =>
+          `<option value="${o}"${o === stirrups[diamField] ? " selected" : ""}>ø${o}</option>`
+        ).join("");
+        diamSel.onchange = () => {
+          stirrups[diamField] = parseInt(diamSel.value, 10);
+          log(`Estribo ${activeEstTab} ø${stirrups[diamField]}`);
+          renderSection();
+        };
+      }
+      const sepVal = document.getElementById("centSepVal");
+      if (sepVal) sepVal.textContent = stirrups[sepField];
+      document.querySelectorAll("#estriboCard .stepper-btn[data-st]").forEach(btn => {
+        btn.onclick = e => {
+          e.stopPropagation();
+          stirrups[sepField] = Math.max(50, stirrups[sepField] + (+btn.dataset.d));
+          log(`Estribo ${activeEstTab} @${stirrups[sepField]} mm`);
+          renderEstribos();
+          renderSection();
+        };
+      });
+      const confinSel = document.getElementById("confinType");
+      if (confinSel) {
+        confinSel.value = stirrups.confin;
+        confinSel.onchange = () => {
+          stirrups.confin = confinSel.value;
+          log(`Confin: ${stirrups.confin}`);
+          renderSection();
+        };
+      }
+    }
+
+    function renderEstribos() {
+      const beam = beams[selectedBeamIdx];
+      const hMm = beam ? parseSection(beam.type).h * 10 : 500;
+      const lArr = beam ? Math.max(0, beam.len * 1000 - 100) : 0;
+      const centL = Math.round(lArr * 0.5);
+      const extL = Math.round(hMm * 2);
+      const note = '<span class="note"> · L auto · regla 2·h</span>';
+      const centHint = document.getElementById("centLenHint");
+      const centHintOld = document.getElementById("centLenHintOld");
+      const extHintOld = document.getElementById("extLenHintOld");
+      if (centHint) {
+        centHint.innerHTML = activeEstTab === "ext"
+          ? `L ${extL} mm ×2${note}`
+          : `L ${centL} mm · luz libre${note}`;
+      }
+      if (centHintOld) centHintOld.innerHTML = `L ${centL} mm${note}`;
+      if (extHintOld) extHintOld.innerHTML = `L ${extL} mm ×2${note}`;
+
+      const titles = { cent: "Zona central", ext: "Extremos", confin: "Confinamiento" };
+      const badges = { cent: ["cent", "Cant"], ext: ["ext", "Ext ×2"], confin: ["confin", "Confin."] };
+      document.getElementById("estriboTitle").textContent = titles[activeEstTab];
+      const [cls, txt] = badges[activeEstTab];
+      const badge = document.getElementById("estriboBadge");
+      badge.className = "role-badge " + cls;
+      badge.textContent = txt;
+      document.getElementById("estriboLenRow").style.display = activeEstTab === "confin" ? "none" : "";
+      document.getElementById("estriboFields").style.display = activeEstTab === "confin" ? "none" : "";
+      document.getElementById("confinRow").style.display = activeEstTab === "confin" ? "" : "none";
+      bindEstriboControls();
+    }
+
+    function renderSection() {
+      const beam = beams[selectedBeamIdx];
+      const nameEl = document.getElementById("previewBeamName");
+      const metaEl = document.getElementById("sectionMeta");
+      const svg = document.getElementById("sectionSvg");
+      if (!beam || !nameEl || !metaEl || !svg) {
+        if (nameEl) nameEl.textContent = "—";
+        if (metaEl) metaEl.textContent = "Seleccione una viga en el alzado.";
+        if (svg) svg.innerHTML = "";
+        return;
+      }
+      nameEl.textContent = `${beam.id} · ${beam.type}`;
+      const sec = parseSection(beam.type);
+      const bw = sec.w * 2.5, bh = sec.h * 2.5;
+      const x = (120 - bw) / 2, y = (80 - bh) / 2;
+      svg.innerHTML = `
+        <rect x="${x}" y="${y}" width="${bw}" height="${bh}" fill="rgba(30,52,68,0.9)" stroke="#22d3ee" stroke-width="1.5" rx="1"/>
+        <circle cx="${x + 8}" cy="${y + 8}" r="2.5" fill="#22d3ee"/>
+        <circle cx="${x + bw - 8}" cy="${y + 8}" r="2.5" fill="#22d3ee"/>
+        <circle cx="${x + 8}" cy="${y + bh - 8}" r="2.5" fill="#22d3ee"/>
+        <circle cx="${x + bw - 8}" cy="${y + bh - 8}" r="2.5" fill="#22d3ee"/>`;
+      metaEl.innerHTML =
+        `Sup ${beam.nCapasSup} capas · ${layerSummary(beam, "sup")} mm<br>` +
+        `Inf ${beam.nCapasInf} capas · ${layerSummary(beam, "inf")} mm<br>` +
+        `Est ${activeEstTab === "ext" ? "Ext" : "Cant"} ø${activeEstTab === "ext" ? stirrups.extDiam : stirrups.centDiam} @${activeEstTab === "ext" ? stirrups.extSep : stirrups.centSep} · Confin ${stirrups.confin}` +
+        (beam.supleEnabled ? `<br>Suple ${beam.supleN}ø${beam.supleDiam}` : "");
+    }
+
+    function renderCompareMinis() {
+      const before = document.getElementById("miniBefore");
+      const after = document.getElementById("miniAfter");
+      if (!before || !after || viewMode !== "compare") return;
+      const beam = beams[selectedBeamIdx];
+      const chip = beam ? `${beam.id} · T${selectedTramo.sup || "?"} sup` : "—";
+      before.innerHTML =
+        `<div style="font-size:9px;color:#fb7185;margin-bottom:6px;font-weight:700">Actual · ${chip}</div>` +
+        `<div style="display:flex;gap:2px;height:22px;margin-bottom:4px">` +
+        tramosSup.map(t => `<div style="flex:${tramoSpan(t).widthPct};background:${accentRgba(t.accent,0.45)};border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#fff">T${t.id}</div>`).join("") +
+        `</div>` +
+        `<div style="height:48px;background:#0a1620;border:1px solid #21465C;border-radius:3px;margin-bottom:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#64748b">Alzado · colores saturados</div>` +
+        `<div style="padding:6px;background:#16120a;border:1px solid #fbbf24;border-radius:3px;font-size:8px;color:#fbbf24">Traslape bloque ámbar</div>`;
+      after.innerHTML =
+        `<div style="font-size:9px;color:#22d3ee;margin-bottom:6px;font-weight:700">Propuesto · ${chip}</div>` +
+        `<div style="display:flex;gap:2px;height:22px;margin-bottom:4px">` +
+        tramosSup.map(t => `<div style="flex:${tramoSpan(t).widthPct};background:var(--bg-panel);border:1px solid #21465C;border-radius:2px;overflow:hidden;display:flex;flex-direction:column"><div style="font-size:7px;text-align:center;padding:2px;color:#95b8cc;flex:1">T${t.id}</div><div style="height:4px;background:${accentRgba(t.accent,0.5)};margin-top:auto"></div></div>`).join("") +
+        `</div>` +
+        `<div style="height:48px;background:#0a1620;border:1px solid #22d3ee;border-radius:3px;margin-bottom:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#22d3ee">Alzado · acento único</div>` +
+        `<div style="padding:6px;background:var(--bg-panel);border:1px solid #21465C;border-radius:3px;font-size:8px;color:#95b8cc">Traslape <span style="color:#fbbf24">badge</span> · panel unificado</div>`;
+    }
+
+    function updateChrome() {
+      document.getElementById("chipBeams").textContent = beams.length;
+      document.getElementById("chipTramos").innerHTML = `Sup <strong>${tramosSup.length}</strong> · Inf <strong>${tramosInf.length}</strong> tramos`;
+      const parts = [];
+      if (selectedTramo.sup) parts.push(`T${selectedTramo.sup} sup`);
+      if (selectedTramo.inf) parts.push(`T${selectedTramo.inf} inf`);
+      document.getElementById("elevHint").textContent = parts.length ? "Tramo: " + parts.join(" · ") : "Sin tramo";
+      document.getElementById("footerStatus").textContent =
+        `${beams.length} viga(s) · ${parts.join(", ") || "clic viga o tramo"}`;
+      document.getElementById("pillState").textContent = viewMode === "actual" ? "Skin: Actual" : "Skin: Propuesto";
+      document.getElementById("stateBox").textContent =
+        `Modo: ${viewMode}\nViga: ${beams[selectedBeamIdx]?.id || "—"}\nTramo sup: T${selectedTramo.sup || "—"}\nTramo inf: T${selectedTramo.inf || "—"}\nTab estribo: ${activeEstTab}`;
+      document.getElementById("legendRow").innerHTML = tramosSup.map(t =>
+        `<span><span class="legend-dot" style="background:${accentRgba(t.accent, 0.5)}"></span>T${t.id} sup</span>`
+      ).join("") + tramosInf.map(t =>
+        `<span><span class="legend-dot" style="background:${accentRgba(t.accent, 0.5)}"></span>T${t.id} inf</span>`
+      ).join("");
+    }
+
+    function renderAll() {
+      try {
+        const sorted = [...beams].sort((a, b) => a.u - b.u);
+        tramosSup = buildTramos(sorted, "sup");
+        tramosInf = buildTramos(sorted, "inf");
+        if (!selectedTramo.sup && tramosSup.length) selectedTramo.sup = tramosSup[0].id;
+        if (!selectedTramo.inf && tramosInf.length) selectedTramo.inf = tramosInf[0].id;
+
+        layoutMeta = computeLayouts(sorted, canvasContentWidth());
+
+        renderBands(document.getElementById("bandsSup"), tramosSup, "sup");
+        renderBands(document.getElementById("bandsInf"), tramosInf, "inf");
+        renderElevation();
+        renderSupleStrip();
+        renderTraslape();
+        renderEstribos();
+        renderSection();
+        updateChrome();
+        renderCompareMinis();
+      } catch (err) {
+        console.error(err);
+        const box = document.getElementById("stateBox");
+        if (box) box.textContent = "Error render: " + err.message;
+        log("Error: " + err.message);
+      }
+    }
+
+    function setViewMode(mode) {
+      viewMode = mode;
+      document.body.classList.remove("skin-actual", "skin-proposed", "mode-compare");
+      if (mode === "actual") document.body.classList.add("skin-actual");
+      else document.body.classList.add("skin-proposed");
+      if (mode === "compare") document.body.classList.add("mode-compare");
+      document.querySelectorAll("#viewToggle button").forEach(b => {
+        b.classList.toggle("active", b.dataset.mode === mode);
+      });
+      log("Vista: " + mode);
+      renderAll();
+    }
+
+    document.getElementById("viewToggle").addEventListener("click", e => {
+      const btn = e.target.closest("button[data-mode]");
+      if (btn) setViewMode(btn.dataset.mode);
+    });
+    document.getElementById("showAnnot").addEventListener("change", e => {
+      document.body.classList.toggle("show-annot", e.target.checked);
+    });
+    document.querySelectorAll(".tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        activeEstTab = btn.dataset.tab;
+        log("Estribo tab: " + activeEstTab);
+        renderAll();
+      });
+    });
+
+    const sel = document.getElementById("scenarioSelect");
+    Object.entries(SCENARIOS).forEach(([k, sc]) => {
+      const o = document.createElement("option");
+      o.value = k; o.textContent = sc.label;
+      sel.appendChild(o);
+    });
+    sel.value = "fiveBeams";
+    sel.addEventListener("change", () => { cloneScenario(sel.value); log("Escenario: " + SCENARIOS[sel.value].label); renderAll(); });
+    window.addEventListener("resize", () => renderAll());
+
+    cloneScenario("fiveBeams");
+    setViewMode("proposed");
+    requestAnimationFrame(() => renderAll());
+    log("Mockup homogeneidad listo");
+  </script>
+</body>
+</html>

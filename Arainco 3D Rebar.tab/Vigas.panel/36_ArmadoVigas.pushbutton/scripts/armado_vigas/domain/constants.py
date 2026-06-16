@@ -1,0 +1,14 @@
+# -*- coding: utf-8 -*-
+"""Constantes de dominio (alineadas al mockup canvas)."""
+
+MAX_BAR_MM = 12000
+BAR_COUNT_MIN = 2
+BAR_COUNT_MAX = 8
+CAPAS_MIN = 1
+CAPAS_MAX = 3
+CAPAS_DEFAULT = 1
+LONG_DIAM_OPTS = (12, 16, 20, 25, 28, 32)
+ESTRIBO_INSET_MM = 50
+ESTRIBO_SPACING_MIN = 50
+ESTRIBO_SPACING_OPTS = tuple(range(ESTRIBO_SPACING_MIN, 425, 25))
+UMBRAL_EMPALME_MM = 12000

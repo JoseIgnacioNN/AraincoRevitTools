@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mockup — Confinamiento global bajo controladores · Armado vigas</title>
+  <style>
+    :root {
+      --bg-app: #071018;
+      --bg-panel: #0a1620;
+      --border: #21465c;
+      --fg-hi: #e8f4f8;
+      --fg-mid: #95b8cc;
+      --fg-lo: #64748b;
+      --input-bg: #071018;
+      --input-border: #1e3344;
+      --btn-outline: #2d4455;
+      --btn-primary: #5bb8d4;
+      --btn-primary-fg: #071018;
+      --ok: #4ade80;
+      --warn: #fbbf24;
+      --bar-ext: #fbbf24;
+      --bar-cent: #34d399;
+      --bar-uni: #fde68a;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #050c14;
+      color: var(--fg-mid);
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .dev-bar {
+      background: #0f1c28;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      align-items: center;
+      font-size: 11px;
+    }
+    .dev-bar h1 { font-size: 13px; color: var(--fg-hi); font-weight: 600; }
+    .dev-bar label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .dev-bar select {
+      background: var(--input-bg);
+      color: var(--fg-hi);
+      border: 1px solid var(--input-border);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+    .pill {
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .pill.ok { background: rgba(74, 222, 128, 0.15); color: var(--ok); }
+    .pill.ref { background: rgba(251, 191, 36, 0.12); color: var(--warn); }
+    .sep { width: 1px; height: 20px; background: var(--border); }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      min-height: 0;
+      overflow: hidden;
+    }
+    @media (max-width: 960px) {
+      main { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+      .eval-panel { border-left: none; border-top: 1px solid var(--border); max-height: 280px; }
+    }
+
+    .workspace {
+      overflow: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .intro {
+      max-width: 720px;
+      width: 100%;
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--fg-lo);
+    }
+    .intro strong { color: var(--fg-hi); }
+
+    .compare-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 24px;
+      justify-content: center;
+      width: 100%;
+      max-width: 900px;
+    }
+    .compare-row.single-variant { justify-content: center; }
+    .compare-row.single-variant .variant-col.hidden { display: none; }
+
+    .variant-col {
+      flex: 1 1 320px;
+      max-width: 420px;
+      min-width: 280px;
+    }
+    .variant-col.hidden { display: none; }
+    .variant-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .variant-label.proposed { color: var(--ok); }
+    .variant-label.current { color: var(--warn); }
+
+    /* ── Slot estribo (estilo canvas WPF) ── */
+    .stirrup-slot {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg-app);
+      padding: 4px 6px 6px;
+      min-width: 280px;
+    }
+    .slot-hdr {
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-align: center;
+      color: var(--fg-lo);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+    .slot-zones {
+      display: flex;
+      gap: 4px;
+      align-items: stretch;
+    }
+    .zone-slot { flex: 1; min-width: 0; display: flex; }
+    .zone-slot.ext,
+    .zone-slot.cent { flex: 1 1 0; min-width: 0; }
+    .zone-slot.full { flex: 1 1 100%; }
+
+    .zone-panel {
+      width: 100%;
+      border-radius: 4px;
+      font-size: 9px;
+      cursor: pointer;
+      overflow: hidden;
+      transition: border-color 0.12s, box-shadow 0.12s;
+    }
+    .zone-panel .bar-top { height: 2px; margin-bottom: 2px; }
+    .zone-panel.ext {
+      border: 1px solid rgba(251, 191, 36, 0.45);
+      background: rgba(22, 18, 10, 0.94);
+    }
+    .zone-panel.ext .bar-top { background: var(--bar-ext); }
+    .zone-panel.ext .zone-id { color: #fcd34d; }
+    .zone-panel.ext.selected {
+      border-color: var(--bar-ext);
+      box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.45);
+    }
+    .zone-panel.cent {
+      border: 1px solid rgba(52, 211, 153, 0.35);
+      background: rgba(10, 22, 32, 0.95);
+    }
+    .zone-panel.cent .bar-top { background: var(--bar-cent); }
+    .zone-panel.cent .zone-id { color: #6ee7b7; }
+    .zone-panel.cent.selected {
+      border-color: var(--bar-cent);
+      box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.55);
+    }
+    .zone-panel.uni {
+      border: 1px solid rgba(251, 191, 36, 0.5);
+      background: rgba(14, 20, 18, 0.95);
+    }
+    .zone-panel.uni .bar-top {
+      background: linear-gradient(90deg, var(--bar-ext), var(--bar-cent));
+    }
+    .zone-panel.uni .zone-id { color: var(--bar-uni); }
+    .zone-panel.uni.selected {
+      border-color: var(--bar-ext);
+      box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.5);
+    }
+
+    .zone-toolbar { padding: 3px 6px 2px; }
+    .zone-id { font-size: 8px; font-weight: 700; }
+    .zone-body { padding: 0 6px 6px; }
+
+    .est-fields { display: flex; flex-direction: column; gap: 4px; }
+    .est-field-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 8px;
+    }
+    .est-lbl {
+      min-width: 14px;
+      font-weight: 700;
+      color: var(--fg-lo);
+      font-size: 7px;
+    }
+    .zone-len-tag {
+      font-size: 6.5px;
+      color: var(--fg-lo);
+      margin-top: 3px;
+      line-height: 1.3;
+    }
+    .zone-panel.ext .zone-len-tag { color: rgba(251, 191, 36, 0.75); }
+    .est-hint {
+      font-size: 7px;
+      color: var(--fg-lo);
+      line-height: 1.35;
+      margin-top: 2px;
+    }
+
+    .stepper-wrap { display: inline-flex; align-items: center; }
+    .stepper-btn {
+      width: 16px; height: 18px;
+      border: 1px solid var(--input-border);
+      background: var(--input-bg); color: var(--fg-mid);
+      font-size: 10px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .stepper-btn:hover { border-color: var(--btn-primary); color: var(--fg-hi); }
+    .stepper-val {
+      width: 28px; height: 18px;
+      border-top: 1px solid var(--input-border);
+      border-bottom: 1px solid var(--input-border);
+      background: var(--input-bg); color: var(--fg-hi);
+      font-size: 9px; font-weight: 600; text-align: center; line-height: 16px;
+    }
+    select.ctrl {
+      flex: 1;
+      height: 20px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 3px;
+      color: var(--fg-hi);
+      font-size: 9px;
+      padding: 0 4px;
+      cursor: pointer;
+      min-width: 0;
+    }
+    .at-unit { font-size: 7px; color: var(--fg-lo); }
+
+    /* ── Fila global confinamiento (propuesta) ── */
+    .confin-global {
+      margin-top: 5px;
+      border: 1px solid rgba(91, 184, 212, 0.35);
+      border-radius: 4px;
+      background: rgba(7, 16, 24, 0.92);
+      overflow: hidden;
+    }
+    .confin-global .bar-top {
+      height: 2px;
+      background: linear-gradient(90deg, var(--bar-ext) 0%, var(--bar-cent) 50%, var(--bar-ext) 100%);
+    }
+    .confin-global-body { padding: 5px 6px 6px; }
+    .confin-global .est-field-row .est-lbl { min-width: 38px; font-size: 8px; }
+    .confin-global-hint {
+      font-size: 7px;
+      color: var(--fg-lo);
+      margin-top: 4px;
+      line-height: 1.35;
+    }
+    .confin-global-hint em {
+      font-style: normal;
+      color: rgba(91, 184, 212, 0.85);
+    }
+    .confin-global.selected {
+      border-color: var(--btn-primary);
+      box-shadow: 0 0 0 1px rgba(91, 184, 212, 0.4);
+    }
+
+    /* ── Panel evaluación ── */
+    .eval-panel {
+      border-left: 1px solid var(--border);
+      background: var(--bg-panel);
+      padding: 14px;
+      overflow: auto;
+      font-size: 11px;
+    }
+    .eval-panel h2 {
+      font-size: 12px;
+      color: var(--fg-hi);
+      margin-bottom: 10px;
+    }
+    .eval-panel h3 {
+      font-size: 10px;
+      color: var(--btn-primary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 12px 0 6px;
+    }
+    .preview-box {
+      border: 1px solid rgba(33, 70, 92, 0.65);
+      border-radius: 4px;
+      background: radial-gradient(ellipse at 50% 30%, rgba(30, 52, 68, 0.5), rgba(7, 16, 24, 0.88));
+      padding: 8px;
+      min-height: 120px;
+    }
+    .preview-box svg { width: 100%; height: auto; display: block; }
+    .state-lines {
+      font-size: 9px;
+      color: var(--fg-lo);
+      line-height: 1.55;
+      font-family: Consolas, "Courier New", monospace;
+    }
+    .state-lines .hi { color: var(--fg-hi); }
+    .log {
+      margin-top: 8px;
+      max-height: 100px;
+      overflow: auto;
+      font-size: 8px;
+      color: var(--fg-lo);
+      border-top: 1px dashed var(--border);
+      padding-top: 6px;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 8px 16px;
+      font-size: 10px;
+      color: var(--fg-lo);
+      background: #0a1218;
+    }
+  </style>
+</head>
+<body>
+  <header class="dev-bar">
+    <h1>Confinamiento — distribución controladores</h1>
+    <span class="pill ok">Propuesta A</span>
+    <span class="pill ref">Referencia B</span>
+    <span class="sep"></span>
+    <label>Viga
+      <select id="beamSelect"></select>
+    </label>
+    <label>Modo estribos
+      <select id="modeSelect">
+        <option value="triple" selected>triple (Ext + Cent)</option>
+        <option value="uni">único (merge)</option>
+        <option value="short">corto (solo Cent)</option>
+      </select>
+    </label>
+    <label>N barras 1ª capa
+      <select id="barCountSelect"></select>
+    </label>
+    <label>Vista
+      <select id="viewSelect">
+        <option value="both" selected>A vs B (comparar)</option>
+        <option value="proposed">Solo propuesta A</option>
+        <option value="current">Solo referencia B</option>
+      </select>
+    </label>
+  </header>
+
+  <main>
+    <div class="workspace">
+      <p class="intro">
+        <strong>Propuesta A:</strong> el tipo de confinamiento (<code>estConfin</code>) va en una fila
+        <strong>debajo</strong> de los controladores Ext y Cent, porque define el patrón de estribos
+        en la sección transversal y aplica por igual a ini/fin y centro.
+        <strong>Referencia B</strong> reproduce el layout actual (Confin. solo dentro del panel Cent).
+      </p>
+      <div class="compare-row" id="compareRow">
+        <div class="variant-col" id="colProposed">
+          <div class="variant-label proposed">A · Propuesto — confin. global</div>
+          <div id="slotProposed"></div>
+        </div>
+        <div class="variant-col" id="colCurrent">
+          <div class="variant-label current">B · Actual — confin. en Cent</div>
+          <div id="slotCurrent"></div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="eval-panel">
+      <h2>Evaluación en vivo</h2>
+      <div class="preview-box" id="sectionPreview"></div>
+      <h3>Estado viga</h3>
+      <div class="state-lines" id="stateDump"></div>
+      <h3>Eventos</h3>
+      <div class="log" id="eventLog">—</div>
+    </aside>
+  </main>
+
+  <footer>
+    Mockup interactivo · sin backend · abrir en navegador desde
+    <code>BIMTools.tab/Armadura.panel/36_ArmadoVigas.pushbutton/mockups/confinamiento_layout_mockup.html</code>
+  </footer>
+
+  <script>
+    const ESTRIBO_DIAM_OPTS = [8, 10, 12, 16];
+    const ESTRIBO_SPACING_MIN = 50;
+
+    const CONFIN_BY_COUNT = {
+      2: [{ label: "Perimetral", perimetral: true, ties: [], pairs: [] }],
+      3: [
+        { label: "Perimetral", perimetral: true, ties: [], pairs: [] },
+        { label: "Perimetral + traba [1]", perimetral: true, ties: [1], pairs: [] },
+      ],
+      4: [
+        { label: "Perimetral + traba [2]", perimetral: true, ties: [2], pairs: [] },
+        { label: "E(0–2) + E(1–3)", perimetral: false, ties: [], pairs: [[0, 2], [1, 3]] },
+      ],
+      5: [
+        { label: "E(0–3) + E(1–4)", perimetral: false, ties: [], pairs: [[0, 3], [1, 4]] },
+        { label: "E(0–3) + E(1–4) + traba [2]", perimetral: false, ties: [2], pairs: [[0, 3], [1, 4]] },
+      ],
+      6: [
+        { label: "E(0–3) + E(2–5)", perimetral: false, ties: [], pairs: [[0, 3], [2, 5]] },
+        { label: "E(0–3) + E(2–5) + traba [1] + traba [4]", perimetral: false, ties: [1, 4], pairs: [[0, 3], [2, 5]] },
+      ],
+      7: [
+        { label: "Perimetral + E(1–2) + E(4–5) + traba [3]", perimetral: true, ties: [3], pairs: [[1, 2], [4, 5]] },
+      ],
+      8: [
+        { label: "E(0–3) + E(2–5) + E(4–7)", perimetral: false, ties: [], pairs: [[0, 3], [2, 5], [4, 7]] },
+      ],
+    };
+
+    const BEAMS = [
+      { id: "V-471545", type: "30×60", len: 8.4, nSup: 4, nInf: 4, estExtDiam: 10, estExtSpacing: 125, estCentDiam: 8, estCentSpacing: 200, estConfin: "E(0–2) + E(1–3)" },
+      { id: "V-102", type: "30×60", len: 2.0, nSup: 3, nInf: 3, estExtDiam: 10, estExtSpacing: 125, estCentDiam: 8, estCentSpacing: 200, estConfin: "Perimetral + traba [1]" },
+      { id: "V-101", type: "30×60", len: 6.2, nSup: 2, nInf: 2, estExtDiam: 10, estExtSpacing: 125, estCentDiam: 8, estCentSpacing: 200, estConfin: "Perimetral" },
+    ];
+
+    let selectedZone = { role: "ext" };
+    let selectedConfinGlobal = false;
+    let forcedMode = "triple";
+    let forcedBarCount = null;
+    const logs = [];
+
+    const beamSelect = document.getElementById("beamSelect");
+    const modeSelect = document.getElementById("modeSelect");
+    const barCountSelect = document.getElementById("barCountSelect");
+    const viewSelect = document.getElementById("viewSelect");
+    const compareRow = document.getElementById("compareRow");
+    const colCurrent = document.getElementById("colCurrent");
+    const slotProposed = document.getElementById("slotProposed");
+    const slotCurrent = document.getElementById("slotCurrent");
+    const sectionPreview = document.getElementById("sectionPreview");
+    const stateDump = document.getElementById("stateDump");
+    const eventLog = document.getElementById("eventLog");
+
+    BEAMS.forEach((b, i) => {
+      const opt = document.createElement("option");
+      opt.value = i;
+      opt.textContent = `${b.id} · ${b.type}`;
+      beamSelect.appendChild(opt);
+    });
+    for (let n = 2; n <= 8; n++) {
+      const opt = document.createElement("option");
+      opt.value = n;
+      opt.textContent = String(n);
+      barCountSelect.appendChild(opt);
+    }
+
+    function currentBeam() {
+      return BEAMS[parseInt(beamSelect.value, 10) || 0];
+    }
+
+    function firstLayerBarCount(beam) {
+      if (forcedBarCount != null) return forcedBarCount;
+      const ns = beam.nSup || 0;
+      const ni = beam.nInf || 0;
+      if (ns < 2 || ni < 2) return 2;
+      return Math.min(ns, ni, 8);
+    }
+
+    function getConfinScenarios(beam) {
+      const n = firstLayerBarCount(beam);
+      return CONFIN_BY_COUNT[n] || CONFIN_BY_COUNT[2];
+    }
+
+    function confinementOptions(beam) {
+      return getConfinScenarios(beam).map(s => s.label);
+    }
+
+    function ensureBeamConfinement(beam) {
+      const opts = confinementOptions(beam);
+      const cur = beam.estConfin;
+      beam.estConfin = cur && opts.includes(cur) ? cur : opts[0];
+      return beam.estConfin;
+    }
+
+    function sectionHeightMm(typeStr) {
+      const m = String(typeStr || "30×60").match(/(\d+)\s*[×xX*]\s*(\d+)/);
+      return m ? Math.round(+m[2] * 10) : 600;
+    }
+
+    function computePlan(beam) {
+      const h = sectionHeightMm(beam.type);
+      const Lw = Math.round((beam.len || 0) * 1000);
+      const inset = 50;
+      const L_arr = Math.max(0, Lw - 2 * inset);
+      const twoH = 2 * h;
+
+      if (forcedMode === "short") {
+        return { mode: "short", L_ext: 0, L_cent: L_arr, Lw, h, label: "short" };
+      }
+      if (forcedMode === "uni") {
+        return { mode: "uni", L_ext: 0, L_cent: L_arr, Lw, h, label: "merge" };
+      }
+      const L_ext = Math.min(twoH, L_arr / 2);
+      const L_cent = Math.max(0, L_arr - 2 * L_ext);
+      return { mode: "triple", L_ext, L_cent, Lw, h, label: "triple" };
+    }
+
+    function stepperHtml(val) {
+      return `<span class="stepper-wrap"><button type="button" class="stepper-btn" data-d="-25">−</button><span class="stepper-val">${val}</span><button type="button" class="stepper-btn" data-d="25">+</button></span>`;
+    }
+
+    function diamSelectHtml(val, cls) {
+      return `<select class="ctrl ${cls}">${ESTRIBO_DIAM_OPTS.map(d =>
+        `<option value="${d}"${d === val ? " selected" : ""}>ø${d}</option>`
+      ).join("")}</select>`;
+    }
+
+    function confinSelectHtml(beam) {
+      const opts = confinementOptions(beam);
+      const cur = ensureBeamConfinement(beam);
+      return opts.map(o =>
+        `<option value="${o}"${o === cur ? " selected" : ""}>${o}</option>`
+      ).join("");
+    }
+
+    function zoneFieldsExt(beam, plan) {
+      const lenHint = plan.mode === "triple"
+        ? `L ${Math.round(plan.L_ext)} mm ×2 (ini/fin) · 2·h=${plan.h * 2}`
+        : `L ${Math.round(plan.L_cent || plan.L_ext)} mm`;
+      return `
+        <div class="est-fields">
+          <div class="est-field-row">
+            <span class="est-lbl">ø</span>${diamSelectHtml(beam.estExtDiam, "ext-diam")}
+          </div>
+          <div class="est-field-row est-spacing-row" data-field="estExtSpacing">
+            <span class="est-lbl">@</span>${stepperHtml(beam.estExtSpacing)}<span class="at-unit">mm</span>
+          </div>
+          <div class="zone-len-tag">${lenHint}</div>
+        </div>`;
+    }
+
+    function zoneFieldsCent(beam, plan, withConfin) {
+      const len = plan.mode === "triple" ? plan.L_cent : (plan.L_cent || plan.L_ext);
+      const lenHint = plan.mode === "short"
+        ? `L ${Math.round(len)} mm · &lt; 2·h`
+        : `L ${Math.round(len)} mm`;
+      const confinBlock = withConfin ? `
+          <div class="est-field-row">
+            <span class="est-lbl">Confin.</span>
+            <select class="ctrl confin-in-cent"${confinementOptions(beam).length < 2 ? " disabled" : ""}>${confinSelectHtml(beam)}</select>
+          </div>
+          <div class="est-hint">${firstLayerBarCount(beam)} barras 1ª capa · sup ${beam.nSup} · inf ${beam.nInf}</div>` : "";
+      return `
+        <div class="est-fields">
+          <div class="est-field-row">
+            <span class="est-lbl">ø</span>${diamSelectHtml(beam.estCentDiam, "cent-diam")}
+          </div>
+          <div class="est-field-row est-spacing-row" data-field="estCentSpacing">
+            <span class="est-lbl">@</span>${stepperHtml(beam.estCentSpacing)}<span class="at-unit">mm</span>
+          </div>
+          ${confinBlock}
+          <div class="zone-len-tag">${lenHint}</div>
+        </div>`;
+    }
+
+    function zoneFieldsUni(beam, plan, withConfin) {
+      const confinBlock = withConfin ? `
+          <div class="est-field-row">
+            <span class="est-lbl">Confin.</span>
+            <select class="ctrl confin-in-cent"${confinementOptions(beam).length < 2 ? " disabled" : ""}>${confinSelectHtml(beam)}</select>
+          </div>
+          <div class="est-hint">${firstLayerBarCount(beam)} barras · carta Ext</div>` : "";
+      return `
+        <div class="est-fields">
+          <div class="est-field-row">
+            <span class="est-lbl">ø</span>${diamSelectHtml(beam.estExtDiam, "ext-diam")}
+          </div>
+          <div class="est-field-row est-spacing-row" data-field="estExtSpacing">
+            <span class="est-lbl">@</span>${stepperHtml(beam.estExtSpacing)}<span class="at-unit">mm</span>
+          </div>
+          ${confinBlock}
+          <div class="zone-len-tag">L ${Math.round(plan.L_cent || plan.L_ext)} mm · único</div>
+        </div>`;
+    }
+
+    function zonePanelHtml(role, title, body, selected) {
+      return `
+        <div class="zone-panel ${role}${selected ? " selected" : ""}" data-role="${role}">
+          <div class="bar-top"></div>
+          <div class="zone-toolbar"><span class="zone-id">${title}</span></div>
+          <div class="zone-body">${body}</div>
+        </div>`;
+    }
+
+    function confinGlobalHtml(beam, selected) {
+      const n = firstLayerBarCount(beam);
+      return `
+        <div class="confin-global${selected ? " selected" : ""}" data-role="confin">
+          <div class="bar-top"></div>
+          <div class="confin-global-body">
+            <div class="est-field-row">
+              <span class="est-lbl">Confin.</span>
+              <select class="ctrl confin-global"${confinementOptions(beam).length < 2 ? " disabled" : ""}>${confinSelectHtml(beam)}</select>
+            </div>
+            <div class="confin-global-hint">
+              Sección transversal · <em>aplica a Ext ini/fin y Cent</em> · ${n} barras 1ª capa (sup ${beam.nSup} · inf ${beam.nInf})
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function renderSlot(container, variant) {
+      const beam = currentBeam();
+      ensureBeamConfinement(beam);
+      const plan = computePlan(beam);
+      const withConfinInCent = variant === "current";
+      const withConfinGlobal = variant === "proposed";
+
+      let zonesHtml = "";
+      if (plan.mode === "triple") {
+        zonesHtml = `
+          <div class="slot-zones">
+            <div class="zone-slot ext">${zonePanelHtml("ext", "Ext · ini/fin", zoneFieldsExt(beam, plan), selectedZone.role === "ext" && !selectedConfinGlobal)}</div>
+            <div class="zone-slot cent">${zonePanelHtml("cent", "Cent", zoneFieldsCent(beam, plan, withConfinInCent), selectedZone.role === "cent" && !selectedConfinGlobal)}</div>
+          </div>`;
+      } else if (plan.mode === "uni") {
+        zonesHtml = `
+          <div class="slot-zones">
+            <div class="zone-slot full">${zonePanelHtml("uni", "Único", zoneFieldsUni(beam, plan, withConfinInCent), selectedZone.role === "uni" && !selectedConfinGlobal)}</div>
+          </div>`;
+      } else {
+        zonesHtml = `
+          <div class="slot-zones">
+            <div class="zone-slot full">${zonePanelHtml("cent", "Cent", zoneFieldsCent(beam, plan, withConfinInCent), selectedZone.role === "cent" && !selectedConfinGlobal)}</div>
+          </div>`;
+      }
+
+      const confinRow = withConfinGlobal
+        ? confinGlobalHtml(beam, selectedConfinGlobal)
+        : "";
+
+      container.innerHTML = `
+        <div class="stirrup-slot">
+          <div class="slot-hdr">${beam.id} · ${plan.label}</div>
+          ${zonesHtml}
+          ${confinRow}
+        </div>`;
+
+      bindSlot(container, beam, variant);
+    }
+
+    function bindSlot(container, beam, variant) {
+      container.querySelectorAll("button, select").forEach(el => {
+        el.addEventListener("click", e => e.stopPropagation());
+        el.addEventListener("mousedown", e => e.stopPropagation());
+      });
+
+      container.querySelectorAll(".zone-panel").forEach(panel => {
+        panel.addEventListener("click", () => {
+          selectedZone = { role: panel.dataset.role };
+          selectedConfinGlobal = false;
+          renderAll();
+          log(`Zona ${panel.dataset.role} seleccionada (${variant}).`);
+        });
+      });
+
+      const confinGlobal = container.querySelector(".confin-global");
+      if (confinGlobal) {
+        confinGlobal.addEventListener("click", () => {
+          selectedConfinGlobal = true;
+          selectedZone = { role: "confin" };
+          renderAll();
+          log("Fila confinamiento global seleccionada.");
+        });
+      }
+
+      const extDiam = container.querySelector(".ext-diam");
+      if (extDiam) {
+        extDiam.addEventListener("change", () => {
+          beam.estExtDiam = parseInt(extDiam.value, 10);
+          renderAll();
+          log(`Ext ø${beam.estExtDiam} mm.`);
+        });
+      }
+      const centDiam = container.querySelector(".cent-diam");
+      if (centDiam) {
+        centDiam.addEventListener("change", () => {
+          beam.estCentDiam = parseInt(centDiam.value, 10);
+          renderAll();
+          log(`Cent ø${beam.estCentDiam} mm.`);
+        });
+      }
+
+      container.querySelectorAll(".est-spacing-row").forEach(row => {
+        const field = row.dataset.field;
+        row.querySelectorAll(".stepper-btn").forEach(btn => {
+          btn.addEventListener("click", e => {
+            e.stopPropagation();
+            const delta = parseInt(btn.dataset.d, 10);
+            beam[field] = Math.max(ESTRIBO_SPACING_MIN, Math.min(400, (beam[field] || 200) + delta));
+            renderAll();
+            log(`${field === "estExtSpacing" ? "Ext" : "Cent"} @ ${beam[field]} mm.`);
+          });
+        });
+      });
+
+      container.querySelectorAll(".confin-global, .confin-in-cent").forEach(sel => {
+        sel.addEventListener("change", () => {
+          beam.estConfin = sel.value;
+          renderAll();
+          log(`Confinamiento «${beam.estConfin}».`);
+        });
+      });
+    }
+
+    function findConfinDef(beam) {
+      const scenarios = getConfinScenarios(beam);
+      return scenarios.find(s => s.label === beam.estConfin) || scenarios[0];
+    }
+
+    function sectionPreviewSvg(beam) {
+      const n = firstLayerBarCount(beam);
+      const def = findConfinDef(beam);
+      const vbW = 120;
+      const vbH = 80;
+      const pad = 12;
+      const w = vbW - pad * 2;
+      const h = vbH - pad * 2;
+      const x0 = pad;
+      const y0 = pad;
+
+      const supPts = [];
+      const infPts = [];
+      for (let i = 0; i < n; i++) {
+        const t = n === 1 ? 0.5 : i / (n - 1);
+        supPts.push({ x: x0 + 4 + t * (w - 8), y: y0 + 8 });
+        infPts.push({ x: x0 + 4 + t * (w - 8), y: y0 + h - 8 });
+      }
+
+      let inner = `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" rx="2" fill="rgba(15,28,40,0.9)" stroke="#21465c" stroke-width="1"/>`;
+      supPts.forEach(p => { inner += `<circle cx="${p.x}" cy="${p.y}" r="2.2" fill="#67e8f9"/>`; });
+      infPts.forEach(p => { inner += `<circle cx="${p.x}" cy="${p.y}" r="2.2" fill="#fca5a5"/>`; });
+
+      const stirStroke = "#4ade80";
+      const hook = 3;
+      inner += `<path d="M ${x0 + hook} ${y0} H ${x0 + w - hook} Q ${x0 + w} ${y0} ${x0 + w} ${y0 + hook} V ${y0 + h - hook} Q ${x0 + w} ${y0 + h} ${x0 + w - hook} ${y0 + h} H ${x0 + hook} Q ${x0} ${y0 + h} ${x0} ${y0 + h - hook} V ${y0 + hook} Q ${x0} ${y0} ${x0 + hook} ${y0} Z" fill="none" stroke="${stirStroke}" stroke-width="1.2"/>`;
+
+      if (def.perimetral) {
+        /* perimetral only */
+      } else {
+        def.pairs.forEach(pair => {
+          const [i0, i1] = pair;
+          if (supPts[i1] && infPts[i1]) {
+            const xs = [supPts[i0].x, supPts[i1].x, infPts[i0].x, infPts[i1].x];
+            const ys = [supPts[i0].y, supPts[i1].y, infPts[i0].y, infPts[i1].y];
+            const rx = Math.min(...xs) - 2;
+            const ry = Math.min(...ys) - 2;
+            const rw = Math.max(...xs) - Math.min(...xs) + 4;
+            const rh = Math.max(...ys) - Math.min(...ys) + 4;
+            inner += `<rect x="${rx}" y="${ry}" width="${rw}" height="${rh}" rx="1" fill="rgba(74,222,128,0.06)" stroke="${stirStroke}" stroke-width="0.9" stroke-dasharray="2 1"/>`;
+          }
+        });
+        def.ties.forEach(idx => {
+          if (supPts[idx]) {
+            inner += `<line x1="${supPts[idx].x}" y1="${supPts[idx].y}" x2="${infPts[idx].x}" y2="${infPts[idx].y}" stroke="${stirStroke}" stroke-width="0.8" stroke-dasharray="1.5 1"/>`;
+          }
+        });
+      }
+
+      return `<svg viewBox="0 0 ${vbW} ${vbH}" xmlns="http://www.w3.org/2000/svg">${inner}<text x="${x0}" y="${vbH - 2}" font-size="6" fill="#64748b">${def.label}</text></svg>`;
+    }
+
+    function log(msg) {
+      const ts = new Date().toLocaleTimeString("es", { hour12: false });
+      logs.unshift(`[${ts}] ${msg}`);
+      if (logs.length > 12) logs.length = 12;
+      eventLog.textContent = logs.join("\n");
+    }
+
+    function renderEval() {
+      const beam = currentBeam();
+      const plan = computePlan(beam);
+      ensureBeamConfinement(beam);
+      sectionPreview.innerHTML = sectionPreviewSvg(beam);
+      stateDump.innerHTML = `
+        <div class="hi">${beam.id} · ${plan.label}</div>
+        estConfin = ${beam.estConfin}<br/>
+        Ext ø${beam.estExtDiam} @ ${beam.estExtSpacing} mm · L_ext ${Math.round(plan.L_ext)} mm<br/>
+        Cent ø${beam.estCentDiam} @ ${beam.estCentSpacing} mm · L_cent ${Math.round(plan.L_cent)} mm<br/>
+        N 1ª capa = ${firstLayerBarCount(beam)} · escenarios = ${confinementOptions(beam).length}<br/>
+        Selección UI = ${selectedConfinGlobal ? "confin global" : selectedZone.role}`;
+    }
+
+    function renderAll() {
+      const view = viewSelect.value;
+      compareRow.classList.toggle("single-variant", view !== "both");
+      colCurrent.classList.toggle("hidden", view === "proposed");
+      document.getElementById("colProposed").classList.toggle("hidden", view === "current");
+
+      renderSlot(slotProposed, "proposed");
+      if (view !== "proposed") renderSlot(slotCurrent, "current");
+      renderEval();
+    }
+
+    beamSelect.addEventListener("change", () => {
+      forcedBarCount = null;
+      barCountSelect.value = String(firstLayerBarCount(currentBeam()));
+      renderAll();
+      log(`Viga ${currentBeam().id}.`);
+    });
+    modeSelect.addEventListener("change", () => {
+      forcedMode = modeSelect.value;
+      renderAll();
+      log(`Modo forzado: ${forcedMode}.`);
+    });
+    barCountSelect.addEventListener("change", () => {
+      forcedBarCount = parseInt(barCountSelect.value, 10);
+      ensureBeamConfinement(currentBeam());
+      renderAll();
+      log(`N barras 1ª capa = ${forcedBarCount}.`);
+    });
+    viewSelect.addEventListener("change", renderAll);
+
+    barCountSelect.value = String(firstLayerBarCount(BEAMS[0]));
+    renderAll();
+    log("Mockup listo — comparar A vs B.");
+  </script>
+</body>
+</html>

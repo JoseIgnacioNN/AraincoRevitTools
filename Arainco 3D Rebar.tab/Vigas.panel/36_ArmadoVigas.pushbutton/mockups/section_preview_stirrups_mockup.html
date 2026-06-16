@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mockup — Cent/Ext/Confin en panel sección · Armado vigas</title>
+  <style>
+    :root {
+      --bg-app: #071018;
+      --bg-panel: #0a1620;
+      --border: #21465c;
+      --fg-hi: #e8f4f8;
+      --fg-mid: #95b8cc;
+      --fg-lo: #64748b;
+      --input-bg: #071018;
+      --input-border: #1e3344;
+      --btn-primary: #5bb8d4;
+      --ok: #4ade80;
+      --warn: #fbbf24;
+      --bar-ext: #fbbf24;
+      --bar-cent: #34d399;
+      --bar-confin: #5bb8d4;
+      --bar-suple: #c084fc;
+      --bar-ini: #22d3ee;
+      --bar-fin: #f87171;
+      --ctrl-width: 268px;
+      --right-panel-w: 300px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #050c14;
+      color: var(--fg-mid);
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .dev-bar {
+      background: #0f1c28;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      align-items: center;
+      font-size: 11px;
+    }
+    .dev-bar h1 { font-size: 13px; color: var(--fg-hi); font-weight: 600; }
+    .dev-bar label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .dev-bar select {
+      background: var(--input-bg);
+      color: var(--fg-hi);
+      border: 1px solid var(--input-border);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+    .dev-bar input[type="checkbox"] { accent-color: var(--btn-primary); }
+    .pill {
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .pill.act { background: rgba(251, 191, 36, 0.12); color: var(--warn); }
+    .pill.prop { background: rgba(52, 211, 153, 0.12); color: var(--bar-cent); }
+    .sep { width: 1px; height: 20px; background: var(--border); }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      min-height: 0;
+      overflow: hidden;
+    }
+    @media (max-width: 1100px) {
+      main { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+      .eval-panel { border-left: none; border-top: 1px solid var(--border); max-height: 360px; }
+    }
+
+    .workspace {
+      overflow: auto;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .intro {
+      max-width: 920px;
+      width: 100%;
+      font-size: 11px;
+      line-height: 1.55;
+      color: var(--fg-lo);
+      border: 1px solid rgba(33, 70, 92, 0.55);
+      border-radius: 4px;
+      padding: 10px 12px;
+      background: rgba(7, 16, 24, 0.6);
+    }
+    .intro strong { color: var(--fg-hi); }
+    .intro code {
+      font-size: 10px;
+      color: rgba(91, 184, 212, 0.9);
+      background: rgba(7, 16, 24, 0.8);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+
+    /* ── Simulated main window ── */
+    .win-frame {
+      width: 100%;
+      max-width: 920px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg-app);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+      overflow: hidden;
+    }
+    .win-hdr {
+      padding: 10px 14px 8px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-panel);
+    }
+    .win-hdr .title { font-size: 14px; font-weight: 700; color: var(--fg-hi); }
+    .win-hdr .sub { font-size: 10px; color: var(--fg-lo); margin-top: 2px; }
+
+    .split-body {
+      display: grid;
+      grid-template-columns: 1fr var(--right-panel-w);
+      min-height: 420px;
+    }
+    @media (max-width: 780px) {
+      .split-body { grid-template-columns: 1fr; }
+      .right-panel { border-left: none; border-top: 1px solid var(--border); }
+    }
+
+    /* ── Canvas (left) ── */
+    .canvas-col {
+      padding: 12px;
+      min-width: 0;
+      overflow: auto;
+    }
+    .canvas-hint {
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--fg-lo);
+      margin-bottom: 8px;
+    }
+    .canvas-hint span { color: rgba(91, 184, 212, 0.8); }
+
+    .alzado-strip {
+      position: relative;
+      height: 56px;
+      border: 1px solid rgba(33, 70, 92, 0.75);
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.02);
+      margin-bottom: 6px;
+    }
+    .beam-slot-col {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      cursor: pointer;
+      transition: box-shadow 0.12s, background 0.12s;
+      border-radius: 2px;
+    }
+    .beam-slot-col:hover { background: rgba(91, 184, 212, 0.05); }
+    .beam-slot-col.selected {
+      box-shadow: inset 0 0 0 2px var(--btn-primary);
+      background: rgba(91, 184, 212, 0.08);
+      z-index: 2;
+    }
+    .beam-slot-col .beam-face {
+      position: absolute;
+      left: 4px;
+      right: 4px;
+      top: 18px;
+      height: 24px;
+      background: rgba(226, 232, 240, 0.06);
+      border-top: 1.5px solid rgba(226, 232, 240, 0.75);
+      border-bottom: 1.5px solid rgba(226, 232, 240, 0.75);
+      pointer-events: none;
+    }
+    .beam-slot-col .bar-sup,
+    .beam-slot-col .bar-inf {
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      height: 2px;
+      border-radius: 1px;
+      pointer-events: none;
+    }
+    .beam-slot-col .bar-sup { top: 22px; background: var(--bar-ini); }
+    .beam-slot-col .bar-inf { bottom: 14px; background: var(--bar-fin); }
+    .beam-slot-col .slot-id {
+      position: absolute;
+      top: 4px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 7px;
+      font-weight: 700;
+      color: var(--fg-lo);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .beam-slot-col.selected .slot-id { color: var(--btn-primary); }
+    .beam-slot-col .zone-band {
+      position: absolute;
+      bottom: 2px;
+      height: 10px;
+      border-radius: 1px;
+      pointer-events: none;
+      opacity: 0.65;
+    }
+    .beam-slot-col .zone-band.ext { background: rgba(251, 191, 36, 0.25); border: 1px solid rgba(251, 191, 36, 0.4); }
+    .beam-slot-col .zone-band.cent { background: rgba(52, 211, 153, 0.2); border: 1px solid rgba(52, 211, 153, 0.35); }
+
+    .estribo-zone {
+      margin-top: 4px;
+      padding-top: 6px;
+      border-top: 1px dashed rgba(52, 211, 153, 0.22);
+    }
+    .estribo-hint {
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: rgba(52, 211, 153, 0.75);
+      margin-bottom: 6px;
+    }
+    .estribo-strip {
+      position: relative;
+      min-height: 88px;
+    }
+    .estribo-beam-slot {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      padding: 0 3px;
+      box-sizing: border-box;
+    }
+    .estribo-beam-slot.selected-beam .slot-hdr { color: var(--btn-primary); }
+
+    .stirrup-slot {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg-app);
+      padding: 4px 6px 6px;
+      height: 100%;
+    }
+    .slot-hdr {
+      font-size: 7px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-align: center;
+      color: var(--fg-lo);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+    .slot-zones { display: flex; gap: 3px; align-items: stretch; }
+    .zone-slot { flex: 1; min-width: 0; display: flex; }
+    .stack-vertical { display: flex; flex-direction: column; gap: 4px; }
+    .stack-vertical .zone-slot { flex: none; width: 100%; }
+
+    .zone-panel {
+      width: 100%;
+      border-radius: 4px;
+      font-size: 8px;
+      cursor: pointer;
+      overflow: hidden;
+      transition: border-color 0.12s, box-shadow 0.12s;
+    }
+    .zone-panel .bar-top { height: 2px; margin-bottom: 2px; }
+    .zone-panel.ext {
+      border: 1px solid rgba(251, 191, 36, 0.45);
+      background: rgba(22, 18, 10, 0.94);
+    }
+    .zone-panel.ext .bar-top { background: var(--bar-ext); }
+    .zone-panel.ext .zone-id { color: #fcd34d; }
+    .zone-panel.ext.selected { border-color: var(--bar-ext); box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.45); }
+    .zone-panel.cent {
+      border: 1px solid rgba(52, 211, 153, 0.35);
+      background: rgba(10, 22, 32, 0.95);
+    }
+    .zone-panel.cent .bar-top { background: var(--bar-cent); }
+    .zone-panel.cent .zone-id { color: #6ee7b7; }
+    .zone-panel.cent.selected { border-color: var(--bar-cent); box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.55); }
+    .zone-toolbar { padding: 3px 5px 2px; }
+    .zone-id { font-size: 7px; font-weight: 700; }
+    .zone-body { padding: 0 5px 5px; }
+    .est-fields { display: flex; flex-direction: column; gap: 3px; }
+    .est-diam-at-row { display: flex; align-items: center; gap: 4px; }
+    .est-field-row { display: flex; align-items: center; gap: 3px; font-size: 7px; }
+    .est-lbl { min-width: 10px; font-weight: 700; color: var(--fg-lo); font-size: 7px; }
+    .zone-len-tag { font-size: 6px; color: var(--fg-lo); margin-top: 2px; line-height: 1.3; }
+    .zone-panel.ext .zone-len-tag { color: rgba(251, 191, 36, 0.75); }
+    .zone-panel.cent .zone-len-tag { color: rgba(52, 211, 153, 0.7); }
+    .est-hint { font-size: 6.5px; color: var(--fg-lo); line-height: 1.3; margin-top: 2px; }
+    .est-hint.hidden { display: none; }
+
+    .stepper-wrap { display: inline-flex; align-items: center; }
+    .stepper-btn {
+      width: 14px; height: 16px;
+      border: 1px solid var(--input-border);
+      background: var(--input-bg); color: var(--fg-mid);
+      font-size: 9px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .stepper-btn:hover { border-color: var(--btn-primary); color: var(--fg-hi); }
+    .stepper-val {
+      width: 24px; height: 16px;
+      border-top: 1px solid var(--input-border);
+      border-bottom: 1px solid var(--input-border);
+      background: var(--input-bg); color: var(--fg-hi);
+      font-size: 7px; font-weight: 600; text-align: center; line-height: 14px;
+    }
+    select.ctrl {
+      height: 18px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 3px;
+      color: var(--fg-hi);
+      font-size: 7px;
+      padding: 0 3px;
+      cursor: pointer;
+      min-width: 0;
+    }
+    select.ctrl.diam-ctrl { width: 42px; flex: 0 0 auto; text-align: center; }
+    .at-unit { font-size: 6px; color: var(--fg-lo); }
+
+    .confin-block {
+      border: 1px solid rgba(91, 184, 212, 0.35);
+      border-radius: 4px;
+      background: rgba(7, 16, 24, 0.92);
+      overflow: hidden;
+      cursor: pointer;
+      margin-top: 3px;
+    }
+    .confin-block .bar-top { height: 2px; background: var(--bar-confin); }
+    .confin-body { padding: 4px 5px 5px; }
+    .confin-block .est-lbl { min-width: 32px; color: rgba(91, 184, 212, 0.85); font-size: 7px; }
+    .confin-ctrl { flex: 1; min-width: 0; font-size: 6.5px !important; }
+    .confin-block.selected { border-color: var(--bar-confin); box-shadow: 0 0 0 1px rgba(91, 184, 212, 0.4); }
+
+    .suple-block {
+      border: 1px solid rgba(192, 132, 252, 0.4);
+      border-radius: 4px;
+      background: rgba(12, 8, 20, 0.92);
+      overflow: hidden;
+      margin-top: 3px;
+    }
+    .suple-block .bar-top {
+      height: 2px;
+      background: linear-gradient(90deg, transparent 8%, var(--bar-suple) 8%, var(--bar-suple) 92%, transparent 92%);
+    }
+    .suple-body { padding: 4px 5px 5px; }
+    .suple-block .est-lbl { min-width: 40px; color: rgba(192, 132, 252, 0.85); font-size: 7px; }
+    .toggle-yesno { display: inline-flex; border: 1px solid var(--input-border); border-radius: 3px; overflow: hidden; }
+    .toggle-yesno button {
+      border: none; background: var(--input-bg); color: var(--fg-lo);
+      font-size: 7px; font-weight: 700; padding: 2px 8px; cursor: pointer;
+    }
+    .toggle-yesno button.on-yes { background: rgba(74, 222, 128, 0.2); color: var(--ok); }
+    .toggle-yesno button.on-no { background: rgba(100, 116, 139, 0.25); color: var(--fg-mid); }
+    .suple-fields-row2 { display: flex; gap: 4px; margin-top: 3px; }
+    .suple-fields-row2.disabled { opacity: 0.35; pointer-events: none; }
+
+    .canvas-placeholder {
+      border: 1px dashed rgba(52, 211, 153, 0.35);
+      border-radius: 4px;
+      padding: 10px;
+      font-size: 9px;
+      color: var(--fg-lo);
+      text-align: center;
+      line-height: 1.45;
+      background: rgba(7, 16, 24, 0.4);
+      margin-top: 6px;
+    }
+    .canvas-placeholder strong { color: var(--bar-cent); }
+    .canvas-placeholder em { font-style: normal; color: var(--bar-suple); }
+
+    /* ── Right panel (section preview) ── */
+    .right-panel {
+      border-left: 1px solid rgba(52, 211, 153, 0.28);
+      background: rgba(5, 12, 20, 0.72);
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 0;
+    }
+    .rail-hint {
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: rgba(52, 211, 153, 0.75);
+      line-height: 1.3;
+    }
+    .section-preview-dock {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border: 1px solid rgba(52, 211, 153, 0.28);
+      border-radius: 4px;
+      background: rgba(7, 16, 24, 0.55);
+      padding: 8px;
+    }
+    .dock-preview {
+      padding: 6px;
+      border-radius: 4px;
+      border: 1px solid rgba(33, 70, 92, 0.65);
+      background: radial-gradient(ellipse at 50% 30%, rgba(30, 52, 68, 0.45), rgba(7, 16, 24, 0.88));
+    }
+    .beam-section-preview {
+      width: 100%;
+      max-height: 160px;
+      display: block;
+    }
+    .dock-meta .dock-title {
+      font-size: 8px;
+      font-weight: 700;
+      color: #6ee7b7;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+      line-height: 1.35;
+    }
+    .dock-meta .dock-lines {
+      font-size: 7.5px;
+      color: var(--fg-lo);
+      line-height: 1.5;
+    }
+
+    /* Controllers below preview — compact stack (ver section_preview_stack_mockup.html) */
+    .section-ctrls {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      margin-top: 0;
+      width: 100%;
+      max-width: var(--ctrl-width, 268px);
+    }
+    .stack-order-hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      font-size: 7px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--fg-lo);
+      margin: 2px 0 1px;
+      padding: 5px 0 3px;
+      border-top: 1px dashed rgba(33, 70, 92, 0.55);
+    }
+    .stack-order-hdr .order-flow { white-space: nowrap; }
+    .stack-order-hdr .order-note { font-size: 6.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: rgba(100, 116, 139, 0.85); }
+    .stack-order-hdr .cent { color: var(--bar-cent); }
+    .stack-order-hdr .ext { color: var(--bar-ext); }
+    .stack-order-hdr .confin { color: var(--bar-confin); }
+    .section-ctrls.hidden { display: none; }
+    .section-ctrls .ctrl-block { width: 100%; }
+    .ctrl-zone { width: 100%; border-radius: 4px; overflow: hidden; cursor: pointer; transition: border-color 0.12s, box-shadow 0.12s; }
+    .ctrl-zone .bar-top { height: 2px; }
+    .ctrl-zone-hdr { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; padding: 3px 6px 2px; }
+    .ctrl-zone-id { font-size: 7.5px; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+    .ctrl-zone-len { font-size: 6.5px; font-weight: 500; color: var(--fg-lo); text-align: right; line-height: 1.25; opacity: 0.9; }
+    .ctrl-zone-len.hidden { display: none; }
+    .ctrl-zone-fields { display: grid; grid-template-columns: 12px 48px 12px 1fr 18px; align-items: center; gap: 0 4px; padding: 0 6px 5px; }
+    .ctrl-zone-fields .est-lbl { font-size: 7px; font-weight: 700; color: var(--fg-lo); text-align: center; }
+    .ctrl-zone-fields .est-lbl.at-lbl { grid-column: 3; }
+    .ctrl-zone-fields .diam-ctrl { grid-column: 2; }
+    .ctrl-zone-fields .at-field { grid-column: 4; display: flex; align-items: center; gap: 3px; min-width: 0; }
+    .ctrl-zone-fields .at-unit { grid-column: 5; font-size: 6px; color: var(--fg-lo); }
+    .ctrl-zone.cent { border: 1px solid rgba(52, 211, 153, 0.35); background: rgba(10, 22, 32, 0.95); }
+    .ctrl-zone.cent .bar-top { background: var(--bar-cent); }
+    .ctrl-zone.cent .ctrl-zone-id { color: #6ee7b7; }
+    .ctrl-zone.cent .ctrl-zone-len { color: rgba(52, 211, 153, 0.65); }
+    .ctrl-zone.cent.selected { border-color: var(--bar-cent); box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.55); }
+    .ctrl-zone.ext { border: 1px solid rgba(251, 191, 36, 0.45); background: rgba(22, 18, 10, 0.94); }
+    .ctrl-zone.ext .bar-top { background: var(--bar-ext); }
+    .ctrl-zone.ext .ctrl-zone-id { color: #fcd34d; }
+    .ctrl-zone.ext .ctrl-zone-len { color: rgba(251, 191, 36, 0.7); }
+    .ctrl-zone.ext.selected { border-color: var(--bar-ext); box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.45); }
+    .ctrl-zone.confin { border: 1px solid rgba(91, 184, 212, 0.35); background: rgba(7, 16, 24, 0.92); }
+    .ctrl-zone.confin .bar-top { background: var(--bar-confin); }
+    .ctrl-zone.confin .ctrl-zone-id { color: rgba(91, 184, 212, 0.9); }
+    .ctrl-zone.confin .ctrl-zone-len { color: rgba(91, 184, 212, 0.55); }
+    .ctrl-zone.confin.selected { border-color: var(--bar-confin); box-shadow: 0 0 0 1px rgba(91, 184, 212, 0.4); }
+    .ctrl-zone.confin .ctrl-zone-fields { grid-template-columns: 1fr; padding-bottom: 4px; }
+    .ctrl-zone.confin .confin-ctrl { width: 100%; }
+    .section-ctrls .stepper-btn { width: 15px; height: 18px; font-size: 9px; }
+    .section-ctrls .stepper-val { width: 26px; height: 18px; font-size: 8px; line-height: 16px; }
+    .section-ctrls select.ctrl.diam-ctrl { width: 48px; font-size: 8px; height: 20px; flex: 0 0 48px; }
+    .section-ctrls .confin-ctrl { font-size: 7.5px !important; height: 20px; }
+    .section-ctrls .confin-hint { font-size: 6.5px; color: var(--fg-lo); padding: 0 6px 4px; line-height: 1.3; opacity: 0.85; }
+    .section-ctrls .confin-hint em { font-style: normal; color: rgba(91, 184, 212, 0.75); }
+    .section-ctrls .confin-hint.hidden { display: none; }
+
+    .suple-note {
+      font-size: 8px;
+      line-height: 1.45;
+      color: var(--fg-lo);
+      border: 1px dashed rgba(192, 132, 252, 0.35);
+      border-radius: 4px;
+      padding: 6px 8px;
+      background: rgba(12, 8, 20, 0.5);
+    }
+    .suple-note strong { color: var(--bar-suple); font-weight: 600; }
+    .suple-note.hidden { display: none; }
+
+    .mode-badge {
+      display: inline-block;
+      font-size: 7px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 3px;
+      margin-bottom: 6px;
+    }
+    .mode-badge.act { background: rgba(251, 191, 36, 0.12); color: var(--warn); }
+    .mode-badge.prop { background: rgba(52, 211, 153, 0.12); color: var(--bar-cent); }
+
+    /* Eval panel */
+    .eval-panel {
+      border-left: 1px solid var(--border);
+      background: var(--bg-panel);
+      padding: 14px;
+      overflow: auto;
+      font-size: 11px;
+    }
+    .eval-panel h2 { font-size: 12px; color: var(--fg-hi); margin-bottom: 10px; }
+    .eval-panel h3 {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 12px 0 6px;
+    }
+    .eval-panel h3.act { color: var(--warn); }
+    .eval-panel h3.prop { color: var(--bar-cent); }
+    .eval-panel h3.neutral { color: var(--btn-primary); }
+
+    .checklist { list-style: none; font-size: 10px; line-height: 1.45; }
+    .checklist li {
+      display: flex;
+      gap: 6px;
+      align-items: flex-start;
+      margin-bottom: 4px;
+      color: var(--fg-mid);
+    }
+    .checklist input { margin-top: 2px; accent-color: var(--btn-primary); flex-shrink: 0; }
+    .checklist .tag {
+      font-size: 8px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .checklist .tag.pro { background: rgba(74, 222, 128, 0.15); color: var(--ok); }
+    .checklist .tag.con { background: rgba(251, 191, 36, 0.12); color: var(--warn); }
+    .checklist .tag.note { background: rgba(91, 184, 212, 0.12); color: var(--btn-primary); }
+
+    .state-lines {
+      font-size: 9px;
+      color: var(--fg-lo);
+      line-height: 1.55;
+      font-family: Consolas, "Courier New", monospace;
+      border: 1px solid rgba(33, 70, 92, 0.5);
+      border-radius: 4px;
+      padding: 8px;
+      background: rgba(7, 16, 24, 0.6);
+    }
+    .state-lines .hi { color: var(--fg-hi); }
+    .state-lines .ext { color: var(--bar-ext); }
+    .state-lines .cent { color: var(--bar-cent); }
+    .state-lines .confin { color: var(--bar-confin); }
+    .state-lines .suple { color: var(--bar-suple); }
+
+    .pros-cons {
+      font-size: 10px;
+      line-height: 1.5;
+      color: var(--fg-lo);
+      border: 1px dashed rgba(33, 70, 92, 0.55);
+      border-radius: 4px;
+      padding: 8px 10px;
+      background: rgba(7, 16, 24, 0.5);
+    }
+    .pros-cons textarea {
+      width: 100%;
+      min-height: 52px;
+      margin-top: 6px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 3px;
+      color: var(--fg-mid);
+      font-size: 10px;
+      font-family: inherit;
+      padding: 6px;
+      resize: vertical;
+    }
+
+    .log {
+      max-height: 72px;
+      overflow: auto;
+      font-size: 8px;
+      color: var(--fg-lo);
+      border-top: 1px dashed var(--border);
+      padding-top: 6px;
+      margin-top: 6px;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 8px 16px;
+      font-size: 10px;
+      color: var(--fg-lo);
+      background: #0a1218;
+    }
+    footer code { font-size: 9px; color: rgba(91, 184, 212, 0.8); }
+  </style>
+</head>
+<body>
+  <header class="dev-bar">
+    <h1>Sección + Cent/Ext/Confin</h1>
+    <span class="pill act">Actual</span>
+    <span class="pill prop">Propuesto</span>
+    <span class="sep"></span>
+    <label>Modo
+      <select id="modeSelect">
+        <option value="compare">Comparar (split view)</option>
+        <option value="actual">Solo actual</option>
+        <option value="propuesto">Solo propuesto</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="hintsCheck" checked /> Hints</label>
+    <span class="sep"></span>
+    <span style="color:var(--fg-lo);font-size:10px">Viga activa: <strong id="activeBeamLbl" style="color:var(--fg-hi)">—</strong></span>
+  </header>
+
+  <main>
+    <div class="workspace">
+      <div class="intro">
+        <strong>Evaluación UX</strong> — mockup sin WPF/Python. Al seleccionar una viga en el canvas (clic en alzado o franja estribos),
+        el panel derecho muestra la <strong>sección transversal</strong> con confinamiento E y barras.
+        <br/><br/>
+        <strong>Propuesto:</strong> mover <code>Cent</code>, <code>Ext · ini/fin</code> y <code>Confin.</code> debajo del preview (stack compacto ~268&nbsp;px: 2 filas/bloque, ø|@ en una línea).
+        <strong>Actual:</strong> esos controles permanecen en la franja estribos bajo el alzado.
+        <code>Suple inf.</code> permanece en canvas (fuera de alcance de este mockup).
+        <br/><br/>
+        <strong>Numeración:</strong> las vigas se identifican como <code>Viga 1</code>, <code>Viga 2</code>… (izquierda → derecha en canvas).
+        El ID Revit queda solo como referencia técnica en el panel de evaluación.
+        <em>Pendiente validación — no implementado en WPF.</em>
+      </div>
+
+      <div class="win-frame" id="winFrame">
+        <div class="win-hdr">
+          <div class="title">Arainco: Armado vigas</div>
+          <div class="sub">Mockup · selección de viga → preview sección + configuradores</div>
+        </div>
+        <div class="split-body" id="splitBody">
+          <div class="canvas-col" id="canvasCol"></div>
+          <div class="right-panel" id="rightPanel"></div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="eval-panel">
+      <h2>Evaluación UX</h2>
+
+      <h3 class="act">Actual — estribos en canvas</h3>
+      <ul class="checklist">
+        <li><input type="checkbox" /><span class="tag pro">+</span> Controles junto al alzado — contexto longitudinal visible</li>
+        <li><input type="checkbox" /><span class="tag pro">+</span> Panel sección solo informativo — menos altura derecha</li>
+        <li><input type="checkbox" /><span class="tag con">−</span> Confin. lejos del dibujo de sección que ilustra</li>
+        <li><input type="checkbox" /><span class="tag con">−</span> Franja estribos ancha — compite con tramos/capas</li>
+        <li><input type="checkbox" /><span class="tag note">→</span> Cambiar Confin. no actualiza preview inmediatamente bajo el control</li>
+      </ul>
+
+      <h3 class="prop">Propuesto — Cent/Ext/Confin en panel sección</h3>
+      <ul class="checklist">
+        <li><input type="checkbox" /><span class="tag pro">+</span> WYSIWYG: editar estribo/confin junto al SVG de sección</li>
+        <li><input type="checkbox" /><span class="tag pro">+</span> Canvas más limpio — solo alzado + Suple en franja</li>
+        <li><input type="checkbox" /><span class="tag pro">+</span> Stack compacto Cent→Ext→Confin (ø|@ una fila, hint L en cabecera)</li>
+        <li><input type="checkbox" /><span class="tag con">−</span> Panel derecho más alto que solo preview (~+100&nbsp;px)</li>
+        <li><input type="checkbox" /><span class="tag con">−</span> Separación física entre @ longitudinal y preview</li>
+        <li><input type="checkbox" /><span class="tag note">→</span> Requiere clic en viga para editar estribos de esa viga</li>
+      </ul>
+
+      <h3 class="neutral">Notas</h3>
+      <div class="pros-cons">
+        <label for="notesArea">Pros / contras / decisiones:</label>
+        <textarea id="notesArea" placeholder="Ej.: Confin. en panel sección reduce errores al elegir E(0–2)…"></textarea>
+      </div>
+
+      <h3>Estado · viga seleccionada</h3>
+      <div class="state-lines" id="stateDump">—</div>
+
+      <h3>Eventos</h3>
+      <div class="log" id="eventLog">—</div>
+    </aside>
+  </main>
+
+  <footer>
+    Mockup interactivo · sin backend ·
+    <code>BIMTools.tab/Armadura.panel/36_ArmadoVigas.pushbutton/mockups/section_preview_stirrups_mockup.html</code>
+  </footer>
+
+  <script>
+    const ESTRIBO_DIAM_OPTS = [8, 10, 12, 16];
+    const BAR_DIAM_OPTS = [12, 16, 20, 25];
+    const SECTION_PREVIEW_VB_W = 280;
+    const SECTION_PREVIEW_VB_H = 222;
+
+    const CONFIN_BY_COUNT = {
+      2: [{ label: "Perimetral", perimetral: true, ties: [], pairs: [] }],
+      3: [
+        { label: "Perimetral", perimetral: true, ties: [], pairs: [] },
+        { label: "Perimetral + traba [1]", perimetral: true, ties: [1], pairs: [] },
+      ],
+      4: [
+        { label: "Perimetral + traba [2]", perimetral: true, ties: [2], pairs: [] },
+        { label: "E(0–2) + E(1–3)", perimetral: false, ties: [], pairs: [[0, 2], [1, 3]] },
+      ],
+      5: [
+        { label: "E(0–3) + E(1–4)", perimetral: false, ties: [], pairs: [[0, 3], [1, 4]] },
+        { label: "E(0–3) + E(1–4) + traba [2]", perimetral: false, ties: [2], pairs: [[0, 3], [1, 4]] },
+      ],
+    };
+
+    const beams = [
+      {
+        id: "V-471546",
+        type: "30×60",
+        len: 8.4,
+        nSup: 4, nInf: 4, nCapas: 1,
+        estExtDiam: 10, estExtSpacing: 125,
+        estCentDiam: 8, estCentSpacing: 200,
+        estConfin: "E(0–2) + E(1–3)",
+        requiereSuple: true, supleDiam: 16, supleN: 2,
+        L_ext: 1200, L_cent: 6000,
+      },
+      {
+        id: "V-471892",
+        type: "25×50",
+        len: 5.2,
+        nSup: 3, nInf: 3, nCapas: 1,
+        estExtDiam: 8, estExtSpacing: 150,
+        estCentDiam: 8, estCentSpacing: 200,
+        estConfin: "Perimetral + traba [1]",
+        requiereSuple: false, supleDiam: 16, supleN: 2,
+        L_ext: 1000, L_cent: 3200,
+      },
+      {
+        id: "V-472001",
+        type: "40×70",
+        len: 11.8,
+        nSup: 5, nInf: 5, nCapas: 2,
+        diamSup2: 16, diamInf2: 16, nSup2: 2, nInf2: 2,
+        estExtDiam: 12, estExtSpacing: 100,
+        estCentDiam: 10, estCentSpacing: 150,
+        estConfin: "E(0–3) + E(1–4)",
+        requiereSuple: true, supleDiam: 20, supleN: 3,
+        L_ext: 1400, L_cent: 10000,
+      },
+    ];
+
+    let selectedIdx = 0;
+    let layoutMode = "compare";
+    let showHints = true;
+    let selectedRole = "cent";
+    const logs = [];
+
+    function beamLabel(idx) {
+      return `Viga ${idx + 1}`;
+    }
+
+    function beamTitle(idx, suffix) {
+      return suffix ? `${beamLabel(idx)} · ${suffix}` : beamLabel(idx);
+    }
+
+    function beamLogRef(idx) {
+      const b = beams[idx];
+      return `${beamLabel(idx)} (Revit ${b.id})`;
+    }
+
+    const modeSelect = document.getElementById("modeSelect");
+    const hintsCheck = document.getElementById("hintsCheck");
+    const canvasCol = document.getElementById("canvasCol");
+    const rightPanel = document.getElementById("rightPanel");
+    const stateDump = document.getElementById("stateDump");
+    const eventLog = document.getElementById("eventLog");
+    const activeBeamLbl = document.getElementById("activeBeamLbl");
+
+    function log(msg) {
+      const t = new Date().toLocaleTimeString("es", { hour12: false });
+      logs.unshift(`[${t}] ${msg}`);
+      if (logs.length > 24) logs.length = 24;
+      eventLog.textContent = logs.join("\n") || "—";
+    }
+
+    function hintCls() { return showHints ? "" : " hidden"; }
+
+    function firstLayerBarCount(beam) {
+      return Math.min(Math.max(beam.nSup || 2, 2), Math.max(beam.nInf || 2, 2), 8);
+    }
+
+    function getConfinScenarios(beam) {
+      const n = firstLayerBarCount(beam);
+      return CONFIN_BY_COUNT[n] || CONFIN_BY_COUNT[2];
+    }
+
+    function findConfinDef(beam) {
+      const scenarios = getConfinScenarios(beam);
+      return scenarios.find(s => s.label === beam.estConfin) || scenarios[0];
+    }
+
+    function confinementOptions(beam) {
+      return getConfinScenarios(beam).map(s => s.label);
+    }
+
+    function parseBeamSection(typeStr) {
+      const m = String(typeStr || "30×60").match(/(\d+(?:\.\d+)?)\s*[×xX*]\s*(\d+(?:\.\d+)?)/);
+      return m ? { b: +m[1], h: +m[2] } : { b: 30, h: 60 };
+    }
+
+    function distributeBarPoints(count, x0, x1, y) {
+      if (count <= 0) return [];
+      if (count === 1) return [{ x: (x0 + x1) / 2, y }];
+      const step = (x1 - x0) / (count - 1);
+      return Array.from({ length: count }, (_, i) => ({ x: x0 + i * step, y }));
+    }
+
+    function barRadiusSvg(diamMm, sectionScale, maxFromSpacing) {
+      let r = (diamMm / 18) * 1.35 * sectionScale;
+      if (maxFromSpacing > 0) r = Math.min(r, maxFromSpacing);
+      return Math.max(0.9, Math.min(1.85, r));
+    }
+
+    function outerStirrupPath(st, stirStroke, rEst) {
+      const hook = Math.min(3.2, st.w * 0.12, st.h * 0.12);
+      return `<path d="M ${st.x + hook} ${st.y} H ${st.x + st.w - hook} A ${hook} ${hook} 0 0 1 ${st.x + st.w} ${st.y + hook} V ${st.y + st.h - hook} A ${hook} ${hook} 0 0 1 ${st.x + st.w - hook} ${st.y + st.h} H ${st.x + hook} A ${hook} ${hook} 0 0 1 ${st.x} ${st.y + st.h - hook} V ${st.y + hook} A ${hook} ${hook} 0 0 1 ${st.x + hook} ${st.y} Z" fill="none" stroke="${stirStroke}" stroke-width="${rEst.toFixed(1)}" stroke-linejoin="round"/>`;
+    }
+
+    function stirrupPairSvg(supBars, infBars, i0, i1, pad, stroke, r) {
+      if (supBars.length <= i1 || infBars.length <= i1) return "";
+      const xs = [supBars[i0].x, supBars[i1].x, infBars[i0].x, infBars[i1].x];
+      const ys = [supBars[i0].y, supBars[i1].y, infBars[i0].y, infBars[i1].y];
+      const x = Math.min(...xs) - pad;
+      const y = Math.min(...ys) - pad;
+      const w = Math.max(...xs) - Math.min(...xs) + pad * 2;
+      const h = Math.max(...ys) - Math.min(...ys) + pad * 2;
+      if (w < 3 || h < 3) return "";
+      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="1.3" fill="rgba(74,222,128,0.04)" stroke="${stroke}" stroke-width="${r.toFixed(1)}"/>`;
+    }
+
+    function trabaAtIndexSvg(supBars, infBars, idx, r) {
+      if (supBars.length <= idx || infBars.length <= idx) return "";
+      const x = (supBars[idx].x + infBars[idx].x) / 2;
+      return `<line x1="${x.toFixed(1)}" y1="${supBars[idx].y.toFixed(1)}" x2="${x.toFixed(1)}" y2="${infBars[idx].y.toFixed(1)}" stroke="#fb923c" stroke-width="${r.toFixed(1)}" stroke-linecap="round"/>`;
+    }
+
+    function sectionLayerBarDots(beam, st, barX0, barX1, barPad, scale) {
+      const nCapas = beam.nCapas || 1;
+      const barSpan = barX1 - barX0;
+      const layerStep = nCapas > 1
+        ? Math.max(3.5, Math.min(st.h * 0.15, (st.h - barPad * 2) / Math.max(1, nCapas * 2)))
+        : 0;
+      const layerFill = [
+        { sup: "#22d3ee", supStroke: "#0891b2", inf: "#f87171", infStroke: "#b91c1c", op: 1 },
+        { sup: "#38bdf8", supStroke: "#0284c7", inf: "#fb7185", infStroke: "#e11d48", op: 0.88 },
+      ];
+      const dots = [];
+      for (let L = nCapas; L >= 1; L--) {
+        const nS = L === 1 ? (beam.nSup || 2) : (beam.nSup2 || 2);
+        const nI = L === 1 ? (beam.nInf || 2) : (beam.nInf2 || 2);
+        const dS = L === 1 ? 16 : (beam.diamSup2 || 16);
+        const dI = L === 1 ? 16 : (beam.diamInf2 || 16);
+        const supY = st.y + barPad + (L - 1) * layerStep;
+        const infY = st.y + st.h - barPad - (L - 1) * layerStep;
+        const maxRSup = nS > 1 ? (barSpan / (nS - 1)) * 0.34 : barSpan * 0.13;
+        const maxRInf = nI > 1 ? (barSpan / (nI - 1)) * 0.34 : barSpan * 0.13;
+        const rSup = barRadiusSvg(dS, scale, maxRSup) * (L === 1 ? 1 : 0.92);
+        const rInf = barRadiusSvg(dI, scale, maxRInf) * (L === 1 ? 1 : 0.92);
+        const pal = layerFill[L - 1] || layerFill[1];
+        distributeBarPoints(nS, barX0, barX1, supY).forEach(p => {
+          dots.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${rSup.toFixed(2)}" fill="${pal.sup}" fill-opacity="${pal.op}" stroke="${pal.supStroke}" stroke-width="0.35"/>`);
+        });
+        distributeBarPoints(nI, barX0, barX1, infY).forEach(p => {
+          dots.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${rInf.toFixed(2)}" fill="${pal.inf}" fill-opacity="${pal.op}" stroke="${pal.infStroke}" stroke-width="0.35"/>`);
+        });
+      }
+      return dots.join("");
+    }
+
+    function beamSectionPreviewSvg(beam, beamIdx) {
+      const { b, h } = parseBeamSection(beam.type);
+      const vbW = SECTION_PREVIEW_VB_W;
+      const vbH = SECTION_PREVIEW_VB_H;
+      const padX = 16, padTop = 10, labelH = 12;
+      const maxW = vbW - padX * 2;
+      const maxH = vbH - padTop - labelH - 6;
+      let secW, secH;
+      if (h >= b) {
+        secH = maxH; secW = secH * (b / h);
+        if (secW > maxW) { secW = maxW; secH = secW * (h / b); }
+      } else {
+        secW = maxW; secH = secW * (h / b);
+        if (secH > maxH) { secH = maxH; secW = secH * (b / h); }
+      }
+      const ox = (vbW - secW) / 2;
+      const oy = padTop + (maxH - secH) / 2;
+      const cover = Math.max(3.5, Math.min(secW, secH) * 0.11);
+      const inner = { x: ox + cover, y: oy + cover, w: secW - cover * 2, h: secH - cover * 2 };
+      const stInset = 2.2;
+      const st = { x: inner.x + stInset, y: inner.y + stInset, w: inner.w - stInset * 2, h: inner.h - stInset * 2 };
+      const barPad = Math.max(2.5, cover * 0.55);
+      const barX0 = st.x + barPad;
+      const barX1 = st.x + st.w - barPad;
+      const scale = secH / Math.max(h, 1);
+      const rEst = Math.max(0.9, (beam.estCentDiam || beam.estExtDiam || 8) / 9);
+      const supY = st.y + barPad;
+      const infY = st.y + st.h - barPad;
+      const supBars = distributeBarPoints(beam.nSup || 2, barX0, barX1, supY);
+      const infBars = distributeBarPoints(beam.nInf || 2, barX0, barX1, infY);
+      const barDots = sectionLayerBarDots(beam, st, barX0, barX1, barPad, scale);
+      const confDef = findConfinDef(beam);
+      const stirStroke = "#34d399";
+      const stirrupShape = confDef.perimetral ? outerStirrupPath(st, stirStroke, rEst) : "";
+      const rIn = Math.max(0.7, rEst * 0.85);
+      const pad = Math.max(2.8, rIn * 2);
+      let confinementShape = "";
+      confDef.pairs.forEach(pair => {
+        confinementShape += stirrupPairSvg(supBars, infBars, pair[0], pair[1], pad, "#4ade80", rIn);
+      });
+      confDef.ties.forEach(idx => {
+        confinementShape += trabaAtIndexSvg(supBars, infBars, idx, rIn);
+      });
+      const grainId = `conc-${beam.id.replace(/[^a-z0-9]/gi, "")}`;
+      return `<svg class="beam-section-preview" viewBox="0 0 ${vbW} ${vbH}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <defs><pattern id="${grainId}" width="5" height="5" patternUnits="userSpaceOnUse">
+          <rect width="5" height="5" fill="rgba(148,163,184,0.04)"/>
+          <circle cx="1.2" cy="1.2" r="0.35" fill="rgba(255,255,255,0.05)"/>
+        </pattern></defs>
+        <text x="${vbW / 2}" y="7" text-anchor="middle" font-size="6.5" font-weight="600" fill="#5bb8d4">${beamLabel(beamIdx)}</text>
+        <rect x="${ox}" y="${oy}" width="${secW}" height="${secH}" rx="1.8" fill="url(#${grainId})" stroke="#5bb8d4" stroke-width="1.15"/>
+        <rect x="${inner.x}" y="${inner.y}" width="${inner.w}" height="${inner.h}" fill="none" stroke="rgba(148,163,184,0.22)" stroke-width="0.55" stroke-dasharray="2.5 2"/>
+        ${stirrupShape}${confinementShape}${barDots}
+        <line x1="${ox - 3}" y1="${oy}" x2="${ox - 3}" y2="${oy + secH}" stroke="rgba(100,116,139,0.55)" stroke-width="0.6"/>
+        <text x="${ox - 6.5}" y="${oy + secH / 2 + 2}" text-anchor="middle" font-size="5.5" fill="#64748b" transform="rotate(-90 ${ox - 6.5} ${oy + secH / 2 + 2})">${h}</text>
+        <line x1="${ox}" y1="${oy + secH + 4}" x2="${ox + secW}" y2="${oy + secH + 4}" stroke="rgba(100,116,139,0.55)" stroke-width="0.6"/>
+        <text x="${ox + secW / 2}" y="${oy + secH + 8}" text-anchor="middle" font-size="5.5" fill="#64748b">${b}</text>
+        <text x="${vbW / 2}" y="${vbH - 1.5}" text-anchor="middle" font-size="5.5" fill="#94a3b8">Ext ø${beam.estExtDiam}@${beam.estExtSpacing} · Cent ø${beam.estCentDiam}@${beam.estCentSpacing}</text>
+      </svg>`;
+    }
+
+    function beamLayersSummary(beam) {
+      const cap = beam.nCapas === 1 ? "1 capa" : `${beam.nCapas} capas`;
+      const s1 = `S${beam.nSup}ø16/I${beam.nInf}ø16`;
+      if (beam.nCapas > 1) {
+        return `${cap} · 1ª ${s1} · 2ª S${beam.nSup2}/I${beam.nInf2}`;
+      }
+      return `${cap} · ${s1}`;
+    }
+
+    function stepperHtml(val, field) {
+      return `<span class="stepper-wrap" data-field="${field}"><button type="button" class="stepper-btn" data-d="-25">−</button><span class="stepper-val">${val}</span><button type="button" class="stepper-btn" data-d="25">+</button></span>`;
+    }
+
+    function diamSelectHtml(val, cls, opts) {
+      const list = opts || ESTRIBO_DIAM_OPTS;
+      return `<select class="ctrl diam-ctrl ${cls}">${list.map(d =>
+        `<option value="${d}"${d === val ? " selected" : ""}>ø${d}</option>`
+      ).join("")}</select>`;
+    }
+
+    function toggleHtml(val) {
+      return `<span class="toggle-yesno suple-toggle"><button type="button" class="${val ? "on-yes" : ""}" data-val="1">Sí</button><button type="button" class="${!val ? "on-no" : ""}" data-val="0">No</button></span>`;
+    }
+
+    function zoneFieldsExt(beam) {
+      return `
+        <div class="est-fields">
+          <div class="est-diam-at-row">
+            <div class="est-field-row"><span class="est-lbl">ø</span>${diamSelectHtml(beam.estExtDiam, "ext-diam")}</div>
+            <div class="est-field-row" data-field="estExtSpacing"><span class="est-lbl">@</span>${stepperHtml(beam.estExtSpacing, "estExtSpacing")}<span class="at-unit">mm</span></div>
+          </div>
+          <div class="zone-len-tag${hintCls()}">L ${beam.L_ext} mm ×2 (ini/fin)</div>
+        </div>`;
+    }
+
+    function zoneFieldsCent(beam) {
+      return `
+        <div class="est-fields">
+          <div class="est-diam-at-row">
+            <div class="est-field-row"><span class="est-lbl">ø</span>${diamSelectHtml(beam.estCentDiam, "cent-diam")}</div>
+            <div class="est-field-row" data-field="estCentSpacing"><span class="est-lbl">@</span>${stepperHtml(beam.estCentSpacing, "estCentSpacing")}<span class="at-unit">mm</span></div>
+          </div>
+          <div class="zone-len-tag${hintCls()}">L ${beam.L_cent} mm · luz libre</div>
+        </div>`;
+    }
+
+    function zonePanelHtml(role, title, body, compact) {
+      const sel = selectedRole === role ? " selected" : "";
+      return `<div class="zone-panel ${role}${sel}${compact ? " compact" : ""}" data-role="${role}">
+        <div class="bar-top"></div>
+        <div class="zone-toolbar"><span class="zone-id">${title}</span></div>
+        <div class="zone-body">${body}</div>
+      </div>`;
+    }
+
+    function sectionAtRowHtml(spacing, field, diamCls, diamVal) {
+      return `
+        <div class="ctrl-zone-fields">
+          <span class="est-lbl">ø</span>
+          ${diamSelectHtml(diamVal, diamCls)}
+          <span class="est-lbl at-lbl">@</span>
+          <div class="at-field" data-field="${field}">${stepperHtml(spacing, field)}</div>
+          <span class="at-unit">mm</span>
+        </div>`;
+    }
+
+    function sectionZoneHtml(role, title, lenHint, spacing, field, diamCls, diamVal) {
+      const sel = selectedRole === role ? " selected" : "";
+      const lenCls = showHints ? "" : " hidden";
+      return `
+        <div class="ctrl-zone ${role}${sel}" data-role="${role}">
+          <div class="bar-top"></div>
+          <div class="ctrl-zone-hdr">
+            <span class="ctrl-zone-id">${title}</span>
+            <span class="ctrl-zone-len${lenCls}">${lenHint}</span>
+          </div>
+          ${sectionAtRowHtml(spacing, field, diamCls, diamVal)}
+        </div>`;
+    }
+
+    function sectionConfinHtml(beam) {
+      const sel = selectedRole === "confin" ? " selected" : "";
+      const opts = confinementOptions(beam);
+      const nBars = firstLayerBarCount(beam);
+      const lenCls = showHints ? "" : " hidden";
+      return `
+        <div class="ctrl-zone confin${sel}" data-role="confin">
+          <div class="bar-top"></div>
+          <div class="ctrl-zone-hdr">
+            <span class="ctrl-zone-id">Confin.</span>
+            <span class="ctrl-zone-len${lenCls}">${nBars}b · vinculado preview</span>
+          </div>
+          <div class="ctrl-zone-fields">
+            <select class="ctrl confin-ctrl">${opts.map(o =>
+              `<option value="${o}"${o === beam.estConfin ? " selected" : ""}>${o}</option>`
+            ).join("")}</select>
+          </div>
+          <div class="confin-hint${hintCls()}"><em>Sección transversal</em> · cambio actualiza SVG</div>
+        </div>`;
+    }
+
+    function confinHtml(beam, fullWidth) {
+      const sel = selectedRole === "confin" ? " selected" : "";
+      const opts = confinementOptions(beam);
+      return `
+        <div class="confin-block${sel}" data-role="confin">
+          <div class="bar-top"></div>
+          <div class="confin-body">
+            <div class="est-field-row" style="width:100%">
+              <span class="est-lbl">Confin.</span>
+              <select class="ctrl confin-ctrl">${opts.map(o =>
+                `<option value="${o}"${o === beam.estConfin ? " selected" : ""}>${o}</option>`
+              ).join("")}</select>
+            </div>
+            ${fullWidth ? `<div class="confin-hint${hintCls()}">Sección transversal · <em>vinculado al preview</em> · ${firstLayerBarCount(beam)} barras 1ª capa</div>` : ""}
+          </div>
+        </div>`;
+    }
+
+    function supleHtml(beam) {
+      const on = beam.requiereSuple;
+      return `
+        <div class="suple-block" data-role="suple">
+          <div class="bar-top"></div>
+          <div class="suple-body">
+            <div class="est-field-row">
+              <span class="est-lbl">Suple inf.</span>${toggleHtml(on)}
+            </div>
+            <div class="suple-fields-row2${on ? "" : " disabled"}">
+              <div class="est-field-row"><span class="est-lbl">ø</span>${diamSelectHtml(beam.supleDiam, "suple-diam", BAR_DIAM_OPTS)}</div>
+              <div class="est-field-row"><span class="est-lbl">n</span>${stepperHtml(beam.supleN, "supleN")}</div>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function renderCanvasStirrupSlot(beam, idx, isPropuesto) {
+      const selCls = idx === selectedIdx ? " selected-beam" : "";
+      let inner;
+      if (isPropuesto) {
+        inner = `
+          <div class="stirrup-slot">
+            <div class="slot-hdr">${beamLabel(idx)}</div>
+            ${supleHtml(beam)}
+          </div>`;
+      } else {
+        inner = `
+          <div class="stirrup-slot">
+            <div class="slot-hdr">${beamTitle(idx, "triple")}</div>
+            <div class="slot-zones">
+              <div class="zone-slot ext">${zonePanelHtml("ext", "Ext · ini/fin", zoneFieldsExt(beam), true)}</div>
+              <div class="zone-slot cent">${zonePanelHtml("cent", "Cent", zoneFieldsCent(beam), true)}</div>
+            </div>
+            ${confinHtml(beam, false)}
+            ${supleHtml(beam)}
+          </div>`;
+      }
+      return `<div class="estribo-beam-slot${selCls}" data-idx="${idx}" style="left:${beam._leftPct}%;width:${beam._widthPct}%">${inner}</div>`;
+    }
+
+    function layoutBeams() {
+      const totalLen = beams.reduce((s, b) => s + b.len, 0);
+      let acc = 0;
+      beams.forEach(b => {
+        b._widthPct = (b.len / totalLen) * 100;
+        b._leftPct = (acc / totalLen) * 100;
+        acc += b.len;
+        const extFrac = b.L_ext / (b.L_ext * 2 + b.L_cent);
+        const centFrac = b.L_cent / (b.L_ext * 2 + b.L_cent);
+        b._extBandLeft = 0;
+        b._extBandW = extFrac * 100;
+        b._centBandLeft = extFrac * 100;
+        b._centBandW = centFrac * 100;
+        b._ext2BandLeft = (extFrac + centFrac) * 100;
+        b._ext2BandW = extFrac * 100;
+      });
+    }
+
+    function renderCanvas(isPropuesto) {
+      layoutBeams();
+      const badge = isPropuesto
+        ? `<span class="mode-badge prop">Propuesto · Suple en canvas</span>`
+        : `<span class="mode-badge act">Actual · estribos en canvas</span>`;
+
+      const alzadoCols = beams.map((b, i) => `
+        <div class="beam-slot-col${i === selectedIdx ? " selected" : ""}" data-idx="${i}" style="left:${b._leftPct}%;width:${b._widthPct}%">
+          <span class="slot-id">${beamLabel(i)}</span>
+          <div class="beam-face"></div>
+          <div class="bar-sup"></div>
+          <div class="bar-inf"></div>
+          <div class="zone-band ext" style="left:${b._extBandLeft}%;width:${b._extBandW}%"></div>
+          <div class="zone-band cent" style="left:${b._centBandLeft}%;width:${b._centBandW}%"></div>
+          <div class="zone-band ext" style="left:${b._ext2BandLeft}%;width:${b._ext2BandW}%"></div>
+        </div>`).join("");
+
+      const estriboSlots = beams.map((b, i) => renderCanvasStirrupSlot(b, i, isPropuesto)).join("");
+
+      const placeholder = isPropuesto ? `
+        <div class="canvas-placeholder">
+          <strong>Cent · Ext · Confin.</strong> movidos al panel derecho ↗<br/>
+          La franja estribos conserva solo <em>Suple inf.</em> (fuera de alcance).
+        </div>` : "";
+
+      return `
+        ${badge}
+        <div class="canvas-hint">Canvas · alzado <span>(clic en viga para seleccionar)</span></div>
+        <div class="alzado-strip">${alzadoCols}</div>
+        <div class="estribo-zone">
+          <div class="estribo-hint">Estribos · franja bajo alzado</div>
+          <div class="estribo-strip">${estriboSlots}</div>
+        </div>
+        ${placeholder}`;
+    }
+
+    function renderSectionControls(beam) {
+      return `
+        <div class="stack-order-hdr">
+          <span class="order-flow"><span class="cent">Cent</span> → <span class="ext">Ext</span> → <span class="confin">Confin.</span></span>
+          <span class="order-note">ø|@ · 268px</span>
+        </div>
+        <div class="section-ctrls" id="sectionCtrls">
+          <div class="ctrl-block">${sectionZoneHtml("cent", "Cent", `L ${beam.L_cent} mm · luz libre`, beam.estCentSpacing, "estCentSpacing", "cent-diam", beam.estCentDiam)}</div>
+          <div class="ctrl-block">${sectionZoneHtml("ext", "Ext · ini/fin", `L ${beam.L_ext} mm ×2`, beam.estExtSpacing, "estExtSpacing", "ext-diam", beam.estExtDiam)}</div>
+          <div class="ctrl-block">${sectionConfinHtml(beam)}</div>
+        </div>
+        <div class="suple-note">
+          <strong>Suple inf.</strong> en franja estribos del canvas ↙
+        </div>`;
+    }
+
+    function renderRightPanel(isPropuesto) {
+      const beam = beams[selectedIdx];
+      const confShort = findConfinDef(beam).label;
+      const shortLbl = confShort.length > 28 ? confShort.slice(0, 26) + "…" : confShort;
+      return `
+        <div class="rail-hint">${beamLabel(selectedIdx)} · sección · confinamiento</div>
+        <div class="section-preview-dock">
+          <div class="dock-preview">${beamSectionPreviewSvg(beam, selectedIdx)}</div>
+          <div class="dock-meta">
+            <div class="dock-title">${beamLabel(selectedIdx)} · ${beam.type} · Cent / confin.</div>
+            <div class="dock-lines">
+              ${beamLayersSummary(beam)}<br/>
+              Ext ×2 · Cent ${beam.L_cent} mm<br/>
+              ${firstLayerBarCount(beam)}b · ${shortLbl}<br/>
+              Ext ø${beam.estExtDiam} @ ${beam.estExtSpacing}<br/>
+              Cent ø${beam.estCentDiam} @ ${beam.estCentSpacing}
+            </div>
+          </div>
+          ${isPropuesto ? renderSectionControls(beam) : ""}
+        </div>`;
+    }
+
+    function bindControls(root, beamIdx) {
+      const beam = beams[beamIdx];
+      root.querySelectorAll("button, select").forEach(el => {
+        el.addEventListener("click", e => e.stopPropagation());
+        el.addEventListener("mousedown", e => e.stopPropagation());
+      });
+
+      root.querySelectorAll(".zone-panel, .confin-block, .ctrl-zone").forEach(el => {
+        el.addEventListener("click", e => {
+          if (e.target.closest(".stepper-btn, select.ctrl, .confin-ctrl")) return;
+          selectedRole = el.dataset.role;
+          renderAll();
+          log(`Rol: ${selectedRole}`);
+        });
+      });
+
+      root.querySelectorAll(".stepper-wrap").forEach(wrap => {
+        const field = wrap.dataset.field;
+        wrap.querySelectorAll(".stepper-btn").forEach(btn => {
+          btn.addEventListener("click", e => {
+            e.stopPropagation();
+            const delta = parseInt(btn.dataset.d, 10);
+            if (field === "supleN") {
+              beam.supleN = Math.max(1, Math.min(6, beam.supleN + (delta > 0 ? 1 : -1)));
+            } else {
+              beam[field] = Math.max(50, Math.min(400, beam[field] + delta));
+            }
+            renderAll();
+            log(`${beamLogRef(beamIdx)} · ${field} → ${beam[field]}`);
+          });
+        });
+      });
+
+      const bindDiam = (cls, key) => {
+        const el = root.querySelector(`.${cls}`);
+        if (el) el.addEventListener("change", () => {
+          beam[key] = parseInt(el.value, 10);
+          renderAll();
+          log(`${beamLogRef(beamIdx)} · ${key} ø${beam[key]}`);
+        });
+      };
+      bindDiam("ext-diam", "estExtDiam");
+      bindDiam("cent-diam", "estCentDiam");
+      bindDiam("suple-diam", "supleDiam");
+
+      root.querySelectorAll(".confin-ctrl").forEach(sel => {
+        sel.addEventListener("change", () => {
+          beam.estConfin = sel.value;
+          renderAll();
+          log(`${beamLogRef(beamIdx)} · Confin. «${beam.estConfin}» → preview actualizado`);
+        });
+      });
+
+      root.querySelectorAll(".suple-toggle button").forEach(btn => {
+        btn.addEventListener("click", e => {
+          e.stopPropagation();
+          beam.requiereSuple = btn.dataset.val === "1";
+          renderAll();
+          log(`${beamLogRef(beamIdx)} · Suple ${beam.requiereSuple ? "SÍ" : "NO"}`);
+        });
+      });
+    }
+
+    function bindBeamSelection(root) {
+      root.querySelectorAll("[data-idx]").forEach(el => {
+        el.addEventListener("click", e => {
+          if (e.target.closest("button, select, .stepper-btn, .toggle-yesno")) return;
+          const idx = parseInt(el.dataset.idx, 10);
+          if (idx === selectedIdx) return;
+          selectedIdx = idx;
+          renderAll();
+          log(`Seleccionada: ${beamLogRef(idx)}`);
+        });
+      });
+    }
+
+    function renderState() {
+      const b = beams[selectedIdx];
+      activeBeamLbl.textContent = `${beamLabel(selectedIdx)} · ${b.type}`;
+      const modeLbl = layoutMode === "propuesto" ? "propuesto" : layoutMode === "actual" ? "actual" : "comparar";
+      stateDump.innerHTML = `
+        Modo: <span class="hi">${modeLbl}</span> · índice ${selectedIdx}<br/>
+        <span class="hi">${beamLabel(selectedIdx)}</span> · ${b.type} · ${b.nCapas} capa(s)<br/>
+        <span style="color:var(--fg-lo);font-size:9px">Revit ${b.id}</span><br/>
+        <span class="cent">Cent</span> ø${b.estCentDiam} @${b.estCentSpacing} · L ${b.L_cent}<br/>
+        <span class="ext">Ext</span> ø${b.estExtDiam} @${b.estExtSpacing} · L ${b.L_ext}×2<br/>
+        <span class="confin">Confin.</span> ${b.estConfin}<br/>
+        <span class="suple">Suple</span> ${b.requiereSuple ? `Sí · ø${b.supleDiam} · n=${b.supleN}` : "No"}<br/>
+        Rol activo: <span class="hi">${selectedRole}</span>`;
+    }
+
+    function renderAll() {
+      layoutMode = modeSelect.value;
+      showHints = hintsCheck.checked;
+      const isPropuesto = layoutMode === "propuesto";
+      const isActual = layoutMode === "actual";
+      const isCompare = layoutMode === "compare";
+
+      if (isCompare) {
+        canvasCol.innerHTML = `
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;min-width:0">
+            <div>${renderCanvas(false)}</div>
+            <div>${renderCanvas(true)}</div>
+          </div>`;
+        rightPanel.innerHTML = `
+          <div style="font-size:8px;color:var(--fg-lo);margin-bottom:4px">Panel derecho · vista <strong style="color:var(--bar-cent)">propuesta</strong> (controles bajo preview)</div>
+          ${renderRightPanel(true)}`;
+        bindBeamSelection(canvasCol);
+        bindControls(canvasCol, selectedIdx);
+        bindControls(rightPanel, selectedIdx);
+      } else if (isActual) {
+        canvasCol.innerHTML = renderCanvas(false);
+        rightPanel.innerHTML = renderRightPanel(false);
+        bindBeamSelection(canvasCol);
+        bindControls(canvasCol, selectedIdx);
+      } else {
+        canvasCol.innerHTML = renderCanvas(true);
+        rightPanel.innerHTML = renderRightPanel(true);
+        bindBeamSelection(canvasCol);
+        bindControls(canvasCol, selectedIdx);
+        bindControls(rightPanel, selectedIdx);
+      }
+
+      renderState();
+    }
+
+    modeSelect.addEventListener("change", () => {
+      renderAll();
+      log(`Modo: ${modeSelect.options[modeSelect.selectedIndex].text}`);
+    });
+    hintsCheck.addEventListener("change", () => {
+      renderAll();
+      log(`Hints ${hintsCheck.checked ? "ON" : "OFF"}`);
+    });
+
+    renderAll();
+    log("Mockup cargado — seleccione vigas y compare actual vs propuesto.");
+  </script>
+</body>
+</html>

@@ -1,0 +1,3294 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mockup interactivo — Arainco: Armado vigas</title>
+  <style>
+    :root {
+      --bg-app: #071018;
+      --bg-panel: #0a1620;
+      --border: #21465c;
+      --fg-hi: #e8f4f8;
+      --fg-mid: #95b8cc;
+      --fg-lo: #64748b;
+      --accent-hdr: #7eb8d0;
+      --bar-ini: #22d3ee;
+      --bar-fin: #f87171;
+      --bar-mesh: #34d399;
+      --layer-ini: #67e8f9;
+      --layer-fin: #fca5a5;
+      --input-bg: #071018;
+      --input-border: #1e3344;
+      --btn-outline: #2d4455;
+      --btn-primary: #5bb8d4;
+      --btn-primary-fg: #071018;
+      --ok: #4ade80;
+      --warn: #fbbf24;
+      --col-accent: #a78bfa;
+      --wall-accent: #34d399;
+      --zoom: 1;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body { height: 100%; }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #050c14;
+      color: var(--fg-mid);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Dev bar (solo mockup) ── */
+    .dev-bar {
+      background: #0f1c28;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      align-items: center;
+      font-size: 11px;
+      z-index: 10;
+    }
+    .dev-bar h1 { font-size: 13px; color: var(--fg-hi); font-weight: 600; }
+    .dev-bar label { display: flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
+    .dev-bar select, .dev-bar input[type="range"] { accent-color: var(--btn-primary); }
+    .dev-bar select {
+      background: var(--input-bg);
+      color: var(--fg-hi);
+      border: 1px solid var(--input-border);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+    .pill {
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: rgba(74, 222, 128, 0.15);
+      color: var(--ok);
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .dev-bar .sep { width: 1px; height: 20px; background: var(--border); }
+
+    /* ── Workspace ── */
+    .workspace {
+      display: grid;
+      grid-template-columns: 1fr 280px;
+      min-height: 0;
+      overflow: hidden;
+    }
+    @media (max-width: 1100px) {
+      .workspace { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+      .eval-panel { max-height: 240px; border-left: none; border-top: 1px solid var(--border); }
+    }
+
+    .win-scroll {
+      overflow: auto;
+      padding: 16px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    .win-scaler {
+      transform: scale(var(--zoom));
+      transform-origin: top center;
+      transition: transform 0.15s ease;
+    }
+
+    .win {
+      background: var(--bg-app);
+      border: 1px solid var(--border);
+      padding: 18px;
+      min-width: 720px;
+      width: min(1100px, 96vw);
+      box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+    }
+    .win-title { color: var(--fg-hi); font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+    .win-sub { color: var(--fg-mid); font-size: 12px; margin-bottom: 10px; }
+    .scope-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      color: var(--fg-mid);
+      background: rgba(91, 184, 212, 0.1);
+      border: 1px solid rgba(91, 184, 212, 0.35);
+      border-radius: 4px;
+      padding: 4px 10px;
+      margin-bottom: 8px;
+    }
+    .scope-badge strong { color: var(--fg-hi); font-weight: 600; }
+    .info-muros { font-size: 11px; margin-bottom: 10px; color: var(--fg-lo); }
+
+    .select-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .select-row .btn-outline { width: auto; flex: 1; min-width: 200px; margin-bottom: 0; }
+
+    .legend-apoyos {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      font-size: 9px;
+      color: var(--fg-lo);
+      margin-bottom: 8px;
+    }
+    .legend-apoyos span { display: inline-flex; align-items: center; gap: 5px; }
+    .legend-apoyos .sw-col {
+      width: 10px; height: 18px;
+      background: rgba(148, 163, 184, 0.35);
+      border: 1px solid rgba(203, 213, 225, 0.65);
+    }
+    .legend-apoyos .sw-wall {
+      width: 14px; height: 8px; border-radius: 1px;
+      background: rgba(52, 211, 153, 0.2); border: 1px solid var(--wall-accent);
+    }
+
+    .btn-outline {
+      border: 1px solid var(--btn-outline);
+      background: transparent;
+      color: var(--fg-mid);
+      border-radius: 5px;
+      padding: 7px 12px;
+      font-size: 11px;
+      cursor: pointer;
+      width: 100%;
+      margin-bottom: 8px;
+    }
+    .btn-outline:hover { border-color: var(--btn-primary); color: var(--fg-hi); }
+
+    .main-grid {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg-panel);
+      margin-bottom: 10px;
+    }
+    .col-headers.vigas-hdr {
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border);
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--accent-hdr);
+      text-transform: uppercase;
+    }
+    .col-headers.vigas-hdr .hdr-hint {
+      text-transform: none;
+      font-weight: 400;
+      font-size: 9px;
+      color: var(--fg-lo);
+      margin-top: 4px;
+    }
+
+    .scroll-body { max-height: 58vh; overflow: auto; }
+
+    /* Canvas vigas — zonas E · core · Tn */
+    .canvas-body {
+      padding: 10px 12px 12px;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+    .canvas-body.has-h-scroll {
+      scrollbar-gutter: stable;
+    }
+    .canvas-layout {
+      display: flex;
+      align-items: flex-start;
+      gap: 0;
+      width: 100%;
+    }
+    .canvas-scroll-col {
+      flex: 1;
+      min-width: 0;
+      overflow-x: auto;
+      overflow-y: visible;
+    }
+    .canvas-scroll-col.has-h-scroll {
+      scrollbar-gutter: stable;
+    }
+    .section-preview-rail {
+      width: 176px;
+      flex-shrink: 0;
+      padding: 6px 6px 8px 10px;
+      margin-top: 2px;
+      border-left: 1px solid rgba(52, 211, 153, 0.28);
+      background: rgba(5, 12, 20, 0.72);
+      position: sticky;
+      top: 8px;
+      align-self: flex-start;
+      max-height: calc(100vh - 180px);
+      overflow-y: auto;
+      border-radius: 0 4px 4px 0;
+    }
+    .section-preview-rail .rail-hint {
+      font-size: 7px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: rgba(52, 211, 153, 0.7);
+      margin-bottom: 6px;
+      line-height: 1.3;
+    }
+    .canvas-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      box-sizing: border-box;
+    }
+    .canvas-row.fits-viewport { width: 100%; }
+    .canvas-row.needs-scroll { width: var(--canvas-content-w, 100%); min-width: var(--canvas-content-w, 100%); }
+
+    .canvas-ctrl-hint {
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: var(--fg-lo);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+    .canvas-ctrl-hint.estribos { color: rgba(52, 211, 153, 0.75); }
+    .canvas-ctrl-hint.tramos { color: rgba(34, 211, 238, 0.75); margin: 6px 0 4px; }
+
+    /* Configurador estribos — franja bajo alzado, 1 columna por viga */
+    .estribo-zone {
+      position: relative;
+      margin-top: 4px;
+      padding-top: 6px;
+      border-top: 1px dashed rgba(52, 211, 153, 0.22);
+    }
+    .estribo-strip {
+      position: relative;
+      min-height: 104px;
+      padding-bottom: 4px;
+    }
+    .estribo-beam-slot {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      box-sizing: border-box;
+      padding: 0 3px;
+      min-width: 0;
+    }
+    .estribo-beam-slot.selected-beam .slot-hdr { color: var(--btn-primary); }
+    .slot-hdr {
+      font-size: 7px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-align: center;
+      color: var(--fg-lo);
+      margin-bottom: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-transform: uppercase;
+    }
+    .slot-zones {
+      display: flex;
+      gap: 3px;
+      align-items: stretch;
+      min-height: 82px;
+      height: calc(100% - 12px);
+    }
+    .zone-slot {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .zone-slot.full { flex: 1 1 100%; max-width: 100%; margin: 0 auto; }
+    .zone-slot.ext { min-width: 58px; }
+    .zone-slot.cent { min-width: 72px; }
+    .zone-slot .zone-panel {
+      position: relative;
+      left: auto !important;
+      bottom: auto;
+      transform: none;
+      width: 100% !important;
+      max-width: none;
+      flex: 1;
+      box-sizing: border-box;
+    }
+    .zone-panel.compact { font-size: 9px; }
+    .zone-panel.compact .zone-toolbar { padding: 3px 5px 2px; gap: 3px; }
+    .zone-panel.compact .zone-id { font-size: 8px; }
+    .zone-panel.compact .zone-meta { display: none; }
+    .zone-panel.compact .zone-body { padding: 0 5px 5px; }
+    .zone-panel.compact .est-field-row { gap: 3px; font-size: 8px; margin: 0; }
+    .zone-panel.compact .est-field-row .est-lbl { min-width: 14px; font-size: 7px; }
+    .zone-panel.compact .est-hint { display: none; }
+    .zone-panel.compact .zone-len-tag { font-size: 6.5px; line-height: 1.25; margin-top: 2px; }
+    .zone-panel.compact select.ctrl { max-width: none; width: 100%; font-size: 9px; height: 20px; }
+    .zone-panel.compact .stepper-btn { width: 16px; height: 18px; font-size: 10px; }
+    .zone-panel.compact .stepper-val { width: 28px; height: 18px; font-size: 9px; line-height: 16px; }
+    .zone-panel.compact .est-confin-row select.ctrl {
+      font-size: 7px;
+      padding: 0 2px;
+      height: auto;
+      min-height: 20px;
+    }
+    .zone-panel .zone-stem { display: none; }
+
+    .section-preview-dock {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: stretch;
+      margin: 0;
+      padding: 8px;
+      border: 1px solid rgba(52, 211, 153, 0.28);
+      border-radius: 4px;
+      background: rgba(7, 16, 24, 0.55);
+    }
+    .section-preview-dock.hidden { display: none; }
+    .dock-meta { flex: 0; min-width: 0; }
+    .dock-meta .dock-title {
+      font-size: 8px;
+      font-weight: 700;
+      color: #6ee7b7;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+      line-height: 1.35;
+    }
+    .dock-meta .dock-lines {
+      font-size: 7.5px;
+      color: var(--fg-lo);
+      line-height: 1.5;
+    }
+    .dock-preview {
+      width: 100%;
+      flex-shrink: 0;
+      padding: 6px;
+      border-radius: 4px;
+      border: 1px solid rgba(33, 70, 92, 0.65);
+      background: radial-gradient(ellipse at 50% 30%, rgba(30, 52, 68, 0.45), rgba(7, 16, 24, 0.88));
+      box-sizing: border-box;
+    }
+    .dock-preview .beam-section-preview {
+      min-height: 0;
+      max-height: 132px;
+      width: 100%;
+    }
+    .beam-span .stirrup-zone-band .band-lbl {
+      position: absolute;
+      top: 2px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 6px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    .beam-span .stirrup-zone-band.ext .band-lbl { color: rgba(251, 191, 36, 0.9); }
+    .beam-span .stirrup-zone-band.cent .band-lbl { color: rgba(52, 211, 153, 0.85); }
+    .beam-span .stirrup-zone-band.uni .band-lbl { color: rgba(251, 191, 36, 0.85); }
+
+    .vigas-estribo-row {
+      position: relative;
+      min-height: 0;
+      padding-bottom: 0;
+      margin-bottom: 0;
+    }
+
+    .canvas-core {
+      position: relative;
+      border: 1px solid rgba(33, 70, 92, 0.85);
+      border-radius: 4px;
+      padding: 10px 8px 6px;
+      background: rgba(255, 255, 255, 0.025);
+      margin-top: 2px;
+    }
+
+    .tramo-zone {
+      position: relative;
+      padding-top: 2px;
+    }
+
+    .canvas-core .long-track-shared {
+      border: none;
+      background: transparent;
+    }
+
+    .long-track-shared {
+      position: relative;
+      height: 52px;
+      background: rgba(255,255,255,0.02);
+      border-radius: 3px;
+      overflow: visible;
+      border: 1px solid rgba(33, 70, 92, 0.6);
+    }
+    .long-track-shared.has-elevation {
+      height: 98px;
+      background: rgba(255,255,255,0.03);
+    }
+
+    .empalme-btn-row {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 20px;
+      z-index: 8;
+    }
+    .empalme-btn-slot {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 2px;
+    }
+    .empalme-btn {
+      font-size: 7px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 1px 6px;
+      border-radius: 3px;
+      border: 1px solid rgba(91, 184, 212, 0.4);
+      background: var(--input-bg);
+      color: var(--fg-mid);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .empalme-btn:hover { filter: brightness(1.12); }
+    .empalme-btn.on {
+      border-color: var(--warn);
+      background: rgba(251, 191, 36, 0.14);
+      color: var(--warn);
+    }
+
+    /* Alzado integrado: viga continua + columnas/muros en el mismo plano */
+    .elevation-track {
+      position: absolute;
+      inset: 0;
+    }
+    .beam-continuous {
+      position: absolute;
+      top: 22px;
+      height: 28px;
+      z-index: 1;
+      pointer-events: none;
+    }
+    .beam-continuous .beam-face {
+      position: absolute;
+      inset: 0;
+      background: rgba(226, 232, 240, 0.07);
+    }
+    .beam-continuous .beam-chord {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 0;
+      border-top: 1.5px solid rgba(226, 232, 240, 0.82);
+    }
+    .beam-continuous .beam-chord.top { top: 0; }
+    .beam-continuous .beam-chord.bottom { bottom: 0; border-top: none; border-bottom: 1.5px solid rgba(226, 232, 240, 0.82); }
+    .beam-continuous .beam-axis {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      border-top: 1px dashed rgba(148, 163, 184, 0.55);
+    }
+
+    .col-support {
+      position: absolute;
+      top: 6px;
+      bottom: 6px;
+      width: 22px;
+      transform: translateX(-50%);
+      z-index: 5;
+      pointer-events: none;
+    }
+    .col-support * { pointer-events: none; }
+    .col-support .col-fill {
+      position: absolute;
+      inset: 0;
+      background: rgba(148, 163, 184, 0.32);
+      border: 1px solid rgba(203, 213, 225, 0.65);
+    }
+    .col-support .col-edge {
+      position: absolute;
+      top: 22px;
+      bottom: 26px;
+      width: 0;
+      border-left: 1px dashed rgba(100, 116, 139, 0.75);
+    }
+    .col-support .col-edge.left { left: 0; }
+    .col-support .col-edge.right { right: 0; }
+    .col-support .col-axis {
+      position: absolute;
+      left: 50%;
+      top: 0;
+      bottom: 0;
+      border-left: 1px dashed rgba(100, 116, 139, 0.85);
+    }
+    .col-support .col-pocket {
+      position: absolute;
+      top: 22px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 14px;
+      height: 11px;
+      color: rgba(148, 163, 184, 0.9);
+    }
+    .col-support .sup-id {
+      position: absolute;
+      bottom: -14px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 7px;
+      font-weight: 700;
+      color: var(--fg-hi);
+      white-space: nowrap;
+    }
+    .col-support.is-wall {
+      width: 30px;
+      top: 14px;
+      bottom: 14px;
+    }
+    .col-support.is-wall .col-fill {
+      background: rgba(52, 211, 153, 0.22);
+      border-color: rgba(52, 211, 153, 0.55);
+    }
+    .col-support.is-wall .sup-id { color: var(--wall-accent); }
+
+    .beam-span {
+      position: absolute;
+      top: 22px;
+      height: 28px;
+      cursor: pointer;
+      z-index: 6;
+      transition: box-shadow 0.12s, background 0.12s;
+    }
+    .beam-span:hover { background: rgba(91, 184, 212, 0.06); }
+    .beam-span.selected {
+      box-shadow: inset 0 0 0 2px var(--btn-primary);
+      background: rgba(91, 184, 212, 0.1);
+      z-index: 7;
+    }
+    .beam-span.warn { background: rgba(251, 191, 36, 0.06); }
+    .beam-span.empalme-on {
+      background: rgba(251, 191, 36, 0.05);
+    }
+    .beam-span .span-half {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 50%;
+      cursor: pointer;
+      z-index: 2;
+    }
+    .beam-span .span-half.left { left: 0; }
+    .beam-span .span-half.right { right: 0; }
+    .beam-span .span-half.selected {
+      background: rgba(91, 184, 212, 0.14);
+      box-shadow: inset 0 0 0 2px var(--btn-primary);
+    }
+    .beam-span.empalme-on.selected {
+      box-shadow: none;
+      background: rgba(251, 191, 36, 0.05);
+    }
+    .beam-span .bar-sup,
+    .beam-span .bar-inf {
+      position: absolute;
+      height: 2px;
+      border-radius: 1px;
+      opacity: 0.85;
+      pointer-events: none;
+    }
+    .beam-span:not(.empalme-on) .bar-sup,
+    .beam-span:not(.empalme-on) .bar-inf {
+      left: 6px;
+      right: 6px;
+    }
+    .beam-span .bar-sup { top: 5px; background: var(--bar-ini); }
+    .beam-span .bar-inf { bottom: 5px; background: var(--bar-fin); }
+    .beam-span.empalme-on .bar-sup.left-bar,
+    .beam-span.empalme-on .bar-inf.left-bar { left: 6px; right: calc(50% + 3px); }
+    .beam-span.empalme-on .bar-sup.right-bar,
+    .beam-span.empalme-on .bar-inf.right-bar { left: calc(50% + 3px); right: 6px; }
+    .beam-span .splice-mark {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: transparent;
+      z-index: 4;
+      cursor: pointer;
+    }
+    .beam-span .splice-mark::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 2px;
+      transform: translateX(-50%);
+      background: var(--warn);
+      box-shadow: 0 0 8px rgba(251, 191, 36, 0.65);
+      pointer-events: none;
+    }
+    .beam-span .splice-mark .splice-lbl {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 7px;
+      font-weight: 700;
+      color: var(--warn);
+      white-space: nowrap;
+      letter-spacing: 0.04em;
+    }
+    .beam-span .splice-mark::after {
+      content: "⌖";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 9px;
+      color: var(--warn);
+    }
+
+    .beam-segment {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      cursor: pointer;
+      border-radius: 3px;
+      transition: box-shadow 0.12s, filter 0.12s;
+    }
+    .beam-segment:hover { filter: brightness(1.08); }
+    .beam-segment.selected {
+      box-shadow: inset 0 0 0 2px var(--btn-primary), 0 0 12px rgba(91, 184, 212, 0.25);
+      z-index: 2;
+    }
+    .beam-segment.warn { background: rgba(251, 191, 36, 0.06); }
+
+    .beam-segment .beam-body {
+      position: absolute;
+      left: 2px;
+      right: 2px;
+      top: 10px;
+      height: 24px;
+      border-radius: 3px;
+      border: 1px solid rgba(91, 192, 222, 0.35);
+      background: linear-gradient(180deg, rgba(34, 211, 238, 0.14), rgba(248, 113, 113, 0.1));
+    }
+
+    .beam-segment .bar-sup,
+    .beam-segment .bar-inf {
+      position: absolute;
+      left: 4px;
+      right: 4px;
+      height: 2px;
+      border-radius: 1px;
+      opacity: 0.9;
+    }
+    .beam-segment .bar-sup { top: 5px; background: var(--bar-ini); }
+    .beam-segment .bar-inf { bottom: 5px; background: var(--bar-fin); }
+
+    .beam-segment .splice-mark {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--warn);
+      box-shadow: 0 0 6px rgba(251, 191, 36, 0.6);
+      z-index: 1;
+    }
+    .beam-segment .splice-mark::after {
+      content: "E";
+      position: absolute;
+      top: -1px;
+      left: 4px;
+      font-size: 8px;
+      font-weight: 700;
+      color: var(--warn);
+    }
+
+    .beam-segment .seg-divider {
+      position: absolute;
+      right: -1px;
+      top: 6px;
+      bottom: 6px;
+      width: 1px;
+      background: rgba(33, 70, 92, 0.8);
+    }
+    .beam-segment:last-child .seg-divider { display: none; }
+
+    .labels-row {
+      position: relative;
+      height: 32px;
+      margin-top: 6px;
+    }
+    .labels-row.with-apoyos {
+      height: 36px;
+    }
+
+    .beam-label {
+      position: absolute;
+      top: 0;
+      transform: translateX(-50%);
+      text-align: center;
+      font-size: 9px;
+      color: var(--fg-lo);
+      cursor: pointer;
+      white-space: nowrap;
+      line-height: 1.3;
+    }
+    .beam-label:hover { color: var(--fg-mid); }
+    .beam-label.selected { color: var(--btn-primary); }
+    .beam-label .id { font-weight: 700; color: var(--fg-hi); display: block; }
+    .beam-label.selected .id { color: var(--btn-primary); }
+    .beam-label .len { color: var(--fg-mid); }
+    .beam-label .warn-tag { color: var(--warn); font-size: 8px; }
+
+    .axis-hint {
+      display: flex;
+      justify-content: space-between;
+      font-size: 9px;
+      color: var(--fg-lo);
+      margin-top: 6px;
+      padding: 0 2px;
+    }
+
+    /* Bandas de color tramo — bajo el canvas */
+    .tramos-band-row {
+      position: relative;
+      height: 8px;
+      margin: 8px 0 6px;
+    }
+    .tramo-band {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      border-radius: 3px;
+      opacity: 0.55;
+      border: 1px solid rgba(255,255,255,0.08);
+      pointer-events: none;
+    }
+    .tramo-band.selected {
+      opacity: 1;
+      box-shadow: 0 0 0 1px var(--btn-primary);
+    }
+    .tramo-band.has-warn {
+      opacity: 0.9;
+      box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.55);
+    }
+    .tramo-band.has-warn.selected {
+      box-shadow: 0 0 0 1px var(--warn), 0 0 0 2px var(--btn-primary);
+    }
+
+    .tramos-ctrl-row .cap-panel.has-warn {
+      border-color: rgba(251, 191, 36, 0.55);
+    }
+    .tramos-ctrl-row .cap-panel.has-warn.selected {
+      border-color: var(--warn);
+      box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.45), 0 8px 20px rgba(0,0,0,0.35);
+    }
+
+    /* Controladores cap-panel Tn (bajo canvas) */
+    .tramos-ctrl-row {
+      position: relative;
+      min-height: 152px;
+      margin-top: 0;
+      padding-top: 2px;
+    }
+
+    .tramos-ctrl-row.has-many-layers {
+      min-height: 188px;
+    }
+
+    .tramos-ctrl-row .cap-panel {
+      position: absolute;
+      top: 0;
+      transform: translateX(-50%);
+      box-sizing: border-box;
+      min-width: 188px;
+      max-width: 272px;
+      margin: 0;
+      padding: 7px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: rgba(10, 22, 32, 0.88);
+      font-size: 10px;
+      cursor: pointer;
+      transition: border-color 0.12s, box-shadow 0.12s;
+      --bar: var(--bar-ini);
+      --layer: var(--layer-ini);
+    }
+    .tramos-ctrl-row .cap-panel:hover {
+      border-color: rgba(255,255,255,0.35);
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
+    }
+    .tramos-ctrl-row .cap-panel.selected {
+      border-color: var(--btn-primary);
+      box-shadow: 0 0 0 1px rgba(91, 184, 212, 0.35), 0 8px 20px rgba(0,0,0,0.35);
+      z-index: 3;
+    }
+    .tramos-ctrl-row .cap-panel.split-new { border-style: dashed; }
+    .tramos-ctrl-row .cap-panel.fin { --bar: var(--bar-fin); --layer: var(--layer-fin); }
+
+    /* Configurador estribos E — legacy panel (no usado en franja) */
+    .vigas-estribo-row.legacy { min-height: 220px; padding-bottom: 14px; }
+    .estribo-panel {
+      position: absolute;
+      top: 0;
+      left: 0;
+      box-sizing: border-box;
+      min-width: 220px;
+      max-width: 280px;
+      transform: translateX(-50%);
+      border-radius: 4px;
+      border: 1px solid rgba(52, 211, 153, 0.35);
+      background: rgba(10, 22, 32, 0.95);
+      font-size: 10px;
+      cursor: pointer;
+      transition: border-color 0.12s, box-shadow 0.12s;
+      overflow: visible;
+    }
+    .estribo-panel:hover {
+      border-color: rgba(52, 211, 153, 0.55);
+    }
+    .estribo-panel.selected {
+      border-color: var(--bar-mesh);
+      box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.55), 0 10px 28px rgba(0, 0, 0, 0.45);
+      z-index: 4;
+    }
+    .estribo-panel .est-stem {
+      position: absolute;
+      left: 50%;
+      bottom: -10px;
+      width: 1px;
+      height: 10px;
+      background: rgba(52, 211, 153, 0.4);
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+    .estribo-panel.selected .est-stem {
+      background: var(--bar-mesh);
+      height: 12px;
+      bottom: -12px;
+    }
+    .estribo-panel .est-body { padding: 0; }
+    .estribo-panel .est-toolbar {
+      padding: 6px 7px 4px;
+    }
+    .estribo-panel .est-split {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: stretch;
+      padding: 0 8px 8px;
+    }
+    .estribo-panel .est-controls { min-width: 0; width: 100%; }
+    .estribo-panel .est-preview-hdr {
+      font-size: 7px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: rgba(52, 211, 153, 0.65);
+      margin-bottom: 4px;
+    }
+    .estribo-panel .est-preview {
+      display: block;
+      width: 100%;
+      min-height: 124px;
+      padding: 6px;
+      border-radius: 4px;
+      border: 1px solid rgba(33, 70, 92, 0.65);
+      background: radial-gradient(ellipse at 50% 30%, rgba(30, 52, 68, 0.5), rgba(7, 16, 24, 0.88));
+      box-sizing: border-box;
+    }
+    .beam-section-preview {
+      display: block;
+      width: 100%;
+      height: auto;
+      min-height: 112px;
+      max-height: 148px;
+      border: none;
+      border-radius: 3px;
+      background: transparent;
+      flex-shrink: 0;
+    }
+    .estribo-panel.selected .est-preview {
+      border-color: rgba(52, 211, 153, 0.45);
+      box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.12);
+    }
+    .est-fields { display: flex; flex-direction: column; gap: 5px; }
+    .est-field-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 9px;
+      color: var(--fg-mid);
+    }
+    .est-field-row .est-lbl {
+      min-width: 38px;
+      font-weight: 700;
+      color: var(--fg-lo);
+      font-size: 8px;
+      letter-spacing: 0.03em;
+    }
+    .est-field-row .ctrl { flex: 1; max-width: none; }
+    .est-field-row.est-spacing-row .stepper-wrap { flex: 1; }
+    .est-field-row.est-spacing-row .stepper-val { flex: 1; width: auto; min-width: 36px; }
+    .est-hint {
+      font-size: 8px;
+      color: var(--fg-lo);
+      line-height: 1.35;
+      padding-top: 1px;
+    }
+    .estribo-panel .bar-top {
+      height: 2px;
+      background: var(--bar-mesh);
+      margin: 0;
+      border-radius: 3px 3px 0 0;
+    }
+    .est-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 6px;
+      margin-bottom: 5px;
+    }
+    .est-id {
+      font-size: 10px;
+      font-weight: 700;
+      color: #6ee7b7;
+      letter-spacing: 0.02em;
+    }
+    .estribo-panel.selected .est-id { color: #a7f3d0; }
+    .est-meta { font-size: 9px; color: var(--fg-lo); white-space: nowrap; }
+    .estribo-panel .cap-tbl { margin-bottom: 2px; }
+    .estribo-panel .cap-tbl tr.on td:first-child { color: var(--bar-mesh); }
+    .est-at-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin: 4px 0;
+      font-size: 9px;
+      color: var(--fg-mid);
+    }
+    .est-at-row .at-sym { font-weight: 700; color: var(--fg-lo); min-width: 10px; }
+    .est-at-row .at-unit { font-size: 8px; color: var(--fg-lo); }
+    .estribo-panel .est-tipo { width: 100%; max-width: none; margin-top: 4px; }
+
+    /* Controladores zonas estribo — Ext · Cent · Único */
+    .zone-panel {
+      border-radius: 4px;
+      font-size: 10px;
+      cursor: pointer;
+      transition: border-color 0.12s, box-shadow 0.12s;
+      overflow: hidden;
+      z-index: 2;
+    }
+    .zone-panel .zone-stem {
+      position: absolute;
+      left: 50%;
+      bottom: -10px;
+      width: 1px;
+      height: 10px;
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+    .zone-panel.selected .zone-stem { height: 12px; bottom: -12px; }
+    .zone-panel.ext {
+      border: 1px solid rgba(251, 191, 36, 0.45);
+      background: rgba(22, 18, 10, 0.94);
+    }
+    .zone-panel.ext:hover { border-color: rgba(251, 191, 36, 0.65); }
+    .zone-panel.ext.selected {
+      border-color: #fbbf24;
+      box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.45), 0 8px 22px rgba(0, 0, 0, 0.4);
+      z-index: 4;
+    }
+    .zone-panel.ext .bar-top { background: #fbbf24; }
+    .zone-panel.ext .zone-stem { background: rgba(251, 191, 36, 0.45); }
+    .zone-panel.ext.selected .zone-stem { background: #fbbf24; }
+    .zone-panel.ext .zone-id { color: #fcd34d; }
+    .zone-panel.cent {
+      border: 1px solid rgba(52, 211, 153, 0.35);
+      background: rgba(10, 22, 32, 0.95);
+    }
+    .zone-panel.cent:hover { border-color: rgba(52, 211, 153, 0.55); }
+    .zone-panel.cent.selected {
+      border-color: var(--bar-mesh);
+      box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.55), 0 10px 28px rgba(0, 0, 0, 0.45);
+      z-index: 4;
+    }
+    .zone-panel.cent .bar-top { background: var(--bar-mesh); }
+    .zone-panel.cent .zone-stem { background: rgba(52, 211, 153, 0.4); }
+    .zone-panel.cent.selected .zone-stem { background: var(--bar-mesh); }
+    .zone-panel.uni {
+      border: 1px solid rgba(251, 191, 36, 0.5);
+      background: rgba(14, 20, 18, 0.95);
+    }
+    .zone-panel.uni:hover { border-color: rgba(251, 191, 36, 0.7); }
+    .zone-panel.uni.selected {
+      border-color: #fbbf24;
+      box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.5), 0 10px 28px rgba(0, 0, 0, 0.45);
+      z-index: 4;
+    }
+    .zone-panel.uni .bar-top { background: linear-gradient(90deg, #fbbf24, var(--bar-mesh)); }
+    .zone-panel.uni .zone-id { color: #fde68a; }
+    .zone-panel.uni .zone-stem { background: rgba(251, 191, 36, 0.45); }
+    .zone-panel.uni.selected .zone-stem { background: #fbbf24; }
+    .zone-panel.uni .zone-hint { color: rgba(251, 191, 36, 0.85); }
+    .beam-span .stirrup-zone-band.uni {
+      background: rgba(251, 191, 36, 0.12);
+      border-left: 1px solid rgba(251, 191, 36, 0.4);
+      border-right: 1px solid rgba(251, 191, 36, 0.4);
+    }
+    .zone-panel .zone-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 6px;
+      padding: 5px 7px 3px;
+    }
+    .zone-panel .zone-id {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .zone-panel .zone-meta { font-size: 8px; color: var(--fg-lo); white-space: nowrap; }
+    .zone-panel .zone-body { padding: 0 7px 7px; }
+    .zone-panel.ext .zone-hint { color: rgba(251, 191, 36, 0.8); }
+    .zone-len-tag {
+      font-size: 8px;
+      color: var(--fg-lo);
+      margin-top: 4px;
+      line-height: 1.35;
+    }
+    .zone-panel.cent .zone-body .est-split {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: stretch;
+    }
+    .zone-panel.uni .zone-body .est-split {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: stretch;
+    }
+    .zone-panel.cent .est-preview,
+    .zone-panel.uni .est-preview {
+      display: block;
+      width: 100%;
+      min-height: 112px;
+      padding: 6px;
+      border-radius: 4px;
+      border: 1px solid rgba(33, 70, 92, 0.65);
+      background: radial-gradient(ellipse at 50% 30%, rgba(30, 52, 68, 0.5), rgba(7, 16, 24, 0.88));
+      box-sizing: border-box;
+    }
+    .beam-span .stirrup-zone-band {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      pointer-events: none;
+      opacity: 0.55;
+      z-index: 2;
+    }
+    .beam-span .stirrup-zone-band.ext {
+      background: rgba(251, 191, 36, 0.14);
+      border-left: 1px solid rgba(251, 191, 36, 0.35);
+      border-right: 1px solid rgba(251, 191, 36, 0.35);
+    }
+    .beam-span .stirrup-zone-band.cent {
+      background: rgba(52, 211, 153, 0.1);
+      border-left: 1px dashed rgba(52, 211, 153, 0.35);
+      border-right: 1px dashed rgba(52, 211, 153, 0.35);
+    }
+
+    .cap-panel .bar-top {
+      height: 2px;
+      background: var(--bar);
+      margin: -7px -7px 5px;
+      border-radius: 2px 2px 0 0;
+    }
+    .cap-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 5px;
+      min-height: 18px;
+      gap: 4px;
+    }
+    .tramo-lbl {
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--fg-mid);
+      line-height: 1.35;
+    }
+    .cap-panel.selected .tramo-lbl { color: var(--fg-hi); }
+    .capas { font-size: 9px; color: var(--fg-lo); white-space: nowrap; }
+
+    .tramos-ctrl-row .cap-panel .conf-n-hint {
+      color: rgba(52, 211, 153, 0.85);
+      font-size: 8px;
+    }
+
+    .cap-panel .capas-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 5px;
+      font-size: 9px;
+      color: var(--fg-mid);
+    }
+    .cap-panel .capas-row .capas-lbl {
+      font-weight: 700;
+      color: var(--fg-lo);
+      font-size: 8px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      min-width: 34px;
+    }
+    .cap-panel .capas-row .stepper-wrap { flex: 1; }
+    .cap-panel .capas-row .stepper-val { flex: 1; width: auto; }
+    .cap-tbl tr.layer-row td:first-child {
+      font-size: 8px;
+      white-space: nowrap;
+      width: 22px;
+    }
+
+    .cap-split {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 4px;
+    }
+    .cap-col {
+      flex: 1;
+      min-width: 0;
+      border-radius: 3px;
+      padding: 3px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(33, 70, 92, 0.45);
+    }
+    .cap-col-sup { border-color: rgba(34, 211, 238, 0.22); }
+    .cap-col-inf { border-color: rgba(248, 113, 113, 0.22); }
+    .cap-col-hdr {
+      font-size: 7px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      text-align: center;
+      margin-bottom: 3px;
+      padding: 2px 0;
+      border-radius: 2px;
+    }
+    .cap-col-sup .cap-col-hdr { color: #67e8f9; background: rgba(34, 211, 238, 0.1); }
+    .cap-col-inf .cap-col-hdr { color: #fca5a5; background: rgba(248, 113, 113, 0.1); }
+    .cap-tbl-compact { width: 100%; }
+    .cap-tbl-compact th { font-size: 7px; padding: 0 1px 2px; }
+    .cap-tbl-compact td { padding: 1px 1px; vertical-align: middle; }
+    .cap-tbl-compact .stepper-btn { width: 14px; height: 17px; font-size: 9px; }
+    .cap-tbl-compact .stepper-val { width: 20px; height: 17px; font-size: 8px; line-height: 15px; }
+    .cap-tbl-compact select.ctrl { max-width: 44px; width: 100%; font-size: 8px; height: 17px; padding: 0 2px; }
+    .cap-panel .cap-meta {
+      font-size: 8px;
+      color: var(--fg-lo);
+      line-height: 1.35;
+      margin-top: 3px;
+    }
+    .cap-panel .cap-meta .embed-tag,
+    .cap-panel .cap-meta .conf-lbl { margin-top: 2px; font-size: 8px; }
+
+    table.cap-tbl { width: 100%; border-collapse: collapse; }
+    .cap-tbl th { color: var(--fg-lo); font-size: 8px; padding: 1px 3px; text-align: center; }
+    .cap-tbl th:first-child { text-align: left; }
+    .cap-tbl td { padding: 2px 3px; }
+    .cap-tbl tr.on td:first-child { color: var(--layer); font-weight: 600; }
+
+    .stepper-wrap { display: inline-flex; align-items: center; gap: 0; }
+    .stepper-btn {
+      width: 18px; height: 22px; border: 1px solid var(--input-border);
+      background: var(--input-bg); color: var(--fg-mid); font-size: 11px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+    .stepper-btn:hover { border-color: var(--btn-primary); color: var(--fg-hi); }
+    .stepper-val {
+      width: 32px; height: 22px; border-top: 1px solid var(--input-border);
+      border-bottom: 1px solid var(--input-border);
+      background: var(--input-bg); color: var(--fg-hi);
+      font-size: 10px; font-weight: 600; text-align: center; line-height: 20px;
+    }
+    select.ctrl, .combo-like {
+      height: 22px; background: var(--input-bg); border: 1px solid var(--input-border);
+      border-radius: 3px; color: var(--fg-hi); font-size: 10px;
+      padding: 0 4px; cursor: pointer; max-width: 58px;
+    }
+
+    .conf-lbl { font-size: 9px; font-weight: 600; color: var(--fg-mid); margin-top: 4px; }
+    .empalme-tag { font-size: 8px; color: var(--bar-fin); margin-top: 3px; }
+    .embed-tag { font-size: 8px; color: var(--col-accent); margin-top: 2px; line-height: 1.35; }
+    .embed-tag.wall { color: var(--wall-accent); }
+    .warn-chip {
+      display: none;
+      font-size: 8px;
+      color: var(--warn);
+      margin-top: 4px;
+      padding: 3px 5px;
+      border-radius: 3px;
+      background: rgba(251, 191, 36, 0.1);
+      border: 1px solid rgba(251, 191, 36, 0.35);
+      line-height: 1.35;
+    }
+    .cap-panel.has-warn .warn-chip { display: block; }
+
+    .footer-hint { font-size: 10px; color: var(--fg-lo); margin-top: 8px; }
+    .footer-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 10px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+    .estado { font-size: 10px; color: var(--fg-lo); flex: 1; min-width: 180px; }
+    .btn-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .chk-inline {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 10px;
+      color: var(--fg-mid);
+      margin-right: 4px;
+    }
+    .chk-inline input { accent-color: var(--btn-primary); }
+    .btn-primary {
+      background: var(--btn-primary);
+      color: var(--btn-primary-fg);
+      border: none;
+      border-radius: 5px;
+      padding: 7px 16px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-primary:hover { filter: brightness(1.08); }
+    .btn-sm {
+      border: 1px solid var(--btn-outline);
+      background: transparent;
+      color: var(--fg-mid);
+      border-radius: 3px;
+      font-size: 9px;
+      padding: 3px 7px;
+      cursor: pointer;
+    }
+    .btn-sm:hover { border-color: var(--btn-primary); color: var(--fg-hi); }
+
+    /* Eval panel */
+    .eval-panel {
+      background: #0a1420;
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      font-size: 11px;
+    }
+    .eval-panel h2 {
+      font-size: 11px;
+      color: var(--fg-hi);
+      padding: 10px 12px 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .checklist { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+    .checklist label {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      line-height: 1.35;
+      font-size: 10px;
+    }
+    .checklist input { margin-top: 2px; accent-color: var(--ok); }
+    .spec-notes {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 12px;
+      font-size: 10px;
+      line-height: 1.5;
+      color: #94a3b8;
+    }
+    .spec-notes h4 { color: var(--fg-hi); font-size: 10px; margin: 8px 0 4px; }
+    .spec-notes ul { padding-left: 16px; }
+    .spec-notes li { margin-bottom: 3px; }
+
+    .status-bar {
+      padding: 6px 16px;
+      font-size: 10px;
+      color: var(--fg-lo);
+      border-top: 1px solid var(--border);
+      background: #0a1420;
+    }
+
+    .empty-canvas {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--fg-lo);
+      font-size: 11px;
+    }
+    .empty-canvas svg { opacity: 0.35; margin-bottom: 8px; }
+
+    .hidden { display: none !important; }
+    body.host-mode .dev-bar { display: none !important; }
+    body.host-mode .eval-panel { display: none; }
+    body.host-mode .workspace { grid-template-columns: 1fr; }
+  </style>
+</head>
+<body>
+  <header class="dev-bar">
+    <h1>Armado vigas — mockup UI</h1>
+    <span class="pill">Interactivo</span>
+    <span class="sep"></span>
+    <label>Vigas simuladas
+      <select id="devBeamCount">
+        <option value="0">0 — vacío</option>
+        <option value="1">1 viga</option>
+        <option value="3" selected>3 vigas</option>
+        <option value="5">5 vigas</option>
+      </select>
+    </label>
+    <label>Zoom <input type="range" id="devZoom" min="0.75" max="1.15" step="0.05" value="1" /></label>
+    <label><input type="checkbox" id="devSplitEmpalme" checked /> Trocear tramos por empalme (&gt;12 m)</label>
+  </header>
+
+  <div class="workspace">
+    <div class="win-scroll">
+      <div class="win-scaler" id="winScaler">
+        <div class="win">
+          <div class="win-title">Arainco: Armado vigas</div>
+          <div class="win-sub" id="winSub">Selección de vigas · tramos por sección · controladores cap-panel</div>
+
+          <div class="scope-badge">
+            <strong>Tramos de barra:</strong> <span id="tramoSummaryText">—</span>
+          </div>
+          <div class="scope-badge">
+            <strong>Apoyos:</strong> <span id="apoyosSummaryText">—</span>
+          </div>
+          <p class="info-muros" id="selectionInfo">
+            Seleccione vigas, columnas y muros. Las vigas se representan entre columnas para evaluar empotramiento en extremos.
+          </p>
+
+          <div class="select-row">
+            <button type="button" class="btn-outline" id="btnSelect">Seleccionar vigas en modelo</button>
+            <button type="button" class="btn-outline" id="btnSelectApoyos">Seleccionar columnas y muros</button>
+          </div>
+
+          <div class="legend-apoyos">
+            <span><i class="sw-col"></i> Columna en alzado (eje discontinuo · bolsillo U)</span>
+            <span><i class="sw-wall"></i> Muro en alzado</span>
+            <span>Viga continua entre apoyos · empotrado / trabe</span>
+          </div>
+
+          <div class="main-grid">
+            <div class="col-headers vigas-hdr">
+              Canvas longitudinal · alzado viga–columna
+              <div class="hdr-hint">Alzado + preview sección (derecha) · Ext/Cent · Tn abajo</div>
+            </div>
+            <div class="scroll-body canvas-body" id="canvasBody">
+              <div class="empty-canvas" id="emptyState">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <rect x="2" y="8" width="20" height="8" rx="1"/>
+                  <line x1="4" y1="10" x2="20" y2="10"/>
+                  <line x1="4" y1="14" x2="20" y2="14"/>
+                </svg>
+                <div>Seleccione vigas en el modelo para generar el canvas.</div>
+              </div>
+            </div>
+          </div>
+
+          <p class="footer-hint">
+            Clic viga → selección · botón Traslapo bajo alzado → empalme @ mitad · Tn = barra · Ext/Cent = estribos.
+          </p>
+          <div class="footer-actions">
+            <div class="estado" id="estado">Listo para evaluar.</div>
+            <div class="btn-row">
+              <label class="chk-inline"><input type="checkbox" checked /> Model lines</label>
+              <button type="button" class="btn-outline" id="btnCancel">Cancelar</button>
+              <button type="button" class="btn-primary" id="btnColocar">Colocar armadura</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="eval-panel">
+      <h2>Evaluación</h2>
+      <div class="checklist">
+        <label><input type="checkbox" checked /> Vigas entre columnas en canvas</label>
+        <label><input type="checkbox" checked /> Selección vigas + columnas + muros</label>
+        <label><input type="checkbox" checked /> Evaluación empotramiento en extremos</label>
+        <label><input type="checkbox" checked /> Todas las vigas en la misma fila (L→R)</label>
+        <label><input type="checkbox" /> Preview de barras en canvas longitudinal</label>
+        <label><input type="checkbox" checked /> Empalme @ mitad · botón Traslapo bajo cada viga (no al seleccionar)</label>
+        <label><input type="checkbox" checked /> Estribos: Ext · Cent · confin. sección (E)</label>
+      </div>
+      <div class="spec-notes">
+        <h4>Selección (enfierrado_vigas)</h4>
+        <ul>
+          <li>Structural Framing (vigas), Structural Columns y Walls.</li>
+          <li>Columnas/muros definen apoyos y condición de empotramiento.</li>
+          <li>En canvas: cada viga vive entre dos apoyos (columna↔columna o columna↔muro).</li>
+        </ul>
+        <h4>Empotramiento (mockup)</h4>
+        <ul>
+          <li>Columna: empotrado · extensión ±2 m en apoyo (spec vigas).</li>
+          <li>Muro: apoyo tipo trabe / encuentro (evaluar en extremo).</li>
+        </ul>
+        <h4>Tramo de barra (definición)</h4>
+        <ul>
+          <li><strong>Tramo de barra</strong> Tn: <strong>Nº capas</strong> (1–3) · Sup/Inf por capa (Cant., ø).</li>
+          <li><strong>Estribos</strong>: <strong>Ext</strong> · <strong>Cent</strong> · <strong>Único</strong> (1 lote) según alcance abajo.</li>
+          <li>L_arr = largo viga − 100 mm · h en mm (sección cm × 10).</li>
+          <li>Vigas L→R con <strong>misma sección</strong> (ancho×altura) y <strong>colineales</strong> (cadena de apoyos) → <strong>un tramo</strong>.</li>
+          <li>Cambio de sección o quiebre de colinealidad → nuevo tramo.</li>
+          <li><strong>Traslapo</strong> (empalme @ mitad de viga) se marca con botón bajo el tramo en alzado — no al seleccionar la viga.</li>
+        </ul>
+        <h4>Alcance Ext · Cent · Único</h4>
+        <ul>
+          <li><strong>3 lotes</strong> — alzado: Ext ini + Cent + Ext fin · UI: <strong>2 controladores</strong> (Ext compartido ini/fin + Cent).</li>
+          <li><strong>1 lote Cent</strong> — L_arr &lt; 2·h (vano corto): carta centrales en todo el vano.</li>
+          <li><strong>1 lote Único</strong> — L_arr ≥ 2·h pero extremos se tocan o L_cent &lt; mín.: sin panel Cent; carta Ext + Confin. en un solo controlador.</li>
+          <li>Toque de extremos: L_ext = min(2·h, L_arr/2) → si 2·L_ext ≥ L_arr (p. ej. L_arr ≤ 4·h con h fijo).</li>
+          <li>Confin. sección: panel Cent (3 lotes) o panel Único (1 lote merge).</li>
+        </ul>
+        <h4>Confinamiento estribos (por N barras 1ª capa)</h4>
+        <ul>
+          <li><strong>2</strong> · Perimetral</li>
+          <li><strong>3</strong> · Perimetral · Perimetral + traba [1]</li>
+          <li><strong>4</strong> · Perimetral + traba [2] · E(0–2)+E(1–3)</li>
+          <li><strong>5</strong> · E(0–3)+E(1–4) · + traba [2]</li>
+          <li><strong>6</strong> · E(0–3)+E(2–5) · +E(1–4) · +traba [1],[4]</li>
+          <li><strong>7</strong> · E(0–4)+E(2–6) · +traba [3] · P+E(1–2)+E(4–5) · +traba [3]</li>
+          <li><strong>8</strong> · E(0–3)+E(2–5)+E(4–7) · +traba [1],[6]</li>
+          <li>N = min(sup, inf), máx. 8 · preview según tipo elegido.</li>
+        </ul>
+        <h4>Layout canvas</h4>
+        <ul>
+          <li>Una fila de vigas; largo uniforme (representación).</li>
+          <li>Esquema color Tn + controlador <strong>debajo</strong> del canvas.</li>
+          <li>Layout: <strong>alzado</strong> + preview sección fijo a la <strong>derecha</strong> · Ext/Cent · Tn.</li>
+          <li>Controladores compactos por viga · sin solapamiento entre vigas.</li>
+          <li>Muchas vigas: tramos proporcionales al largo · scroll horizontal si no caben.</li>
+        </ul>
+        <h4>Próximos pasos</h4>
+        <ul>
+          <li>Implementar <code>build_tramos_vigas</code> en Python (análogo cabezal).</li>
+          <li>WPF: instancia única + ExternalEvent selección.</li>
+        </ul>
+      </div>
+    </aside>
+  </div>
+
+  <div class="status-bar" id="statusBar">Mockup listo — abrir en navegador para revisar interacción.</div>
+
+  <script>
+    const BEAM_PALETTE = ["#22d3ee", "#38bdf8", "#67e8f9", "#5eead4", "#86efac"];
+    const TRAMO_ACCENTS = ["#22d3ee", "#a78bfa", "#34d399", "#fbbf24", "#f87171", "#38bdf8", "#5eead4"];
+    const MAX_BAR_MM = 12000;
+    const CANVAS_SIDE_PAD_PX = 12;
+    const BEAM_GAP_PX = 2;
+    const MIN_BEAM_SLOT_PX = 168;
+    const FIT_MIN_SLOT_PX = 88;
+    const ESTRIBO_PANEL_MIN_PX = 220;
+    const ESTRIBO_PANEL_MAX_PX = 280;
+    const SECTION_PREVIEW_VB_W = 132;
+    const SECTION_PREVIEW_VB_H = 118;
+    const BAR_COUNT_MIN = 2;
+    const BAR_COUNT_MAX = 8;
+    const CAPAS_MIN = 1;
+    const CAPAS_MAX = 3;
+    const LONG_DIAM_OPTS = [12, 16, 20, 25, 28, 32];
+    const TRAMO_PANEL_MAX_PX = 272;
+    const ESTRIBO_INSET_MM = 50;
+    const ESTRIBO_FRACC_EXTREMOS = 0.25;
+    const ESTRIBO_SPACING_MIN = 50;
+    const ZONE_PANEL_EXT_PX = 148;
+    const ZONE_PANEL_CENT_MIN_PX = 220;
+
+    const SAMPLE_SUPPORTS = {
+      "C-01": { id: "C-01", kind: "column", size: "40×40", embed: "empotrado" },
+      "C-02": { id: "C-02", kind: "column", size: "40×40", embed: "empotrado" },
+      "C-03": { id: "C-03", kind: "column", size: "35×35", embed: "empotrado" },
+      "C-04": { id: "C-04", kind: "column", size: "40×40", embed: "empotrado" },
+      "C-05": { id: "C-05", kind: "column", size: "45×45", embed: "empotrado" },
+      "C-06": { id: "C-06", kind: "column", size: "40×40", embed: "empotrado" },
+      "M-A": { id: "M-A", kind: "wall", size: "200 mm", embed: "trabe" },
+    };
+
+    const SAMPLE_BEAMS = [
+      { id: "V-101", type: "30×60", len: 6.2, u: 0, color: BEAM_PALETTE[0], nSup: 2, nInf: 2, diamSup: 16, diamInf: 16, estExtDiam: 10, estExtSpacing: 125, estCentDiam: 8, estCentSpacing: 200, estConfin: "Perimetral", colStart: "C-01", colEnd: "C-02" },
+      { id: "V-102", type: "30×60", len: 2.0, u: 1, color: BEAM_PALETTE[1], nSup: 3, nInf: 3, diamSup: 16, diamInf: 16, estExtDiam: 10, estExtSpacing: 125, estCentDiam: 8, estCentSpacing: 200, estConfin: "Perimetral + traba [1]", colStart: "C-02", colEnd: "C-03" },
+      { id: "V-103", type: "30×70", len: 12.8, u: 2, color: BEAM_PALETTE[2], nCapas: 2, nSup: 4, nInf: 4, diamSup: 20, diamInf: 16, nSup2: 2, nInf2: 2, diamSup2: 16, diamInf2: 16, estExtDiam: 10, estExtSpacing: 125, estCentDiam: 8, estCentSpacing: 200, estConfin: "E(0–2) + E(1–3)", colStart: "C-03", colEnd: "M-A" },
+      { id: "V-104", type: "30×60", len: 4.5, u: 3, color: BEAM_PALETTE[3], nSup: 5, nInf: 5, diamSup: 16, diamInf: 16, estExtDiam: 10, estExtSpacing: 125, estCentDiam: 8, estCentSpacing: 200, estConfin: "E(0–3) + E(1–4) + traba [2]", colStart: "M-A", colEnd: "C-04" },
+      { id: "V-105", type: "35×80", len: 8.0, u: 4, color: BEAM_PALETTE[4], nSup: 6, nInf: 6, diamSup: 16, diamInf: 20, estExtDiam: 10, estExtSpacing: 125, estCentDiam: 8, estCentSpacing: 200, estConfin: "E(0–3) + E(2–5) + traba [1] + traba [4]", colStart: "C-04", colEnd: "C-06" },
+    ];
+
+    let beams = [];
+    let apoyosLoaded = false;
+    let empalmeBeams = new Set();
+    let tramos = [];
+    let selectedTramoId = null;
+    let selectedBeamIdx = -1;
+    let selectedStirrupZone = null; // { idx, role: "ext"|"cent"|"uni" }
+    let canvasLayoutMeta = { contentWidthPx: 0, needsScroll: false, viewportWidthPx: 0 };
+
+    const canvasBody = document.getElementById("canvasBody");
+    const emptyState = document.getElementById("emptyState");
+    const selectionInfo = document.getElementById("selectionInfo");
+    const tramoSummaryText = document.getElementById("tramoSummaryText");
+    const apoyosSummaryText = document.getElementById("apoyosSummaryText");
+    const winSub = document.getElementById("winSub");
+    const estado = document.getElementById("estado");
+    const statusBar = document.getElementById("statusBar");
+
+    function stepperHtml(val) {
+      return `<span class="stepper-wrap"><button type="button" class="stepper-btn">−</button><span class="stepper-val">${val}</span><button type="button" class="stepper-btn">+</button></span>`;
+    }
+
+    function capTblRow(label, qty, diam, on, qtyField, diamField, layerRow) {
+      const rowCls = (on ? "on" : "off") + (layerRow ? " layer-row" : "");
+      return `<tr class="${rowCls}" data-cap-qty="${qtyField}"><td>${label}</td><td>${stepperHtml(qty)}</td><td>${longDiamSelectHtml(diam, diamField)}</td></tr>`;
+    }
+
+    function layerKeys(layerNum) {
+      if (layerNum === 1) {
+        return { nSup: "nSup", nInf: "nInf", diamSup: "diamSup", diamInf: "diamInf", label: "1ª" };
+      }
+      return {
+        nSup: `nSup${layerNum}`,
+        nInf: `nInf${layerNum}`,
+        diamSup: `diamSup${layerNum}`,
+        diamInf: `diamInf${layerNum}`,
+        label: layerNum === 2 ? "2ª" : "3ª",
+      };
+    }
+
+    function ensureBeamLayers(beam) {
+      if (beam.nCapas == null) beam.nCapas = 1;
+      beam.nCapas = Math.max(CAPAS_MIN, Math.min(CAPAS_MAX, Math.round(beam.nCapas)));
+      for (let L = 2; L <= CAPAS_MAX; L++) {
+        const k = layerKeys(L);
+        if (beam.nCapas >= L) {
+          if (beam[k.nSup] == null) beam[k.nSup] = BAR_COUNT_MIN;
+          if (beam[k.nInf] == null) beam[k.nInf] = BAR_COUNT_MIN;
+          if (beam[k.diamSup] == null) beam[k.diamSup] = beam.diamSup || 16;
+          if (beam[k.diamInf] == null) beam[k.diamInf] = beam.diamInf || 16;
+        }
+      }
+      return beam.nCapas;
+    }
+
+    function longDiamSelectHtml(val, diamField) {
+      return `<select class="ctrl cap-diam" data-cap-diam="${diamField || ""}">${LONG_DIAM_OPTS.map(d =>
+        `<option value="${d}"${d === val ? " selected" : ""}>ø${d}</option>`
+      ).join("")}</select>`;
+    }
+
+    function tramoCapColHtml(beam, side) {
+      const isSup = side === "sup";
+      let rows = "";
+      for (let L = 1; L <= beam.nCapas; L++) {
+        const k = layerKeys(L);
+        const qtyField = isSup ? k.nSup : k.nInf;
+        const diamField = isSup ? k.diamSup : k.diamInf;
+        rows += capTblRow(
+          k.label,
+          beam[qtyField] || BAR_COUNT_MIN,
+          beam[diamField] || 16,
+          true,
+          qtyField,
+          diamField,
+          true
+        );
+      }
+      const hdr = isSup ? "Sup" : "Inf";
+      return `
+        <div class="cap-col cap-col-${side}">
+          <div class="cap-col-hdr">${hdr}</div>
+          <table class="cap-tbl cap-tbl-compact">
+            <tr><th></th><th>C</th><th>ø</th></tr>
+            ${rows}
+          </table>
+        </div>`;
+    }
+
+    function tramoCapSplitHtml(beam) {
+      ensureBeamLayers(beam);
+      return `<div class="cap-split">${tramoCapColHtml(beam, "sup")}${tramoCapColHtml(beam, "inf")}</div>`;
+    }
+
+    function clampBarCount(n) {
+      return Math.max(BAR_COUNT_MIN, Math.min(BAR_COUNT_MAX, Math.round(n)));
+    }
+
+    function applyTramoToBeams(tramo, sorted, fn) {
+      tramo.beamIndices.forEach(idx => {
+        const beam = sorted[idx];
+        if (beam) fn(beam);
+      });
+    }
+
+    function bumpTramoCapas(tramo, sorted, delta) {
+      applyTramoToBeams(tramo, sorted, beam => {
+        ensureBeamLayers(beam);
+        beam.nCapas = Math.max(CAPAS_MIN, Math.min(CAPAS_MAX, beam.nCapas + delta));
+        ensureBeamLayers(beam);
+        ensureBeamConfinement(beam);
+      });
+      selectedTramoId = tramo.id;
+      selectedBeamIdx = tramo.beamIndices[0];
+      const ref = sorted[tramo.beamIndices[0]];
+      renderCanvas();
+      log(`${tramo.label} · ${ref ? ref.nCapas : CAPAS_MIN} capa(s) · máx. ${CAPAS_MAX}.`);
+    }
+
+    function bumpTramoBarCount(tramo, sorted, field, delta) {
+      applyTramoToBeams(tramo, sorted, beam => {
+        beam[field] = clampBarCount((beam[field] || BAR_COUNT_MIN) + delta);
+        if (field === "nSup" || field === "nInf") ensureBeamConfinement(beam);
+      });
+      selectedTramoId = tramo.id;
+      selectedBeamIdx = tramo.beamIndices[0];
+      const ref = sorted[tramo.beamIndices[0]];
+      const n = ref ? firstLayerBarCount(ref) : BAR_COUNT_MIN;
+      renderCanvas();
+      const side = String(field).indexOf("Sup") >= 0 ? "Sup" : "Inf";
+      log(`${tramo.label} · ${side} · Cant. → confin. N=${n} (1ª capa).`);
+    }
+
+    function setTramoBarDiam(tramo, sorted, field, diam) {
+      applyTramoToBeams(tramo, sorted, beam => {
+        beam[field] = diam;
+      });
+      selectedTramoId = tramo.id;
+      selectedBeamIdx = tramo.beamIndices[0];
+      renderCanvas();
+      log(`${tramo.label} · ø ${diam} mm · ${field}.`);
+    }
+
+    function bindTramoController(el, tramo, sorted) {
+      el.querySelectorAll("button, select, .stepper-wrap").forEach(node => {
+        node.addEventListener("click", e => e.stopPropagation());
+      });
+      el.querySelectorAll(".capas-row .stepper-btn").forEach((btn, i) => {
+        btn.addEventListener("click", e => {
+          e.stopPropagation();
+          bumpTramoCapas(tramo, sorted, i === 0 ? -1 : 1);
+        });
+      });
+      el.querySelectorAll("tr[data-cap-qty]").forEach(row => {
+        const field = row.dataset.capQty;
+        const btns = row.querySelectorAll(".stepper-btn");
+        if (btns.length < 2) return;
+        btns[0].addEventListener("click", e => {
+          e.stopPropagation();
+          bumpTramoBarCount(tramo, sorted, field, -1);
+        });
+        btns[1].addEventListener("click", e => {
+          e.stopPropagation();
+          bumpTramoBarCount(tramo, sorted, field, 1);
+        });
+      });
+      el.querySelectorAll("select.cap-diam").forEach(sel => {
+        sel.addEventListener("change", e => {
+          e.stopPropagation();
+          const field = sel.dataset.capDiam;
+          if (!field) return;
+          setTramoBarDiam(tramo, sorted, field, parseInt(sel.value, 10));
+        });
+      });
+      el.addEventListener("click", e => { e.stopPropagation(); selectTramo(tramo.id); });
+    }
+
+    function sortBeams(list) {
+      return [...list].sort((a, b) => a.u - b.u);
+    }
+
+    function splitEmpalmeEnabled() {
+      return document.getElementById("devSplitEmpalme").checked;
+    }
+
+    function toggleEmpalmeForBeam(beamId) {
+      if (empalmeBeams.has(beamId)) empalmeBeams.delete(beamId);
+      else empalmeBeams.add(beamId);
+    }
+
+    function isEmpalmeActive(beam) {
+      return empalmeBeams.has(beam.id) && splitEmpalmeEnabled();
+    }
+
+    function empalmeMidM(beam) {
+      return beam.len / 2;
+    }
+
+    function tramoExceedsBarLimit(tramo) {
+      return tramo.inferredLenMm > MAX_BAR_MM;
+    }
+
+    function supportMeta(id) {
+      return SAMPLE_SUPPORTS[id] || { id, kind: "column", size: "?", embed: "?" };
+    }
+
+    function collectApoyos(sorted) {
+      const ids = new Set();
+      sorted.forEach(b => {
+        if (b.colStart) ids.add(b.colStart);
+        if (b.colEnd) ids.add(b.colEnd);
+      });
+      let cols = 0;
+      let walls = 0;
+      ids.forEach(id => {
+        const m = supportMeta(id);
+        if (m.kind === "wall") walls += 1;
+        else cols += 1;
+      });
+      return { ids: [...ids], cols, walls };
+    }
+
+    function buildSupportChain(sorted, layouts) {
+      const chain = [];
+      let lastId = null;
+      for (let i = 0; i < sorted.length; i++) {
+        const lay = layouts[i];
+        const points = [
+          { id: sorted[i].colStart, pct: lay.leftPct },
+          { id: sorted[i].colEnd, pct: lay.leftPct + lay.widthPct },
+        ];
+        points.forEach(p => {
+          if (p.id && p.id !== lastId) {
+            chain.push(p);
+            lastId = p.id;
+          }
+        });
+      }
+      return chain;
+    }
+
+    /** Vigas consecutivas misma sección + colineales (colEnd[i-1] === colStart[i]). */
+    function continuesBarRun(sorted, i) {
+      if (i <= 0) return false;
+      const prev = sorted[i - 1];
+      const beam = sorted[i];
+      return prev.type === beam.type && prev.colEnd === beam.colStart;
+    }
+
+    function buildBarRuns(sorted) {
+      const runs = [];
+      let current = null;
+      for (let i = 0; i < sorted.length; i++) {
+        const beam = sorted[i];
+        if (!current || !continuesBarRun(sorted, i)) {
+          if (current) runs.push(current);
+          current = { section: beam.type, indices: [i] };
+        } else {
+          current.indices.push(i);
+        }
+      }
+      if (current) runs.push(current);
+      return runs;
+    }
+
+    function computeTramoLenMm(sorted, piece) {
+      const idxs = piece.beamIndices;
+      if (!idxs.length) return 0;
+      let mm = 0;
+      idxs.forEach((i, k) => {
+        const full = sorted[i].len * 1000;
+        if (idxs.length === 1) {
+          if (piece.edgeStart === "half" && piece.edgeEnd === "half") return;
+          if (piece.edgeStart === "half" || piece.edgeEnd === "half") mm += full * 0.5;
+          else mm += full;
+          return;
+        }
+        if (k === 0 && piece.edgeStart === "half") mm += full * 0.5;
+        else if (k === idxs.length - 1 && piece.edgeEnd === "half") mm += full * 0.5;
+        else mm += full;
+      });
+      return mm;
+    }
+
+    /** Subdividir corrida de barra en tramos; cortes adicionales solo por traslapo @ mitad. */
+    function subdivideBarRun(sorted, run, splitEmp) {
+      const idxs = run.indices;
+      const splitBeamIdxs = idxs.filter(i => splitEmp && empalmeBeams.has(sorted[i].id));
+      if (!splitBeamIdxs.length) {
+        return [{
+          beamIndices: [...idxs],
+          section: run.section,
+          edgeStart: null,
+          edgeEnd: null,
+          fromEmpalme: false,
+        }];
+      }
+
+      const pieces = [];
+      let runPos = 0;
+      let startHalf = false;
+
+      splitBeamIdxs.forEach(splitIdx => {
+        const pos = idxs.indexOf(splitIdx);
+        const seg = idxs.slice(runPos, pos + 1);
+        if (seg.length) {
+          pieces.push({
+            beamIndices: seg,
+            section: run.section,
+            edgeStart: startHalf ? "half" : null,
+            edgeEnd: "half",
+            fromEmpalme: true,
+          });
+        }
+        runPos = pos;
+        startHalf = true;
+      });
+
+      const tail = idxs.slice(runPos);
+      if (tail.length) {
+        pieces.push({
+          beamIndices: tail,
+          section: run.section,
+          edgeStart: startHalf ? "half" : null,
+          edgeEnd: null,
+          fromEmpalme: startHalf,
+        });
+      }
+      return pieces;
+    }
+
+    /** Tramos de barra: agrupación sección+colinealidad; cortes por traslapo. */
+    function buildTramos(sorted) {
+      const out = [];
+      let tid = 1;
+      const splitEmp = splitEmpalmeEnabled();
+      const runs = buildBarRuns(sorted);
+
+      runs.forEach(run => {
+        subdivideBarRun(sorted, run, splitEmp).forEach(piece => {
+          const ids = piece.beamIndices.map(i => sorted[i].id).join("+");
+          const suffix = piece.fromEmpalme ? " · traslapo" : "";
+          out.push({
+            id: tid,
+            label: `T${tid} · ${ids}${suffix}`,
+            section: piece.section,
+            beamIndices: [...piece.beamIndices],
+            edgeStart: piece.edgeStart,
+            edgeEnd: piece.edgeEnd,
+            accent: TRAMO_ACCENTS[(tid - 1) % TRAMO_ACCENTS.length],
+            fromEmpalme: piece.fromEmpalme,
+            inferredLenMm: computeTramoLenMm(sorted, piece),
+          });
+          tid += 1;
+        });
+      });
+      return out;
+    }
+
+    function findTramoForBeam(preview, idx) {
+      return preview.find(t => t.beamIndices.includes(idx));
+    }
+
+    function findTramoHalf(preview, idx, part) {
+      return preview.find(t => {
+        if (!t.beamIndices.includes(idx)) return false;
+        if (part === 1) {
+          return t.beamIndices[t.beamIndices.length - 1] === idx && t.edgeEnd === "half";
+        }
+        return t.beamIndices[0] === idx && t.edgeStart === "half";
+      });
+    }
+
+    function formatTramoSummary(sorted, tramosList) {
+      if (!tramosList.length) return "—";
+      const parts = tramosList.map(t => {
+        const ids = t.beamIndices.map(i => sorted[i].id).join("+");
+        return `T${t.id}(${ids})`;
+      });
+      return `${tramosList.length} tramo(s) barra · ${parts.join(" · ")}`;
+    }
+
+    function getCanvasViewportWidth() {
+      const w = canvasBody.clientWidth;
+      return Math.max(320, w > 0 ? w : 640);
+    }
+
+    function computeLayout(sorted, viewportW) {
+      const n = sorted.length;
+      if (!n) {
+        return { layouts: [], contentWidthPx: viewportW, needsScroll: false };
+      }
+
+      const totalLen = sorted.reduce((s, b) => s + b.len, 0);
+      const gapsTotal = BEAM_GAP_PX * Math.max(n - 1, 0);
+      const poolInViewport = viewportW - CANVAS_SIDE_PAD_PX * 2 - gapsTotal;
+
+      let contentW;
+      let needsScroll = false;
+      let widths;
+
+      const fitWidths = sorted.map(b => (b.len / totalLen) * poolInViewport);
+      const minFit = Math.min.apply(null, fitWidths);
+
+      if (minFit >= FIT_MIN_SLOT_PX) {
+        contentW = viewportW;
+        widths = fitWidths;
+      } else {
+        widths = sorted.map(b => Math.max(MIN_BEAM_SLOT_PX, (b.len / totalLen) * n * MIN_BEAM_SLOT_PX));
+        contentW = CANVAS_SIDE_PAD_PX * 2 + gapsTotal + widths.reduce((a, b) => a + b, 0);
+        needsScroll = contentW > viewportW + 1;
+      }
+
+      let cursor = CANVAS_SIDE_PAD_PX;
+      const layouts = sorted.map((beam, idx) => {
+        const widthPx = widths[idx];
+        const leftPx = cursor;
+        const centerPx = leftPx + widthPx / 2;
+        cursor += widthPx + BEAM_GAP_PX;
+        return {
+          idx,
+          leftPx,
+          widthPx,
+          centerPx,
+          leftPct: (leftPx / contentW) * 100,
+          widthPct: (widthPx / contentW) * 100,
+          centerPct: (centerPx / contentW) * 100,
+        };
+      });
+
+      return { layouts, contentWidthPx: contentW, needsScroll };
+    }
+
+    function tramoSpan(layouts, tramo) {
+      const first = layouts[tramo.beamIndices[0]];
+      const last = layouts[tramo.beamIndices[tramo.beamIndices.length - 1]];
+      let leftPct = first.leftPct;
+      let rightPct = last.leftPct + last.widthPct;
+      if (tramo.edgeStart === "half") leftPct = first.leftPct + first.widthPct / 2;
+      if (tramo.edgeEnd === "half") rightPct = last.leftPct + last.widthPct / 2;
+      const widthPct = rightPct - leftPct;
+      const contentW = canvasLayoutMeta.contentWidthPx || 1;
+      return {
+        leftPct,
+        widthPct,
+        centerPct: (leftPct + rightPct) / 2,
+        widthPx: (widthPct / 100) * contentW,
+      };
+    }
+
+    function panelWidthForSlot(slotPx, maxPx, floorPx) {
+      const floor = floorPx != null ? floorPx : 72;
+      return Math.min(maxPx, Math.max(floor, slotPx - 6));
+    }
+
+    function estriboPanelWidth(slotPx) {
+      return Math.min(ESTRIBO_PANEL_MAX_PX, Math.max(ESTRIBO_PANEL_MIN_PX, slotPx - 8));
+    }
+
+    const ESTRIBO_DIAM_OPTS = [8, 10, 12, 16];
+
+    /** Escenarios de confinamiento · N = min(nSup, nInf) en 1ª capa */
+    const CONFIN_BY_COUNT = {
+      2: [
+        { label: "Perimetral", perimetral: true, ties: [], pairs: [] },
+      ],
+      3: [
+        { label: "Perimetral", perimetral: true, ties: [], pairs: [] },
+        { label: "Perimetral + traba [1]", perimetral: true, ties: [1], pairs: [] },
+      ],
+      4: [
+        { label: "Perimetral + traba [2]", perimetral: true, ties: [2], pairs: [] },
+        { label: "E(0–2) + E(1–3)", perimetral: false, ties: [], pairs: [[0, 2], [1, 3]] },
+      ],
+      5: [
+        { label: "E(0–3) + E(1–4)", perimetral: false, ties: [], pairs: [[0, 3], [1, 4]] },
+        { label: "E(0–3) + E(1–4) + traba [2]", perimetral: false, ties: [2], pairs: [[0, 3], [1, 4]] },
+      ],
+      6: [
+        { label: "E(0–3) + E(2–5)", perimetral: false, ties: [], pairs: [[0, 3], [2, 5]] },
+        { label: "E(0–3) + E(2–5) + E(1–4)", perimetral: false, ties: [], pairs: [[0, 3], [2, 5], [1, 4]] },
+        { label: "E(0–3) + E(2–5) + traba [1] + traba [4]", perimetral: false, ties: [1, 4], pairs: [[0, 3], [2, 5]] },
+      ],
+      7: [
+        { label: "E(0–4) + E(2–6)", perimetral: false, ties: [], pairs: [[0, 4], [2, 6]] },
+        { label: "E(0–4) + E(2–6) + traba [3]", perimetral: false, ties: [3], pairs: [[0, 4], [2, 6]] },
+        { label: "Perimetral + E(1–2) + E(4–5)", perimetral: true, ties: [], pairs: [[1, 2], [4, 5]] },
+        { label: "Perimetral + E(1–2) + E(4–5) + traba [3]", perimetral: true, ties: [3], pairs: [[1, 2], [4, 5]] },
+      ],
+      8: [
+        { label: "E(0–3) + E(2–5) + E(4–7)", perimetral: false, ties: [], pairs: [[0, 3], [2, 5], [4, 7]] },
+        { label: "E(0–3) + E(2–5) + E(4–7) + traba [1] + traba [6]", perimetral: false, ties: [1, 6], pairs: [[0, 3], [2, 5], [4, 7]] },
+      ],
+    };
+
+    function firstLayerBarCount(beam) {
+      const ns = beam.nSup || 0;
+      const ni = beam.nInf || 0;
+      if (ns < 2 || ni < 2) return 2;
+      return Math.min(ns, ni, 8);
+    }
+
+    function getConfinScenarios(beam) {
+      const n = firstLayerBarCount(beam);
+      return CONFIN_BY_COUNT[n] || CONFIN_BY_COUNT[2];
+    }
+
+    function findConfinDef(beam) {
+      const scenarios = getConfinScenarios(beam);
+      const raw = beam.estConfin || beam.estTipo || scenarios[0].label;
+      return scenarios.find(s => s.label === raw) || scenarios[0];
+    }
+
+    function beamConfinement(beam) {
+      return findConfinDef(beam).label;
+    }
+
+    function confinementScenarioHint(beam) {
+      const n = firstLayerBarCount(beam);
+      const opts = getConfinScenarios(beam);
+      return `${n} barras 1ª capa · sup ${beam.nSup} · inf ${beam.nInf} · ${opts.length} tipo(s)`;
+    }
+
+    function confinementOptions(beam) {
+      return getConfinScenarios(beam).map(s => s.label);
+    }
+
+    function ensureBeamConfinement(beam) {
+      const opts = confinementOptions(beam);
+      const cur = beam.estConfin || beam.estTipo;
+      beam.estConfin = cur && opts.includes(cur) ? cur : opts[0];
+      delete beam.estTipo;
+      return beam.estConfin;
+    }
+
+    function ensureBeamStirrupFields(beam) {
+      if (beam.estExtDiam == null) beam.estExtDiam = beam.estDiam || 10;
+      if (beam.estCentDiam == null) beam.estCentDiam = beam.estDiam || 8;
+      if (beam.estExtSpacing == null) beam.estExtSpacing = beam.estSpacing || 125;
+      if (beam.estCentSpacing == null) beam.estCentSpacing = beam.estSpacing || 200;
+      ensureBeamConfinement(beam);
+    }
+
+    function sectionHeightMm(typeStr) {
+      const { h } = parseBeamSection(typeStr);
+      return Math.round(h * 10);
+    }
+
+    function beamArrayLengthMm(beam) {
+      return Math.max(0, Math.round((beam.len || 0) * 1000) - 2 * ESTRIBO_INSET_MM);
+    }
+
+    function centralZoneViable(L_cent, minLen, minEdge) {
+      return L_cent >= minLen + minEdge - 1e-6;
+    }
+
+    /** Reparto longitudinal estribos (análogo _crear_rebar_estribos_multizonas). */
+    function computeStirrupZones(beam) {
+      ensureBeamStirrupFields(beam);
+      const h_mm = sectionHeightMm(beam.type);
+      const L_arr = beamArrayLengthMm(beam);
+      const spE = Math.max(ESTRIBO_SPACING_MIN, beam.estExtSpacing || 200);
+      const spC = Math.max(ESTRIBO_SPACING_MIN, beam.estCentSpacing || 200);
+      const minLen = Math.max(spE, spC) * 0.2;
+      const minEdge = 50;
+
+      const Lw = Math.round((beam.len || 0) * 1000);
+
+      function zone(role, lenMm, beamStartMm) {
+        const fracStart = Lw > 0 ? beamStartMm / Lw : 0;
+        const fracLen = Lw > 0 ? lenMm / Lw : 0;
+        return { role, lenMm: Math.round(lenMm), startMm: Math.round(beamStartMm), fracStart, fracLen };
+      }
+
+      if (L_arr <= 0) {
+        return { mode: "empty", h_mm, L_arr, Lw, zones: [] };
+      }
+
+      if (h_mm > 0) {
+        const twoH = 2 * h_mm;
+        if (L_arr < twoH - 1e-6) {
+          return {
+            mode: "single",
+            singleKind: "short",
+            h_mm,
+            L_arr,
+            Lw,
+            L_cent: 0,
+            L_ext_each: 0,
+            zones: [zone("cent", L_arr, ESTRIBO_INSET_MM)],
+          };
+        }
+        const L_ext_each = Math.min(twoH, L_arr / 2);
+        const L_cent = Math.max(0, L_arr - 2 * L_ext_each);
+        if (!centralZoneViable(L_cent, minLen, minEdge)) {
+          return {
+            mode: "single",
+            singleKind: "merge",
+            h_mm,
+            L_arr,
+            Lw,
+            L_ext_each,
+            L_cent,
+            zones: [zone("uni", L_arr, ESTRIBO_INSET_MM)],
+          };
+        }
+        return {
+          mode: "triple",
+          h_mm,
+          L_arr,
+          Lw,
+          L_ext_each,
+          L_cent,
+          zones: [
+            zone("ext", L_ext_each, ESTRIBO_INSET_MM),
+            zone("cent", L_cent, ESTRIBO_INSET_MM + L_ext_each),
+            zone("ext", L_ext_each, ESTRIBO_INSET_MM + L_ext_each + L_cent),
+          ],
+        };
+      }
+
+      const f = ESTRIBO_FRACC_EXTREMOS;
+      const L1 = L_arr * f;
+      const L2 = L_arr * Math.max(0, 1 - 2 * f);
+      const L3 = L_arr * f;
+      if (!centralZoneViable(L2, minLen, minEdge)) {
+        return {
+          mode: "single",
+          singleKind: "merge",
+          h_mm,
+          L_arr,
+          Lw,
+          L_ext_each: L1,
+          L_cent: L2,
+          zones: [zone("uni", L_arr, ESTRIBO_INSET_MM)],
+        };
+      }
+      return {
+        mode: "triple",
+        h_mm,
+        L_arr,
+        Lw,
+        L_ext_each: L1,
+        L_cent: L2,
+        zones: [
+          zone("ext", L1, ESTRIBO_INSET_MM),
+          zone("cent", L2, ESTRIBO_INSET_MM + L1),
+          zone("ext", L3, ESTRIBO_INSET_MM + L1 + L2),
+        ],
+      };
+    }
+
+    function zoneCenterPct(lay, z) {
+      return lay.leftPct + lay.widthPct * (z.fracStart + z.fracLen / 2);
+    }
+
+    function stirrupZoneSummaryPlain(plan) {
+      if (plan.mode === "single") {
+        if (plan.singleKind === "merge") return plan.L_cent <= 0 ? "1 lote único · ext se tocan" : "1 lote único";
+        return "1 lote · vano corto";
+      }
+      if (plan.mode === "triple") return `3 lotes · 2 ctrl · ext×2 + cent`;
+      return "—";
+    }
+
+    function stirrupZoneSummary(beam) {
+      const plan = computeStirrupZones(beam);
+      if (plan.mode === "single") {
+        const z = plan.zones[0];
+        if (plan.singleKind === "merge") {
+          const touch = plan.L_cent <= 0;
+          return touch
+            ? `1 lote Único · Ext se tocan (L_arr ≤ 4·h) · L ${z.lenMm} mm`
+            : `1 lote Único · sin centro viable · L ${z.lenMm} mm`;
+        }
+        return `1 lote Cent · vano corto (L_arr &lt; 2·h) · L ${z.lenMm} mm`;
+      }
+      if (plan.mode === "triple") {
+        return `3 lotes · 2 ctrl · Ext ${plan.L_ext_each} mm ×2 (ini/fin) · Cent ${plan.L_cent} mm`;
+      }
+      return "—";
+    }
+
+    function isStirrupZoneSelected(idx, role) {
+      return selectedStirrupZone && selectedStirrupZone.idx === idx && selectedStirrupZone.role === role;
+    }
+
+    function selectStirrupZone(idx, beamId, role) {
+      selectedStirrupZone = { idx, role };
+      selectedBeamIdx = idx;
+      renderCanvas();
+      const labels = {
+        ext: `Ext · ini/fin · ${beamId}`,
+        cent: `Cent · ${beamId}`,
+        uni: `Único · ${beamId}`,
+      };
+      log(`${labels[role] || role} · controlador estribos seleccionado.`);
+    }
+
+    function estriboDiamSelectHtml(val, cls) {
+      return ESTRIBO_DIAM_OPTS.map(d =>
+        `<option value="${d}"${d === val ? " selected" : ""}>ø${d}</option>`
+      ).join("");
+    }
+
+    function zoneSpacingBind(el, beam, field, logLabel) {
+      el.querySelectorAll(".est-spacing-row .stepper-btn").forEach((btn, i) => {
+        btn.addEventListener("click", e => {
+          e.stopPropagation();
+          const delta = i === 0 ? -25 : 25;
+          beam[field] = Math.max(ESTRIBO_SPACING_MIN, Math.min(400, (beam[field] || 200) + delta));
+          renderCanvas();
+          log(`${logLabel} · @ ${beam[field]} mm.`);
+        });
+      });
+    }
+
+    function confinementSelectHtml(beam) {
+      const opts = confinementOptions(beam);
+      const cur = ensureBeamConfinement(beam);
+      return opts.map(o =>
+        `<option value="${o}"${o === cur ? " selected" : ""}>${o}</option>`
+      ).join("");
+    }
+
+    function extControlsHtml(beam, zone, plan) {
+      const lenHint = plan && plan.mode === "triple"
+        ? `L ${zone.lenMm} mm ×2 (ini/fin) · 2·h=${sectionHeightMm(beam.type) * 2}`
+        : `L ${zone.lenMm} mm · 2·h=${sectionHeightMm(beam.type) * 2}`;
+      return `
+        <div class="est-fields">
+          <div class="est-field-row">
+            <span class="est-lbl">ø</span>
+            <select class="ctrl zone-ext-diam">${estriboDiamSelectHtml(beam.estExtDiam)}</select>
+          </div>
+          <div class="est-field-row est-spacing-row">
+            <span class="est-lbl">@</span>
+            ${stepperHtml(beam.estExtSpacing)}
+            <span class="at-unit">mm</span>
+          </div>
+          <div class="zone-len-tag zone-hint">${lenHint}</div>
+        </div>
+      `;
+    }
+
+    function centControlsHtml(beam) {
+      return `
+        <div class="est-fields">
+          <div class="est-field-row">
+            <span class="est-lbl">ø</span>
+            <select class="ctrl zone-cent-diam">${estriboDiamSelectHtml(beam.estCentDiam)}</select>
+          </div>
+          <div class="est-field-row est-spacing-row">
+            <span class="est-lbl">@</span>
+            ${stepperHtml(beam.estCentSpacing)}
+            <span class="at-unit">mm</span>
+          </div>
+          <div class="est-field-row est-confin-row">
+            <span class="est-lbl">Confin.</span>
+            <select class="ctrl est-confin"${confinementOptions(beam).length < 2 ? " disabled" : ""}>${confinementSelectHtml(beam)}</select>
+          </div>
+          <div class="est-hint">${confinementScenarioHint(beam)}</div>
+        </div>
+      `;
+    }
+
+    function uniControlsHtml(beam, plan, zone) {
+      const touch = plan.L_cent <= 0;
+      const hint = touch
+        ? `Ext ini/fin se tocan · L_arr ≤ 4·h · L ${zone.lenMm} mm · carta Ext`
+        : `Sin hueco central (L_cent=${Math.round(plan.L_cent)} mm) · carta Ext`;
+      return `
+        <div class="est-fields">
+          <div class="est-field-row">
+            <span class="est-lbl">ø</span>
+            <select class="ctrl zone-ext-diam">${estriboDiamSelectHtml(beam.estExtDiam)}</select>
+          </div>
+          <div class="est-field-row est-spacing-row">
+            <span class="est-lbl">@</span>
+            ${stepperHtml(beam.estExtSpacing)}
+            <span class="at-unit">mm</span>
+          </div>
+          <div class="est-field-row est-confin-row">
+            <span class="est-lbl">Confin.</span>
+            <select class="ctrl est-confin"${confinementOptions(beam).length < 2 ? " disabled" : ""}>${confinementSelectHtml(beam)}</select>
+          </div>
+          <div class="est-hint">${confinementScenarioHint(beam)}</div>
+          <div class="zone-len-tag zone-hint">${hint}</div>
+        </div>
+      `;
+    }
+
+    function bindZonePanel(el, beam, idx, role) {
+      el.querySelectorAll("button, select, .stepper-wrap").forEach(node => {
+        node.addEventListener("click", e => e.stopPropagation());
+      });
+      if (role === "ext" || role === "uni") {
+        const diamSel = el.querySelector(".zone-ext-diam");
+        if (diamSel) {
+          diamSel.addEventListener("change", e => {
+            e.stopPropagation();
+            beam.estExtDiam = parseInt(diamSel.value, 10) || beam.estExtDiam;
+            renderCanvas();
+            log(`${role === "uni" ? "Único" : "Ext"} · ${beam.id} · ø ${beam.estExtDiam} mm.`);
+          });
+        }
+        zoneSpacingBind(el, beam, "estExtSpacing", `${role === "uni" ? "Único" : "Ext"} · ${beam.id}`);
+      }
+      if (role === "cent" || role === "uni") {
+        if (role === "cent") {
+          const diamSel = el.querySelector(".zone-cent-diam");
+          if (diamSel) {
+            diamSel.addEventListener("change", e => {
+              e.stopPropagation();
+              beam.estCentDiam = parseInt(diamSel.value, 10) || beam.estCentDiam;
+              renderCanvas();
+              log(`Cent · ${beam.id} · ø ${beam.estCentDiam} mm.`);
+            });
+          }
+          zoneSpacingBind(el, beam, "estCentSpacing", `Cent · ${beam.id}`);
+        }
+        const confSel = el.querySelector(".est-confin");
+        if (confSel) {
+          confSel.addEventListener("change", e => {
+            e.stopPropagation();
+            beam.estConfin = confSel.value;
+            renderCanvas();
+            log(`${role === "uni" ? "Único" : "Cent"} · ${beam.id} · confinamiento «${beam.estConfin}».`);
+          });
+        }
+      }
+      el.addEventListener("click", () => selectStirrupZone(idx, beam.id, role));
+    }
+
+    function renderExtController(beam, idx, zone, container, plan) {
+      const isSel = isStirrupZoneSelected(idx, "ext");
+      const el = document.createElement("div");
+      el.className = "zone-panel ext compact" + (isSel ? " selected" : "");
+      el.innerHTML = `
+        <div class="bar-top"></div>
+        <div class="zone-toolbar">
+          <span class="zone-id">Ext · ini/fin</span>
+        </div>
+        <div class="zone-body">${extControlsHtml(beam, zone, plan)}</div>
+      `;
+      bindZonePanel(el, beam, idx, "ext");
+      container.appendChild(el);
+    }
+
+    function renderUnifiedController(beam, idx, plan, zone, container) {
+      const isSel = isStirrupZoneSelected(idx, "uni");
+      const el = document.createElement("div");
+      el.className = "zone-panel uni compact" + (isSel ? " selected" : "");
+      el.innerHTML = `
+        <div class="bar-top"></div>
+        <div class="zone-toolbar">
+          <span class="zone-id">Único</span>
+        </div>
+        <div class="zone-body">${uniControlsHtml(beam, plan, zone)}</div>
+      `;
+      bindZonePanel(el, beam, idx, "uni");
+      container.appendChild(el);
+    }
+
+    function renderCentController(beam, idx, zone, container, plan) {
+      const isSel = isStirrupZoneSelected(idx, "cent");
+      const lenHint = zone
+        ? (plan && plan.singleKind === "short"
+          ? `L ${zone.lenMm} · &lt; 2·h`
+          : `L ${zone.lenMm}`)
+        : "";
+      const el = document.createElement("div");
+      el.className = "zone-panel cent compact" + (isSel ? " selected" : "");
+      el.innerHTML = `
+        <div class="bar-top"></div>
+        <div class="zone-toolbar">
+          <span class="zone-id">${plan && plan.singleKind === "short" ? "Cent" : "Cent"}</span>
+        </div>
+        <div class="zone-body">
+          ${centControlsHtml(beam)}
+          ${zone ? `<div class="zone-len-tag">${lenHint}</div>` : ""}
+        </div>
+      `;
+      bindZonePanel(el, beam, idx, "cent");
+      container.appendChild(el);
+    }
+
+    function renderStirrupBeamSlot(beam, idx, lay, container) {
+      ensureBeamStirrupFields(beam);
+      const plan = computeStirrupZones(beam);
+      const slot = document.createElement("div");
+      slot.className = "estribo-beam-slot" + (selectedBeamIdx === idx ? " selected-beam" : "");
+      slot.style.left = `${lay.leftPct}%`;
+      slot.style.width = `${lay.widthPct}%`;
+
+      const hdr = document.createElement("div");
+      hdr.className = "slot-hdr";
+      hdr.textContent = `${beam.id} · ${stirrupZoneSummaryPlain(plan)}`;
+      hdr.title = stirrupZoneSummary(beam);
+      slot.appendChild(hdr);
+
+      const zonesRow = document.createElement("div");
+      zonesRow.className = "slot-zones";
+
+      if (plan.mode === "single") {
+        const zSlot = document.createElement("div");
+        zSlot.className = "zone-slot full";
+        if (plan.singleKind === "merge") {
+          renderUnifiedController(beam, idx, plan, plan.zones[0], zSlot);
+        } else {
+          renderCentController(beam, idx, plan.zones[0], zSlot, plan);
+        }
+        zonesRow.appendChild(zSlot);
+      } else if (plan.mode === "triple") {
+        const centZone = plan.zones.find(z => z.role === "cent");
+        const extLen = plan.L_ext_each || plan.zones.find(z => z.role === "ext")?.lenMm || 0;
+
+        const extSlot = document.createElement("div");
+        extSlot.className = "zone-slot ext ext-shared";
+        extSlot.style.flex = `${Math.max(extLen * 2, 1)} 1 0`;
+        renderExtController(beam, idx, { lenMm: extLen }, extSlot, plan);
+        zonesRow.appendChild(extSlot);
+
+        const centSlot = document.createElement("div");
+        centSlot.className = "zone-slot cent";
+        centSlot.style.flex = `${Math.max(centZone ? centZone.lenMm : 1, 1)} 1 0`;
+        renderCentController(beam, idx, centZone, centSlot, plan);
+        zonesRow.appendChild(centSlot);
+      }
+
+      slot.appendChild(zonesRow);
+      container.appendChild(slot);
+    }
+
+    function renderSectionPreviewDock(sorted, container) {
+      const idx = selectedBeamIdx >= 0 ? selectedBeamIdx : 0;
+      const beam = sorted[idx];
+      if (!beam) return;
+      ensureBeamStirrupFields(beam);
+      ensureBeamLayers(beam);
+      const zoneSel = selectedStirrupZone && selectedStirrupZone.idx === idx ? selectedStirrupZone.role : null;
+      const roleLabel = zoneSel === "ext"
+        ? "Ext · ini/fin"
+        : zoneSel === "uni" ? "Único" : "Cent / confin.";
+      const hint = document.createElement("div");
+      hint.className = "rail-hint";
+      hint.textContent = "Sección · confinamiento";
+      container.appendChild(hint);
+      const dock = document.createElement("div");
+      dock.className = "section-preview-dock";
+      dock.innerHTML = `
+        <div class="dock-preview">${beamSectionPreviewSvg(beam, true)}</div>
+        <div class="dock-meta">
+          <div class="dock-title">${beam.id} · ${beam.type} · ${roleLabel}</div>
+          <div class="dock-lines">
+            ${beamLayersSummary(beam)}<br/>
+            ${stirrupZoneSummary(beam)}<br/>
+            ${confinementScenarioHint(beam)}<br/>
+            Ext ø${beam.estExtDiam} @ ${beam.estExtSpacing}<br/>
+            Cent ø${beam.estCentDiam} @ ${beam.estCentSpacing}
+          </div>
+        </div>
+      `;
+      container.appendChild(dock);
+    }
+
+    function renderStirrupZoneControllers(beam, idx, lay, container) {
+      renderStirrupBeamSlot(beam, idx, lay, container);
+    }
+
+    function stirrupZoneBandsHtml(plan) {
+      if (!plan || !plan.zones.length) return "";
+      const lbl = { ext: "Ext", cent: "Cent", uni: "Único" };
+      return plan.zones.map(z =>
+        `<div class="stirrup-zone-band ${z.role}" style="left:${(z.fracStart * 100).toFixed(2)}%;width:${(z.fracLen * 100).toFixed(2)}%" title="L ${z.lenMm} mm"><span class="band-lbl">${lbl[z.role] || z.role}</span></div>`
+      ).join("");
+    }
+
+    function parseBeamSection(typeStr) {
+      const m = String(typeStr || "30×60").match(/(\d+(?:\.\d+)?)\s*[×xX*]\s*(\d+(?:\.\d+)?)/);
+      return m ? { b: +m[1], h: +m[2] } : { b: 30, h: 60 };
+    }
+
+    function distributeBarPoints(count, x0, x1, y) {
+      if (count <= 0) return [];
+      if (count === 1) return [{ x: (x0 + x1) / 2, y }];
+      const step = (x1 - x0) / (count - 1);
+      return Array.from({ length: count }, (_, i) => ({ x: x0 + i * step, y }));
+    }
+
+    function barRadiusSvg(diamMm, sectionScale, maxFromSpacing) {
+      const fromDiam = (diamMm / 18) * 1.35 * sectionScale;
+      let r = fromDiam;
+      if (maxFromSpacing != null && maxFromSpacing > 0) r = Math.min(r, maxFromSpacing);
+      return Math.max(0.9, Math.min(1.85, r));
+    }
+
+    function outerStirrupPath(st, stirStroke, rEst) {
+      const hook = Math.min(3.2, st.w * 0.12, st.h * 0.12);
+      return `<path d="M ${st.x + hook} ${st.y} H ${st.x + st.w - hook} A ${hook} ${hook} 0 0 1 ${st.x + st.w} ${st.y + hook} V ${st.y + st.h - hook} A ${hook} ${hook} 0 0 1 ${st.x + st.w - hook} ${st.y + st.h} H ${st.x + hook} A ${hook} ${hook} 0 0 1 ${st.x} ${st.y + st.h - hook} V ${st.y + hook} A ${hook} ${hook} 0 0 1 ${st.x + hook} ${st.y} Z" fill="none" stroke="${stirStroke}" stroke-width="${rEst.toFixed(1)}" stroke-linejoin="round" stroke-linecap="round"/>`;
+    }
+
+    function stirrupPairSvg(supBars, infBars, i0, i1, pad, stroke, r, dash) {
+      if (supBars.length <= i1 || infBars.length <= i1) return "";
+      const xs = [supBars[i0].x, supBars[i1].x, infBars[i0].x, infBars[i1].x];
+      const ys = [supBars[i0].y, supBars[i1].y, infBars[i0].y, infBars[i1].y];
+      const x = Math.min.apply(null, xs) - pad;
+      const y = Math.min.apply(null, ys) - pad;
+      const w = Math.max.apply(null, xs) - Math.min.apply(null, xs) + pad * 2;
+      const h = Math.max.apply(null, ys) - Math.min.apply(null, ys) + pad * 2;
+      if (w < 3 || h < 3) return "";
+      const dashAttr = dash ? ` stroke-dasharray="${dash}"` : "";
+      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="1.3" fill="rgba(74,222,128,0.04)" stroke="${stroke}" stroke-width="${r.toFixed(1)}"${dashAttr}/>`;
+    }
+
+    function trabaAtIndexSvg(supBars, infBars, idx, r) {
+      if (supBars.length <= idx || infBars.length <= idx) return "";
+      const x = (supBars[idx].x + infBars[idx].x) / 2;
+      const tieStroke = "#fb923c";
+      return `<line x1="${x.toFixed(1)}" y1="${supBars[idx].y.toFixed(1)}" x2="${x.toFixed(1)}" y2="${infBars[idx].y.toFixed(1)}" stroke="${tieStroke}" stroke-width="${r.toFixed(1)}" stroke-linecap="round"/>`;
+    }
+
+    function confinementExtraSvg(beam, st, supBars, infBars, rEst) {
+      const def = findConfinDef(beam);
+      const rIn = Math.max(0.7, rEst * 0.85);
+      const pad = Math.max(2.8, rIn * 2);
+      const innerStroke = "#4ade80";
+      const parts = [];
+      def.pairs.forEach(pair => {
+        const i0 = pair[0];
+        const i1 = pair[1];
+        parts.push(stirrupPairSvg(supBars, infBars, i0, i1, pad, innerStroke, rIn, null));
+      });
+      def.ties.forEach(idx => {
+        parts.push(trabaAtIndexSvg(supBars, infBars, idx, rIn));
+      });
+      return parts.join("");
+    }
+
+    function confinementPreviewLabel(beam) {
+      const n = firstLayerBarCount(beam);
+      const lbl = findConfinDef(beam).label;
+      const short = lbl.length > 32 ? lbl.slice(0, 30) + "…" : lbl;
+      return `${n}b · ${short}`;
+    }
+
+    function beamLayersSummary(beam) {
+      ensureBeamLayers(beam);
+      const parts = [];
+      for (let L = 1; L <= beam.nCapas; L++) {
+        const k = layerKeys(L);
+        const ns = beam[k.nSup] || BAR_COUNT_MIN;
+        const ni = beam[k.nInf] || BAR_COUNT_MIN;
+        const ds = beam[k.diamSup] || 16;
+        const di = beam[k.diamInf] || 16;
+        parts.push(`${k.label} S${ns}ø${ds}/I${ni}ø${di}`);
+      }
+      const capTxt = beam.nCapas === 1 ? "1 capa" : `${beam.nCapas} capas`;
+      return `${capTxt} · ${parts.join(" · ")}`;
+    }
+
+    function sectionLayerBarDots(beam, st, barX0, barX1, barPad, scale) {
+      ensureBeamLayers(beam);
+      const nCapas = beam.nCapas || 1;
+      const barSpan = barX1 - barX0;
+      const layerStep = nCapas > 1
+        ? Math.max(3.5, Math.min(st.h * 0.15, (st.h - barPad * 2) / Math.max(1, nCapas * 2)))
+        : 0;
+      const layerFill = [
+        { sup: "#22d3ee", supStroke: "#0891b2", inf: "#f87171", infStroke: "#b91c1c", op: 1 },
+        { sup: "#38bdf8", supStroke: "#0284c7", inf: "#fb7185", infStroke: "#e11d48", op: 0.88 },
+        { sup: "#7dd3fc", supStroke: "#0369a1", inf: "#fda4af", infStroke: "#be123c", op: 0.72 },
+      ];
+      const dots = [];
+      for (let L = nCapas; L >= 1; L--) {
+        const k = layerKeys(L);
+        const nS = beam[k.nSup] || BAR_COUNT_MIN;
+        const nI = beam[k.nInf] || BAR_COUNT_MIN;
+        const dS = beam[k.diamSup] || 16;
+        const dI = beam[k.diamInf] || 16;
+        const supY = st.y + barPad + (L - 1) * layerStep;
+        const infY = st.y + st.h - barPad - (L - 1) * layerStep;
+        const maxRSup = nS > 1 ? (barSpan / (nS - 1)) * 0.34 : barSpan * 0.13;
+        const maxRInf = nI > 1 ? (barSpan / (nI - 1)) * 0.34 : barSpan * 0.13;
+        const rSup = barRadiusSvg(dS, scale, maxRSup) * (L === 1 ? 1 : 0.92);
+        const rInf = barRadiusSvg(dI, scale, maxRInf) * (L === 1 ? 1 : 0.92);
+        const pal = layerFill[L - 1] || layerFill[2];
+        const supBars = distributeBarPoints(nS, barX0, barX1, supY);
+        const infBars = distributeBarPoints(nI, barX0, barX1, infY);
+        supBars.forEach(p => {
+          dots.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${rSup.toFixed(2)}" fill="${pal.sup}" fill-opacity="${pal.op}" stroke="${pal.supStroke}" stroke-width="0.35"/>`);
+        });
+        infBars.forEach(p => {
+          dots.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${rInf.toFixed(2)}" fill="${pal.inf}" fill-opacity="${pal.op}" stroke="${pal.infStroke}" stroke-width="0.35"/>`);
+        });
+      }
+      return dots.join("");
+    }
+
+    function beamSectionPreviewSvg(beam, selected) {
+      ensureBeamLayers(beam);
+      const { b, h } = parseBeamSection(beam.type);
+      const vbW = SECTION_PREVIEW_VB_W;
+      const vbH = SECTION_PREVIEW_VB_H;
+      const padX = 16;
+      const padTop = 10;
+      const labelH = 12;
+      const maxW = vbW - padX * 2;
+      const maxH = vbH - padTop - labelH - 6;
+
+      let secW;
+      let secH;
+      if (h >= b) {
+        secH = maxH;
+        secW = secH * (b / h);
+        if (secW > maxW) {
+          secW = maxW;
+          secH = secW * (h / b);
+        }
+      } else {
+        secW = maxW;
+        secH = secW * (h / b);
+        if (secH > maxH) {
+          secH = maxH;
+          secW = secH * (b / h);
+        }
+      }
+
+      const ox = (vbW - secW) / 2;
+      const oy = padTop + (maxH - secH) / 2;
+      const cover = Math.max(3.5, Math.min(secW, secH) * 0.11);
+      const inner = {
+        x: ox + cover,
+        y: oy + cover,
+        w: secW - cover * 2,
+        h: secH - cover * 2,
+      };
+      const stInset = 2.2;
+      const st = {
+        x: inner.x + stInset,
+        y: inner.y + stInset,
+        w: inner.w - stInset * 2,
+        h: inner.h - stInset * 2,
+      };
+      const barPad = Math.max(2.5, cover * 0.55);
+      const barX0 = st.x + barPad;
+      const barX1 = st.x + st.w - barPad;
+      const supY = st.y + barPad;
+      const infY = st.y + st.h - barPad;
+      const scale = secH / Math.max(h, 1);
+      const rEst = Math.max(0.9, (beam.estCentDiam || beam.estExtDiam || 8) / 9);
+      const supBars = distributeBarPoints(beam.nSup || 2, barX0, barX1, supY);
+      const infBars = distributeBarPoints(beam.nInf || 2, barX0, barX1, infY);
+      const barDots = sectionLayerBarDots(beam, st, barX0, barX1, barPad, scale);
+
+      const concStroke = selected ? "#5bb8d4" : "#456578";
+      const stirStroke = selected ? "#34d399" : "#2f6650";
+      const grainId = `conc-${String(beam.id).replace(/[^a-z0-9]/gi, "")}`;
+      const confDef = findConfinDef(beam);
+      const stirrupShape = confDef.perimetral ? outerStirrupPath(st, stirStroke, rEst) : "";
+      const confinementShape = confinementExtraSvg(beam, st, supBars, infBars, rEst);
+      const confShort = confinementPreviewLabel(beam);
+
+      const dimB = `${b}`;
+      const dimH = `${h}`;
+
+      return `<svg class="beam-section-preview" viewBox="0 0 ${vbW} ${vbH}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <defs>
+          <pattern id="${grainId}" width="5" height="5" patternUnits="userSpaceOnUse">
+            <rect width="5" height="5" fill="rgba(148,163,184,0.04)"/>
+            <circle cx="1.2" cy="1.2" r="0.35" fill="rgba(255,255,255,0.05)"/>
+            <circle cx="3.8" cy="3.5" r="0.25" fill="rgba(255,255,255,0.04)"/>
+          </pattern>
+        </defs>
+        <rect x="${ox}" y="${oy}" width="${secW}" height="${secH}" rx="1.8" fill="url(#${grainId})" stroke="${concStroke}" stroke-width="1.15"/>
+        <rect x="${ox}" y="${oy}" width="${secW}" height="${secH}" rx="1.8" fill="rgba(148,163,184,0.07)" stroke="none"/>
+        <rect x="${inner.x}" y="${inner.y}" width="${inner.w}" height="${inner.h}" fill="none" stroke="rgba(148,163,184,0.22)" stroke-width="0.55" stroke-dasharray="2.5 2"/>
+        ${stirrupShape}
+        ${confinementShape}
+        ${barDots}
+        <line x1="${ox - 3}" y1="${oy}" x2="${ox - 3}" y2="${oy + secH}" stroke="rgba(100,116,139,0.55)" stroke-width="0.6"/>
+        <line x1="${ox - 5}" y1="${oy}" x2="${ox - 1}" y2="${oy}" stroke="rgba(100,116,139,0.55)" stroke-width="0.6"/>
+        <line x1="${ox - 5}" y1="${oy + secH}" x2="${ox - 1}" y2="${oy + secH}" stroke="rgba(100,116,139,0.55)" stroke-width="0.6"/>
+        <text x="${ox - 6.5}" y="${oy + secH / 2 + 2}" text-anchor="middle" font-size="5.5" fill="#64748b" font-family="Segoe UI, sans-serif" transform="rotate(-90 ${ox - 6.5} ${oy + secH / 2 + 2})">${dimH}</text>
+        <line x1="${ox}" y1="${oy + secH + 4}" x2="${ox + secW}" y2="${oy + secH + 4}" stroke="rgba(100,116,139,0.55)" stroke-width="0.6"/>
+        <line x1="${ox}" y1="${oy + secH + 2}" x2="${ox}" y2="${oy + secH + 6}" stroke="rgba(100,116,139,0.55)" stroke-width="0.6"/>
+        <line x1="${ox + secW}" y1="${oy + secH + 2}" x2="${ox + secW}" y2="${oy + secH + 6}" stroke="rgba(100,116,139,0.55)" stroke-width="0.6"/>
+        <text x="${ox + secW / 2}" y="${oy + secH + 8}" text-anchor="middle" font-size="5.5" fill="#64748b" font-family="Segoe UI, sans-serif">${dimB}</text>
+        <text x="${vbW / 2}" y="${vbH - 1.5}" text-anchor="middle" font-size="5.5" fill="${selected ? "#94a3b8" : "#64748b"}" font-family="Segoe UI, sans-serif">Ext ø${beam.estExtDiam}@${beam.estExtSpacing} · Cent ø${beam.estCentDiam}@${beam.estCentSpacing}</text>
+      </svg>`;
+    }
+
+    function selectTramo(tramoId) {
+      selectedTramoId = tramoId;
+      const tramo = tramos.find(t => t.id === tramoId);
+      if (tramo) selectedBeamIdx = tramo.beamIndices[0];
+      renderCanvas();
+      log(`Tramo ${tramo ? tramo.label : tramoId} seleccionado.`);
+    }
+
+    function selectBeamHalf(idx, beamId, part) {
+      selectedBeamIdx = idx;
+      const sorted = sortBeams(beams);
+      const preview = buildTramos(sorted);
+      const hit = findTramoHalf(preview, idx, part);
+      selectedTramoId = hit ? hit.id : null;
+      renderCanvas();
+      const beam = sorted[idx];
+      log(`Tramo barra ${hit ? hit.label : "—"} · traslapo @ ${empalmeMidM(beam).toFixed(2)} m (${part}/2).`);
+    }
+
+    function selectBeamOnly(idx, beamId) {
+      selectedBeamIdx = idx;
+      const sorted = sortBeams(beams);
+      const beam = sorted[idx];
+      const plan = beam ? computeStirrupZones(beam) : null;
+      let role = "cent";
+      if (plan && plan.mode === "single" && plan.singleKind === "merge") role = "uni";
+      selectedStirrupZone = { idx, role };
+      const preview = buildTramos(sorted);
+      const hit = findTramoForBeam(preview, idx);
+      selectedTramoId = hit ? hit.id : null;
+      renderCanvas();
+      log(`Tramo barra ${hit ? hit.label : "—"} · viga ${beamId}.`);
+    }
+
+    function toggleEmpalmeAtBeam(idx, beamId) {
+      toggleEmpalmeForBeam(beamId);
+      selectedBeamIdx = idx;
+      const sorted = sortBeams(beams);
+      const beam = sorted[idx];
+      const plan = beam ? computeStirrupZones(beam) : null;
+      let role = "cent";
+      if (plan && plan.mode === "single" && plan.singleKind === "merge") role = "uni";
+      selectedStirrupZone = { idx, role };
+      const preview = buildTramos(sorted);
+      let hit = null;
+      if (isEmpalmeActive(beam)) {
+        hit = findTramoHalf(preview, idx, 1) || findTramoForBeam(preview, idx);
+      } else {
+        hit = findTramoForBeam(preview, idx);
+      }
+      selectedTramoId = hit ? hit.id : null;
+      renderCanvas();
+      const on = empalmeBeams.has(beamId);
+      log(on
+        ? `Traslapo @ mitad · ${beamId} · botón bajo alzado.`
+        : `Traslapo desmarcado · ${beamId}.`);
+    }
+
+    function clearEmpalme(beamId, idx) {
+      if (!empalmeBeams.has(beamId)) return;
+      toggleEmpalmeAtBeam(idx, beamId);
+    }
+
+    function selectBeam(idx, beamId) {
+      selectBeamOnly(idx, beamId);
+    }
+
+    function renderTramoController(tramo, sorted, layouts, container) {
+      const span = tramoSpan(layouts, tramo);
+      const owner = sorted[tramo.beamIndices[0]];
+      const ownerEnd = sorted[tramo.beamIndices[tramo.beamIndices.length - 1]];
+      const warn = tramoExceedsBarLimit(tramo);
+      const el = document.createElement("div");
+      el.className = "cap-panel ini"
+        + (selectedTramoId === tramo.id ? " selected" : "")
+        + (tramo.fromEmpalme ? " split-new" : "")
+        + (warn ? " has-warn" : "");
+      el.dataset.tramo = tramo.id;
+      el.title = warn
+        ? `${tramo.label} · barra presunta ${Math.round(tramo.inferredLenMm)} mm > 12 m`
+        : tramo.label;
+      el.style.left = `${span.centerPct}%`;
+      el.style.width = `${panelWidthForSlot(span.widthPx, TRAMO_PANEL_MAX_PX, 100)}px`;
+      el.style.setProperty("--bar", tramo.accent);
+      ensureBeamLayers(owner);
+      const nConf = firstLayerBarCount(owner);
+      el.innerHTML = `
+        <div class="bar-top" style="background:${tramo.accent}"></div>
+        <div class="cap-toolbar">
+          <span class="tramo-lbl">${tramo.label}</span>
+          <span class="capas">${owner.nCapas} capa(s) · ${tramo.section}</span>
+        </div>
+        <div class="capas-row">
+          <span class="capas-lbl">Capas</span>
+          ${stepperHtml(owner.nCapas)}
+        </div>
+        ${tramoCapSplitHtml(owner)}
+        <div class="cap-meta">
+          <div class="conf-lbl conf-n-hint">1ª capa N=${nConf} → confin. E</div>
+          <div class="embed-tag">${owner.colStart} ↔ ${ownerEnd.colEnd}</div>
+          <div class="conf-lbl">L ${Math.round(tramo.inferredLenMm)} mm</div>
+          ${tramo.fromEmpalme ? `<div class="empalme-tag">↳ traslapo</div>` : ""}
+        </div>
+        ${warn ? `<div class="warn-chip">Barra presunta &gt; 12 m · L ${Math.round(tramo.inferredLenMm)} mm</div>` : ""}
+      `;
+      bindTramoController(el, tramo, sorted);
+      container.appendChild(el);
+    }
+
+    function renderElevationSupport(container, point, idx) {
+      const meta = supportMeta(point.id);
+      const isWall = meta.kind === "wall";
+      const el = document.createElement("div");
+      el.className = "col-support" + (isWall ? " is-wall" : " is-column");
+      el.style.left = `${point.pct}%`;
+      el.title = `${meta.id} · ${isWall ? "Muro" : "Columna"} · ${meta.embed}`;
+      const pocket = !isWall && idx > 0;
+      el.innerHTML = `
+        <div class="col-fill"></div>
+        <div class="col-edge left"></div>
+        <div class="col-edge right"></div>
+        <div class="col-axis"></div>
+        ${pocket ? `<svg class="col-pocket" viewBox="0 0 14 11" aria-hidden="true"><path d="M1 1 v8 h12 v-8" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="2.5 2"/></svg>` : ""}
+        <span class="sup-id">${meta.id}</span>
+      `;
+      container.appendChild(el);
+    }
+
+    function renderElevationTrack(track, sorted, layouts) {
+      const runLeft = layouts[0].leftPct;
+      const runRight = layouts[layouts.length - 1].leftPct + layouts[layouts.length - 1].widthPct;
+      const elevation = document.createElement("div");
+      elevation.className = "elevation-track";
+
+      const beamRun = document.createElement("div");
+      beamRun.className = "beam-continuous";
+      beamRun.style.left = `${runLeft}%`;
+      beamRun.style.width = `${runRight - runLeft}%`;
+      beamRun.innerHTML = `
+        <div class="beam-face"></div>
+        <div class="beam-chord top"></div>
+        <div class="beam-chord bottom"></div>
+        <div class="beam-axis"></div>
+      `;
+      elevation.appendChild(beamRun);
+
+      layouts.forEach((lay, i) => {
+        const beam = sorted[i];
+        const isSel = selectedBeamIdx === i;
+        const empalmeOn = isEmpalmeActive(beam);
+        const tramo1 = findTramoHalf(tramos, i, 1);
+        const tramo2 = findTramoHalf(tramos, i, 2);
+        const selPart1 = tramo1 && selectedTramoId === tramo1.id;
+        const selPart2 = tramo2 && selectedTramoId === tramo2.id;
+
+        const plan = computeStirrupZones(beam);
+        const zoneBands = stirrupZoneBandsHtml(plan);
+
+        const span = document.createElement("div");
+        span.className = "beam-span"
+          + (isSel ? " selected" : "")
+          + (empalmeOn ? " empalme-on" : "");
+        span.style.left = `${lay.leftPct}%`;
+        span.style.width = `${lay.widthPct}%`;
+        span.title = empalmeOn
+          ? `${beam.id} · empalme @ ${empalmeMidM(beam).toFixed(2)} m · clic mitad izq/der → tramo Tn`
+          : `${beam.id} · clic → seleccionar viga (${beam.len.toFixed(1)} m)`;
+
+        if (empalmeOn) {
+          span.innerHTML = `
+            ${zoneBands}
+            <div class="span-half left${selPart1 ? " selected" : ""}" data-part="1"></div>
+            <div class="span-half right${selPart2 ? " selected" : ""}" data-part="2"></div>
+            <div class="bar-sup left-bar"></div>
+            <div class="bar-inf left-bar"></div>
+            <div class="bar-sup right-bar"></div>
+            <div class="bar-inf right-bar"></div>
+            <div class="splice-mark" title="Empalme @ mitad"><span class="splice-lbl">Emp @ mitad</span></div>
+          `;
+          span.querySelector(".span-half.left").addEventListener("click", e => {
+            e.stopPropagation();
+            selectBeamHalf(i, beam.id, 1);
+          });
+          span.querySelector(".span-half.right").addEventListener("click", e => {
+            e.stopPropagation();
+            selectBeamHalf(i, beam.id, 2);
+          });
+        } else {
+          span.innerHTML = `
+            ${zoneBands}
+            <div class="bar-sup"></div>
+            <div class="bar-inf"></div>
+          `;
+          span.addEventListener("click", () => selectBeamOnly(i, beam.id));
+        }
+
+        elevation.appendChild(span);
+      });
+
+      const empalmeRow = document.createElement("div");
+      empalmeRow.className = "empalme-btn-row";
+      layouts.forEach((lay, i) => {
+        const beam = sorted[i];
+        const on = isEmpalmeActive(beam);
+        const slot = document.createElement("div");
+        slot.className = "empalme-btn-slot";
+        slot.style.left = `${lay.leftPct}%`;
+        slot.style.width = `${lay.widthPct}%`;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "empalme-btn" + (on ? " on" : "");
+        btn.textContent = on ? "Traslapo ✓" : "Traslapo";
+        btn.title = on
+          ? `Quitar empalme @ mitad · ${beam.id}`
+          : `Marcar traslape @ mitad · ${beam.id}`;
+        btn.addEventListener("click", e => {
+          e.stopPropagation();
+          toggleEmpalmeAtBeam(i, beam.id);
+        });
+        slot.appendChild(btn);
+        empalmeRow.appendChild(slot);
+      });
+      elevation.appendChild(empalmeRow);
+
+      if (apoyosLoaded) {
+        buildSupportChain(sorted, layouts).forEach((p, idx) => renderElevationSupport(elevation, p, idx));
+      }
+
+      track.appendChild(elevation);
+    }
+
+    function updateApoyosSummary(sorted) {
+      if (!sorted.length || !apoyosLoaded) {
+        apoyosSummaryText.textContent = apoyosLoaded ? "sin vigas" : "— (seleccione apoyos)";
+        return;
+      }
+      const a = collectApoyos(sorted);
+      apoyosSummaryText.textContent = `${a.cols} columna(s) · ${a.walls} muro(s) · cadena ${a.ids.join(" → ")}`;
+    }
+
+    function renderCanvas() {
+      const viewportW = beams.length ? getCanvasViewportWidth() : 0;
+      if (emptyState.parentNode) emptyState.remove();
+      canvasBody.innerHTML = "";
+      canvasBody.classList.remove("has-h-scroll");
+
+      if (!beams.length) {
+        canvasBody.appendChild(emptyState);
+        emptyState.classList.remove("hidden");
+        selectionInfo.textContent = "Seleccione vigas, columnas y muros. Las vigas se representan entre columnas para evaluar empotramiento en extremos.";
+        tramoSummaryText.textContent = "—";
+        apoyosSummaryText.textContent = "—";
+        winSub.textContent = "Vigas · columnas · muros · tramos cap-panel";
+        tramos = [];
+        selectedTramoId = null;
+        selectedBeamIdx = -1;
+        selectedStirrupZone = null;
+        return;
+      }
+
+      const sorted = sortBeams(beams);
+      sorted.forEach(b => {
+        ensureBeamStirrupFields(b);
+        ensureBeamLayers(b);
+      });
+      const layoutResult = computeLayout(sorted, viewportW);
+      const layouts = layoutResult.layouts;
+      canvasLayoutMeta = {
+        contentWidthPx: layoutResult.contentWidthPx,
+        needsScroll: layoutResult.needsScroll,
+        viewportWidthPx: viewportW,
+      };
+      tramos = buildTramos(sorted);
+      const maxCapas = sorted.reduce((m, b) => Math.max(m, b.nCapas || 1), 1);
+
+      if (!selectedTramoId && tramos.length) selectedTramoId = tramos[0].id;
+      if (selectedStirrupZone && selectedStirrupZone.idx >= sorted.length) selectedStirrupZone = null;
+      if (!selectedStirrupZone && sorted.length) {
+        selectedStirrupZone = { idx: 0, role: "cent" };
+      }
+      if (selectedTramoId && !tramos.find(t => t.id === selectedTramoId)) {
+        selectedTramoId = tramos[0] ? tramos[0].id : null;
+      }
+
+      tramoSummaryText.textContent = formatTramoSummary(sorted, tramos);
+      updateApoyosSummary(sorted);
+      winSub.textContent = `${sorted.length} vigas · alzado integrado · ${tramos.length} tramos`;
+      selectionInfo.textContent = (apoyosLoaded
+        ? `Clic viga → selección · botón Traslapo → empalme @ mitad · Tn · Ext/Cent · empotrado en panel.`
+        : `Clic viga → selección · botón Traslapo bajo alzado · Ext/Cent por viga.`)
+        + (canvasLayoutMeta.needsScroll ? " · Desplazar horizontalmente (↔) para ver todas las vigas." : "");
+
+      const layout = document.createElement("div");
+      layout.className = "canvas-layout";
+      const scrollCol = document.createElement("div");
+      scrollCol.className = "canvas-scroll-col";
+
+      const row = document.createElement("div");
+      row.className = "canvas-row" + (canvasLayoutMeta.needsScroll ? " needs-scroll" : " fits-viewport");
+      row.style.setProperty("--canvas-content-w", `${canvasLayoutMeta.contentWidthPx}px`);
+
+      const estriboZone = document.createElement("div");
+      estriboZone.className = "estribo-zone";
+      const estriboHint = document.createElement("div");
+      estriboHint.className = "canvas-ctrl-hint estribos";
+      estriboHint.textContent = "Ext · ini/fin (compartido) · Cent · Único — ancho ∝ alzado";
+      const estriboStrip = document.createElement("div");
+      estriboStrip.className = "estribo-strip";
+      const previewRail = document.createElement("aside");
+      previewRail.className = "section-preview-rail";
+      previewRail.setAttribute("aria-label", "Preview sección confinamiento");
+      const canvasCore = document.createElement("div");
+      canvasCore.className = "canvas-core";
+      const tramoZone = document.createElement("div");
+      tramoZone.className = "tramo-zone";
+      const bandsRow = document.createElement("div");
+      bandsRow.className = "tramos-band-row";
+      const track = document.createElement("div");
+      track.className = "long-track-shared has-elevation";
+      const ctrlRow = document.createElement("div");
+      ctrlRow.className = "tramos-ctrl-row" + (maxCapas >= 2 ? " has-many-layers" : "");
+      const tramoHint = document.createElement("div");
+      tramoHint.className = "canvas-ctrl-hint tramos";
+      tramoHint.textContent = "Tn · tramo de barra (bajo canvas)";
+      const labelsRow = document.createElement("div");
+      labelsRow.className = "labels-row" + (apoyosLoaded ? " with-apoyos" : "");
+
+      tramos.forEach(tramo => {
+        const span = tramoSpan(layouts, tramo);
+        const band = document.createElement("div");
+        band.className = "tramo-band"
+          + (selectedTramoId === tramo.id ? " selected" : "")
+          + (tramoExceedsBarLimit(tramo) ? " has-warn" : "");
+        band.style.left = `${span.leftPct}%`;
+        band.style.width = `${span.widthPct}%`;
+        band.style.background = tramo.accent;
+        bandsRow.appendChild(band);
+        renderTramoController(tramo, sorted, layouts, ctrlRow);
+      });
+
+      layouts.forEach((lay, i) => {
+        const beam = sorted[i];
+        const isSel = selectedBeamIdx === i;
+
+        const lbl = document.createElement("div");
+        lbl.className = "beam-label" + (isSel ? " selected" : "");
+        lbl.style.left = `${lay.centerPct}%`;
+        lbl.innerHTML = `
+          <span class="id">${beam.id}</span>
+          <span class="len">${beam.len.toFixed(1)} m · ${beam.type}</span>
+          ${apoyosLoaded ? `<span class="len">${beam.colStart}–${beam.colEnd}</span>` : ""}
+          ${empalmeBeams.has(beam.id) ? `<span class="warn-tag">Emp @ ${empalmeMidM(beam).toFixed(1)} m</span>` : ""}
+        `;
+        lbl.addEventListener("click", () => selectBeamOnly(i, beam.id));
+        labelsRow.appendChild(lbl);
+
+        renderStirrupBeamSlot(beam, i, lay, estriboStrip);
+      });
+
+      renderElevationTrack(track, sorted, layouts);
+
+      const axis = document.createElement("div");
+      axis.className = "axis-hint";
+      axis.innerHTML = `<span>← ${apoyosLoaded ? "Apoyo ini." : "Izquierda"}</span><span>Scroll ↔ solo alzado · preview fijo</span><span>${apoyosLoaded ? "Apoyo fin." : "Derecha"} →</span>`;
+
+      canvasCore.appendChild(track);
+      canvasCore.appendChild(labelsRow);
+      estriboZone.appendChild(estriboHint);
+      estriboZone.appendChild(estriboStrip);
+      tramoZone.appendChild(bandsRow);
+      tramoZone.appendChild(tramoHint);
+      tramoZone.appendChild(ctrlRow);
+
+      row.appendChild(canvasCore);
+      row.appendChild(estriboZone);
+      row.appendChild(tramoZone);
+      row.appendChild(axis);
+      scrollCol.appendChild(row);
+      renderSectionPreviewDock(sorted, previewRail);
+      layout.appendChild(scrollCol);
+      layout.appendChild(previewRail);
+      canvasBody.appendChild(layout);
+      if (canvasLayoutMeta.needsScroll) scrollCol.classList.add("has-h-scroll");
+    }
+
+    function log(msg) {
+      estado.textContent = msg;
+      statusBar.textContent = msg;
+    }
+
+    function loadBeams(count) {
+      beams = count > 0 ? SAMPLE_BEAMS.slice(0, count).map(b => ({ ...b })) : [];
+      beams.forEach(b => {
+        ensureBeamStirrupFields(b);
+        ensureBeamLayers(b);
+      });
+      empalmeBeams = new Set();
+      selectedBeamIdx = beams.length ? 0 : -1;
+      selectedStirrupZone = beams.length ? { idx: 0, role: "cent" } : null;
+      selectedTramoId = null;
+      if (!beams.length) apoyosLoaded = false;
+      renderCanvas();
+      if (beams.length) {
+        const n = buildTramos(sortBeams(beams)).length;
+        log(`${beams.length} vigas cargadas · ${n} tramo(s). ${apoyosLoaded ? "Apoyos vinculados." : "Seleccione columnas y muros."}`);
+      } else {
+        log("Sin vigas — estado inicial.");
+      }
+    }
+
+    function loadApoyos() {
+      if (!beams.length) {
+        log("Primero seleccione vigas en modelo.");
+        return;
+      }
+      apoyosLoaded = true;
+      renderCanvas();
+      const sorted = sortBeams(beams);
+      const a = collectApoyos(sorted);
+      log(`Apoyos: ${a.cols} columnas, ${a.walls} muros · ${a.ids.join(" → ")}`);
+    }
+
+    document.getElementById("devBeamCount").addEventListener("change", e => {
+      loadBeams(parseInt(e.target.value, 10));
+    });
+
+    document.getElementById("devZoom").addEventListener("input", e => {
+      document.getElementById("winScaler").style.setProperty("--zoom", e.target.value);
+      if (beams.length) renderCanvas();
+    });
+
+    let canvasResizeTimer;
+    window.addEventListener("resize", () => {
+      clearTimeout(canvasResizeTimer);
+      canvasResizeTimer = setTimeout(() => {
+        if (beams.length) renderCanvas();
+      }, 120);
+    });
+
+    document.getElementById("devSplitEmpalme").addEventListener("change", () => {
+      selectedTramoId = null;
+      renderCanvas();
+      log("Tramos recalculados (troceo empalme " + (splitEmpalmeEnabled() ? "ON" : "OFF") + ").");
+    });
+
+    let HOST_MODE = /[?&]host=1/.test(location.search);
+
+    function hostCommand(cmd) {
+      window.location.href = "armavigas://" + cmd;
+    }
+
+    function isHostMode() {
+      return HOST_MODE;
+    }
+
+    function initHostMode() {
+      HOST_MODE = true;
+      document.body.classList.add("host-mode");
+      const devBar = document.querySelector(".dev-bar");
+      if (devBar) devBar.classList.add("hidden");
+      const btnSelect = document.getElementById("btnSelect");
+      const btnApoyos = document.getElementById("btnSelectApoyos");
+      if (btnSelect) btnSelect.textContent = "Seleccionar lote (vigas + apoyos)";
+      if (btnApoyos) btnApoyos.textContent = "Actualizar selección Revit";
+      log("Modo Revit — seleccione el lote en el modelo.");
+    }
+
+    function applyBeamsFromHost(jsonStr) {
+      let data = {};
+      try {
+        data = typeof jsonStr === "string" ? JSON.parse(jsonStr) : (jsonStr || {});
+      } catch (e) {
+        log("Error al leer datos del host.");
+        return;
+      }
+      beams = (data.beams || []).map((b, i) => ({
+        ...b,
+        color: b.color || BEAM_PALETTE[i % BEAM_PALETTE.length],
+      }));
+      beams.forEach(b => {
+        ensureBeamStirrupFields(b);
+        ensureBeamLayers(b);
+      });
+      apoyosLoaded = !!data.apoyosLoaded;
+      empalmeBeams = new Set();
+      selectedBeamIdx = beams.length ? 0 : -1;
+      selectedStirrupZone = beams.length ? { idx: 0, role: "cent" } : null;
+      selectedTramoId = null;
+      renderCanvas();
+      if (data.message) log(data.message);
+      else if (beams.length) {
+        const n = buildTramos(sortBeams(beams)).length;
+        log(`${beams.length} vigas · ${n} tramo(s) · canvas actualizado.`);
+      } else {
+        log("Sin vigas en la selección.");
+      }
+    }
+
+    function setHostStatus(msg) {
+      log(msg || "");
+    }
+
+    document.getElementById("btnSelect").addEventListener("click", () => {
+      if (isHostMode()) {
+        hostCommand("pick");
+        return;
+      }
+      loadBeams(parseInt(document.getElementById("devBeamCount").value, 10) || 3);
+    });
+
+    document.getElementById("btnSelectApoyos").addEventListener("click", () => {
+      if (HOST_MODE) {
+        hostCommand("pick");
+        return;
+      }
+      loadApoyos();
+    });
+
+    document.getElementById("btnColocar").addEventListener("click", () => {
+      if (!beams.length) {
+        log("Seleccione al menos una viga antes de colocar armadura.");
+        return;
+      }
+      if (HOST_MODE) {
+        hostCommand("colocar");
+        return;
+      }
+      log(`Colocar armadura — ${tramos.length} tramo(s) · transacción «Arainco: Armadura vigas» (simulado).`);
+    });
+
+    document.getElementById("btnCancel").addEventListener("click", () => {
+      if (HOST_MODE) {
+        hostCommand("cancel");
+        return;
+      }
+      log("Cancelar (simulado).");
+    });
+
+    if (!HOST_MODE) {
+      loadBeams(3);
+      loadApoyos();
+      const longTramo = tramos.find(tramoExceedsBarLimit);
+      if (longTramo) {
+        selectedTramoId = longTramo.id;
+        renderCanvas();
+      }
+    } else {
+      initHostMode();
+    }
+  </script>
+</body>
+</html>

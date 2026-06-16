@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mockup — Suple inferior · Armado vigas</title>
+  <style>
+    :root {
+      --bg-app: #071018;
+      --bg-panel: #0a1620;
+      --border: #21465c;
+      --fg-hi: #e8f4f8;
+      --fg-mid: #95b8cc;
+      --fg-lo: #64748b;
+      --input-bg: #071018;
+      --input-border: #1e3344;
+      --btn-outline: #2d4455;
+      --btn-primary: #5bb8d4;
+      --btn-primary-fg: #071018;
+      --ok: #4ade80;
+      --warn: #fbbf24;
+      --bar-ext: #fbbf24;
+      --bar-cent: #34d399;
+      --bar-uni: #fde68a;
+      --bar-inf: #fca5a5;
+      --bar-suple: #c084fc;
+      --zone-trim: rgba(251, 191, 36, 0.12);
+      --zone-trim-border: rgba(251, 191, 36, 0.35);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #050c14;
+      color: var(--fg-mid);
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .dev-bar {
+      background: #0f1c28;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      align-items: center;
+      font-size: 11px;
+    }
+    .dev-bar h1 { font-size: 13px; color: var(--fg-hi); font-weight: 600; }
+    .dev-bar label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .dev-bar select, .dev-bar input[type="number"] {
+      background: var(--input-bg);
+      color: var(--fg-hi);
+      border: 1px solid var(--input-border);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+    .dev-bar input[type="number"] { width: 64px; }
+    .pill {
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .pill.ok { background: rgba(74, 222, 128, 0.15); color: var(--ok); }
+    .pill.ref { background: rgba(192, 132, 252, 0.15); color: var(--bar-suple); }
+    .sep { width: 1px; height: 20px; background: var(--border); }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      min-height: 0;
+      overflow: hidden;
+    }
+    @media (max-width: 960px) {
+      main { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+      .eval-panel { border-left: none; border-top: 1px solid var(--border); max-height: 320px; }
+    }
+
+    .workspace {
+      overflow: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .intro {
+      max-width: 820px;
+      width: 100%;
+      font-size: 11px;
+      line-height: 1.55;
+      color: var(--fg-lo);
+    }
+    .intro strong { color: var(--fg-hi); }
+    .intro code {
+      font-size: 10px;
+      color: rgba(91, 184, 212, 0.9);
+      background: rgba(7, 16, 24, 0.8);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+
+    /* ── Tramo selector ── */
+    .tramo-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      width: 100%;
+      max-width: 820px;
+    }
+    .tramo-bar span.lbl {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--fg-lo);
+    }
+    .tramo-btn {
+      min-width: 44px;
+      padding: 5px 12px;
+      border: 1px solid var(--input-border);
+      border-radius: 4px;
+      background: var(--input-bg);
+      color: var(--fg-mid);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 0.12s, background 0.12s;
+    }
+    .tramo-btn:hover { border-color: var(--btn-primary); color: var(--fg-hi); }
+    .tramo-btn.active {
+      border-color: var(--btn-primary);
+      background: rgba(91, 184, 212, 0.12);
+      color: var(--fg-hi);
+      box-shadow: 0 0 0 1px rgba(91, 184, 212, 0.35);
+    }
+    .tramo-meta {
+      margin-left: auto;
+      font-size: 10px;
+      color: var(--fg-lo);
+    }
+    .tramo-meta .hi { color: var(--fg-hi); font-weight: 600; }
+
+    .compare-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 24px;
+      justify-content: center;
+      width: 100%;
+      max-width: 900px;
+    }
+    .compare-row.single-variant { justify-content: center; }
+
+    .variant-col {
+      flex: 1 1 320px;
+      max-width: 420px;
+      min-width: 280px;
+    }
+    .variant-col.hidden { display: none; }
+    .variant-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .variant-label.a { color: var(--ok); }
+    .variant-label.b { color: var(--bar-suple); }
+
+    /* ── Slot estribo (estilo canvas WPF) ── */
+    .stirrup-slot {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg-app);
+      padding: 4px 6px 6px;
+      min-width: 280px;
+    }
+    .slot-hdr {
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-align: center;
+      color: var(--fg-lo);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+    .slot-zones {
+      display: flex;
+      gap: 4px;
+      align-items: stretch;
+    }
+    .zone-slot { flex: 1; min-width: 0; display: flex; }
+    .zone-slot.ext,
+    .zone-slot.cent { flex: 1 1 0; min-width: 0; }
+
+    .zone-panel {
+      width: 100%;
+      border-radius: 4px;
+      font-size: 9px;
+      cursor: pointer;
+      overflow: hidden;
+      transition: border-color 0.12s, box-shadow 0.12s;
+    }
+    .zone-panel .bar-top { height: 2px; margin-bottom: 2px; }
+    .zone-panel.ext {
+      border: 1px solid rgba(251, 191, 36, 0.45);
+      background: rgba(22, 18, 10, 0.94);
+    }
+    .zone-panel.ext .bar-top { background: var(--bar-ext); }
+    .zone-panel.ext .zone-id { color: #fcd34d; }
+    .zone-panel.ext.selected {
+      border-color: var(--bar-ext);
+      box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.45);
+    }
+    .zone-panel.cent {
+      border: 1px solid rgba(52, 211, 153, 0.35);
+      background: rgba(10, 22, 32, 0.95);
+    }
+    .zone-panel.cent .bar-top { background: var(--bar-cent); }
+    .zone-panel.cent .zone-id { color: #6ee7b7; }
+    .zone-panel.cent.selected {
+      border-color: var(--bar-cent);
+      box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.55);
+    }
+
+    .zone-toolbar { padding: 3px 6px 2px; }
+    .zone-id { font-size: 8px; font-weight: 700; }
+    .zone-body { padding: 0 6px 6px; }
+
+    .est-fields { display: flex; flex-direction: column; gap: 4px; }
+    .est-field-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 8px;
+    }
+    .est-lbl {
+      min-width: 14px;
+      font-weight: 700;
+      color: var(--fg-lo);
+      font-size: 7px;
+    }
+    .zone-len-tag {
+      font-size: 6.5px;
+      color: var(--fg-lo);
+      margin-top: 3px;
+      line-height: 1.3;
+    }
+    .zone-panel.ext .zone-len-tag { color: rgba(251, 191, 36, 0.75); }
+
+    select.ctrl {
+      flex: 1;
+      height: 20px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 3px;
+      color: var(--fg-hi);
+      font-size: 9px;
+      padding: 0 4px;
+      cursor: pointer;
+      min-width: 0;
+    }
+
+    /* ── Fila global confinamiento + suple ── */
+    .confin-global {
+      margin-top: 5px;
+      border: 1px solid rgba(91, 184, 212, 0.35);
+      border-radius: 4px;
+      background: rgba(7, 16, 24, 0.92);
+      overflow: hidden;
+    }
+    .confin-global .bar-top {
+      height: 2px;
+      background: linear-gradient(90deg, var(--bar-ext) 0%, var(--bar-cent) 50%, var(--bar-ext) 100%);
+    }
+    .confin-global-body { padding: 5px 6px 6px; }
+    .confin-global .est-field-row .est-lbl { min-width: 38px; font-size: 8px; }
+    .confin-global-hint {
+      font-size: 7px;
+      color: var(--fg-lo);
+      margin-top: 4px;
+      line-height: 1.35;
+    }
+    .confin-global-hint em {
+      font-style: normal;
+      color: rgba(91, 184, 212, 0.85);
+    }
+    .confin-global.selected {
+      border-color: var(--btn-primary);
+      box-shadow: 0 0 0 1px rgba(91, 184, 212, 0.4);
+    }
+
+    /* ── Fila suple separada (variante B) ── */
+    .suple-row {
+      margin-top: 5px;
+      border: 1px solid rgba(192, 132, 252, 0.4);
+      border-radius: 4px;
+      background: rgba(12, 8, 20, 0.92);
+      overflow: hidden;
+    }
+    .suple-row .bar-top {
+      height: 2px;
+      background: linear-gradient(90deg, transparent 10%, var(--bar-suple) 10%, var(--bar-suple) 90%, transparent 90%);
+    }
+    .suple-row-body { padding: 5px 6px 6px; }
+    .suple-row .est-field-row .est-lbl { min-width: 52px; font-size: 8px; color: rgba(192, 132, 252, 0.85); }
+    .suple-row-hint {
+      font-size: 7px;
+      color: var(--fg-lo);
+      margin-top: 4px;
+      line-height: 1.35;
+    }
+    .suple-row.selected {
+      border-color: var(--bar-suple);
+      box-shadow: 0 0 0 1px rgba(192, 132, 252, 0.4);
+    }
+
+    /* ── Toggle Sí/No ── */
+    .toggle-yesno {
+      display: inline-flex;
+      border: 1px solid var(--input-border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .toggle-yesno button {
+      border: none;
+      background: var(--input-bg);
+      color: var(--fg-lo);
+      font-size: 8px;
+      font-weight: 700;
+      padding: 3px 10px;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+    }
+    .toggle-yesno button:hover { color: var(--fg-hi); }
+    .toggle-yesno button.on-yes {
+      background: rgba(74, 222, 128, 0.2);
+      color: var(--ok);
+    }
+    .toggle-yesno button.on-no {
+      background: rgba(100, 116, 139, 0.25);
+      color: var(--fg-mid);
+    }
+
+    /* ── Esquema alzado ── */
+    .elevation-block {
+      width: 100%;
+      max-width: 820px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-app);
+      padding: 14px 16px 16px;
+    }
+    .elevation-hdr {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .elevation-hdr h2 {
+      font-size: 12px;
+      color: var(--fg-hi);
+      font-weight: 600;
+    }
+    .elevation-hdr .sub {
+      font-size: 10px;
+      color: var(--fg-lo);
+    }
+    .elevation-svg-wrap {
+      border: 1px solid rgba(33, 70, 92, 0.65);
+      border-radius: 4px;
+      background: radial-gradient(ellipse at 50% 40%, rgba(30, 52, 68, 0.45), rgba(7, 16, 24, 0.92));
+      padding: 12px 8px 8px;
+    }
+    .elevation-svg-wrap svg { width: 100%; height: auto; display: block; }
+
+    .readout-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .readout-card {
+      border: 1px solid rgba(33, 70, 92, 0.55);
+      border-radius: 4px;
+      background: rgba(7, 16, 24, 0.75);
+      padding: 8px 10px;
+    }
+    .readout-card .rk {
+      font-size: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--fg-lo);
+      margin-bottom: 2px;
+    }
+    .readout-card .rv {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--fg-hi);
+      font-family: Consolas, "Courier New", monospace;
+    }
+    .readout-card.suple .rv { color: var(--bar-suple); }
+    .readout-card.off .rv { color: var(--fg-lo); text-decoration: line-through; opacity: 0.6; }
+
+    /* ── Panel evaluación ── */
+    .eval-panel {
+      border-left: 1px solid var(--border);
+      background: var(--bg-panel);
+      padding: 14px;
+      overflow: auto;
+      font-size: 11px;
+    }
+    .eval-panel h2 {
+      font-size: 12px;
+      color: var(--fg-hi);
+      margin-bottom: 10px;
+    }
+    .eval-panel h3 {
+      font-size: 10px;
+      color: var(--btn-primary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 12px 0 6px;
+    }
+    .eval-panel h3.suple { color: var(--bar-suple); }
+
+    .checklist {
+      list-style: none;
+      font-size: 10px;
+      line-height: 1.5;
+    }
+    .checklist li {
+      display: flex;
+      gap: 6px;
+      align-items: flex-start;
+      margin-bottom: 5px;
+      color: var(--fg-mid);
+    }
+    .checklist input { margin-top: 2px; accent-color: var(--btn-primary); }
+    .checklist .tag {
+      font-size: 8px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .checklist .tag.pro { background: rgba(74, 222, 128, 0.15); color: var(--ok); }
+    .checklist .tag.con { background: rgba(251, 191, 36, 0.12); color: var(--warn); }
+    .checklist .tag.note { background: rgba(91, 184, 212, 0.12); color: var(--btn-primary); }
+
+    .impl-notes {
+      font-size: 9px;
+      color: var(--fg-lo);
+      line-height: 1.55;
+      border-top: 1px dashed var(--border);
+      padding-top: 8px;
+      margin-top: 4px;
+    }
+    .impl-notes code {
+      font-size: 8px;
+      color: rgba(192, 132, 252, 0.9);
+    }
+
+    .state-lines {
+      font-size: 9px;
+      color: var(--fg-lo);
+      line-height: 1.55;
+      font-family: Consolas, "Courier New", monospace;
+      border: 1px solid rgba(33, 70, 92, 0.5);
+      border-radius: 4px;
+      padding: 8px;
+      background: rgba(7, 16, 24, 0.6);
+    }
+    .state-lines .hi { color: var(--fg-hi); }
+    .state-lines .suple { color: var(--bar-suple); }
+
+    .log {
+      margin-top: 8px;
+      max-height: 80px;
+      overflow: auto;
+      font-size: 8px;
+      color: var(--fg-lo);
+      border-top: 1px dashed var(--border);
+      padding-top: 6px;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 8px 16px;
+      font-size: 10px;
+      color: var(--fg-lo);
+      background: #0a1218;
+    }
+  </style>
+</head>
+<body>
+  <header class="dev-bar">
+    <h1>Suple inferior — evaluación UX</h1>
+    <span class="pill ok">Variante A</span>
+    <span class="pill ref">Variante B</span>
+    <span class="sep"></span>
+    <label>Tramo activo
+      <select id="tramoSelect"></select>
+    </label>
+    <label>Vigas en tramo
+      <input type="number" id="beamCountInput" min="1" max="6" value="2" />
+    </label>
+    <label>Capas inf. (n_capas_inf)
+      <select id="capasInfSelect">
+        <option value="1">1</option>
+        <option value="2" selected>2</option>
+        <option value="3">3</option>
+      </select>
+    </label>
+    <label>Alcance suple
+      <select id="scopeSelect">
+        <option value="tramo" selected>Por tramo</option>
+        <option value="beam">Por viga</option>
+      </select>
+    </label>
+    <label>L viga demo (m)
+      <input type="number" id="beamLenInput" min="2" max="20" step="0.1" value="8.4" />
+    </label>
+    <label>Vista UI
+      <select id="viewSelect">
+        <option value="both" selected>A vs B (comparar)</option>
+        <option value="a">Solo A (en confin.)</option>
+        <option value="b">Solo B (fila aparte)</option>
+      </select>
+    </label>
+  </header>
+
+  <main>
+    <div class="workspace">
+      <p class="intro">
+        <strong>Regla de longitud:</strong> el suple inferior ocupa el <strong>80&nbsp;% central</strong> de la viga
+        (recorte del <strong>10&nbsp;%</strong> en cada extremo).
+        <strong>Capa:</strong> <code>suple_layer = n_capas_inf + 1</code> — inmediatamente después de la última capa inferior modelada.
+        La opción <strong>«¿Requiere suple?»</strong> se configura <em>por tramo</em>, junto al área de confinamiento.
+      </p>
+
+      <div class="tramo-bar" id="tramoBar">
+        <span class="lbl">Tramos</span>
+      </div>
+
+      <div class="compare-row" id="compareRow">
+        <div class="variant-col" id="colA">
+          <div class="variant-label a">A · Suple en fila confinamiento</div>
+          <div id="slotA"></div>
+        </div>
+        <div class="variant-col" id="colB">
+          <div class="variant-label b">B · Suple en fila dedicada</div>
+          <div id="slotB"></div>
+        </div>
+      </div>
+
+      <section class="elevation-block">
+        <div class="elevation-hdr">
+          <h2>Alzado — tramo seleccionado</h2>
+          <span class="sub" id="elevationSub">—</span>
+        </div>
+        <div class="elevation-svg-wrap" id="elevationSvg"></div>
+        <div class="readout-grid" id="readoutGrid"></div>
+      </section>
+    </div>
+
+    <aside class="eval-panel">
+      <h2>Panel de evaluación</h2>
+
+      <h3>Variante A — en confinamiento</h3>
+      <ul class="checklist" id="checklistA">
+        <li><input type="checkbox" id="a1" /><span class="tag pro">+</span> Agrupa opciones «globales por tramo» en un solo bloque</li>
+        <li><input type="checkbox" id="a2" /><span class="tag pro">+</span> Menos filas verticales en el slot de estribos</li>
+        <li><input type="checkbox" id="a3" /><span class="tag con">−</span> Mezcla confinamiento (sección) con suple (longitudinal)</li>
+        <li><input type="checkbox" id="a4" /><span class="tag con">−</span> Puede pasarse desapercibido entre campos ø/@</li>
+      </ul>
+
+      <h3 class="suple">Variante B — fila dedicada</h3>
+      <ul class="checklist" id="checklistB">
+        <li><input type="checkbox" id="b1" /><span class="tag pro">+</span> Visibilidad alta — barra púrpura y etiqueta «Suple inf.»</li>
+        <li><input type="checkbox" id="b2" /><span class="tag pro">+</span> Coherente con regla 80&nbsp;% (gradiente central en bar-top)</li>
+        <li><input type="checkbox" id="b3" /><span class="tag con">−</span> Una fila más en UI ya densa</li>
+        <li><input type="checkbox" id="b4" /><span class="tag con">−</span> Separación semántica de confinamiento puede confundir orden lógico</li>
+      </ul>
+
+      <h3>Estado tramo / viga</h3>
+      <div class="state-lines" id="stateDump">—</div>
+
+      <h3>Notas implementación WPF</h3>
+      <div class="impl-notes">
+        <p><strong>Dominio:</strong> <code>domain/confinement.py</code> — flag <code>requiere_suple_inf</code> por tramo en sesión; calcular <code>L_suple = 0.8 × L_viga</code>, offsets <code>0.1 × L</code>.</p>
+        <p><strong>Capa:</strong> <code>suple_layer = n_capas_inf + 1</code>; validar contra máximo de capas del modelo.</p>
+        <p><strong>UI:</strong> <code>canvas_view.py</code> — toggle Sí/No en zona confinamiento (A) o fila <code>suple-row</code> (B); refrescar alzado al cambiar tramo.</p>
+        <p><strong>Sesión:</strong> persistir por tramo en <code>session.tramos[i]</code>; si alcance = por viga, clave compuesta <code>tramo_id + beam_id</code>.</p>
+        <p><strong>Transacción:</strong> <code>Arainco: Suple inferior viga</code> al modelar barras.</p>
+      </div>
+
+      <h3>Eventos</h3>
+      <div class="log" id="eventLog">—</div>
+    </aside>
+  </main>
+
+  <footer>
+    Mockup interactivo · sin backend · abrir en navegador desde
+    <code>BIMTools.tab/Armadura.panel/36_ArmadoVigas.pushbutton/mockups/suple_inferior_mockup.html</code>
+  </footer>
+
+  <script>
+    const ESTRIBO_DIAM_OPTS = [8, 10, 12, 16];
+    const TRAMOS = [
+      { id: "T1", label: "T1 · Apoyo A→B", len: 8.4, requiereSuple: true,  estConfin: "E(0–2) + E(1–3)", estExtDiam: 10, estExtSpacing: 125, estCentDiam: 8, estCentSpacing: 200 },
+      { id: "T2", label: "T2 · Luz central", len: 6.2, requiereSuple: false, estConfin: "Perimetral + traba [1]", estExtDiam: 10, estExtSpacing: 125, estCentDiam: 8, estCentSpacing: 200 },
+      { id: "T3", label: "T3 · Apoyo B→C", len: 4.8, requiereSuple: true,  estConfin: "Perimetral", estExtDiam: 10, estExtSpacing: 125, estCentDiam: 8, estCentSpacing: 200 },
+    ];
+
+    const BEAMS_BY_TRAMO = {};
+
+    let activeTramoIdx = 0;
+    let activeBeamIdx = 0;
+    let nCapasInf = 2;
+    let scopeMode = "tramo";
+    let demoLen = 8.4;
+    let selectedRow = "confin";
+    const logs = [];
+
+    const tramoSelect = document.getElementById("tramoSelect");
+    const tramoBar = document.getElementById("tramoBar");
+    const beamCountInput = document.getElementById("beamCountInput");
+    const capasInfSelect = document.getElementById("capasInfSelect");
+    const scopeSelect = document.getElementById("scopeSelect");
+    const beamLenInput = document.getElementById("beamLenInput");
+    const viewSelect = document.getElementById("viewSelect");
+    const compareRow = document.getElementById("compareRow");
+    const colA = document.getElementById("colA");
+    const colB = document.getElementById("colB");
+    const slotA = document.getElementById("slotA");
+    const slotB = document.getElementById("slotB");
+    const elevationSvg = document.getElementById("elevationSvg");
+    const elevationSub = document.getElementById("elevationSub");
+    const readoutGrid = document.getElementById("readoutGrid");
+    const stateDump = document.getElementById("stateDump");
+    const eventLog = document.getElementById("eventLog");
+
+    TRAMOS.forEach((t, i) => {
+      const opt = document.createElement("option");
+      opt.value = i;
+      opt.textContent = t.label;
+      tramoSelect.appendChild(opt);
+    });
+
+    function currentTramo() {
+      return TRAMOS[activeTramoIdx] || TRAMOS[0];
+    }
+
+    function ensureBeamsForTramo(tramo) {
+      const n = Math.max(1, Math.min(6, parseInt(beamCountInput.value, 10) || 1));
+      beamCountInput.value = String(n);
+      if (!BEAMS_BY_TRAMO[tramo.id]) {
+        BEAMS_BY_TRAMO[tramo.id] = [];
+      }
+      const arr = BEAMS_BY_TRAMO[tramo.id];
+      while (arr.length < n) {
+        arr.push({
+          id: `V-${tramo.id}-${arr.length + 1}`,
+          requiereSuple: tramo.requiereSuple,
+        });
+      }
+      arr.length = n;
+      if (activeBeamIdx >= n) activeBeamIdx = 0;
+      return arr;
+    }
+
+    function effectiveLen() {
+      const t = currentTramo();
+      return scopeMode === "tramo" ? (parseFloat(beamLenInput.value) || t.len) : (parseFloat(beamLenInput.value) || t.len);
+    }
+
+    function requiereSupleActive() {
+      const tramo = currentTramo();
+      const beams = ensureBeamsForTramo(tramo);
+      if (scopeMode === "tramo") return tramo.requiereSuple;
+      return beams[activeBeamIdx]?.requiereSuple ?? false;
+    }
+
+    function setRequiereSuple(val) {
+      const tramo = currentTramo();
+      const beams = ensureBeamsForTramo(tramo);
+      if (scopeMode === "tramo") {
+        tramo.requiereSuple = val;
+        beams.forEach(b => { b.requiereSuple = val; });
+      } else {
+        beams[activeBeamIdx].requiereSuple = val;
+      }
+      log(`Suple ${val ? "SÍ" : "NO"} · ${scopeMode === "tramo" ? tramo.id : beams[activeBeamIdx].id}.`);
+      renderAll();
+    }
+
+    function supleLayer() {
+      return nCapasInf + 1;
+    }
+
+    function supleMetrics(Lm) {
+      const Lmm = Math.round(Lm * 1000);
+      const offset = Math.round(Lmm * 0.1);
+      const Lsuple = Math.round(Lmm * 0.8);
+      return { Lmm, offset, Lsuple, pctTrim: 10, pctSpan: 80 };
+    }
+
+    function toggleHtml(val, cls) {
+      return `
+        <span class="toggle-yesno ${cls}">
+          <button type="button" class="${val ? "on-yes" : ""}" data-val="1">Sí</button>
+          <button type="button" class="${!val ? "on-no" : ""}" data-val="0">No</button>
+        </span>`;
+    }
+
+    function diamSelectHtml(val, cls) {
+      return `<select class="ctrl ${cls}">${ESTRIBO_DIAM_OPTS.map(d =>
+        `<option value="${d}"${d === val ? " selected" : ""}>ø${d}</option>`
+      ).join("")}</select>`;
+    }
+
+    function stepperHtml(val) {
+      return `<span class="stepper-wrap" style="display:inline-flex;align-items:center"><button type="button" class="stepper-btn" data-d="-25" style="width:16px;height:18px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--fg-mid);font-size:10px;cursor:pointer">−</button><span class="stepper-val" style="width:28px;height:18px;border-top:1px solid var(--input-border);border-bottom:1px solid var(--input-border);background:var(--input-bg);color:var(--fg-hi);font-size:9px;font-weight:600;text-align:center;line-height:16px">${val}</span><button type="button" class="stepper-btn" data-d="25" style="width:16px;height:18px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--fg-mid);font-size:10px;cursor:pointer">+</button></span>`;
+    }
+
+    function zoneFieldsExt(tramo) {
+      return `
+        <div class="est-fields">
+          <div class="est-field-row">
+            <span class="est-lbl">ø</span>${diamSelectHtml(tramo.estExtDiam, "ext-diam")}
+          </div>
+          <div class="est-field-row est-spacing-row" data-field="estExtSpacing">
+            <span class="est-lbl">@</span>${stepperHtml(tramo.estExtSpacing)}<span style="font-size:7px;color:var(--fg-lo)">mm</span>
+          </div>
+          <div class="zone-len-tag">Ext ini/fin · 2·h</div>
+        </div>`;
+    }
+
+    function zoneFieldsCent(tramo) {
+      return `
+        <div class="est-fields">
+          <div class="est-field-row">
+            <span class="est-lbl">ø</span>${diamSelectHtml(tramo.estCentDiam, "cent-diam")}
+          </div>
+          <div class="est-field-row est-spacing-row" data-field="estCentSpacing">
+            <span class="est-lbl">@</span>${stepperHtml(tramo.estCentSpacing)}<span style="font-size:7px;color:var(--fg-lo)">mm</span>
+          </div>
+          <div class="zone-len-tag">Cent · luz libre</div>
+        </div>`;
+    }
+
+    function zonePanelHtml(role, title, body, selected) {
+      return `
+        <div class="zone-panel ${role}${selected ? " selected" : ""}" data-role="${role}">
+          <div class="bar-top"></div>
+          <div class="zone-toolbar"><span class="zone-id">${title}</span></div>
+          <div class="zone-body">${body}</div>
+        </div>`;
+    }
+
+    function confinGlobalHtml(tramo, variant, selected) {
+      const suple = requiereSupleActive();
+      const supleInConfin = variant === "a";
+      const supleField = supleInConfin ? `
+            <div class="est-field-row">
+              <span class="est-lbl">Suple</span>
+              ${toggleHtml(suple, "suple-toggle")}
+            </div>` : "";
+      return `
+        <div class="confin-global${selected && selectedRow === "confin" ? " selected" : ""}" data-role="confin">
+          <div class="bar-top"></div>
+          <div class="confin-global-body">
+            <div class="est-field-row">
+              <span class="est-lbl">Confin.</span>
+              <select class="ctrl confin-select">
+                <option${tramo.estConfin.includes("Perimetral") ? " selected" : ""}>Perimetral</option>
+                <option${tramo.estConfin.includes("E(0") ? " selected" : ""}>${tramo.estConfin}</option>
+              </select>
+            </div>
+            ${supleField}
+            <div class="confin-global-hint">
+              Sección transversal · <em>aplica a Ext ini/fin y Cent</em>
+              ${supleInConfin ? " · <em style=\"color:rgba(192,132,252,0.9)\">¿Requiere suple?</em> por tramo" : ""}
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function supleRowHtml(selected) {
+      const suple = requiereSupleActive();
+      const layer = supleLayer();
+      return `
+        <div class="suple-row${selected && selectedRow === "suple" ? " selected" : ""}" data-role="suple">
+          <div class="bar-top"></div>
+          <div class="suple-row-body">
+            <div class="est-field-row">
+              <span class="est-lbl">Suple inf.</span>
+              ${toggleHtml(suple, "suple-toggle")}
+            </div>
+            <div class="suple-row-hint">
+              Capa ${layer} · L central 80&nbsp;% · recorte 10&nbsp;% extremos
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function renderSlot(container, variant) {
+      const tramo = currentTramo();
+      const beams = ensureBeamsForTramo(tramo);
+      const beamLabel = scopeMode === "beam"
+        ? `${beams[activeBeamIdx].id}`
+        : `${tramo.id} · ${beams.length} viga(s)`;
+
+      container.innerHTML = `
+        <div class="stirrup-slot">
+          <div class="slot-hdr">${beamLabel} · Ext + Cent</div>
+          <div class="slot-zones">
+            <div class="zone-slot ext">${zonePanelHtml("ext", "Ext · ini/fin", zoneFieldsExt(tramo), selectedRow === "ext")}</div>
+            <div class="zone-slot cent">${zonePanelHtml("cent", "Cent", zoneFieldsCent(tramo), selectedRow === "cent")}</div>
+          </div>
+          ${confinGlobalHtml(tramo, variant, true)}
+          ${variant === "b" ? supleRowHtml(true) : ""}
+        </div>`;
+
+      bindSlot(container, tramo);
+    }
+
+    function bindSlot(container, tramo) {
+      container.querySelectorAll("button, select").forEach(el => {
+        el.addEventListener("click", e => e.stopPropagation());
+        el.addEventListener("mousedown", e => e.stopPropagation());
+      });
+
+      container.querySelectorAll(".zone-panel").forEach(panel => {
+        panel.addEventListener("click", () => {
+          selectedRow = panel.dataset.role;
+          renderAll();
+        });
+      });
+
+      const confinEl = container.querySelector(".confin-global");
+      if (confinEl) {
+        confinEl.addEventListener("click", e => {
+          if (e.target.closest(".suple-toggle, .confin-select")) return;
+          selectedRow = "confin";
+          renderAll();
+        });
+      }
+
+      const supleEl = container.querySelector(".suple-row");
+      if (supleEl) {
+        supleEl.addEventListener("click", e => {
+          if (e.target.closest(".suple-toggle")) return;
+          selectedRow = "suple";
+          renderAll();
+        });
+      }
+
+      container.querySelectorAll(".suple-toggle button").forEach(btn => {
+        btn.addEventListener("click", e => {
+          e.stopPropagation();
+          setRequiereSuple(btn.dataset.val === "1");
+        });
+      });
+
+      container.querySelectorAll(".est-spacing-row .stepper-btn").forEach(btn => {
+        btn.addEventListener("click", e => {
+          e.stopPropagation();
+          const row = btn.closest(".est-spacing-row");
+          const field = row.dataset.field;
+          const delta = parseInt(btn.dataset.d, 10);
+          tramo[field] = Math.max(50, Math.min(400, (tramo[field] || 200) + delta));
+          renderAll();
+        });
+      });
+    }
+
+    function renderTramoBar() {
+      const existingBtns = tramoBar.querySelectorAll(".tramo-btn");
+      existingBtns.forEach(b => b.remove());
+      const meta = tramoBar.querySelector(".tramo-meta");
+      if (meta) meta.remove();
+
+      TRAMOS.forEach((t, i) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "tramo-btn" + (i === activeTramoIdx ? " active" : "");
+        btn.textContent = t.id;
+        btn.title = t.label;
+        btn.addEventListener("click", () => {
+          activeTramoIdx = i;
+          tramoSelect.value = String(i);
+          beamLenInput.value = String(t.len);
+          demoLen = t.len;
+          log(`Tramo ${t.id} seleccionado.`);
+          renderAll();
+        });
+        tramoBar.appendChild(btn);
+      });
+
+      if (scopeMode === "beam") {
+        const beams = ensureBeamsForTramo(currentTramo());
+        beams.forEach((b, i) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "tramo-btn" + (i === activeBeamIdx ? " active" : "");
+          btn.style.fontSize = "10px";
+          btn.textContent = b.id.split("-").pop();
+          btn.title = b.id;
+          btn.addEventListener("click", () => {
+            activeBeamIdx = i;
+            log(`Viga ${b.id}.`);
+            renderAll();
+          });
+          tramoBar.appendChild(btn);
+        });
+      }
+
+      const span = document.createElement("span");
+      span.className = "tramo-meta";
+      const t = currentTramo();
+      span.innerHTML = `<span class="hi">${t.label}</span> · L=${effectiveLen().toFixed(1)} m`;
+      tramoBar.appendChild(span);
+    }
+
+    function elevationSvgHtml(Lm, supleOn) {
+      const m = supleMetrics(Lm);
+      const vbW = 640;
+      const vbH = 180;
+      const padX = 48;
+      const padTop = 28;
+      const beamY = 24;
+      const beamH = 14;
+      const barAreaTop = beamY + beamH + 18;
+      const barAreaH = vbH - barAreaTop - 28;
+      const x0 = padX;
+      const x1 = vbW - padX;
+      const beamW = x1 - x0;
+
+      const trimW = beamW * 0.1;
+      const supleX0 = x0 + trimW;
+      const supleX1 = x1 - trimW;
+
+      const nLayers = nCapasInf + (supleOn ? 1 : 0);
+      const layerGap = Math.min(22, barAreaH / Math.max(nLayers, 1));
+
+      let svg = `<svg viewBox="0 0 ${vbW} ${vbH}" xmlns="http://www.w3.org/2000/svg">`;
+
+      svg += `<text x="${vbW / 2}" y="14" text-anchor="middle" font-size="10" fill="#95b8cc" font-weight="600">Alzado longitudinal — inferior</text>`;
+
+      svg += `<rect x="${x0}" y="${beamY}" width="${beamW}" height="${beamH}" rx="2" fill="rgba(30,52,68,0.6)" stroke="#21465c" stroke-width="1"/>`;
+      svg += `<text x="${x0}" y="${beamY - 4}" font-size="8" fill="#64748b">ini</text>`;
+      svg += `<text x="${x1}" y="${beamY - 4}" text-anchor="end" font-size="8" fill="#64748b">fin</text>`;
+      svg += `<text x="${vbW / 2}" y="${beamY + beamH / 2 + 3}" text-anchor="middle" font-size="9" fill="#e8f4f8">L = ${Lm.toFixed(2)} m (${m.Lmm} mm)</text>`;
+
+      svg += `<rect x="${x0}" y="${barAreaTop - 4}" width="${trimW}" height="${barAreaH + 8}" fill="var(--zone-trim)" stroke="var(--zone-trim-border)" stroke-width="0.8" stroke-dasharray="3 2"/>`;
+      svg += `<rect x="${x1 - trimW}" y="${barAreaTop - 4}" width="${trimW}" height="${barAreaH + 8}" fill="var(--zone-trim)" stroke="var(--zone-trim-border)" stroke-width="0.8" stroke-dasharray="3 2"/>`;
+      svg += `<text x="${x0 + trimW / 2}" y="${barAreaTop + barAreaH / 2}" text-anchor="middle" font-size="7" fill="rgba(251,191,36,0.8)">10%</text>`;
+      svg += `<text x="${x1 - trimW / 2}" y="${barAreaTop + barAreaH / 2}" text-anchor="middle" font-size="7" fill="rgba(251,191,36,0.8)">10%</text>`;
+
+      if (supleOn) {
+        svg += `<rect x="${supleX0}" y="${barAreaTop - 4}" width="${supleX1 - supleX0}" height="${barAreaH + 8}" fill="rgba(192,132,252,0.06)" stroke="rgba(192,132,252,0.25)" stroke-width="0.6"/>`;
+        svg += `<text x="${(supleX0 + supleX1) / 2}" y="${barAreaTop - 8}" text-anchor="middle" font-size="7" fill="rgba(192,132,252,0.85)">80% · L_suple</text>`;
+      }
+
+      for (let i = 0; i < nCapasInf; i++) {
+        const y = barAreaTop + i * layerGap + 6;
+        const isFirst = i === 0;
+        svg += `<line x1="${x0 + 4}" y1="${y}" x2="${x1 - 4}" y2="${y}" stroke="#fca5a5" stroke-width="2.2" stroke-linecap="round"/>`;
+        svg += `<text x="${x0 - 6}" y="${y + 3}" text-anchor="end" font-size="8" fill="#fca5a5">Capa ${i + 1}</text>`;
+        if (isFirst) {
+          svg += `<text x="${x1 + 6}" y="${y + 3}" font-size="7" fill="#64748b">inf. modelada</text>`;
+        }
+      }
+
+      if (supleOn) {
+        const ySuple = barAreaTop + nCapasInf * layerGap + 6;
+        svg += `<line x1="${supleX0}" y1="${ySuple}" x2="${supleX1}" y2="${ySuple}" stroke="#c084fc" stroke-width="3" stroke-linecap="round"/>`;
+        svg += `<circle cx="${supleX0}" cy="${ySuple}" r="3" fill="#c084fc"/>`;
+        svg += `<circle cx="${supleX1}" cy="${ySuple}" r="3" fill="#c084fc"/>`;
+        svg += `<text x="${x0 - 6}" y="${ySuple + 3}" text-anchor="end" font-size="8" fill="#c084fc" font-weight="600">Suple (capa ${supleLayer()})</text>`;
+
+        const dimY = ySuple + 18;
+        svg += `<line x1="${x0}" y1="${dimY}" x2="${x0}" y2="${dimY + 6}" stroke="#64748b" stroke-width="0.8"/>`;
+        svg += `<line x1="${supleX0}" y1="${dimY}" x2="${supleX0}" y2="${dimY + 6}" stroke="#64748b" stroke-width="0.8"/>`;
+        svg += `<line x1="${x0}" y1="${dimY + 3}" x2="${supleX0}" y2="${dimY + 3}" stroke="#64748b" stroke-width="0.8"/>`;
+        svg += `<text x="${(x0 + supleX0) / 2}" y="${dimY + 12}" text-anchor="middle" font-size="7" fill="#64748b">${m.offset} mm</text>`;
+
+        svg += `<line x1="${supleX0}" y1="${dimY}" x2="${supleX1}" y2="${dimY}" stroke="#c084fc" stroke-width="1"/>`;
+        svg += `<line x1="${supleX0}" y1="${dimY - 3}" x2="${supleX0}" y2="${dimY + 3}" stroke="#c084fc" stroke-width="1"/>`;
+        svg += `<line x1="${supleX1}" y1="${dimY - 3}" x2="${supleX1}" y2="${dimY + 3}" stroke="#c084fc" stroke-width="1"/>`;
+        svg += `<text x="${(supleX0 + supleX1) / 2}" y="${dimY + 12}" text-anchor="middle" font-size="8" fill="#c084fc">${m.Lsuple} mm</text>`;
+
+        svg += `<line x1="${supleX1}" y1="${dimY}" x2="${x1}" y2="${dimY}" stroke="#64748b" stroke-width="0.8"/>`;
+        svg += `<line x1="${x1}" y1="${dimY}" x2="${x1}" y2="${dimY + 6}" stroke="#64748b" stroke-width="0.8"/>`;
+        svg += `<text x="${(supleX1 + x1) / 2}" y="${dimY + 12}" text-anchor="middle" font-size="7" fill="#64748b">${m.offset} mm</text>`;
+      } else {
+        svg += `<text x="${vbW / 2}" y="${barAreaTop + nCapasInf * layerGap + 20}" text-anchor="middle" font-size="9" fill="#64748b" font-style="italic">Suple desactivado — sin barra adicional</text>`;
+      }
+
+      svg += `<line x1="${x0}" y1="${vbH - 14}" x2="${x1}" y2="${vbH - 14}" stroke="#21465c" stroke-width="1"/>`;
+      svg += `<line x1="${x0}" y1="${vbH - 18}" x2="${x0}" y2="${vbH - 10}" stroke="#21465c" stroke-width="1"/>`;
+      svg += `<line x1="${x1}" y1="${vbH - 18}" x2="${x1}" y2="${vbH - 10}" stroke="#21465c" stroke-width="1"/>`;
+      svg += `<text x="${vbW / 2}" y="${vbH - 4}" text-anchor="middle" font-size="8" fill="#64748b">L_viga = ${m.Lmm} mm</text>`;
+
+      svg += `</svg>`;
+      return svg;
+    }
+
+    function renderReadout(Lm, supleOn) {
+      const m = supleMetrics(Lm);
+      const layer = supleLayer();
+      readoutGrid.innerHTML = `
+        <div class="readout-card"><div class="rk">L_viga</div><div class="rv">${Lm.toFixed(2)} m · ${m.Lmm} mm</div></div>
+        <div class="readout-card${supleOn ? " suple" : " off"}"><div class="rk">L_suple (80%)</div><div class="rv">${supleOn ? (m.Lsuple + " mm") : "—"}</div></div>
+        <div class="readout-card${supleOn ? "" : " off"}"><div class="rk">Recorte c/extremo</div><div class="rv">${supleOn ? (m.offset + " mm · 10%") : "—"}</div></div>
+        <div class="readout-card${supleOn ? " suple" : " off"}"><div class="rk">Capa suple</div><div class="rv">${supleOn ? ("Capa " + layer + " (n_inf+1)") : "—"}</div></div>
+        <div class="readout-card"><div class="rk">n_capas_inf</div><div class="rv">${nCapasInf}</div></div>
+        <div class="readout-card"><div class="rk">¿Requiere suple?</div><div class="rv">${supleOn ? "Sí" : "No"}</div></div>`;
+    }
+
+    function renderEval() {
+      const tramo = currentTramo();
+      const beams = ensureBeamsForTramo(tramo);
+      const Lm = effectiveLen();
+      const supleOn = requiereSupleActive();
+      const m = supleMetrics(Lm);
+
+      elevationSvg.innerHTML = elevationSvgHtml(Lm, supleOn);
+      elevationSub.textContent = `${tramo.id} · ${scopeMode === "beam" ? beams[activeBeamIdx].id : beams.length + " viga(s)"} · n_capas_inf=${nCapasInf}`;
+      renderReadout(Lm, supleOn);
+
+      stateDump.innerHTML = `
+        <div class="hi">${tramo.id} · ${tramo.label}</div>
+        requiere_suple_inf = <span class="suple">${supleOn}</span><br/>
+        alcance = ${scopeMode}<br/>
+        L_viga = ${Lm.toFixed(3)} m (${m.Lmm} mm)<br/>
+        offset_ini = offset_fin = ${m.offset} mm (10%)<br/>
+        L_suple = ${m.Lsuple} mm (80%)<br/>
+        suple_layer = n_capas_inf + 1 = <span class="suple">${supleLayer()}</span><br/>
+        estConfin = ${tramo.estConfin}<br/>
+        UI selección = ${selectedRow}`;
+    }
+
+    function log(msg) {
+      const ts = new Date().toLocaleTimeString("es", { hour12: false });
+      logs.unshift(`[${ts}] ${msg}`);
+      if (logs.length > 12) logs.length = 12;
+      eventLog.textContent = logs.join("\n");
+    }
+
+    function renderAll() {
+      nCapasInf = parseInt(capasInfSelect.value, 10) || 2;
+      scopeMode = scopeSelect.value;
+      demoLen = parseFloat(beamLenInput.value) || currentTramo().len;
+
+      const view = viewSelect.value;
+      compareRow.classList.toggle("single-variant", view !== "both");
+      colA.classList.toggle("hidden", view === "b");
+      colB.classList.toggle("hidden", view === "a");
+
+      renderTramoBar();
+      renderSlot(slotA, "a");
+      if (view !== "a") renderSlot(slotB, "b");
+      renderEval();
+    }
+
+    tramoSelect.addEventListener("change", () => {
+      activeTramoIdx = parseInt(tramoSelect.value, 10) || 0;
+      const t = currentTramo();
+      beamLenInput.value = String(t.len);
+      log(`Tramo ${t.id}.`);
+      renderAll();
+    });
+
+    beamCountInput.addEventListener("change", () => {
+      ensureBeamsForTramo(currentTramo());
+      log(`Vigas en tramo = ${beamCountInput.value}.`);
+      renderAll();
+    });
+
+    capasInfSelect.addEventListener("change", () => {
+      log(`n_capas_inf = ${capasInfSelect.value}.`);
+      renderAll();
+    });
+
+    scopeSelect.addEventListener("change", () => {
+      log(`Alcance suple: ${scopeSelect.value}.`);
+      renderAll();
+    });
+
+    beamLenInput.addEventListener("change", () => {
+      log(`L demo = ${beamLenInput.value} m.`);
+      renderAll();
+    });
+
+    viewSelect.addEventListener("change", renderAll);
+
+    beamLenInput.value = String(TRAMOS[0].len);
+    renderAll();
+    log("Mockup listo — evaluar suple inferior A vs B.");
+  </script>
+</body>
+</html>

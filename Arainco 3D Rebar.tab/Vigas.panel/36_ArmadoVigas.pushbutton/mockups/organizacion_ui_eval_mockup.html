@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mockup — Organización UI · Armado vigas · Evaluación</title>
+  <style>
+    :root {
+      --bg-app: #071018;
+      --bg-panel: #0a1620;
+      --border: #21465c;
+      --fg-hi: #e8f4f8;
+      --fg-mid: #95b8cc;
+      --fg-lo: #64748b;
+      --input-bg: #071018;
+      --input-border: #1e3344;
+      --btn-outline: #2d4455;
+      --btn-primary: #5bb8d4;
+      --btn-primary-fg: #071018;
+      --ok: #4ade80;
+      --warn: #fbbf24;
+      --sup: #22d3ee;
+      --sup-dim: rgba(34, 211, 238, 0.18);
+      --inf: #fb7185;
+      --inf-dim: rgba(251, 113, 133, 0.18);
+      --suple: #c084fc;
+      --col: #a78bfa;
+      --estribo: #34d399;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #050c14;
+      color: var(--fg-mid);
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .dev-bar {
+      background: #0f1c28;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      align-items: center;
+      font-size: 11px;
+      z-index: 10;
+    }
+    .dev-bar h1 { font-size: 13px; color: var(--fg-hi); font-weight: 600; }
+    .dev-bar label { display: flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
+    .dev-bar select {
+      background: var(--input-bg);
+      color: var(--fg-hi);
+      border: 1px solid var(--input-border);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+    .pill {
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .pill.act { background: rgba(251, 191, 36, 0.15); color: var(--warn); }
+    .pill.new { background: rgba(74, 222, 128, 0.12); color: var(--ok); }
+    .pill.sup { background: var(--sup-dim); color: var(--sup); }
+    .pill.inf { background: var(--inf-dim); color: var(--inf); }
+    .sep { width: 1px; height: 20px; background: var(--border); }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .workspace {
+      overflow: auto;
+      padding: 14px 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .intro {
+      font-size: 11px;
+      line-height: 1.55;
+      color: var(--fg-lo);
+      border: 1px solid rgba(33, 70, 92, 0.55);
+      border-radius: 4px;
+      padding: 10px 12px;
+      background: rgba(10, 22, 32, 0.6);
+    }
+    .intro strong { color: var(--fg-mid); }
+
+    .win-frame {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-app);
+      overflow: hidden;
+      min-height: 620px;
+    }
+
+    .win-hdr {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-panel);
+    }
+    .win-hdr.compact { padding: 8px 14px; }
+    .win-hdr .title { font-size: 17px; font-weight: 700; color: var(--fg-hi); }
+    .win-hdr .sub { font-size: 10px; color: #7eb8d0; margin-top: 4px; font-weight: 600; }
+    .win-hdr .meta { font-size: 9px; color: var(--fg-lo); margin-top: 4px; line-height: 1.45; }
+    .win-hdr .hint { font-size: 9px; color: var(--fg-lo); margin-top: 6px; }
+    .scope-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .scope-chip {
+      font-size: 9px;
+      padding: 3px 8px;
+      border-radius: 10px;
+      background: rgba(33, 70, 92, 0.35);
+      color: var(--fg-mid);
+    }
+    .scope-chip strong { color: var(--fg-hi); }
+
+    .split-body {
+      display: grid;
+      grid-template-columns: 1fr 268px;
+      min-height: 520px;
+    }
+    .split-body.wide-rail { grid-template-columns: 1fr 340px; }
+    .split-body.master-detail { grid-template-columns: 52% 48%; }
+
+    .canvas-col { padding: 10px 12px; overflow: auto; }
+
+    /* ── Shared elevation ── */
+    .elev-wrap {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: #071018;
+      margin: 8px 0;
+    }
+    .elev-hdr {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 5px 10px;
+      font-size: 9px;
+      color: var(--fg-lo);
+      border-bottom: 1px solid rgba(33, 70, 92, 0.5);
+    }
+    .elev-canvas {
+      height: 120px;
+      position: relative;
+      padding: 12px 20px;
+    }
+    .elev-canvas.tall { height: 180px; }
+    .elev-canvas.hero { height: 220px; }
+
+    .beam-line {
+      position: absolute;
+      left: 40px; right: 40px;
+      height: 3px;
+      background: #334155;
+      border-radius: 2px;
+    }
+    .beam-line.sup { top: 28px; background: var(--sup); opacity: 0.7; }
+    .beam-line.inf { bottom: 28px; background: var(--inf); opacity: 0.7; }
+    .col-mark {
+      position: absolute;
+      top: 18px; bottom: 18px;
+      width: 8px;
+      background: var(--col);
+      opacity: 0.5;
+      border-radius: 2px;
+    }
+    .col-mark.c1 { left: 38px; }
+    .col-mark.c2 { left: calc(50% - 4px); }
+    .col-mark.c3 { right: 38px; }
+    .span-label {
+      position: absolute;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--sup);
+    }
+    .span-label.s1 { left: 28%; top: 8px; }
+    .span-label.s2 { left: 68%; top: 8px; color: var(--inf); }
+
+    /* ── ACTUAL (baseline) ── */
+    .face-block {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 10px;
+      margin-bottom: 6px;
+    }
+    .face-block.sup { border-color: rgba(34, 211, 238, 0.35); background: rgba(34, 211, 238, 0.04); }
+    .face-block.inf { border-color: rgba(251, 113, 133, 0.35); background: rgba(251, 113, 133, 0.04); }
+    .face-hdr {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 10px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .face-hdr.sup { color: var(--sup); }
+    .face-hdr.inf { color: var(--inf); }
+    .lane-label { font-size: 8px; color: var(--fg-lo); margin: 4px 0 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .traslape-strip {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 4px;
+      height: 28px;
+      align-items: center;
+    }
+    .traslape-btn {
+      flex: 1;
+      max-width: 90px;
+      height: 24px;
+      border: 1px dashed var(--btn-outline);
+      border-radius: 3px;
+      background: transparent;
+      color: var(--fg-lo);
+      font-size: 9px;
+      cursor: pointer;
+    }
+    .bands-row { display: flex; gap: 4px; height: 14px; margin-bottom: 6px; }
+    .band {
+      flex: 1;
+      border-radius: 2px;
+      font-size: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--fg-hi);
+      font-weight: 600;
+    }
+    .band.sup { background: var(--sup); opacity: 0.85; }
+    .band.inf { background: var(--inf); opacity: 0.85; }
+    .band.inf.t2 { background: #e879f9; }
+    .panel-lane-wrap { overflow-x: auto; margin-bottom: 4px; }
+    .panel-lane { display: flex; gap: 8px; min-width: min-content; padding-bottom: 4px; }
+    .tn-panel {
+      flex: 0 0 168px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 6px;
+      background: var(--bg-panel);
+      font-size: 9px;
+    }
+    .tn-panel .hdr { font-weight: 600; color: var(--fg-hi); margin-bottom: 4px; font-size: 8px; }
+    .capa-row {
+      display: grid;
+      grid-template-columns: 24px 1fr 52px;
+      gap: 4px;
+      align-items: center;
+      margin: 2px 0;
+    }
+    .capa-row label { color: var(--fg-lo); }
+    .mini-input {
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 3px;
+      color: var(--fg-hi);
+      font-size: 9px;
+      padding: 2px 4px;
+      text-align: center;
+    }
+
+    /* ── C: Inspector ── */
+    .band-interactive {
+      flex: 1;
+      height: 22px;
+      border-radius: 3px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 8px;
+      font-size: 9px;
+      font-weight: 600;
+      color: var(--fg-hi);
+      transition: border-color 0.15s;
+    }
+    .band-interactive.sup { background: var(--sup); }
+    .band-interactive.inf { background: var(--inf); }
+    .band-interactive.active { border-color: #fff; box-shadow: 0 0 0 1px rgba(255,255,255,0.3); }
+    .band-interactive .traslape-mini {
+      font-size: 8px;
+      padding: 1px 5px;
+      border-radius: 2px;
+      background: rgba(0,0,0,0.25);
+      border: none;
+      color: var(--fg-hi);
+      cursor: pointer;
+    }
+    .inspector {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px 12px;
+      background: var(--bg-panel);
+      margin: 6px 0;
+    }
+    .inspector .face-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+    .face-tab {
+      padding: 4px 12px;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--fg-lo);
+      font-size: 10px;
+      cursor: pointer;
+    }
+    .face-tab.sup.active { background: var(--sup-dim); color: var(--sup); border-color: var(--sup); }
+    .face-tab.inf.active { background: var(--inf-dim); color: var(--inf); border-color: var(--inf); }
+    .inspector-title { font-size: 11px; font-weight: 600; color: var(--fg-hi); margin-bottom: 8px; }
+    .capa-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .capa-card {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px;
+      text-align: center;
+    }
+    .capa-card .capa-name { font-size: 9px; color: var(--fg-lo); margin-bottom: 4px; }
+    .capa-card .capa-val { font-size: 14px; font-weight: 700; color: var(--fg-hi); }
+
+    /* ── D: Compact strips ── */
+    .compact-face {
+      display: grid;
+      grid-template-columns: 72px 1fr;
+      gap: 8px;
+      align-items: center;
+      padding: 6px 8px;
+      border-radius: 4px;
+      margin-bottom: 4px;
+      font-size: 9px;
+    }
+    .compact-face.sup { background: var(--sup-dim); border-left: 3px solid var(--sup); }
+    .compact-face.inf { background: var(--inf-dim); border-left: 3px solid var(--inf); }
+    .compact-face .label { font-weight: 700; color: var(--fg-hi); line-height: 1.3; }
+    .inline-capa {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .inline-capa .chip {
+      padding: 3px 8px;
+      border-radius: 3px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      color: var(--fg-hi);
+      font-size: 9px;
+    }
+    .inline-capa .chip strong { color: var(--sup); }
+    .compact-face.inf .chip strong { color: var(--inf); }
+
+    /* ── E: Master-detail ── */
+    .master-col { padding: 10px; }
+    .detail-col {
+      border-left: 1px solid var(--border);
+      background: var(--bg-panel);
+      overflow-y: auto;
+      padding: 10px;
+    }
+    .detail-col h3 {
+      font-size: 10px;
+      color: var(--fg-lo);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 12px 0 6px;
+    }
+    .detail-col h3:first-child { margin-top: 0; }
+    .detail-tn {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px;
+      margin-bottom: 8px;
+    }
+    .detail-tn.sup { border-left: 3px solid var(--sup); }
+    .detail-tn.inf { border-left: 3px solid var(--inf); }
+    .detail-tn .hdr { font-size: 10px; font-weight: 600; color: var(--fg-hi); margin-bottom: 6px; }
+
+    /* ── Right panel (section + estribos) ── */
+    .right-panel {
+      border-left: 1px solid var(--border);
+      padding: 10px;
+      overflow-y: auto;
+      font-size: 10px;
+    }
+    .right-panel h3 {
+      font-size: 9px;
+      color: var(--fg-lo);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+    .section-box {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: #071018;
+      padding: 8px;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    .section-svg { width: 100%; max-width: 140px; height: 90px; }
+    .section-meta { font-size: 9px; color: var(--fg-mid); margin-top: 6px; line-height: 1.5; text-align: left; }
+    .st-tabs { display: flex; gap: 2px; margin-bottom: 6px; }
+    .st-tab {
+      flex: 1;
+      padding: 4px 2px;
+      text-align: center;
+      font-size: 8px;
+      border: 1px solid var(--border);
+      border-radius: 3px 3px 0 0;
+      background: transparent;
+      color: var(--fg-lo);
+      cursor: pointer;
+    }
+    .st-tab.active { background: var(--bg-panel); color: var(--estribo); border-bottom-color: var(--bg-panel); }
+    .st-block {
+      border: 1px solid var(--border);
+      border-radius: 0 4px 4px 4px;
+      padding: 8px;
+      margin-bottom: 8px;
+      background: var(--bg-panel);
+    }
+    .st-row {
+      display: grid;
+      grid-template-columns: 48px 1fr 1fr;
+      gap: 4px;
+      align-items: center;
+      margin: 4px 0;
+      font-size: 9px;
+    }
+    .st-row label { color: var(--fg-lo); }
+
+    /* ── F: Accordion ── */
+    .accordion { border: 1px solid var(--border); border-radius: 4px; margin-bottom: 6px; overflow: hidden; }
+    .acc-hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .acc-hdr.sup { background: var(--sup-dim); color: var(--sup); }
+    .acc-hdr.inf { background: var(--inf-dim); color: var(--inf); }
+    .acc-hdr .chev { font-size: 8px; opacity: 0.7; }
+    .acc-body { padding: 8px 10px; border-top: 1px solid var(--border); }
+    .acc-body.collapsed { display: none; }
+
+    .win-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-panel);
+      font-size: 10px;
+    }
+    .win-footer .status { color: var(--fg-lo); }
+    .btn-row { display: flex; gap: 8px; }
+    .btn {
+      padding: 7px 16px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      border: 1px solid var(--btn-outline);
+      background: transparent;
+      color: var(--fg-mid);
+    }
+    .btn.primary { background: var(--btn-primary); color: var(--btn-primary-fg); border-color: var(--btn-primary); font-weight: 600; }
+
+    /* Eval panel */
+    .eval-panel {
+      border-left: 1px solid var(--border);
+      padding: 14px 16px;
+      overflow-y: auto;
+      background: #0a1218;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .eval-panel h2 { font-size: 13px; color: var(--fg-hi); margin-bottom: 10px; }
+    .eval-panel h3 { font-size: 11px; color: var(--fg-mid); margin: 14px 0 6px; font-weight: 600; }
+    .eval-panel ul { list-style: none; padding: 0; }
+    .eval-panel li {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+      font-size: 10px;
+      color: var(--fg-lo);
+    }
+    .eval-panel li strong { color: var(--fg-mid); }
+    .check { flex: 0 0 16px; font-weight: 700; }
+    .check.ok { color: var(--ok); }
+    .check.warn { color: var(--warn); }
+    .check.neu { color: var(--fg-lo); }
+    .score-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9px;
+      margin-top: 8px;
+    }
+    .score-table th, .score-table td {
+      border: 1px solid var(--border);
+      padding: 4px 6px;
+      text-align: center;
+    }
+    .score-table th { background: var(--bg-panel); color: var(--fg-mid); }
+    .score-table td:first-child { text-align: left; color: var(--fg-mid); }
+    .score-high { color: var(--ok); font-weight: 700; }
+    .score-mid { color: var(--warn); }
+    .score-low { color: #f87171; }
+
+    .variant { display: none; }
+    .variant.active { display: block; }
+
+    footer.page-footer {
+      border-top: 1px solid var(--border);
+      padding: 8px 16px;
+      font-size: 10px;
+      color: var(--fg-lo);
+      background: #0a1218;
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <header class="dev-bar">
+    <h1>Organización UI — Armado vigas</h1>
+    <span class="pill act">Evaluación pre-implementación</span>
+    <span class="sep"></span>
+    <label>Alternativa
+      <select id="variantSelect">
+        <option value="actual">Actual (WPF en producción)</option>
+        <option value="c">C · Inspector por tramo activo</option>
+        <option value="d">D · Tiras compactas + alzado protagonista</option>
+        <option value="e">E · Master-detail (detalle a la derecha)</option>
+        <option value="f">F · Acordeón sup/inf colapsable</option>
+      </select>
+    </label>
+    <label>Tramo activo
+      <select id="tramoSelect">
+        <option value="T1">T1 · V-471545+V-1058235</option>
+        <option value="T2">T2 · V-1058235</option>
+      </select>
+    </label>
+    <span class="sep"></span>
+    <span class="pill sup">Sup: 1 tramo</span>
+    <span class="pill inf">Inf: 2 tramos</span>
+  </header>
+
+  <main>
+    <div class="workspace">
+      <p class="intro" id="introText">
+        <strong>Estado actual (captura):</strong> Variante A de carriles apilados ya implementada — sin solapamiento de paneles sobre el alzado.
+        <strong>Pendiente:</strong> reducir altura vertical, eliminar scroll horizontal duplicado, reforzar vínculo banda↔editor, aliviar cabecera y rail derecho.
+      </p>
+
+      <div class="win-frame">
+        <!-- ═══ ACTUAL ═══ -->
+        <div class="variant active" id="variant-actual">
+          <div class="win-hdr">
+            <div class="title">Arainco: Armado vigas</div>
+            <div class="sub">2 vigas · sup 1 / inf 2 tramos Tn</div>
+            <div class="meta">Sup: 1 tramo(s) barra — T1(V-471545 + V-1058235) · Inf: 2 tramo(s) — T1(V-471545) · T2(V-1058235) · 3 columna(s) · 0 muro(s)</div>
+            <div class="hint">Clic viga → selección · Traslapo sup/inf en carriles dedicados · Controladores Tn con scroll horizontal · Cant/Ext en panel sección.</div>
+          </div>
+          <div class="split-body">
+            <div class="canvas-col">
+              <div class="face-block sup">
+                <div class="face-hdr sup"><span>Armadura superior</span><span>1 tramo(s): T1</span></div>
+                <div class="lane-label">Carril Traslape</div>
+                <div class="traslape-strip"><button class="traslape-btn">Traslapo</button><button class="traslape-btn">Traslapo</button></div>
+                <div class="lane-label">Bandas Tn</div>
+                <div class="bands-row"><div class="band sup" style="flex:2">T1</div></div>
+                <div class="lane-label">Controladores Tn · scroll horizontal</div>
+                <div class="panel-lane-wrap"><div class="panel-lane">
+                  <div class="tn-panel"><div class="hdr">T1 — V-471545+V-1058235</div>
+                    <div class="capa-row"><label>1ª</label><input class="mini-input" value="2" /><input class="mini-input" value="ø16" /></div>
+                    <div class="capa-row"><label>2ª</label><input class="mini-input" value="2" /><input class="mini-input" value="ø16" /></div>
+                    <div class="capa-row"><label>3ª</label><input class="mini-input" value="2" /><input class="mini-input" value="ø16" /></div>
+                  </div>
+                </div></div>
+              </div>
+              <div class="elev-wrap">
+                <div class="elev-hdr"><span>Alzado · vigas · fibras</span><span>mucho espacio vacío lateral</span></div>
+                <div class="elev-canvas">
+                  <div class="col-mark c1"></div><div class="col-mark c2"></div><div class="col-mark c3"></div>
+                  <div class="beam-line sup"></div><div class="beam-line inf"></div>
+                  <span class="span-label s1">1</span><span class="span-label s2">2</span>
+                </div>
+              </div>
+              <div class="face-block inf">
+                <div class="face-hdr inf"><span>Armadura inferior</span><span>2 tramo(s): T1 · T2</span></div>
+                <div class="lane-label">Carril Traslape</div>
+                <div class="traslape-strip"><button class="traslape-btn">Traslapo</button><button class="traslape-btn">Traslapo</button></div>
+                <div class="lane-label">Bandas Tn</div>
+                <div class="bands-row"><div class="band inf">T1</div><div class="band inf t2">T2</div></div>
+                <div class="lane-label">Controladores Tn · scroll horizontal</div>
+                <div class="panel-lane-wrap"><div class="panel-lane">
+                  <div class="tn-panel"><div class="hdr">T1 — V-471545</div>
+                    <div class="capa-row"><label>1ª</label><input class="mini-input" value="2" /><input class="mini-input" value="ø16" /></div>
+                    <div class="capa-row"><label>2ª</label><input class="mini-input" value="2" /><input class="mini-input" value="ø16" /></div>
+                  </div>
+                  <div class="tn-panel"><div class="hdr">T2 — V-1058235</div>
+                    <div class="capa-row"><label>1ª</label><input class="mini-input" value="2" /><input class="mini-input" value="ø16" /></div>
+                    <div class="capa-row"><label>2ª</label><input class="mini-input" value="2" /><input class="mini-input" value="ø16" /></div>
+                  </div>
+                </div></div>
+              </div>
+            </div>
+            <aside class="right-panel" id="rail-actual">
+              <h3>Sección transversal</h3>
+              <div class="section-box">
+                <svg class="section-svg" viewBox="0 0 120 80"><rect x="20" y="15" width="80" height="50" fill="none" stroke="#64748b" stroke-width="2"/><rect x="22" y="17" width="76" height="46" fill="none" stroke="#34d399" stroke-width="1.5" stroke-dasharray="4 2"/><circle cx="35" cy="28" r="3" fill="#22d3ee"/><circle cx="55" cy="28" r="3" fill="#22d3ee"/><circle cx="35" cy="52" r="3" fill="#fb7185"/><circle cx="55" cy="52" r="3" fill="#fb7185"/></svg>
+                <div class="section-meta">Sup 1ª 2ø16 · Inf 1ª 2ø16<br/>Est x2 · Cant 3600 mm · Ext 1600 mm ×2</div>
+              </div>
+              <h3>Cant · Ext · Confin</h3>
+              <div class="st-tabs"><button class="st-tab active">Cant</button><button class="st-tab">Ext</button><button class="st-tab">Confin</button></div>
+              <div class="st-block">
+                <div class="st-row"><label>L</label><input class="mini-input" value="3600" /><span>mm</span></div>
+                <div class="st-row"><label>ø</label><input class="mini-input" value="8" /><input class="mini-input" value="@ 200" /></div>
+              </div>
+              <div class="st-block">
+                <div class="st-row"><label>Ext</label><input class="mini-input" value="1600×2" /><span>mm</span></div>
+                <div class="st-row"><label>ø</label><input class="mini-input" value="10" /><input class="mini-input" value="@ 125" /></div>
+              </div>
+            </aside>
+          </div>
+          <div class="win-footer">
+            <span class="status">5 elem. · 2 viga(s) · sup 1 / inf 2 tramo(s)</span>
+            <div class="btn-row"><button class="btn">Cancelar</button><button class="btn primary">Colocar armadura</button></div>
+          </div>
+        </div>
+
+        <!-- ═══ C: INSPECTOR ═══ -->
+        <div class="variant" id="variant-c">
+          <div class="win-hdr compact">
+            <div class="title">Arainco: Armado vigas</div>
+            <div class="scope-row">
+              <span class="scope-chip"><strong>2</strong> vigas</span>
+              <span class="scope-chip">Sup <strong>1</strong> tramo · Inf <strong>2</strong> tramos</span>
+              <span class="scope-chip">3 columnas</span>
+              <span class="scope-chip" style="margin-left:auto;color:var(--fg-lo)">Clic banda Tn → edita abajo</span>
+            </div>
+          </div>
+          <div class="split-body">
+            <div class="canvas-col">
+              <div class="lane-label" style="color:var(--sup)">Superior — bandas interactivas</div>
+              <div class="bands-row" style="height:22px;margin-bottom:8px">
+                <div class="band-interactive sup active" data-tramo="T1" data-face="sup" style="flex:2">
+                  <span>T1 · V-471545+V-1058235</span>
+                  <button class="traslape-mini">Traslapo</button>
+                </div>
+              </div>
+              <div class="lane-label" style="color:var(--inf)">Inferior — bandas interactivas</div>
+              <div class="bands-row" style="height:22px;margin-bottom:8px">
+                <div class="band-interactive inf" data-tramo="T1" data-face="inf"><span>T1</span><button class="traslape-mini">Traslapo</button></div>
+                <div class="band-interactive inf active" data-tramo="T2" data-face="inf"><span>T2</span><button class="traslape-mini">Traslapo</button></div>
+              </div>
+              <div class="elev-wrap">
+                <div class="elev-hdr"><span>Alzado · tramo activo resaltado</span><span id="activeTramoLabel">T2 inferior</span></div>
+                <div class="elev-canvas tall">
+                  <div class="col-mark c1"></div><div class="col-mark c2"></div><div class="col-mark c3"></div>
+                  <div class="beam-line sup"></div><div class="beam-line inf" style="opacity:1;box-shadow:0 0 8px var(--inf)"></div>
+                  <span class="span-label s1">T1</span><span class="span-label s2" style="opacity:1;text-decoration:underline">T2 ★</span>
+                </div>
+              </div>
+              <div class="inspector">
+                <div class="face-tabs">
+                  <button class="face-tab sup" data-face="sup">Superior</button>
+                  <button class="face-tab inf active" data-face="inf">Inferior</button>
+                </div>
+                <div class="inspector-title" id="inspectorTitle">T2 — V-1058235 · Armadura inferior</div>
+                <div class="capa-grid">
+                  <div class="capa-card"><div class="capa-name">1ª capa</div><div class="capa-val">2 ø16</div></div>
+                  <div class="capa-card"><div class="capa-name">2ª capa</div><div class="capa-val">2 ø16</div></div>
+                  <div class="capa-card"><div class="capa-name">3ª capa</div><div class="capa-val">—</div></div>
+                </div>
+              </div>
+            </div>
+            <aside class="right-panel">
+              <h3>Sección · viga activa</h3>
+              <div class="section-box">
+                <svg class="section-svg" viewBox="0 0 120 80"><rect x="20" y="15" width="80" height="50" fill="none" stroke="#64748b" stroke-width="2"/><circle cx="35" cy="52" r="3" fill="#fb7185"/></svg>
+                <div class="section-meta">V-1058235 · Inf 1ª 2ø16</div>
+              </div>
+              <h3>Estribos (compartidos)</h3>
+              <div class="st-block">
+                <div class="st-row"><label>Cant</label><input class="mini-input" value="3600" /><input class="mini-input" value="ø8 @200" /></div>
+                <div class="st-row"><label>Ext</label><input class="mini-input" value="1600×2" /><input class="mini-input" value="ø10 @125" /></div>
+                <div class="st-row"><label>Confin</label><select class="mini-input" style="grid-column:span 2"><option>Perimetral</option></select></div>
+              </div>
+            </aside>
+          </div>
+          <div class="win-footer">
+            <span class="status">Editando T2 inf · sin scroll horizontal</span>
+            <div class="btn-row"><button class="btn">Cancelar</button><button class="btn primary">Colocar armadura</button></div>
+          </div>
+        </div>
+
+        <!-- ═══ D: COMPACT STRIPS ═══ -->
+        <div class="variant" id="variant-d">
+          <div class="win-hdr compact">
+            <div class="title">Arainco: Armado vigas</div>
+            <div class="scope-row">
+              <span class="scope-chip"><strong>2</strong> vigas · <strong>3</strong> tramos Tn</span>
+              <span class="scope-chip">Capas editables en tira · alzado 60% altura</span>
+            </div>
+          </div>
+          <div class="split-body wide-rail">
+            <div class="canvas-col">
+              <div class="compact-face sup">
+                <div class="label">SUP<br/>T1</div>
+                <div class="inline-capa">
+                  <span class="chip"><strong>1ª</strong> 2ø16</span>
+                  <span class="chip"><strong>2ª</strong> 2ø16</span>
+                  <span class="chip"><strong>3ª</strong> 2ø16</span>
+                  <button class="traslape-mini">Traslapo</button>
+                </div>
+              </div>
+              <div class="elev-wrap" style="margin:4px 0">
+                <div class="elev-hdr"><span>Alzado protagonista · referencia geométrica</span></div>
+                <div class="elev-canvas hero">
+                  <div class="col-mark c1"></div><div class="col-mark c2"></div><div class="col-mark c3"></div>
+                  <div class="beam-line sup"></div><div class="beam-line inf"></div>
+                </div>
+              </div>
+              <div class="compact-face inf">
+                <div class="label">INF<br/>T1</div>
+                <div class="inline-capa">
+                  <span class="chip"><strong>1ª</strong> 2ø16</span>
+                  <span class="chip"><strong>2ª</strong> 2ø16</span>
+                  <button class="traslape-mini">Traslapo</button>
+                </div>
+              </div>
+              <div class="compact-face inf">
+                <div class="label">INF<br/>T2</div>
+                <div class="inline-capa">
+                  <span class="chip"><strong>1ª</strong> 2ø16</span>
+                  <span class="chip"><strong>2ª</strong> 2ø16</span>
+                  <button class="traslape-mini">Traslapo</button>
+                </div>
+              </div>
+            </div>
+            <aside class="right-panel">
+              <h3>Sección + estribos ampliados</h3>
+              <div class="section-box">
+                <svg class="section-svg" viewBox="0 0 120 80" style="max-width:180px;height:110px"><rect x="20" y="15" width="80" height="50" fill="none" stroke="#64748b" stroke-width="2"/><rect x="22" y="17" width="76" height="46" fill="none" stroke="#34d399" stroke-width="1.5"/></svg>
+              </div>
+              <div class="st-block">
+                <div style="font-weight:600;color:var(--estribo);margin-bottom:6px">Zona central (Cant)</div>
+                <div class="st-row"><label>Long.</label><input class="mini-input" value="3600 mm" style="grid-column:span 2"/></div>
+                <div class="st-row"><label>Estribo</label><input class="mini-input" value="ø8" /><input class="mini-input" value="@ 200 mm" /></div>
+              </div>
+              <div class="st-block">
+                <div style="font-weight:600;color:var(--warn);margin-bottom:6px">Extremos (Ext ×2)</div>
+                <div class="st-row"><label>Long.</label><input class="mini-input" value="1600 mm" style="grid-column:span 2"/></div>
+                <div class="st-row"><label>Estribo</label><input class="mini-input" value="ø10" /><input class="mini-input" value="@ 125 mm" /></div>
+              </div>
+              <div class="st-block">
+                <div class="st-row"><label>Confin</label><select class="mini-input" style="grid-column:span 2"><option>Perimetral</option><option>En U</option></select></div>
+              </div>
+            </aside>
+          </div>
+          <div class="win-footer">
+            <span class="status">−40% altura vs actual · edición inline en chips (clic expande)</span>
+            <div class="btn-row"><button class="btn">Cancelar</button><button class="btn primary">Colocar armadura</button></div>
+          </div>
+        </div>
+
+        <!-- ═══ E: MASTER-DETAIL ═══ -->
+        <div class="variant" id="variant-e">
+          <div class="win-hdr compact">
+            <div class="title">Arainco: Armado vigas</div>
+            <div class="scope-row">
+              <span class="scope-chip">Izquierda: contexto · Derecha: todos los Tn + sección</span>
+            </div>
+          </div>
+          <div class="split-body master-detail">
+            <div class="master-col">
+              <div class="bands-row" style="height:18px;margin-bottom:4px"><div class="band sup" style="flex:2">T1 sup</div></div>
+              <div class="bands-row" style="height:18px;margin-bottom:8px"><div class="band inf">T1 inf</div><div class="band inf t2">T2 inf</div></div>
+              <div class="elev-wrap">
+                <div class="elev-canvas tall">
+                  <div class="col-mark c1"></div><div class="col-mark c2"></div><div class="col-mark c3"></div>
+                  <div class="beam-line sup"></div><div class="beam-line inf"></div>
+                </div>
+              </div>
+              <div style="font-size:9px;color:var(--fg-lo);margin-top:8px">
+                <span style="color:var(--sup)">■</span> Fibra sup ·
+                <span style="color:var(--inf)">■</span> Fibra inf ·
+                <span style="color:var(--col)">■</span> Columna
+              </div>
+            </div>
+            <div class="detail-col">
+              <h3>Sección · viga seleccionada</h3>
+              <div class="section-box" style="margin-bottom:12px">
+                <svg class="section-svg" viewBox="0 0 120 80"><rect x="20" y="15" width="80" height="50" fill="none" stroke="#64748b" stroke-width="2"/></svg>
+              </div>
+              <h3>Tramos superiores</h3>
+              <div class="detail-tn sup">
+                <div class="hdr">T1 — V-471545+V-1058235</div>
+                <div class="capa-row"><label>1ª</label><input class="mini-input" value="2" /><input class="mini-input" value="ø16" /></div>
+                <div class="capa-row"><label>2ª</label><input class="mini-input" value="2" /><input class="mini-input" value="ø16" /></div>
+                <button class="traslape-mini" style="margin-top:4px">Traslapo</button>
+              </div>
+              <h3>Tramos inferiores</h3>
+              <div class="detail-tn inf">
+                <div class="hdr">T1 — V-471545</div>
+                <div class="capa-row"><label>1ª</label><input class="mini-input" value="2" /><input class="mini-input" value="ø16" /></div>
+                <button class="traslape-mini" style="margin-top:4px">Traslapo</button>
+              </div>
+              <div class="detail-tn inf">
+                <div class="hdr">T2 — V-1058235</div>
+                <div class="capa-row"><label>1ª</label><input class="mini-input" value="2" /><input class="mini-input" value="ø16" /></div>
+                <button class="traslape-mini" style="margin-top:4px">Traslapo</button>
+              </div>
+              <h3>Estribos</h3>
+              <div class="st-block">
+                <div class="st-row"><label>Cant</label><input class="mini-input" value="3600" /><input class="mini-input" value="ø8 @200" /></div>
+                <div class="st-row"><label>Ext</label><input class="mini-input" value="1600×2" /><input class="mini-input" value="ø10 @125" /></div>
+              </div>
+            </div>
+          </div>
+          <div class="win-footer">
+            <span class="status">Scroll vertical único · sin rail estrecho</span>
+            <div class="btn-row"><button class="btn">Cancelar</button><button class="btn primary">Colocar armadura</button></div>
+          </div>
+        </div>
+
+        <!-- ═══ F: ACCORDION ═══ -->
+        <div class="variant" id="variant-f">
+          <div class="win-hdr compact">
+            <div class="title">Arainco: Armado vigas</div>
+            <div class="scope-row"><span class="scope-chip">Acordeón: colapsar cara no editada</span></div>
+          </div>
+          <div class="split-body">
+            <div class="canvas-col">
+              <div class="accordion">
+                <div class="acc-hdr sup" data-acc="sup"><span>Armadura superior · 1 tramo T1</span><span class="chev">▼ expandido</span></div>
+                <div class="acc-body" id="acc-sup">
+                  <div class="bands-row" style="margin-bottom:6px"><div class="band sup" style="flex:2">T1</div></div>
+                  <div class="panel-lane"><div class="tn-panel" style="flex:1;max-width:none"><div class="hdr">T1</div>
+                    <div class="capa-row"><label>1ª</label><input class="mini-input" value="2" /><input class="mini-input" value="ø16" /></div>
+                  </div></div>
+                </div>
+              </div>
+              <div class="elev-wrap"><div class="elev-canvas"><div class="col-mark c1"></div><div class="col-mark c3"></div><div class="beam-line sup"></div><div class="beam-line inf"></div></div></div>
+              <div class="accordion">
+                <div class="acc-hdr inf" data-acc="inf"><span>Armadura inferior · 2 tramos T1·T2</span><span class="chev">▼ expandido</span></div>
+                <div class="acc-body" id="acc-inf">
+                  <div class="bands-row" style="margin-bottom:6px"><div class="band inf">T1</div><div class="band inf t2">T2</div></div>
+                  <div class="panel-lane">
+                    <div class="tn-panel"><div class="hdr">T1</div><div class="capa-row"><label>1ª</label><input class="mini-input" value="2" /><input class="mini-input" value="ø16" /></div></div>
+                    <div class="tn-panel"><div class="hdr">T2</div><div class="capa-row"><label>1ª</label><input class="mini-input" value="2" /><input class="mini-input" value="ø16" /></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <aside class="right-panel">
+              <h3>Sección + estribos</h3>
+              <div class="section-box"><svg class="section-svg" viewBox="0 0 120 80"><rect x="20" y="15" width="80" height="50" fill="none" stroke="#64748b" stroke-width="2"/></svg></div>
+              <div class="st-block"><div class="st-row"><label>Cant</label><input class="mini-input" value="3600" /><input class="mini-input" value="ø8" /></div></div>
+            </aside>
+          </div>
+          <div class="win-footer">
+            <span class="status">Colapsar sup al editar inf → −50% scroll vertical</span>
+            <div class="btn-row"><button class="btn">Cancelar</button><button class="btn primary">Colocar armadura</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="eval-panel">
+      <h2>Criterios de evaluación</h2>
+      <table class="score-table">
+        <thead>
+          <tr><th>Criterio</th><th>Actual</th><th>C</th><th>D</th><th>E</th><th>F</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Altura vertical</td><td class="score-low">Baja</td><td class="score-high">Alta</td><td class="score-high">Alta</td><td class="score-mid">Media</td><td class="score-high">Alta</td></tr>
+          <tr><td>Ver sup+inf a la vez</td><td class="score-high">Sí</td><td class="score-mid">Parcial</td><td class="score-high">Sí</td><td class="score-high">Sí</td><td class="score-mid">Colapsable</td></tr>
+          <tr><td>Scroll horizontal</td><td class="score-low">×2</td><td class="score-high">0</td><td class="score-high">0</td><td class="score-high">0</td><td class="score-mid">×1</td></tr>
+          <tr><td>Vínculo banda↔editor</td><td class="score-low">Débil</td><td class="score-high">Fuerte</td><td class="score-mid">Inline</td><td class="score-mid">Lista</td><td class="score-mid">Media</td></tr>
+          <tr><td>Rail estribos</td><td class="score-low">Apretado</td><td class="score-mid">OK</td><td class="score-high">Amplio</td><td class="score-high">Integrado</td><td class="score-mid">OK</td></tr>
+          <tr><td>Esfuerzo implementación</td><td class="score-high">—</td><td class="score-mid">Medio</td><td class="score-low">Alto</td><td class="score-mid">Medio</td><td class="score-high">Bajo</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Recomendación</h3>
+      <ul>
+        <li><span class="check ok">★</span><span><strong>C · Inspector</strong> — mejor equilibrio: un solo panel de edición, bandas clicables, alzado limpio. Encaja con el modelo de datos por tramo Tn.</span></li>
+        <li><span class="check ok">+</span><span><strong>F · Acordeón</strong> — complemento de bajo coste sobre la Variante A actual; colapsar la cara opuesta al editar.</span></li>
+        <li><span class="check warn">→</span><span><strong>D · Tiras compactas</strong> — ideal si el 80% de casos tienen ≤2 capas; edición densa en pocos tramos.</span></li>
+        <li><span class="check neu">—</span><span><strong>E · Master-detail</strong> — útil con ≥4 tramos Tn; sacrifica ancho del alzado.</span></li>
+      </ul>
+
+      <h3>Mejoras transversales (cualquier variante)</h3>
+      <ul>
+        <li><span class="check ok">✓</span><span>Compactar cabecera: chips en una fila; mover hint a tooltip (?)</span></li>
+        <li><span class="check ok">✓</span><span>Eliminar etiquetas de carril repetitivas; usar color de borde</span></li>
+        <li><span class="check ok">✓</span><span>Estribos: stack vertical Cant→Ext→Confin (ver mockup section_preview_stack)</span></li>
+        <li><span class="check ok">✓</span><span>Resaltar tramo activo en alzado al seleccionar banda Tn</span></li>
+        <li><span class="check ok">✓</span><span>Footer: quitar duplicado de conteo; mantener solo en cabecera o footer</span></li>
+      </ul>
+
+      <h3>Mockups relacionados</h3>
+      <ul>
+        <li><span class="check neu">→</span><span><code>ui_legibilidad_redesign_mockup.html</code> — Variantes A/B carriles</span></li>
+        <li><span class="check neu">→</span><span><code>section_preview_stack_mockup.html</code> — rail estribos</span></li>
+        <li><span class="check neu">→</span><span><code>armado_vigas_canvas_mockup.html</code> — canvas interactivo completo</span></li>
+      </ul>
+    </aside>
+  </main>
+
+  <footer class="page-footer">
+    Abrir en navegador: <code>BIMTools.tab/Armadura.panel/36_ArmadoVigas.pushbutton/mockups/organizacion_ui_eval_mockup.html</code>
+  </footer>
+
+  <script>
+    const variantSelect = document.getElementById('variantSelect');
+    const tramoSelect = document.getElementById('tramoSelect');
+    const introText = document.getElementById('introText');
+
+    const intros = {
+      actual: '<strong>Actual (captura):</strong> Variante A implementada — carriles apilados sin solapamiento. Problemas: altura excesiva, doble scroll horizontal, cabecera densa, rail estrecho, alzado con espacio muerto.',
+      c: '<strong>C · Inspector:</strong> Bandas Tn clicables integran Traslapo. Un panel de edición bajo el alzado muestra el tramo activo. Elimina scroll horizontal y refuerza contexto visual.',
+      d: '<strong>D · Tiras compactas:</strong> Capas como chips inline; alzado ocupa ~60% del canvas. Rail derecho más ancho para estribos. Menos filas de etiquetas.',
+      e: '<strong>E · Master-detail:</strong> Izquierda solo contexto geométrico; derecha lista vertical de todos los Tn + sección + estribos. Mejor con muchos tramos.',
+      f: '<strong>F · Acordeón:</strong> Evolución incremental de A. Colapsar sup o inf cuando no se edita. Bajo esfuerzo de implementación sobre código actual.'
+    };
+
+    function showVariant(v) {
+      document.querySelectorAll('.variant').forEach(el => el.classList.remove('active'));
+      const target = document.getElementById('variant-' + v);
+      if (target) target.classList.add('active');
+      introText.innerHTML = intros[v] || intros.actual;
+    }
+
+    variantSelect.addEventListener('change', () => showVariant(variantSelect.value));
+    showVariant('actual');
+
+    document.querySelectorAll('.band-interactive').forEach(b => {
+      b.addEventListener('click', (e) => {
+        if (e.target.classList.contains('traslape-mini')) return;
+        const face = b.dataset.face;
+        document.querySelectorAll('.band-interactive.' + face).forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        const tramo = b.dataset.tramo;
+        document.getElementById('inspectorTitle').textContent =
+          tramo + ' — ' + (tramo === 'T1' ? 'V-471545' : 'V-1058235') + ' · Armadura ' + (face === 'sup' ? 'superior' : 'inferior');
+        document.getElementById('activeTramoLabel').textContent = tramo + ' ' + (face === 'sup' ? 'superior' : 'inferior');
+        tramoSelect.value = tramo;
+      });
+    });
+
+    tramoSelect.addEventListener('change', () => {
+      const t = tramoSelect.value;
+      document.querySelectorAll('.band-interactive.inf').forEach(b => {
+        b.classList.toggle('active', b.dataset.tramo === t);
+      });
+    });
+
+    document.querySelectorAll('.acc-hdr').forEach(hdr => {
+      hdr.addEventListener('click', () => {
+        const body = hdr.nextElementSibling;
+        const collapsed = body.classList.toggle('collapsed');
+        hdr.querySelector('.chev').textContent = collapsed ? '▶ colapsado' : '▼ expandido';
+      });
+    });
+  </script>
+</body>
+</html>

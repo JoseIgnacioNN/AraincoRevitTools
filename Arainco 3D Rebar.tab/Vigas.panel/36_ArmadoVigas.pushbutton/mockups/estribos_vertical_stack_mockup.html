@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mockup — Estribos apilado vertical · Armado vigas</title>
+  <style>
+    :root {
+      --bg-app: #071018;
+      --bg-panel: #0a1620;
+      --border: #21465c;
+      --fg-hi: #e8f4f8;
+      --fg-mid: #95b8cc;
+      --fg-lo: #64748b;
+      --input-bg: #071018;
+      --input-border: #1e3344;
+      --btn-primary: #5bb8d4;
+      --ok: #4ade80;
+      --warn: #fbbf24;
+      --bar-ext: #fbbf24;
+      --bar-cent: #34d399;
+      --bar-confin: #5bb8d4;
+      --bar-suple: #c084fc;
+      --ctrl-width: 268px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #050c14;
+      color: var(--fg-mid);
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .dev-bar {
+      background: #0f1c28;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      align-items: center;
+      font-size: 11px;
+    }
+    .dev-bar h1 { font-size: 13px; color: var(--fg-hi); font-weight: 600; }
+    .dev-bar label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .dev-bar select {
+      background: var(--input-bg);
+      color: var(--fg-hi);
+      border: 1px solid var(--input-border);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+    .dev-bar input[type="checkbox"] { accent-color: var(--btn-primary); }
+    .pill {
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .pill.act { background: rgba(251, 191, 36, 0.12); color: var(--warn); }
+    .pill.prop { background: rgba(52, 211, 153, 0.12); color: var(--bar-cent); }
+    .sep { width: 1px; height: 20px; background: var(--border); }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      min-height: 0;
+      overflow: hidden;
+    }
+    @media (max-width: 960px) {
+      main { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+      .eval-panel { border-left: none; border-top: 1px solid var(--border); max-height: 340px; }
+    }
+
+    .workspace {
+      overflow: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .intro {
+      max-width: 880px;
+      width: 100%;
+      font-size: 11px;
+      line-height: 1.55;
+      color: var(--fg-lo);
+      border: 1px solid rgba(33, 70, 92, 0.55);
+      border-radius: 4px;
+      padding: 10px 12px;
+      background: rgba(7, 16, 24, 0.6);
+    }
+    .intro strong { color: var(--fg-hi); }
+    .intro code {
+      font-size: 10px;
+      color: rgba(91, 184, 212, 0.9);
+      background: rgba(7, 16, 24, 0.8);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    .intro .order-list {
+      margin-top: 6px;
+      padding-left: 18px;
+      color: var(--fg-mid);
+    }
+    .intro .order-list li { margin-bottom: 2px; }
+    .intro .order-list .cent { color: var(--bar-cent); font-weight: 600; }
+    .intro .order-list .ext { color: var(--bar-ext); font-weight: 600; }
+    .intro .order-list .confin { color: var(--bar-confin); font-weight: 600; }
+    .intro .order-list .suple { color: var(--bar-suple); font-weight: 600; }
+
+    .compare-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 24px;
+      justify-content: center;
+      width: 100%;
+      max-width: calc(var(--ctrl-width) * 2 + 24px);
+    }
+    .compare-row.single { justify-content: center; }
+    .compare-row.single .variant-col { flex: 0 0 auto; }
+
+    .variant-col {
+      flex: 0 0 var(--ctrl-width);
+      max-width: var(--ctrl-width);
+      min-width: 240px;
+    }
+    .variant-col.hidden { display: none; }
+    .variant-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .variant-label .tag {
+      font-size: 8px;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-weight: 700;
+    }
+    .variant-label.v-act { color: var(--warn); }
+    .variant-label.v-act .tag { background: rgba(251, 191, 36, 0.15); color: var(--warn); }
+    .variant-label.v-prop { color: var(--bar-cent); }
+    .variant-label.v-prop .tag { background: rgba(52, 211, 153, 0.15); color: var(--bar-cent); }
+
+    /* ── Slot estribo ── */
+    .stirrup-slot {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg-app);
+      padding: 4px 6px 6px;
+      width: var(--ctrl-width);
+      max-width: 100%;
+    }
+    .slot-hdr {
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-align: center;
+      color: var(--fg-lo);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+    .slot-section { margin-top: 5px; }
+    .slot-section:first-of-type { margin-top: 0; }
+    .section-hdr {
+      font-size: 7px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--fg-lo);
+      margin-bottom: 3px;
+      padding: 0 2px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .section-hdr::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: rgba(33, 70, 92, 0.5);
+    }
+    .section-hdr.estribos { color: rgba(251, 191, 36, 0.75); }
+    .section-hdr.suple { color: rgba(192, 132, 252, 0.85); }
+
+    /* Horizontal layout (actual) */
+    .slot-zones {
+      display: flex;
+      gap: 4px;
+      align-items: stretch;
+    }
+    .zone-slot { flex: 1; min-width: 0; display: flex; }
+
+    /* Vertical stack (propuesto) */
+    .stack-vertical {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .stack-vertical .zone-slot { flex: none; width: 100%; }
+
+    .zone-panel {
+      width: 100%;
+      border-radius: 4px;
+      font-size: 9px;
+      cursor: pointer;
+      overflow: hidden;
+      transition: border-color 0.12s, box-shadow 0.12s;
+    }
+    .zone-panel .bar-top { height: 2px; margin-bottom: 2px; }
+    .zone-panel.ext {
+      border: 1px solid rgba(251, 191, 36, 0.45);
+      background: rgba(22, 18, 10, 0.94);
+    }
+    .zone-panel.ext .bar-top { background: var(--bar-ext); }
+    .zone-panel.ext .zone-id { color: #fcd34d; }
+    .zone-panel.ext.selected {
+      border-color: var(--bar-ext);
+      box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.45);
+    }
+    .zone-panel.cent {
+      border: 1px solid rgba(52, 211, 153, 0.35);
+      background: rgba(10, 22, 32, 0.95);
+    }
+    .zone-panel.cent .bar-top { background: var(--bar-cent); }
+    .zone-panel.cent .zone-id { color: #6ee7b7; }
+    .zone-panel.cent.selected {
+      border-color: var(--bar-cent);
+      box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.55);
+    }
+
+    .zone-toolbar { padding: 3px 6px 2px; }
+    .zone-id { font-size: 8px; font-weight: 700; }
+    .zone-body { padding: 0 6px 6px; }
+
+    .est-fields { display: flex; flex-direction: column; gap: 3px; }
+    .est-diam-at-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+      width: fit-content;
+      max-width: 100%;
+    }
+    .est-diam-at-row .est-field-row {
+      flex: 0 0 auto;
+      min-width: 0;
+    }
+    .est-diam-at-row .est-spacing-row { flex: 0 0 auto; }
+    .est-diam-at-row .est-lbl { min-width: 10px; }
+    .est-diam-at-row .stepper-wrap { flex-shrink: 0; }
+    /* Horizontal Ext|Cent: narrower cards — keep ø|@ on one row */
+    .slot-zones .est-diam-at-row { gap: 3px; }
+    .slot-zones .est-diam-at-row .stepper-btn { width: 14px; height: 17px; }
+    .slot-zones .est-diam-at-row .stepper-val { width: 26px; height: 17px; line-height: 15px; font-size: 8px; }
+    .slot-zones .est-diam-at-row .at-unit { font-size: 6.5px; }
+    .est-field-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 8px;
+    }
+    .est-lbl {
+      min-width: 14px;
+      font-weight: 700;
+      color: var(--fg-lo);
+      font-size: 7px;
+    }
+    .zone-len-tag {
+      font-size: 6.5px;
+      color: var(--fg-lo);
+      margin-top: 3px;
+      line-height: 1.3;
+    }
+    .zone-panel.ext .zone-len-tag { color: rgba(251, 191, 36, 0.75); }
+    .zone-panel.cent .zone-len-tag { color: rgba(52, 211, 153, 0.7); }
+    .est-hint {
+      font-size: 7px;
+      color: var(--fg-lo);
+      line-height: 1.35;
+      margin-top: 2px;
+    }
+    .est-hint.hidden { display: none; }
+
+    .stepper-wrap { display: inline-flex; align-items: center; }
+    .stepper-btn {
+      width: 16px; height: 18px;
+      border: 1px solid var(--input-border);
+      background: var(--input-bg); color: var(--fg-mid);
+      font-size: 10px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .stepper-btn:hover { border-color: var(--btn-primary); color: var(--fg-hi); }
+    .stepper-val {
+      width: 28px; height: 18px;
+      border-top: 1px solid var(--input-border);
+      border-bottom: 1px solid var(--input-border);
+      background: var(--input-bg); color: var(--fg-hi);
+      font-size: 9px; font-weight: 600; text-align: center; line-height: 16px;
+    }
+    select.ctrl {
+      flex: 1;
+      height: 20px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 3px;
+      color: var(--fg-hi);
+      font-size: 9px;
+      padding: 0 4px;
+      cursor: pointer;
+      min-width: 0;
+    }
+    select.ctrl.diam-ctrl {
+      flex: 0 0 auto;
+      width: 48px;
+      max-width: 48px;
+      padding: 0 2px;
+      text-align: center;
+    }
+    .at-unit { font-size: 7px; color: var(--fg-lo); }
+
+    /* Confin */
+    .confin-block {
+      border: 1px solid rgba(91, 184, 212, 0.35);
+      border-radius: 4px;
+      background: rgba(7, 16, 24, 0.92);
+      overflow: hidden;
+      cursor: pointer;
+    }
+    .confin-block .bar-top { height: 2px; background: var(--bar-confin); }
+    .confin-body { padding: 5px 6px 6px; }
+    .confin-block .est-field-row {
+      width: 100%;
+      max-width: 100%;
+    }
+    .confin-ctrl {
+      flex: 1;
+      min-width: 0;
+      max-width: calc(var(--ctrl-width) - 56px);
+    }
+    .confin-block .est-field-row .est-lbl {
+      min-width: 38px;
+      font-size: 8px;
+      color: rgba(91, 184, 212, 0.85);
+    }
+    .confin-hint {
+      font-size: 7px;
+      color: var(--fg-lo);
+      margin-top: 4px;
+      line-height: 1.35;
+    }
+    .confin-hint em {
+      font-style: normal;
+      color: rgba(91, 184, 212, 0.85);
+    }
+    .confin-hint.hidden { display: none; }
+    .confin-block.selected {
+      border-color: var(--bar-confin);
+      box-shadow: 0 0 0 1px rgba(91, 184, 212, 0.4);
+    }
+
+    /* Suple */
+    .suple-block {
+      border: 1px solid rgba(192, 132, 252, 0.4);
+      border-radius: 4px;
+      background: rgba(12, 8, 20, 0.92);
+      overflow: hidden;
+      cursor: pointer;
+    }
+    .suple-block .bar-top {
+      height: 2px;
+      background: linear-gradient(90deg, transparent 8%, var(--bar-suple) 8%, var(--bar-suple) 92%, transparent 92%);
+    }
+    .suple-body { padding: 5px 6px 6px; }
+    .suple-block .est-field-row .est-lbl {
+      min-width: 52px;
+      font-size: 8px;
+      color: rgba(192, 132, 252, 0.85);
+    }
+    .suple-hint {
+      font-size: 7px;
+      color: var(--fg-lo);
+      margin-top: 4px;
+      line-height: 1.35;
+    }
+    .suple-hint.hidden { display: none; }
+    .suple-block.selected {
+      border-color: var(--bar-suple);
+      box-shadow: 0 0 0 1px rgba(192, 132, 252, 0.4);
+    }
+    .suple-fields-row2 {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+      opacity: 1;
+      transition: opacity 0.15s;
+      width: fit-content;
+      max-width: 100%;
+    }
+    .suple-fields-row2.disabled {
+      opacity: 0.35;
+      pointer-events: none;
+    }
+    .suple-fields-row2 .est-field-row { flex: 0 0 auto; min-width: 0; }
+    .suple-fields-row2 .est-lbl { min-width: 10px !important; }
+
+    .toggle-yesno {
+      display: inline-flex;
+      border: 1px solid var(--input-border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .toggle-yesno button {
+      border: none;
+      background: var(--input-bg);
+      color: var(--fg-lo);
+      font-size: 8px;
+      font-weight: 700;
+      padding: 3px 10px;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+    }
+    .toggle-yesno button:hover { color: var(--fg-hi); }
+    .toggle-yesno button.on-yes {
+      background: rgba(74, 222, 128, 0.2);
+      color: var(--ok);
+    }
+    .toggle-yesno button.on-no {
+      background: rgba(100, 116, 139, 0.25);
+      color: var(--fg-mid);
+    }
+
+    /* Eval panel */
+    .eval-panel {
+      border-left: 1px solid var(--border);
+      background: var(--bg-panel);
+      padding: 14px;
+      overflow: auto;
+      font-size: 11px;
+    }
+    .eval-panel h2 {
+      font-size: 12px;
+      color: var(--fg-hi);
+      margin-bottom: 10px;
+    }
+    .eval-panel h3 {
+      font-size: 10px;
+      color: var(--btn-primary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 12px 0 6px;
+    }
+    .eval-panel h3.act { color: var(--warn); }
+    .eval-panel h3.prop { color: var(--bar-cent); }
+
+    .checklist {
+      list-style: none;
+      font-size: 10px;
+      line-height: 1.45;
+    }
+    .checklist li {
+      display: flex;
+      gap: 6px;
+      align-items: flex-start;
+      margin-bottom: 4px;
+      color: var(--fg-mid);
+    }
+    .checklist input { margin-top: 2px; accent-color: var(--btn-primary); flex-shrink: 0; }
+    .checklist .tag {
+      font-size: 8px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .checklist .tag.pro { background: rgba(74, 222, 128, 0.15); color: var(--ok); }
+    .checklist .tag.con { background: rgba(251, 191, 36, 0.12); color: var(--warn); }
+    .checklist .tag.note { background: rgba(91, 184, 212, 0.12); color: var(--btn-primary); }
+
+    .height-note {
+      font-size: 10px;
+      line-height: 1.5;
+      color: var(--fg-lo);
+      border: 1px dashed rgba(52, 211, 153, 0.35);
+      border-radius: 4px;
+      padding: 8px 10px;
+      background: rgba(7, 16, 24, 0.5);
+      margin-top: 4px;
+    }
+    .height-note strong { color: var(--fg-hi); }
+
+    .state-lines {
+      font-size: 9px;
+      color: var(--fg-lo);
+      line-height: 1.55;
+      font-family: Consolas, "Courier New", monospace;
+      border: 1px solid rgba(33, 70, 92, 0.5);
+      border-radius: 4px;
+      padding: 8px;
+      background: rgba(7, 16, 24, 0.6);
+    }
+    .state-lines .hi { color: var(--fg-hi); }
+    .state-lines .ext { color: var(--bar-ext); }
+    .state-lines .cent { color: var(--bar-cent); }
+    .state-lines .confin { color: var(--bar-confin); }
+    .state-lines .suple { color: var(--bar-suple); }
+
+    .log {
+      max-height: 72px;
+      overflow: auto;
+      font-size: 8px;
+      color: var(--fg-lo);
+      border-top: 1px dashed var(--border);
+      padding-top: 6px;
+      margin-top: 6px;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 8px 16px;
+      font-size: 10px;
+      color: var(--fg-lo);
+      background: #0a1218;
+    }
+    footer code { font-size: 9px; color: rgba(91, 184, 212, 0.8); }
+  </style>
+</head>
+<body>
+  <header class="dev-bar">
+    <h1>Estribos — apilado vertical</h1>
+    <span class="pill act">Actual</span>
+    <span class="pill prop">Propuesto</span>
+    <span class="sep"></span>
+    <label>Vista
+      <select id="viewSelect">
+        <option value="both" selected>Comparar lado a lado</option>
+        <option value="actual">Solo actual (horizontal)</option>
+        <option value="propuesto">Solo propuesto (vertical)</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="hintsCheck" checked /> Mostrar hints</label>
+    <span class="sep"></span>
+    <span style="color:var(--fg-lo);font-size:10px">Viga demo: <strong style="color:var(--fg-hi)">Viga 1 · triple</strong></span>
+  </header>
+
+  <main>
+    <div class="workspace">
+      <div class="intro">
+        <strong>Mockup de evaluación de layout</strong> — sin backend ni WPF. Objetivo: probar el
+        <strong>reorden vertical</strong> de los cuatro bloques del controlador de estribos por viga (~268&nbsp;px)
+        antes de implementar en <code>canvas_view.py</code>.
+        Numeración canvas: <code>Viga 1</code> = izquierda. <em>Pendiente validación WPF.</em>
+        <ol class="order-list">
+          <li><span class="cent">Cent</span> (centrales)</li>
+          <li><span class="ext">Ext</span> (exterior ini/fin)</li>
+          <li><span class="confin">Confin.</span> (escenario sección)</li>
+          <li><span class="suple">Suple inf.</span> (Sí/No, ø, n)</li>
+        </ol>
+        Compare con el layout actual (Ext|Cent en fila). Los controles son interactivos y comparten estado entre variantes.
+      </div>
+
+      <div class="compare-row" id="compareRow">
+        <div class="variant-col" id="colActual">
+          <div class="variant-label v-act">Actual · Ext|Cent horizontal <span class="tag">prod</span></div>
+          <div id="slotActual"></div>
+        </div>
+        <div class="variant-col" id="colPropuesto">
+          <div class="variant-label v-prop">Propuesto · stack vertical <span class="tag">Cent→Ext→Confin→Suple</span></div>
+          <div id="slotPropuesto"></div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="eval-panel">
+      <h2>Evaluación UX</h2>
+
+      <h3 class="act">Actual — horizontal</h3>
+      <ul class="checklist">
+        <li><input type="checkbox" /><span class="tag pro">+</span> Compacto en altura — Ext y Cent comparten fila</li>
+        <li><input type="checkbox" /><span class="tag pro">+</span> Paralelismo visual izq→der (ini/fin | centro)</li>
+        <li><input type="checkbox" /><span class="tag con">−</span> Orden físico longitudinal no coincide con lectura vertical</li>
+        <li><input type="checkbox" /><span class="tag note">→</span> ~4 filas totales incl. confin + suple</li>
+      </ul>
+
+      <h3 class="prop">Propuesto — vertical Cent primero</h3>
+      <ul class="checklist">
+        <li><input type="checkbox" /><span class="tag pro">+</span> Flujo top→down: zona central → extremos → sección → suple</li>
+        <li><input type="checkbox" /><span class="tag pro">+</span> Cada bloque ocupa ancho completo — labels y @ más legibles</li>
+        <li><input type="checkbox" /><span class="tag con">−</span> Mayor altura del slot (~+40&nbsp;px vs horizontal)</li>
+        <li><input type="checkbox" /><span class="tag con">−</span> Cent antes de Ext invierte orden «físico» ini→fin</li>
+        <li><input type="checkbox" /><span class="tag note">→</span> Secciones ESTRIBOS / SUPLE mantienen agrupación semántica</li>
+      </ul>
+
+      <h3>Altura estimada</h3>
+      <div class="height-note" id="heightNote">—</div>
+
+      <h3>Estado compartido</h3>
+      <div class="state-lines" id="stateDump">—</div>
+
+      <h3>Eventos</h3>
+      <div class="log" id="eventLog">—</div>
+    </aside>
+  </main>
+
+  <footer>
+    Mockup interactivo · sin backend ·
+    <code>BIMTools.tab/Armadura.panel/36_ArmadoVigas.pushbutton/mockups/estribos_vertical_stack_mockup.html</code>
+  </footer>
+
+  <script>
+    const ESTRIBO_DIAM_OPTS = [8, 10, 12, 16];
+    const BAR_DIAM_OPTS = [12, 16, 20, 25];
+    const CONFIN_OPTS = [
+      "Perimetral",
+      "Perimetral + traba [1]",
+      "E(0–2) + E(1–3)",
+      "E(0–3) + E(1–4)",
+      "E(0–3) + E(1–4) + traba [2]",
+    ];
+
+    const state = {
+      beamId: "V-471546",
+      beamLabel: "Viga 1",
+      mode: "triple",
+      L_ext: 1600,
+      L_cent: 5200,
+      estExtDiam: 10,
+      estExtSpacing: 125,
+      estCentDiam: 8,
+      estCentSpacing: 200,
+      estConfin: "E(0–2) + E(1–3)",
+      requiereSuple: true,
+      supleDiam: 16,
+      supleN: 2,
+      nCapasInf: 2,
+      showHints: true,
+      selectedRole: "cent",
+    };
+
+    const logs = [];
+    const viewSelect = document.getElementById("viewSelect");
+    const hintsCheck = document.getElementById("hintsCheck");
+    const compareRow = document.getElementById("compareRow");
+    const colActual = document.getElementById("colActual");
+    const colPropuesto = document.getElementById("colPropuesto");
+    const slotActual = document.getElementById("slotActual");
+    const slotPropuesto = document.getElementById("slotPropuesto");
+    const stateDump = document.getElementById("stateDump");
+    const heightNote = document.getElementById("heightNote");
+    const eventLog = document.getElementById("eventLog");
+
+    function log(msg) {
+      const t = new Date().toLocaleTimeString("es", { hour12: false });
+      logs.unshift(`[${t}] ${msg}`);
+      if (logs.length > 20) logs.length = 20;
+      eventLog.textContent = logs.join("\n") || "—";
+    }
+
+    function hintCls() {
+      return state.showHints ? "" : " hidden";
+    }
+
+    function stepperHtml(val, field) {
+      return `<span class="stepper-wrap" data-field="${field}"><button type="button" class="stepper-btn" data-d="-25">−</button><span class="stepper-val">${val}</span><button type="button" class="stepper-btn" data-d="25">+</button></span>`;
+    }
+
+    function diamSelectHtml(val, cls, opts) {
+      const list = opts || ESTRIBO_DIAM_OPTS;
+      return `<select class="ctrl diam-ctrl ${cls}">${list.map(d =>
+        `<option value="${d}"${d === val ? " selected" : ""}>ø${d}</option>`
+      ).join("")}</select>`;
+    }
+
+    function toggleHtml(val) {
+      return `<span class="toggle-yesno suple-toggle"><button type="button" class="${val ? "on-yes" : ""}" data-val="1">Sí</button><button type="button" class="${!val ? "on-no" : ""}" data-val="0">No</button></span>`;
+    }
+
+    function zoneFieldsExt() {
+      return `
+        <div class="est-fields">
+          <div class="est-diam-at-row">
+            <div class="est-field-row">
+              <span class="est-lbl">ø</span>${diamSelectHtml(state.estExtDiam, "ext-diam")}
+            </div>
+            <div class="est-field-row est-spacing-row" data-field="estExtSpacing">
+              <span class="est-lbl">@</span>${stepperHtml(state.estExtSpacing, "estExtSpacing")}<span class="at-unit">mm</span>
+            </div>
+          </div>
+          <div class="zone-len-tag${hintCls()}">L ${state.L_ext} mm ×2 (ini/fin) · 2·h=1200</div>
+        </div>`;
+    }
+
+    function zoneFieldsCent() {
+      return `
+        <div class="est-fields">
+          <div class="est-diam-at-row">
+            <div class="est-field-row">
+              <span class="est-lbl">ø</span>${diamSelectHtml(state.estCentDiam, "cent-diam")}
+            </div>
+            <div class="est-field-row est-spacing-row" data-field="estCentSpacing">
+              <span class="est-lbl">@</span>${stepperHtml(state.estCentSpacing, "estCentSpacing")}<span class="at-unit">mm</span>
+            </div>
+          </div>
+          <div class="zone-len-tag${hintCls()}">L ${state.L_cent} mm · luz libre</div>
+        </div>`;
+    }
+
+    function zonePanelHtml(role, title, body) {
+      const sel = state.selectedRole === role ? " selected" : "";
+      return `
+        <div class="zone-panel ${role}${sel}" data-role="${role}">
+          <div class="bar-top"></div>
+          <div class="zone-toolbar"><span class="zone-id">${title}</span></div>
+          <div class="zone-body">${body}</div>
+        </div>`;
+    }
+
+    function extCentHorizontal() {
+      return `
+        <div class="slot-zones">
+          <div class="zone-slot ext">${zonePanelHtml("ext", "Ext · ini/fin", zoneFieldsExt())}</div>
+          <div class="zone-slot cent">${zonePanelHtml("cent", "Cent", zoneFieldsCent())}</div>
+        </div>`;
+    }
+
+    function extCentVertical() {
+      return `
+        <div class="stack-vertical">
+          <div class="zone-slot cent">${zonePanelHtml("cent", "Cent", zoneFieldsCent())}</div>
+          <div class="zone-slot ext">${zonePanelHtml("ext", "Ext · ini/fin", zoneFieldsExt())}</div>
+        </div>`;
+    }
+
+    function confinHtml() {
+      const sel = state.selectedRole === "confin" ? " selected" : "";
+      return `
+        <div class="confin-block${sel}" data-role="confin">
+          <div class="bar-top"></div>
+          <div class="confin-body">
+            <div class="est-field-row">
+              <span class="est-lbl">Confin.</span>
+              <select class="ctrl confin-ctrl">${CONFIN_OPTS.map(o =>
+                `<option value="${o}"${o === state.estConfin ? " selected" : ""}>${o}</option>`
+              ).join("")}</select>
+            </div>
+            <div class="confin-hint${hintCls()}">
+              Sección transversal · <em>aplica a Ext ini/fin y Cent</em> · 4 barras 1ª capa
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function supleHtml() {
+      const sel = state.selectedRole === "suple" ? " selected" : "";
+      const on = state.requiereSuple;
+      const layer = state.nCapasInf + 1;
+      return `
+        <div class="suple-block${sel}" data-role="suple">
+          <div class="bar-top"></div>
+          <div class="suple-body">
+            <div class="est-field-row">
+              <span class="est-lbl">Suple inf.</span>
+              ${toggleHtml(on)}
+            </div>
+            <div class="suple-fields-row2${on ? "" : " disabled"}">
+              <div class="est-field-row">
+                <span class="est-lbl">ø</span>${diamSelectHtml(state.supleDiam, "suple-diam", BAR_DIAM_OPTS)}
+              </div>
+              <div class="est-field-row">
+                <span class="est-lbl">n</span>${stepperHtml(state.supleN, "supleN")}
+              </div>
+            </div>
+            <div class="suple-hint${hintCls()}">
+              Capa ${layer} · L central 80&nbsp;% · recorte 10&nbsp;% extremos
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function sectionHdr(title, cls) {
+      return `<div class="section-hdr ${cls}">${title}</div>`;
+    }
+
+    function renderActualSlot() {
+      return `
+        <div class="stirrup-slot" data-layout="actual">
+          <div class="slot-hdr">${state.beamLabel} · ${state.mode}</div>
+          ${extCentHorizontal()}
+          ${confinHtml()}
+          ${supleHtml()}
+        </div>`;
+    }
+
+    function renderPropuestoSlot() {
+      return `
+        <div class="stirrup-slot" data-layout="propuesto">
+          <div class="slot-hdr">${state.beamLabel} · ${state.mode}</div>
+          ${sectionHdr("Estribos", "estribos")}
+          <div class="slot-section">
+            ${extCentVertical()}
+            ${confinHtml()}
+          </div>
+          ${sectionHdr("Suple", "suple")}
+          <div class="slot-section">${supleHtml()}</div>
+        </div>`;
+    }
+
+    function bindSlot(container) {
+      container.querySelectorAll("button, select").forEach(el => {
+        el.addEventListener("click", e => e.stopPropagation());
+        el.addEventListener("mousedown", e => e.stopPropagation());
+      });
+
+      container.querySelectorAll(".zone-panel, .confin-block, .suple-block").forEach(el => {
+        el.addEventListener("click", e => {
+          if (e.target.closest(".suple-toggle, .confin-ctrl, .stepper-btn, select.ctrl")) return;
+          state.selectedRole = el.dataset.role;
+          renderAll();
+          const layout = container.closest(".stirrup-slot")?.dataset.layout || "?";
+          log(`Selección: ${el.dataset.role} (${layout})`);
+        });
+      });
+
+      container.querySelectorAll(".suple-toggle button").forEach(btn => {
+        btn.addEventListener("click", e => {
+          e.stopPropagation();
+          state.requiereSuple = btn.dataset.val === "1";
+          renderAll();
+          log(`Suple ${state.requiereSuple ? "SÍ" : "NO"}`);
+        });
+      });
+
+      container.querySelectorAll(".stepper-wrap").forEach(wrap => {
+        const field = wrap.dataset.field;
+        wrap.querySelectorAll(".stepper-btn").forEach(btn => {
+          btn.addEventListener("click", e => {
+            e.stopPropagation();
+            const delta = parseInt(btn.dataset.d, 10);
+            if (field === "supleN") {
+              state.supleN = Math.max(1, Math.min(6, state.supleN + (delta > 0 ? 1 : -1)));
+            } else {
+              state[field] = Math.max(50, Math.min(400, state[field] + delta));
+            }
+            renderAll();
+            log(`${field} → ${state[field]}`);
+          });
+        });
+      });
+
+      const extDiam = container.querySelector(".ext-diam");
+      if (extDiam) extDiam.addEventListener("change", () => {
+        state.estExtDiam = parseInt(extDiam.value, 10);
+        renderAll();
+        log(`Ext ø${state.estExtDiam}`);
+      });
+      const centDiam = container.querySelector(".cent-diam");
+      if (centDiam) centDiam.addEventListener("change", () => {
+        state.estCentDiam = parseInt(centDiam.value, 10);
+        renderAll();
+        log(`Cent ø${state.estCentDiam}`);
+      });
+      const supleDiam = container.querySelector(".suple-diam");
+      if (supleDiam) supleDiam.addEventListener("change", () => {
+        state.supleDiam = parseInt(supleDiam.value, 10);
+        renderAll();
+        log(`Suple ø${state.supleDiam}`);
+      });
+      container.querySelectorAll(".confin-ctrl").forEach(sel => {
+        sel.addEventListener("change", () => {
+          state.estConfin = sel.value;
+          renderAll();
+          log(`Confin. «${state.estConfin}»`);
+        });
+      });
+    }
+
+    function measureSlotHeight(el) {
+      if (!el) return 0;
+      return Math.round(el.getBoundingClientRect().height);
+    }
+
+    function renderState() {
+      stateDump.innerHTML = `
+        <span class="hi">${state.beamLabel}</span> · ${state.mode}<br/>
+        <span style="color:var(--fg-lo);font-size:9px">Revit ${state.beamId}</span><br/>
+        <span class="cent">Cent</span> ø${state.estCentDiam} @${state.estCentSpacing} · L ${state.L_cent}<br/>
+        <span class="ext">Ext</span> ø${state.estExtDiam} @${state.estExtSpacing} · L ${state.L_ext}×2<br/>
+        <span class="confin">Confin.</span> ${state.estConfin}<br/>
+        <span class="suple">Suple</span> ${state.requiereSuple ? `Sí · ø${state.supleDiam} · n=${state.supleN}` : "No"}<br/>
+        Selección: <span class="hi">${state.selectedRole}</span>`;
+    }
+
+    function renderHeightNote() {
+      const hAct = measureSlotHeight(slotActual.querySelector(".stirrup-slot"));
+      const hProp = measureSlotHeight(slotPropuesto.querySelector(".stirrup-slot"));
+      const delta = hProp - hAct;
+      heightNote.innerHTML = `
+        <strong>Actual:</strong> ~${hAct}px ·
+        <strong>Propuesto:</strong> ~${hProp}px ·
+        <strong>Δ:</strong> ${delta >= 0 ? "+" : ""}${delta}px
+        ${state.showHints ? "" : " (hints ocultos)"}`;
+    }
+
+    function renderAll() {
+      const view = viewSelect.value;
+      compareRow.classList.toggle("single", view !== "both");
+      colActual.classList.toggle("hidden", view === "propuesto");
+      colPropuesto.classList.toggle("hidden", view === "actual");
+
+      slotActual.innerHTML = renderActualSlot();
+      slotPropuesto.innerHTML = renderPropuestoSlot();
+
+      bindSlot(slotActual);
+      bindSlot(slotPropuesto);
+
+      renderState();
+      requestAnimationFrame(renderHeightNote);
+    }
+
+    viewSelect.addEventListener("change", () => {
+      renderAll();
+      log(`Vista: ${viewSelect.options[viewSelect.selectedIndex].text}`);
+    });
+
+    hintsCheck.addEventListener("change", () => {
+      state.showHints = hintsCheck.checked;
+      renderAll();
+      log(`Hints ${state.showHints ? "ON" : "OFF"}`);
+    });
+
+    renderAll();
+    log("Mockup cargado — actual vs propuesto vertical.");
+  </script>
+</body>
+</html>
