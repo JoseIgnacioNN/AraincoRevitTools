@@ -2130,7 +2130,7 @@ class EnfierradoShaftPasadaWindow(object):
         try:
             from System.Windows.Interop import WindowInteropHelper
 
-            hwnd = _revit_main_hwnd(self._revit.Application)
+            hwnd = revit_main_hwnd(self._revit.Application)
             if hwnd:
                 helper = WindowInteropHelper(self._win)
                 helper.Owner = hwnd
