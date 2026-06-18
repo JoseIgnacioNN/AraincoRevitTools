@@ -8,11 +8,13 @@ carpetas `*.tab`.
 
 - DMU etiquetas / RebarShape: `ENABLE_REBAR_SHAPE_TAG_AUTO_SYNC` y
   `rebar_tag_shape_sync_core.REBAR_TAG_SYNC_DEFAULT_FAMILY_NAMES`.
-- DMU ``Armadura_Largo Total``: `ENABLE_ARMADURA_LARGO_TOTAL_DMU` y
-  `scripts/armadura_largo_total_updater_dmu.py`.
+- DMU ``Armadura_Largo Total`` (desactivado): el parámetro lo rellenan las
+  herramientas al crear barras; ver `_apply_armadura_largo_total_to_rebars`.
 - DMU anotaciones (empalme + cotas empotramiento): `ENABLE_LAP_DETAIL_LINK_DMU` y
   `scripts/lap_detail_updater_dmu.py`. Empalmes **vigas** usan schema aparte
   (`lap_detail_link_vigas_schema.py`) y geometría opcional `compute_lap_segment_endpoints_vigas`.
+- DMU marcadores de cota confinamiento (columnas): `ENABLE_CONFINEMENT_DIM_LINK_DMU` y
+  `scripts/confinement_dim_updater_dmu.py`.
 """
 
 from __future__ import print_function
@@ -24,11 +26,14 @@ import sys
 # automática de Rebar Tag por Shape.
 ENABLE_REBAR_SHAPE_TAG_AUTO_SYNC = False
 
-# Sincronizar ``Armadura_Largo Total`` (suma tramos A+B+C…) al modificar barras.
-ENABLE_ARMADURA_LARGO_TOTAL_DMU = True
+# DMU desactivado: ``Armadura_Largo Total`` solo se escribe desde herramientas (no al editar Rebar).
+ENABLE_ARMADURA_LARGO_TOTAL_DMU = False
 
 # Reposicionar / limpiar Detail Components de empalme ligados a pares de Rebar.
 ENABLE_LAP_DETAIL_LINK_DMU = True
+
+# Borrar DetailCurve marcadores al eliminar cotas de confinamiento (columnas).
+ENABLE_CONFINEMENT_DIM_LINK_DMU = True
 
 
 def _register():
@@ -50,11 +55,23 @@ def _register():
         from armadura_largo_total_updater_dmu import register_armadura_largo_total_updater
 
         register_armadura_largo_total_updater(addin_id, doc=None)
+    else:
+        from armadura_largo_total_updater_dmu import unregister_armadura_largo_total_updater
+
+        try:
+            unregister_armadura_largo_total_updater(addin_id)
+        except Exception:
+            pass
 
     if ENABLE_LAP_DETAIL_LINK_DMU:
         from lap_detail_updater_dmu import register_lap_detail_link_updater
 
         register_lap_detail_link_updater(addin_id, doc=None)
+
+    if ENABLE_CONFINEMENT_DIM_LINK_DMU:
+        from confinement_dim_updater_dmu import register_confinement_dim_link_updater
+
+        register_confinement_dim_link_updater(addin_id, doc=None)
 
 
 try:
