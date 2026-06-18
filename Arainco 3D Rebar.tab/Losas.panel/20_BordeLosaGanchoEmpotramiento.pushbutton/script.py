@@ -5,6 +5,8 @@ Resuelve ``<pushbutton>/scripts/`` en primer lugar; si no existe, sube directori
 hasta encontrar ``scripts/barras_bordes_losa_gancho_empotramiento.py`` (extensión BIMTools).
 """
 
+__title__ = u"Borde\nLosa"
+
 import os
 import sys
 import imp
