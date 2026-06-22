@@ -1,0 +1,52 @@
+15_SuperSelectorCategoria.pushbutton
+├── bundle.yaml
+├── script.py                              Entrada pyRevit (valida scripts/ + purge + run)
+├── ESTRUCTURA_PORTABLE.txt
+├── bimtools_access_bootstrap.py           Guardia corporativa (opcional; ver abajo)
+├── icon.png                               Opcional (icono cinta; pyRevit usa default si falta)
+│
+└── scripts/                               Paquete autocontenido (copiar completo)
+    ├── run.py                             Punto de entrada: show_super_selector_ui
+    ├── bimtools_wpf_dark_theme.py         Tema WPF oscuro BIMTools
+    ├── revit_wpf_window_position.py       Centrado de ventana en monitor de Revit
+    ├── lib/
+    │   └── elements_by_category.py        Filtrado y agrupación por categoría de modelado
+    └── ui/
+        └── selector_window.py             UI WPF + ExternalEvent de selección
+
+Copie solo esta carpilla .pushbutton a la pestaña de otra extensión pyRevit.
+No requiere ``BIMTools.tab/bimtools_access_bootstrap.py`` ni módulos compartidos del panel.
+
+Acceso corporativo (opcional): si la extensión destino incluye ``scripts/corporate_access.py``
+(p. ej. copiado desde BIMTools.extension), el botón valida ``bimtools_access.json`` en el
+servidor de incidencias. Sin ese archivo, el botón se ejecuta sin validación de licencia.
+
+-----------------------------------------------------------------------------
+Arquitectura (capas)
+-----------------------------------------------------------------------------
+
+  script.py              Entrada pyRevit, validación del paquete y recarga IronPython
+       ↓
+  run.py                 Importa ui.selector_window
+       ↓
+  selector_window.py     WPF + ExternalEvent (singleton por AppDomain)
+
+Transacciones: la selección en modelo no abre Transaction (solo uidoc.Selection).
+
+-----------------------------------------------------------------------------
+Despliegue
+-----------------------------------------------------------------------------
+
+1. Copie la carpeta completa ``15_SuperSelectorCategoria.pushbutton`` (raíz + ``scripts/`` + bundle.yaml).
+2. Recargue pyRevit en las estaciones destino.
+3. Revit 2024–2026 (``min_revit_ver`` / ``max_revit_ver`` en bundle.yaml).
+
+Prioridad en tiempo de ejecución: ``script.py`` antepone ``scripts/`` a ``sys.path``;
+``_purge_modules()`` fuerza recarga limpia en cada ejecución.
+
+-----------------------------------------------------------------------------
+Fuente canónica (BIMTools.extension)
+-----------------------------------------------------------------------------
+
+Esta carpilla es autocontenida. Al publicar cambios, sincronice todos los .py listados
+arriba desde el repositorio BIMTools; no mezcle versiones sueltas entre carpetas.
