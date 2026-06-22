@@ -1,0 +1,54 @@
+16_ContornoHormigonEje.pushbutton
+├── bundle.yaml
+├── script.py                              Arranque pyRevit (solo scripts/ local)
+├── bimtools_access_bootstrap.py           Guardia corporativa portable
+├── ESTRUCTURA_PORTABLE.txt
+├── icon.png                               Opcional (icono cinta)
+└── scripts/                               Paquete autocontenido (copiar completo)
+    ├── contorno_hormigon_eje.py           Lógica: hormigón, unión, corte, detail lines
+    ├── contorno_hormigon_eje_ui.py        Ventana WPF (eje + Generar contorno)
+    ├── contorno_material_concrete.py      Filtro Concrete + extracción de sólidos
+    ├── bimtools_wpf_dark_theme.py         Tema oscuro WPF
+    └── revit_wpf_window_position.py       Centrado modal sobre Revit
+
+Copie solo esta carpeta .pushbutton a otra extensión pyRevit.
+
+  - No requiere bimtools_paths ni módulos de la raíz de BIMTools.extension
+  - No busca scripts/ en carpetas padre (sin fallback de desarrollo)
+  - script.py valida que los cinco .py de scripts/ existan antes de ejecutar
+
+-----------------------------------------------------------------------------
+Arquitectura
+-----------------------------------------------------------------------------
+
+  script.py                    Entrada pyRevit, validación del paquete y recarga
+       ↓
+  contorno_hormigon_eje.py     Orquestación geométrica y Transaction
+       ↓
+  contorno_hormigon_eje_ui.py  WPF (ComboBox ejes, ExternalEvent)
+  contorno_material_concrete.py  Categorías, filtro Concrete, obtener_solidos_elemento
+
+Transacciones: prefijo ``Arainco: Contorno hormigón por eje``.
+
+-----------------------------------------------------------------------------
+Fuente canónica (BIMTools.extension, solo desarrollo)
+-----------------------------------------------------------------------------
+
+Respaldo en ``BIMTools.extension/scripts/``:
+  - contorno_hormigon_eje.py
+  - contorno_hormigon_eje_ui.py
+  - contorno_material_concrete.py
+
+Tras editar la lógica, sincronice esos .py con ``<pushbutton>/scripts/``
+antes de entregar el paquete portable.
+
+-----------------------------------------------------------------------------
+Requisitos
+-----------------------------------------------------------------------------
+
+  - Revit 2024–2026 (BooleanOperationsUtils, NewGroup)
+  - Vista de modelo 2D activa (no hoja ni cuadro de planificación)
+  - Elementos estructurales con material Concrete visibles en la vista
+  - Al menos un Grid (eje) en el proyecto
+
+pyRevit (IronPython 2.7 / 3.4).
