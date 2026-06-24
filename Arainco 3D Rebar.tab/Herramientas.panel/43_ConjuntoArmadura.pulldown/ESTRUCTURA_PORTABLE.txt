@@ -1,0 +1,24 @@
+43_ConjuntoArmadura.pulldown
+├── bundle.yaml
+├── icon.png
+├── ESTRUCTURA_PORTABLE.txt
+├── sync_portable_lib.ps1              Sincroniza lib/ entre los tres botones
+├── 01_SeleccionarConjunto.pushbutton/   Paquete portable (copiable solo)
+├── 02_OcultarConjunto.pushbutton/       Paquete portable (copiable solo)
+└── 03_EliminarConjunto.pushbutton/      Paquete portable (copiable solo)
+
+Cada .pushbutton es autocontenido: script.py + scripts/run.py + scripts/lib/.
+No depende de lib/ del pulldown ni de módulos de otras herramientas BIMTools.
+
+Para distribuir un solo comando, copie la carpeta .pushbutton completa.
+Para distribuir el menú desplegable, copie la carpeta .pulldown completa.
+
+Al editar scripts/lib/ en un botón, ejecute sync_portable_lib.ps1 para replicar
+en los otros dos (misma lógica compartida, copias independientes).
+
+Aislamiento IronPython (por botón):
+  - imp.load_source con ID único (conjunto_armadura_*_run)
+  - scripts/ del botón prioritario en sys.path
+  - purga de lib.* en sys.modules antes de cada ejecución
+
+Transacciones: prefijo «Arainco: ».
