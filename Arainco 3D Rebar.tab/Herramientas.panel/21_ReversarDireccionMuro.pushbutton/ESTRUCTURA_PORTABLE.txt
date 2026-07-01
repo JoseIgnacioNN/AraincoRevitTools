@@ -1,0 +1,50 @@
+21_ReversarDireccionMuro.pushbutton
+├── bundle.yaml
+├── script.py                              Arranque pyRevit (solo scripts/ local)
+├── bimtools_access_bootstrap.py           Guardia corporativa portable
+├── ESTRUCTURA_PORTABLE.txt
+├── icon.png                               Opcional (icono cinta)
+└── scripts/                               Paquete autocontenido (copiar completo)
+    └── reversar_direccion_muro.py         Selección, inversión LocationCurve, resumen
+
+Copie solo esta carpeta .pushbutton a otra extensión pyRevit.
+
+  - No requiere bimtools_paths ni módulos de la raíz de BIMTools.extension
+  - No busca scripts/ en carpetas padre (sin fallback de desarrollo)
+  - script.py valida que reversar_direccion_muro.py exista antes de ejecutar
+
+-----------------------------------------------------------------------------
+Arquitectura (orden de scripts)
+-----------------------------------------------------------------------------
+
+  script.py
+       ↓  validación del paquete, recarga IronPython, acceso corporativo
+  reversar_direccion_muro.py
+       ↓
+  _FiltroWall / _pick_walls / _obtener_muros   Selección múltiple interactiva
+  _reverse_wall_curve                          Inversión Line o Arc
+  _ejecutar                                    Transaction + resumen
+  run(revit)                                   Entrada pyRevit
+
+Transacciones: prefijo ``Arainco: Reversar dirección de muro``.
+
+-----------------------------------------------------------------------------
+Fuente canónica (BIMTools.extension, solo desarrollo)
+-----------------------------------------------------------------------------
+
+Respaldo en ``BIMTools.extension/scripts/reversar_direccion_muro.py``.
+Tras editar la lógica, sincronice ese .py con
+``<pushbutton>/scripts/reversar_direccion_muro.py`` antes de entregar el paquete
+portable.
+
+Ninguna otra herramienta importa este módulo; el despliegue no afecta al resto
+de BIMTools.
+
+-----------------------------------------------------------------------------
+Requisitos
+-----------------------------------------------------------------------------
+
+  - Revit 2024–2026
+  - Muros con LocationCurve Line o Arc acotada
+
+pyRevit (IronPython 2.7 / 3.4).
