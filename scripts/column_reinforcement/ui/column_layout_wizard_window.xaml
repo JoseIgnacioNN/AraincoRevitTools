@@ -5,7 +5,7 @@
         Title="Arainco: Armado Columnas"
         Height="880" Width="1100"
         MinHeight="700" MinWidth="980"
-        WindowStartupLocation="Manual"
+        WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         Background="#071018"
         FontFamily="Segoe UI"
@@ -96,8 +96,6 @@ __BIMTOOLS_DARK_STYLES__
 
       <StackPanel Grid.Row="0" Margin="0,0,0,10">
         <TextBlock Text="Arainco: Armado Columnas" Foreground="#E8F4F8" FontSize="18" FontWeight="Bold"/>
-        <TextBlock Margin="0,6,0,0" Foreground="#95B8CC" TextWrapping="Wrap"
-                   Text="Asistente: rejilla por sección y troceo (un solo formulario)."/>
       </StackPanel>
 
       <Grid Grid.Row="1" Margin="0,0,0,12">
@@ -219,16 +217,10 @@ __BIMTOOLS_DARK_STYLES__
 
         <Grid x:Name="ScrollTroceoStep" VerticalAlignment="Stretch" Visibility="Collapsed">
           <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
             <!-- Esquema + diámetros longitudinales en un único recuadro; reparto vertical del alto útil. -->
             <RowDefinition Height="*" MinHeight="420"/>
           </Grid.RowDefinitions>
-          <StackPanel Grid.Row="0" Margin="0,0,0,10">
-            <TextBlock Text="Definicion de Empalmes, Diametros y Espaciamiento de Estribos" Foreground="#E8F4F8" FontSize="16" FontWeight="Bold" TextWrapping="Wrap"/>
-            <TextBlock Margin="0,6,0,0" Foreground="#95B8CC" TextWrapping="Wrap"
-                       Text="Corte esquemático: marque referencias en el fuste. Ø/tipo y espaciamiento de estribos por tramo junto al esquema; el diámetro de barras longitudinales por tramo de troceo va en la misma franja del esquema, a la derecha del fuste. Use «Alternar referencia» con Desde / Cada."/>
-          </StackPanel>
-          <Border Grid.Row="1" CornerRadius="4" Padding="12" Margin="0,0,0,0" Background="#0b1924" VerticalAlignment="Stretch">
+          <Border Grid.Row="0" CornerRadius="4" Padding="12" Margin="0,0,0,0" Background="#0b1924" VerticalAlignment="Stretch">
             <Border Background="#050a10" CornerRadius="4" Padding="10" VerticalAlignment="Stretch">
                 <Grid VerticalAlignment="Stretch">
                   <Grid.RowDefinitions>

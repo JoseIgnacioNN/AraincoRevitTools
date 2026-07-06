@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Exportación de láminas (ViewSheet) a PDF y DWG para BIMTools.
-Usado por 04_ExportarLaminasPDFDWG.pushbutton.
+Helpers compartidos en scripts/ (legado): expone ``_sheet_revision_display`` para otras herramientas.
+
+La herramienta ``04_ExportarLaminasPDFDWG.pushbutton`` usa su copia local autocontenida;
+no cargar este módulo desde el pushbutton.
 """
 
 import re
@@ -407,12 +409,13 @@ def build_sheets_datatable(doc):
 
 def export_sheet_pdf(doc, folder, sheet_id, custom_base):
     """
-    Un PDF por lámina. custom_base sin ruta; se añade .pdf si falta.
+    Un PDF por lámina. custom_base sin ruta ni extensión (si trae .pdf, se quita).
     PDFExportOptions.Combine=True con una sola vista respeta FileName.
+    La API de Revit añade ".pdf" automáticamente a FileName.
     """
     base = sanitize_file_base(custom_base)
-    if not base.lower().endswith(u".pdf"):
-        base = base + u".pdf"
+    if base.lower().endswith(u".pdf"):
+        base = base[:-4]
 
     opts = PDFExportOptions()
     try:

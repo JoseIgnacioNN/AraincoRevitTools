@@ -16,6 +16,8 @@ class LegacyColumnReinforcementService(object):
         self.legacy_main = legacy_main
 
     def execute(self, context, request):
+        # ``context`` (RevitExecutionContext) se pasa desde el runner para futuro motor/
+        # transacciones; el legado solo usa el estado global inyectado en el módulo RPS.
         if not request.use_legacy_engine:
             return ColumnReinforcementResult(
                 False,

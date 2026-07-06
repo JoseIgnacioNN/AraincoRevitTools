@@ -15,18 +15,11 @@ __BIMTOOLS_DARK_STYLES__
   <Border Background="#071018" Padding="18">
     <Grid>
       <Grid.RowDefinitions>
-        <RowDefinition Height="Auto"/>
         <RowDefinition Height="*" MinHeight="180"/>
         <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
 
-      <StackPanel Grid.Row="0" Margin="0,0,0,12">
-        <TextBlock Text="Definicion de Empalmes, Diametros y Espaciamiento de Estribos" Foreground="#E8F4F8" FontSize="18" FontWeight="Bold" TextWrapping="Wrap"/>
-        <TextBlock x:Name="SubtitleText" Margin="0,6,0,0" Foreground="#95B8CC" TextWrapping="Wrap"
-                   Text="Fuste, cotas y Ø longitudinal por tramo de troceo en la franja a la derecha del fuste. Ø/tipo y espaciamiento de estribos a la izquierda. «Alternar referencia»: Desde / Cada."/>
-      </StackPanel>
-
-      <Border Grid.Row="1" CornerRadius="4" Padding="12" Margin="0,0,0,12" Background="#0b1924">
+      <Border Grid.Row="0" CornerRadius="4" Padding="12" Margin="0,0,0,12" Background="#0b1924">
         <Border Background="#050a10" CornerRadius="4" Padding="10" VerticalAlignment="Stretch">
             <Grid VerticalAlignment="Stretch">
               <Grid.RowDefinitions>
@@ -113,7 +106,7 @@ __BIMTOOLS_DARK_STYLES__
         </Border>
       </Border>
 
-      <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+      <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
         <Button x:Name="BtnCancel" Content="Cancelar" Style="{StaticResource BtnSelectOutline}" MinWidth="110" Margin="0,0,10,0"/>
         <Button x:Name="BtnConfirm" Content="Confirmar troceo" Style="{StaticResource BtnPrimary}" MinWidth="150"/>
       </StackPanel>

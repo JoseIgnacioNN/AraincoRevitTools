@@ -9,8 +9,9 @@ Unir geometría entre elementos de **material estructural hormigón** (Concrete)
 - Tras unir, en pares **forjado + muro/viga/pilar/cimentación**: ``SwitchJoinOrder`` si hace
   falta para que el **forjado sea el recortado** (no el cortante), vía
   ``IsCuttingElementInJoin`` (mismo criterio que el flujo RPS de referencia).
-- Barra de progreso: ``pyrevit.forms.ProgressBar`` en fases: **(1)** lectura por categoría,
-  **(2)** candidatos por caja por elemento, **(3)** unión por par (si pyRevit está disponible).
+- Barra de progreso: ``pyrevit.forms.ProgressBar`` con acento BIMTools (91,192,222),
+  patrón ``armado_muros_lineales`` — fases lectura, candidatos y unión.
+- Pantalla de inicio: diálogo WPF oscuro BIMTools (``join_geometry_instruction_dialog``).
 - Fallos «Can't cut joined element»: ``IFailuresPreprocessor`` intenta la resolución API
   equivalente a *Unjoin elements* (``FailureResolutionType.UnjoinElements`` / ``DetachElements``)
   antes de borrar el error de la cola.
@@ -18,6 +19,9 @@ Unir geometría entre elementos de **material estructural hormigón** (Concrete)
 - Durante lectura / candidatos / unión: se deshabilita la ventana principal de Revit
   (``user32.EnableWindow``) para que no se lancen otros comandos; la barra de pyRevit
   es otra ventana de nivel superior y sigue mostrando el progreso.
+
+Copia portable: ``BIMTools.tab/Modelado.panel/11_UnirGeometriaHormigonVista.pushbutton/scripts/``.
+Tras editar aquí, sincronice con esa carpeta (ver ``ESTRUCTURA_PORTABLE.txt``).
 """
 
 from __future__ import print_function
@@ -62,6 +66,12 @@ from geometria_colision_vigas import (
     _CATS_ESCANEO_MATERIAL_ESTRUCTURAL,
     material_estructural_es_concrete,
 )
+
+_DIALOG_TITLE = u"Arainco: Unir geometría (hormigón, vista)"
+
+_PBAR_BASE_LECTURA = u"Arainco: Unir geom. hormigón — lectura"
+_PBAR_BASE_CANDIDATOS = u"Arainco: Unir geom. hormigón — candidatos"
+_PBAR_BASE_UNION = u"Arainco: Unir geom. hormigón — uniendo"
 
 
 def _builtin_cannot_cut_joined_failure_ids():
@@ -243,24 +253,41 @@ class _JoinGeomFailuresPreprocessor(IFailuresPreprocessor):
         return FailureProcessingResult.Continue
 
 
+def _pbar_phase_title(base_title, total):
+    """Título inicial 0/N (mismo patrón que Armado Muros)."""
+    try:
+        t = max(int(total), 1)
+    except Exception:
+        t = 1
+    return u"{} 0/{}".format(base_title, t)
+
+
 def _pbar_start(title, count):
-    """
-    ``forms.ProgressBar`` de pyRevit (mismo patrón que Armado Muros Nodo).
-    Si pyRevit no está disponible o falla, devuelve ``None``.
+    u"""
+    ``forms.ProgressBar`` de pyRevit con acento BIMTools (91,192,222),
+    igual que ``armado_muros_lineales._ml_pbar_start``.
     """
     if _pyrevit_forms is None or count is None or int(count) < 1:
         return None
     try:
-        return _pyrevit_forms.ProgressBar(
+        pb = _pyrevit_forms.ProgressBar(
             title=title,
             cancellable=False,
         )
+        try:
+            from System.Windows.Media import Color, SolidColorBrush
+
+            r, g, b = (91, 192, 222)
+            pb.Resources[u"pyRevitAccentBrush"] = SolidColorBrush(Color.FromRgb(r, g, b))
+        except Exception:
+            pass
+        return pb
     except Exception:
         return None
 
 
 def _pbar_step(pb, current_index, count, base_title):
-    """*current_index*: 0…count-1."""
+    u"""*current_index*: 0…count-1. Actualiza barra y título con contador."""
     if pb is None:
         return
     c = int(count) if count else 0
@@ -279,17 +306,28 @@ def _pbar_step(pb, current_index, count, base_title):
     except Exception:
         pass
     try:
-        pb.title = u"{}  {}/{}".format(base_title, i, c)
+        pb.title = u"{} {}/{}".format(base_title, i, c)
     except Exception:
         pass
 
 
-def _pbar_exit_safe(pb, ok):
-    if ok and pb is not None:
-        try:
-            pb.__exit__(None, None, None)
-        except Exception:
-            pass
+def _pbar_enter(pb):
+    if pb is None:
+        return False
+    try:
+        pb.__enter__()
+        return True
+    except Exception:
+        return False
+
+
+def _pbar_exit(pb, pbar_open):
+    if not pbar_open or pb is None:
+        return
+    try:
+        pb.__exit__(None, None, None)
+    except Exception:
+        pass
 
 
 def _hwnd_to_int(hwnd):
@@ -462,7 +500,7 @@ def _recoger_hormigon_en_vista(doc, view, pbar_cats=None):
             pass
         if pbar_cats is not None and n_cat > 0:
             _pbar_step(
-                pbar_cats, i, n_cat, u"Arainco: 1/3 Leyendo (categorías)"
+                pbar_cats, i, n_cat, _PBAR_BASE_LECTURA
             )
     return out
 
@@ -488,7 +526,7 @@ def _pares_unicos_por_caja(doc, view, elements_concrete, pbar_cajas=None):
     for idx, e in enumerate(elements_concrete):
         if pbar_cajas is not None:
             _pbar_step(
-                pbar_cajas, idx, n_el, u"Arainco: 2/3 Candidatos (cajas)"
+                pbar_cajas, idx, n_el, _PBAR_BASE_CANDIDATOS
             )
         if e is None:
             continue
@@ -606,69 +644,58 @@ def _switch_forjado_recortado_por_otro(doc, a, b, err_switch):
 def run(revit):
     uidoc = revit.ActiveUIDocument
     if uidoc is None:
-        TaskDialog.Show(
-            u"Arainco: Unir geometría (hormigón, vista)",
-            u"No hay documento activo.",
-        )
+        TaskDialog.Show(_DIALOG_TITLE, u"No hay documento activo.")
         return
 
     doc = uidoc.Document
     view = uidoc.ActiveView
     ok, msg = _vista_permitida(view)
     if not ok:
-        TaskDialog.Show(u"Arainco: Unir geometría (hormigón, vista)", msg)
+        TaskDialog.Show(_DIALOG_TITLE, msg)
+        return
+
+    from join_geometry_instruction_dialog import show_selection_instructions
+
+    if not show_selection_instructions(revit):
         return
 
     with _BloquearComandosRevit(revit):
         n_cat = len(_CATS_ESCANEO_MATERIAL_ESTRUCTURAL) or 1
-        _pb1 = _pbar_start(
-            u"Arainco: 1/3 Leyendo: 0/{} (categorías)".format(n_cat), n_cat
-        )
-        _ok1 = _pb1 is not None
-        if _ok1:
-            try:
-                _pb1.__enter__()
-            except Exception:
-                _ok1 = False
-                _pb1 = None
+        _pb1 = _pbar_start(_pbar_phase_title(_PBAR_BASE_LECTURA, n_cat), n_cat)
+        _pbar1_open = _pbar_enter(_pb1)
         try:
             elements_concrete = _recoger_hormigon_en_vista(
-                doc, view, _pb1 if _ok1 else None
+                doc, view, _pb1 if _pbar1_open else None
             )
         finally:
-            _pbar_exit_safe(_pb1, _ok1)
+            _pbar_exit(_pb1, _pbar1_open)
 
         if not elements_concrete:
             TaskDialog.Show(
-                u"Arainco: Unir geometría (hormigón, vista)",
-                u"No se encontraron en la vista activa elementos de las categorías consideradas (muros, forjados, pilares, cimentación) con material estructural hormigón (Concrete).",
+                _DIALOG_TITLE,
+                u"No se encontraron en la vista activa elementos de las categorías "
+                u"consideradas (muros, forjados, pilares, cimentación) con material "
+                u"estructural hormigón (Concrete).",
             )
             return
 
         n_el = len(elements_concrete)
-        _pb2 = _pbar_start(
-            u"Arainco: 2/3 Candidatos: 0/{} (elementos)".format(max(n_el, 1)), n_el
-        )
-        _ok2 = _pb2 is not None
-        if _ok2:
-            try:
-                _pb2.__enter__()
-            except Exception:
-                _ok2 = False
-                _pb2 = None
+        _pb2 = _pbar_start(_pbar_phase_title(_PBAR_BASE_CANDIDATOS, n_el), n_el)
+        _pbar2_open = _pbar_enter(_pb2)
         try:
             pairs = list(
                 _pares_unicos_por_caja(
-                    doc, view, elements_concrete, _pb2 if _ok2 else None
+                    doc, view, elements_concrete, _pb2 if _pbar2_open else None
                 )
             )
         finally:
-            _pbar_exit_safe(_pb2, _ok2)
+            _pbar_exit(_pb2, _pbar2_open)
 
         if not pairs:
             TaskDialog.Show(
-                u"Arainco: Unir geometría (hormigón, vista)",
-                u"Hay ejemplares de hormigón en la vista, pero no se detectaron pares (cajas) candidatos a unir.",
+                _DIALOG_TITLE,
+                u"Hay ejemplares de hormigón en la vista, pero no se detectaron "
+                u"pares (cajas) candidatos a unir.",
             )
             return
 
@@ -680,18 +707,8 @@ def run(revit):
         err_switch = []
 
         n_pairs = len(pairs)
-        _pb = _pbar_start(
-            u"Arainco: 3/3 Uniendo: 0/{} (pares)".format(max(n_pairs, 1)),
-            max(n_pairs, 1),
-        )
-        _pb_ok = _pb is not None
-        if _pb_ok:
-            try:
-                _pb.__enter__()
-            except Exception:
-                _pb_ok = False
-                _pb = None
-
+        _pb = _pbar_start(_pbar_phase_title(_PBAR_BASE_UNION, n_pairs), n_pairs)
+        _pbar_open = _pbar_enter(_pb)
         tx = Transaction(
             doc, u"Arainco: Unir geometría hormigón (vista activa)"
         )
@@ -704,13 +721,8 @@ def run(revit):
         tx.Start()
         try:
             for idx, (ida, idb) in enumerate(pairs):
-                if _pb_ok:
-                    _pbar_step(
-                        _pb,
-                        idx,
-                        n_pairs,
-                        u"Arainco: 3/3 Uniendo (vista)",
-                    )
+                if _pbar_open:
+                    _pbar_step(_pb, idx, n_pairs, _PBAR_BASE_UNION)
                 a = doc.GetElement(ida)
                 b = doc.GetElement(idb)
                 if a is None or b is None:
@@ -753,18 +765,15 @@ def run(revit):
             except Exception:
                 pass
             TaskDialog.Show(
-                u"Arainco: Unir geometría (hormigón, vista)",
-                u"Error en la transacción: {0}".format(ex),
+                _DIALOG_TITLE,
+                u"Error en la transacción:\n\n{0}".format(ex),
             )
             return
         finally:
-            if _pb_ok and _pb is not None:
-                try:
-                    _pb.__exit__(None, None, None)
-                except Exception:
-                    pass
+            _pbar_exit(_pb, _pbar_open)
 
     resumen = (
+        u"Proceso completado.\n\n"
         u"Vista: {0}\n"
         u"Ejemplares de hormigón (en vista): {1}\n"
         u"Pares candidatos (caja): {2}\n"
@@ -787,13 +796,11 @@ def run(revit):
         resumen += u"\n\nAvisos SwitchJoin (forjado):\n" + u"\n".join(err_switch)
     if nuevos <= 1 and ya_unidos > 100 and len(pairs) > 0:
         resumen += (
-            u"\n\nNota: «Ya estaban unidos» no interrumpe el bucle: solo cuenta y salta a otro par. "
-            u"Tras unir en una ejecución previa, es normal ver muchos en esa línea. "
-            u"Un diálogo de Revit (p. ej. corte) durante la unión se gestiona al cerrar el Commit; el script sigue con el resto de pares. "
-            u"Forjado–viga: forjado estructural o material detectado como concrete."
+            u"\n\nNota: «Ya estaban unidos» no interrumpe el bucle: solo cuenta y "
+            u"sale al siguiente par. Tras unir en una ejecución previa, es normal "
+            u"ver muchos en esa línea. Un diálogo de Revit (p. ej. corte) durante la "
+            u"unión se gestiona al cerrar el Commit; el script sigue con el resto de "
+            u"pares. Forjado–viga: forjado estructural o material detectado como concrete."
         )
 
-    TaskDialog.Show(
-        u"Arainco: Unir geometría (hormigón, vista)",
-        resumen,
-    )
+    TaskDialog.Show(_DIALOG_TITLE, resumen)

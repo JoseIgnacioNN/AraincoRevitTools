@@ -32,6 +32,7 @@ No gestiona transacciones: el llamador abre ``Transaction``.
 from __future__ import division
 
 import clr
+import math
 import System
 
 clr.AddReference("RevitAPI")
@@ -62,6 +63,7 @@ from Autodesk.Revit.DB.Structure import (
     RebarHookType,
     RebarPresentationMode,
     RebarShape,
+    RebarStyle,
     StructuralMaterialType,
     StructuralType,
 )
@@ -91,6 +93,18 @@ try:
 except Exception:
     buscar_rebar_shape_por_nombre = None
     rebar_shape_display_name = None
+
+try:
+    from rebar_fundacion_cara_inferior import buscar_rebar_hook_type_por_nombre
+except Exception:
+    buscar_rebar_hook_type_por_nombre = None
+
+try:
+    import rebar_extender_l_ganchos_135_rps as l135
+except Exception:
+    l135 = None
+
+_TIE_HOOK_NAME = u"Stirrup/Tie - 135 deg."
 
 _TOL_PLANE_FT = 1.5e-4  # ~0.05 mm
 _TOL_MERGE_PTS_FT = 2.5e-3  # ~0.76 mm
@@ -1537,6 +1551,7 @@ def _crear_rebar_estribos_multizonas(
     spacing_cent_mm,
     avisos,
     rebars_creados=None,
+    rebar_zone_meta_out=None,
     view=None,
 ):
     """
@@ -1661,6 +1676,7 @@ def _crear_rebar_estribos_multizonas(
             ]
     cum = 0.0
     total_qty = 0
+    zone_idx = 0
     try:
         ax = axis.Normalize()
     except Exception:
@@ -1712,10 +1728,600 @@ def _crear_rebar_estribos_multizonas(
         total_qty += _rebar_cantidad_posiciones(rebar)
         if rebars_creados is not None:
             rebars_creados.append(rebar)
+        if rebar_zone_meta_out is not None:
+            n_z = len(zonas)
+            if n_z <= 1:
+                zone_kind = u"central"
+            elif n_z == 2:
+                zone_kind = u"extremo"
+            elif zone_idx == n_z // 2:
+                zone_kind = u"central"
+            else:
+                zone_kind = u"extremo"
+            rebar_zone_meta_out.append({
+                u"zone_index": zone_idx,
+                u"zone_kind": zone_kind,
+            })
+        if view is not None:
+            _presentacion_estribo_first_last_en_vista(rebar, view)
+        cum += float(Lz)
+        zone_idx += 1
+    return int(total_qty)
+
+
+def _resolve_hook_stirrup_tie_135(document):
+    """``RebarHookType`` stirrup/tie 135° (mismo criterio que Armado Muros cabezal)."""
+    if document is None:
+        return None
+    if buscar_rebar_hook_type_por_nombre is not None:
+        for nombre in (
+            _TIE_HOOK_NAME,
+            u"Stirrup/Tie - 135 deg.",
+            u"Stirrup/Tie - 135 deg",
+            u"135",
+        ):
+            try:
+                ht = buscar_rebar_hook_type_por_nombre(document, nombre)
+                if ht is not None:
+                    return ht
+            except Exception:
+                pass
+    target_deg = 135.0
+    tol_deg = 2.0
+    stirrup_cands = []
+    try:
+        for ht in FilteredElementCollector(document).OfClass(RebarHookType):
+            name = u""
+            try:
+                name = (ht.Name or u"").lower()
+            except Exception:
+                pass
+            try:
+                ang = math.degrees(float(ht.HookAngle))
+            except Exception:
+                ang = None
+            if ang is None or abs(ang - target_deg) > tol_deg:
+                continue
+            if u"stirrup" in name or u"tie" in name:
+                stirrup_cands.append(ht)
+    except Exception:
+        pass
+    if stirrup_cands:
+        return stirrup_cands[0]
+    if l135 is not None:
+        try:
+            largo_mm = float(getattr(l135, u"HOOK_LENGTH_MM_135", 100.0))
+            hid, _err = l135._resolve_rebar_hook_135_id(document, largo_mm)
+            if hid is not None and hid != ElementId.InvalidElementId:
+                ht = document.GetElement(hid)
+                if isinstance(ht, RebarHookType):
+                    return ht
+        except Exception:
+            pass
+    if _pick_first_hook_type is not None:
+        try:
+            return _pick_first_hook_type(document)
+        except Exception:
+            pass
+    return None
+
+
+def _tie_plane_normals(axis, width_dir, depth_dir):
+    """Normales candidatas al plano de la traba (propagación = normal del set)."""
+    raw = []
+    for nv in (axis, width_dir, depth_dir):
+        if nv is None:
+            continue
+        try:
+            n = nv.Normalize()
+        except Exception:
+            n = nv
+        if n is None:
+            continue
+        raw.append(n)
+        try:
+            raw.append(n.Negate())
+        except Exception:
+            pass
+    out = []
+    seen = set()
+    for n in raw:
+        try:
+            key = (round(float(n.X), 6), round(float(n.Y), 6), round(float(n.Z), 6))
+        except Exception:
+            key = id(n)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(n)
+    return out
+
+
+def _tie_hook_orient_inward(tangent, plane_normal, at_pt, interior_pt):
+    try:
+        ln = float(tangent.GetLength())
+    except Exception:
+        ln = 0.0
+    if ln < 1e-12:
+        return RebarHookOrientation.Left
+    t = tangent.Multiply(1.0 / ln)
+    try:
+        pn_len = float(plane_normal.GetLength())
+    except Exception:
+        pn_len = 0.0
+    if pn_len < 1e-12:
+        return RebarHookOrientation.Left
+    n = plane_normal.Multiply(1.0 / pn_len)
+    to_axis = interior_pt.Subtract(at_pt)
+    h = float(to_axis.DotProduct(n))
+    to_plane = to_axis.Subtract(n.Multiply(h))
+    tpl = float(to_plane.GetLength())
+    if tpl < 1e-12:
+        return RebarHookOrientation.Left
+    d_in = to_plane.Multiply(1.0 / tpl)
+    lat = n.CrossProduct(t)
+    l = float(lat.GetLength())
+    if l < 1e-12:
+        return RebarHookOrientation.Left
+    lat_u = lat.Multiply(1.0 / l)
+    return (
+        RebarHookOrientation.Right
+        if float(lat_u.DotProduct(d_in)) < 0.0
+        else RebarHookOrientation.Left
+    )
+
+
+def _flip_tie_hook_orient(orient):
+    if orient == RebarHookOrientation.Left:
+        return RebarHookOrientation.Right
+    return RebarHookOrientation.Left
+
+
+def _tie_hook_orientations(p_top, p_bot, interior_pt, plane_normal):
+    t_down = p_bot.Subtract(p_top)
+    t_up = p_top.Subtract(p_bot)
+    o_top = _flip_tie_hook_orient(
+        _tie_hook_orient_inward(t_down.Negate(), plane_normal, p_top, interior_pt),
+    )
+    o_bot = _tie_hook_orient_inward(
+        t_up.Negate(), plane_normal, p_bot, interior_pt,
+    )
+    return o_top, o_bot
+
+
+def _curves_list_translated(curves_list, delta):
+    """Traslada una ``List[Curve]`` abierta a lo largo del eje de la viga."""
+    if curves_list is None or delta is None:
+        return None
+    try:
+        out = List[Curve]()
+        n = int(curves_list.Count)
+        for i in range(n):
+            c = curves_list[i]
+            if c is None or not c.IsBound:
+                continue
+            p0 = c.GetEndPoint(0).Add(delta)
+            p1 = c.GetEndPoint(1).Add(delta)
+            if p0.DistanceTo(p1) < _MIN_EDGE_FT:
+                continue
+            out.Add(Line.CreateBound(p0, p1))
+        if int(out.Count) > 0:
+            return out
+    except Exception:
+        pass
+    return None
+
+
+def _py_curves_from_ilist(curves_ilist, p_top, p_bot):
+    out = []
+    if curves_ilist is None:
+        return [Line.CreateBound(p_top, p_bot)]
+    try:
+        n = int(curves_ilist.Count)
+    except Exception:
+        n = 0
+    for i in range(n):
+        try:
+            c = curves_ilist[i]
+            if c is not None:
+                out.append(c)
+        except Exception:
+            pass
+    if not out:
+        return [Line.CreateBound(p_top, p_bot)]
+    return out
+
+
+def _try_create_viga_tie_from_curves(
+    document, host, bar_type, hook_type, p_top, p_bot, axis, interior_pt,
+    width_dir=None, depth_dir=None, curves_list=None,
+):
+    """Traba abierta (pata vertical) con ganchos stirrup/tie 135° en ambos extremos."""
+    if (
+        document is None
+        or host is None
+        or bar_type is None
+        or hook_type is None
+        or p_top is None
+        or p_bot is None
+        or axis is None
+    ):
+        return None, u"Parámetros incompletos para traba."
+    if interior_pt is None:
+        try:
+            interior_pt = p_top.Add(p_bot.Subtract(p_top).Multiply(0.5))
+        except Exception:
+            interior_pt = p_top
+    try:
+        if p_top.DistanceTo(p_bot) < _MIN_EDGE_FT:
+            if curves_list is None or int(curves_list.Count) < 1:
+                return None, u"Traba: longitud nula."
+    except Exception:
+        if curves_list is None or int(curves_list.Count) < 1:
+            return None, u"Traba: extremos inválidos."
+
+    hook_el = hook_type
+    if not isinstance(hook_el, RebarHookType):
+        try:
+            hook_el = document.GetElement(hook_type)
+        except Exception:
+            hook_el = None
+    if hook_el is None:
+        return None, u"RebarHookType 135° no resuelto."
+
+    curves = curves_list
+    if curves is None or int(curves.Count) < 1:
+        curves = List[Curve]()
+        try:
+            curves.Add(Line.CreateBound(p_top, p_bot))
+        except Exception as ex:
+            try:
+                return None, unicode(ex)
+            except Exception:
+                return None, str(ex)
+
+    try:
+        ax = axis.Normalize()
+    except Exception:
+        ax = axis
+    plane_normals = _tie_plane_normals(ax, width_dir, depth_dir)
+    if not plane_normals:
+        plane_normals = [ax]
+        try:
+            plane_normals.append(ax.Negate())
+        except Exception:
+            pass
+
+    orient_pairs = (
+        (RebarHookOrientation.Left, RebarHookOrientation.Left),
+        (RebarHookOrientation.Right, RebarHookOrientation.Right),
+        (RebarHookOrientation.Left, RebarHookOrientation.Right),
+        (RebarHookOrientation.Right, RebarHookOrientation.Left),
+    )
+    styles = (RebarStyle.StirrupTie, RebarStyle.Standard)
+    # Revit exige al menos uno True; (False, False) lanza ArgumentException.
+    flag_pairs = ((True, True), (True, False), (False, True))
+    last_err = None
+
+    def _create_once(curves_ilist, nv, style, o0, o1, use_ex, create_new):
+        if not use_ex and not create_new:
+            return None, None
+        try:
+            rb = Rebar.CreateFromCurves(
+                document,
+                style,
+                bar_type,
+                hook_el,
+                hook_el,
+                host,
+                nv,
+                curves_ilist,
+                o0,
+                o1,
+                use_ex,
+                create_new,
+            )
+            if rb is not None:
+                return rb, None
+        except Exception as ex:
+            try:
+                return None, unicode(ex)
+            except Exception:
+                return None, str(ex)
+        return None, None
+
+    py_curves = _py_curves_from_ilist(curves, p_top, p_bot)
+
+    # Ruta rápida: plano ⟂ al eje (sección), StirrupTie, forma existente o nueva.
+    for nv in (ax,):
+        try:
+            nv_neg = ax.Negate()
+        except Exception:
+            nv_neg = None
+        for plane_n in [nv] + ([nv_neg] if nv_neg is not None else []):
+            o_top, o_bot = _tie_hook_orientations(
+                p_top, p_bot, interior_pt, plane_n,
+            )
+            rb, err = _create_once(
+                curves, plane_n, RebarStyle.StirrupTie, o_top, o_bot, True, True,
+            )
+            if rb is not None:
+                return rb, None
+            if err:
+                last_err = err
+            rb, err = _create_once(
+                curves, plane_n, RebarStyle.StirrupTie, o_top, o_bot, True, False,
+            )
+            if rb is not None:
+                return rb, None
+            if err:
+                last_err = err
+
+    for nv in plane_normals:
+        o_top, o_bot = _tie_hook_orientations(p_top, p_bot, interior_pt, nv)
+        if l135 is not None:
+            try:
+                hid = hook_el.Id
+            except Exception:
+                hid = None
+            if hid is not None and hid != ElementId.InvalidElementId:
+                for style in styles:
+                    try:
+                        rb = l135._try_create_l_with_hook_types_both_ends(
+                            document,
+                            py_curves,
+                            host,
+                            nv,
+                            bar_type,
+                            style,
+                            o_top,
+                            o_bot,
+                            hid,
+                        )
+                        if rb is not None:
+                            return rb, None
+                    except Exception:
+                        pass
+        for style in styles:
+            for use_ex, create_new in flag_pairs:
+                rb, err = _create_once(
+                    curves, nv, style, o_top, o_bot, use_ex, create_new,
+                )
+                if rb is not None:
+                    return rb, None
+                if err:
+                    last_err = err
+
+    for nv in plane_normals:
+        for style in styles:
+            for o0, o1 in orient_pairs:
+                for use_ex, create_new in flag_pairs:
+                    rb, err = _create_once(
+                        curves, nv, style, o0, o1, use_ex, create_new,
+                    )
+                    if rb is not None:
+                        return rb, None
+                    if err:
+                        last_err = err
+
+    return None, last_err or u"CreateFromCurves traba: sin variante válida."
+
+
+def _zonas_reparto_estribo_viga(
+    document, host, line_work, spacing_ext_mm, spacing_cent_mm, bt_ext, bt_cent,
+):
+    """
+    Reparto Ext/Cent del vano estribo (misma lógica que estribo perimetral).
+
+    Returns:
+        ``(zonas, L_arr_ft)`` con zonas ``(Lz_ft, bar_type, spacing_mm, include_end_bars)``.
+    """
+    bt_e = bt_ext
+    bt_c = bt_cent
+    if bt_e is None:
+        bt_e = bt_c
+    if bt_c is None:
+        bt_c = bt_e
+    try:
+        sp_e = float(max(50.0, float(spacing_ext_mm or 200.0)))
+    except Exception:
+        sp_e = 200.0
+    try:
+        sp_c = float(max(50.0, float(spacing_cent_mm or 200.0)))
+    except Exception:
+        sp_c = 200.0
+    try:
+        Lw = float(line_work.Length)
+        inset_ini = _mm_to_internal(_ESTRIBO_PLANO_DESDE_INICIO_MM)
+        inset_fin = _mm_to_internal(_ESTRIBO_ARRAY_LONGITUD_MENOS_MM)
+        L_arr = max(0.0, Lw - inset_ini - inset_fin)
+    except Exception:
+        return [], 0.0
+    if L_arr < _MIN_EDGE_FT * 4.0:
+        return [], L_arr
+    min_len = max(_mm_to_internal(sp_e), _mm_to_internal(sp_c)) * 0.2
+    h_mm = _altura_viga_estribos_mm(document, host)
+    zonas = []
+    if h_mm is not None and float(h_mm) > 0.0:
+        try:
+            two_h_ft = _mm_to_internal(2.0 * float(h_mm))
+        except Exception:
+            two_h_ft = None
+        if two_h_ft is not None and L_arr < float(two_h_ft) - 1e-9:
+            zonas = [(L_arr, bt_c, sp_c, True)]
+        elif two_h_ft is not None:
+            try:
+                L_ext_tgt = _mm_to_internal(2.0 * float(h_mm))
+            except Exception:
+                L_ext_tgt = None
+            if L_ext_tgt is not None and L_ext_tgt >= _MIN_EDGE_FT:
+                L_half = 0.5 * L_arr
+                L_ext_each = min(float(L_ext_tgt), float(L_half))
+                L_cent = max(0.0, L_arr - 2.0 * L_ext_each)
+                if L_cent < min_len + _MIN_EDGE_FT:
+                    zonas = [
+                        (L_ext_each, bt_e, sp_e, True),
+                        (L_ext_each, bt_e, sp_e, True),
+                    ]
+                else:
+                    zonas = [
+                        (L_ext_each, bt_e, sp_e, True),
+                        (L_cent, bt_c, sp_c, False),
+                        (L_ext_each, bt_e, sp_e, True),
+                    ]
+    if not zonas:
+        f = _ESTRIBO_FRACC_EXTREMOS
+        L1 = L_arr * f
+        L2 = L_arr * max(0.0, 1.0 - 2.0 * f)
+        L3 = L_arr * f
+        if L2 < min_len + _MIN_EDGE_FT:
+            zonas = [(L_arr, bt_e, sp_e, True)]
+        else:
+            zonas = [
+                (L1, bt_e, sp_e, True),
+                (L2, bt_c, sp_c, False),
+                (L3, bt_e, sp_e, True),
+            ]
+    return zonas, L_arr
+
+
+def _crear_rebar_traba_multizonas(
+    document,
+    host,
+    line_work,
+    p_top,
+    p_bot,
+    axis,
+    interior_pt,
+    width_dir,
+    depth_dir,
+    bar_type_tie,
+    bar_type_ext,
+    bar_type_cent,
+    spacing_ext_mm,
+    spacing_cent_mm,
+    avisos,
+    rebars_creados=None,
+    view=None,
+    curves_list=None,
+):
+    """
+    Traba de confinamiento (barra abierta + ganchos 135°) repartida en zonas Ext/Cent.
+    """
+    if (
+        document is None
+        or host is None
+        or line_work is None
+        or p_top is None
+        or p_bot is None
+        or axis is None
+        or interior_pt is None
+    ):
+        return 0
+    if _apply_maximum_spacing_layout is None:
+        avisos.append(u"Trabas: layout/hook no disponibles (estribos_viga_rps).")
+        return 0
+    if not _host_viga_permite_rebar(host):
+        try:
+            eid = host.Id.IntegerValue
+        except Exception:
+            eid = u"?"
+        avisos.append(u"Viga {0}: host no válido para traba.".format(eid))
+        return 0
+
+    hook_type = _resolve_hook_stirrup_tie_135(document)
+    if hook_type is None:
+        avisos.append(u"Trabas: sin RebarHookType 135° (stirrup/tie) en el proyecto.")
+        return 0
+
+    bt_tie = bar_type_tie or bar_type_cent or bar_type_ext
+    if bt_tie is None:
+        avisos.append(u"Trabas: sin RebarBarType para traba.")
+        return 0
+
+    zonas, L_arr = _zonas_reparto_estribo_viga(
+        document,
+        host,
+        line_work,
+        spacing_ext_mm,
+        spacing_cent_mm,
+        bar_type_ext,
+        bar_type_cent,
+    )
+    if not zonas or L_arr < _MIN_EDGE_FT * 4.0:
+        try:
+            eid = host.Id.IntegerValue
+        except Exception:
+            eid = u"?"
+        avisos.append(
+            u"Viga {0}: vano traba demasiado corto; no se creó Rebar.".format(eid)
+        )
+        return 0
+
+    try:
+        ax = axis.Normalize()
+    except Exception:
+        ax = axis
+
+    cum = 0.0
+    total_qty = 0
+    for Lz, bt_zone, sp_mm, include_end_bars in zonas:
+        if Lz < _MIN_EDGE_FT:
+            continue
+        try:
+            dv = ax.Multiply(float(cum))
+            p_top_z = p_top.Add(dv)
+            p_bot_z = p_bot.Add(dv)
+            interior_z = interior_pt.Add(dv)
+            curves_z = _curves_list_translated(curves_list, dv)
+        except Exception:
+            break
+        rebar, err_txt = _try_create_viga_tie_from_curves(
+            document,
+            host,
+            bt_tie,
+            hook_type,
+            p_top_z,
+            p_bot_z,
+            ax,
+            interior_z,
+            width_dir=width_dir,
+            depth_dir=depth_dir,
+            curves_list=curves_z,
+        )
+        if rebar is None:
+            try:
+                eid = host.Id.IntegerValue
+            except Exception:
+                eid = u"?"
+            msg = u"Viga {0}: no se creó traba de confinamiento.".format(eid)
+            if err_txt:
+                msg += u" {0}".format(err_txt)
+            avisos.append(msg)
+            break
+        sp_ft = _mm_to_internal(float(sp_mm))
+        if not _apply_maximum_spacing_layout(
+            rebar, sp_ft, Lz, include_end_bars=include_end_bars
+        ):
+            try:
+                document.Delete(rebar.Id)
+            except Exception:
+                pass
+            avisos.append(
+                u"Viga: traba creada pero falló MaximumSpacing (se eliminó la instancia)."
+            )
+            break
+        total_qty += _rebar_cantidad_posiciones(rebar)
+        if rebars_creados is not None:
+            rebars_creados.append(rebar)
         if view is not None:
             _presentacion_estribo_first_last_en_vista(rebar, view)
         cum += float(Lz)
     return int(total_qty)
+
+
+# Alias público (importable tras reload en pyRevit).
+crear_rebar_traba_multizonas = _crear_rebar_traba_multizonas
 
 
 def crear_model_lines_preview_estribo_viga(
@@ -1730,6 +2336,7 @@ def crear_model_lines_preview_estribo_viga(
     spacing_cent_mm=200,
     crear_model_lines=False,
     out_rebars_creados=None,
+    out_rebar_zone_meta=None,
     view=None,
 ):
     """
@@ -1741,7 +2348,8 @@ def crear_model_lines_preview_estribo_viga(
     ``obstaculos`` se ignora (reservado); el recorte usa solo la geometría del framing.
 
     Si ``out_rebars_creados`` es una ``list``, se añaden ahí los ``Rebar`` de estribo creados
-    (para ``MultiReferenceAnnotation`` u otros usos).
+    (para ``MultiReferenceAnnotation`` u otros usos). ``out_rebar_zone_meta`` recibe en
+    paralelo ``zone_index`` / ``zone_kind`` por cada rebar (tramo extremo vs central).
 
     Si ``view`` no es ``None`` y se crean estribos, se aplica ``RebarPresentationMode.FirstLast``
     en esa vista (equivalente UI *Show first and last*).
@@ -1898,6 +2506,7 @@ def crear_model_lines_preview_estribo_viga(
             spacing_cent_mm,
             avisos,
             rebars_creados=_rebars_local,
+            rebar_zone_meta_out=out_rebar_zone_meta,
             view=view,
         )
         if out_rebars_creados is not None:

@@ -12,9 +12,9 @@ clr.AddReference("RevitAPIUI")
 
 from System import AppDomain, Double
 from System.IO import File
-from System.Windows import FontWeights, RoutedEventHandler, Size, TextAlignment, Visibility
+from System.Windows import FontWeights, GridLength, GridUnitType, RoutedEventHandler, Size, SizeToContent, SystemParameters, TextAlignment, VerticalAlignment, Visibility
 from System.Windows.Markup import XamlReader
-from System.Windows.Controls import Canvas, TextBlock
+from System.Windows.Controls import Canvas, ScrollBarVisibility, TextBlock
 from System.Windows.Media import Brushes, Color, RotateTransform, SolidColorBrush
 from System.Windows.Shapes import Ellipse, Line as WpfLine, Rectangle
 
@@ -48,8 +48,6 @@ _BARS_COUNT_MIN = 2
 _BARS_COUNT_MAX = 10
 # Fase troceo: altura del formulario = alto del área de trabajo (útil en Full HD ~1040 px sin barra).
 _TROCEO_WORKAREA_HEIGHT_TRIM_PX = 0.0
-# Altura mínima al abrir el paso Rejilla: evita ScrollViewer con estribos + vista en planta visibles.
-_REJILLA_PREFERRED_WINDOW_HEIGHT = 880.0
 
 
 def _preview_get_positions(length, count, edge_cover):
@@ -247,7 +245,7 @@ class StirrupSectionConfig(object):
 
     ``spacing_mm`` y ``stirrup_bar_type`` quedan como respaldo del pipeline; el espaciamiento
     y el Ø/tipo operativos se eligen por columna en el esquema vertical de troceo.
-    En rejilla solo se definen patrones A/B y omitir.
+    En rejilla solo se definen patrones A/B de confinamiento.
     """
 
     def __init__(self):
@@ -268,6 +266,9 @@ class ColumnLayoutWizardOutcome(object):
         stirrup_configs=None,
         stirrup_spacing_by_column_id=None,
         stirrup_bar_type_by_column_id=None,
+        stirrup_policy_by_column_id=None,
+        stirrup_spacing_by_column_lot=None,
+        stirrup_bar_type_by_column_lot=None,
     ):
         self.cancelled = bool(cancelled)
         self.already_running = bool(already_running)
@@ -288,6 +289,33 @@ class ColumnLayoutWizardOutcome(object):
             except Exception:
                 pass
         self.stirrup_bar_type_by_column_id = _btmap
+        _pol = {}
+        for _k, _v in (stirrup_policy_by_column_id or {}).items():
+            try:
+                _pol[int(_k)] = unicode(_v)
+            except Exception:
+                pass
+        self.stirrup_policy_by_column_id = _pol
+        _sp_lot = {}
+        for _k, _v in (stirrup_spacing_by_column_lot or {}).items():
+            try:
+                _inner = {}
+                for _lk, _lv in (_v or {}).items():
+                    _inner[int(_lk)] = float(_lv)
+                _sp_lot[int(_k)] = _inner
+            except Exception:
+                pass
+        self.stirrup_spacing_by_column_lot = _sp_lot
+        _bt_lot = {}
+        for _k, _v in (stirrup_bar_type_by_column_lot or {}).items():
+            try:
+                _inner = {}
+                for _lk, _lv in (_v or {}).items():
+                    _inner[int(_lk)] = _lv
+                _bt_lot[int(_k)] = _inner
+            except Exception:
+                pass
+        self.stirrup_bar_type_by_column_lot = _bt_lot
 
 
 def _load_xaml_text():
@@ -322,6 +350,7 @@ class ColumnLayoutWizardController(object):
         self._stirrup_section_data = {}
         self._stirrup_spacing_by_troceo_slot = {}
         self._stirrup_bar_type_by_troceo_slot = {}
+        self._stirrup_policy_by_troceo_slot = {}
         self._section_idx = 0
         self._troceo_ctrl = None
         self._troceo_outcome = None
@@ -333,7 +362,8 @@ class ColumnLayoutWizardController(object):
 
         self._scroll_grid = self.window.FindName("ScrollGridStep")
         self._scroll_troceo = self.window.FindName("ScrollTroceoStep")
-        self._panel_grid = self.window.FindName("PanelGridStep")
+        self._wizard_root_grid = self.window.FindName("WizardRootGrid")
+        self._grid_step_root = self.window.FindName("GridStepRoot")
         self._footer1 = self.window.FindName("FooterStep1")
         self._footer2 = self.window.FindName("FooterStep2")
         self._step1_badge = self.window.FindName("Step1Badge")
@@ -362,7 +392,6 @@ class ColumnLayoutWizardController(object):
         self._btn_troceo_ok = self.window.FindName("BtnTroceoConfirm")
 
         self._stirrup_controls_host = self.window.FindName("StirrupControlsHost")
-        self._chk_skip_stirrup = self.window.FindName("ChkSkipStirrup")
         self._stirrup_diam_combo = None
         self._stirrup_combo_a = None
         self._stirrup_combo_b = None
@@ -387,35 +416,49 @@ class ColumnLayoutWizardController(object):
         self._update_step_badges(1)
 
     def _on_wizard_loaded(self, sender, args):
-        self._apply_rejilla_preferred_window_height()
-        try:
-            from revit_wpf_window_position import (
-                position_wpf_window_top_center_work_area,
-            )
-
-            position_wpf_window_top_center_work_area(self.window)
-        except Exception:
-            pass
         self._refresh_section_dims_label()
         self._refresh_grid_preview()
+        self._apply_rejilla_window_layout()
 
-    def _apply_rejilla_preferred_window_height(self):
-        u"""Sube la ventana si hace falta para que el paso Rejilla quepa sin barra de desplazamiento."""
+    def _apply_rejilla_window_layout(self):
+        u"""Paso Rejilla: fila central Auto + altura al contenido (sin aire inferior)."""
         win = self.window
         if win is None:
             return
+        grid = self._wizard_root_grid
         try:
-            from System.Windows import SystemParameters
+            if grid is not None and grid.RowDefinitions.Count > 2:
+                grid.RowDefinitions[2].Height = GridLength(1.0, GridUnitType.Auto)
+        except Exception:
+            pass
+        try:
+            if self._scroll_grid is not None:
+                self._scroll_grid.VerticalAlignment = VerticalAlignment.Top
+                self._scroll_grid.VerticalScrollBarVisibility = (
+                    ScrollBarVisibility.Auto
+                )
+        except Exception:
+            pass
+        try:
+            win.SizeToContent = SizeToContent.Height
+            win.UpdateLayout()
+            cap = float(SystemParameters.WorkArea.Height) * 0.94
+            actual_h = float(win.ActualHeight)
+            min_h = float(win.MinHeight)
+            if actual_h > cap:
+                win.SizeToContent = SizeToContent.Manual
+                win.Height = cap
+            elif actual_h < min_h:
+                win.SizeToContent = SizeToContent.Manual
+                win.Height = min_h
+        except Exception:
+            pass
+        try:
+            from revit_wpf_window_position import (
+                position_wpf_window_center_work_area,
+            )
 
-            preferred = float(_REJILLA_PREFERRED_WINDOW_HEIGHT)
-            try:
-                cap = float(SystemParameters.WorkArea.Height) * 0.94
-                if cap > 100.0 and preferred > cap:
-                    preferred = cap
-            except Exception:
-                pass
-            if float(win.Height) < preferred:
-                win.Height = preferred
+            position_wpf_window_center_work_area(win)
         except Exception:
             pass
 
@@ -639,22 +682,13 @@ class ColumnLayoutWizardController(object):
                     combo.SelectionChanged += self._on_stirrup_input_changed
                 except Exception:
                     pass
-        if self._chk_skip_stirrup is not None:
-            try:
-                self._chk_skip_stirrup.Checked += self._on_stirrup_input_changed
-                self._chk_skip_stirrup.Unchecked += self._on_stirrup_input_changed
-            except Exception:
-                pass
 
     def _on_stirrup_input_changed(self, sender, args):
         self._refresh_grid_preview()
 
     def _commit_stirrup_for_section(self, sk):
         cfg = StirrupSectionConfig()
-        try:
-            cfg.skip = bool(self._chk_skip_stirrup.IsChecked) if self._chk_skip_stirrup else False
-        except Exception:
-            cfg.skip = False
+        cfg.skip = False
         cfg.stirrup_bar_type = None
         cfg.spacing_mm = 200.0
         try:
@@ -673,17 +707,7 @@ class ColumnLayoutWizardController(object):
         self._update_stirrup_pattern_combos_for_current()
         cfg = self._stirrup_section_data.get(sk)
         if cfg is None:
-            try:
-                if self._chk_skip_stirrup:
-                    self._chk_skip_stirrup.IsChecked = False
-            except Exception:
-                pass
             return
-        try:
-            if self._chk_skip_stirrup:
-                self._chk_skip_stirrup.IsChecked = bool(cfg.skip)
-        except Exception:
-            pass
         try:
             if self._stirrup_combo_a and cfg.sel_a_text:
                 for i in range(self._stirrup_combo_a.Items.Count):
@@ -882,10 +906,6 @@ class ColumnLayoutWizardController(object):
         edge_to_bar_mm = abs(edge_to_bar_mm) if abs(edge_to_bar_mm) > 1.0 else 20.0
         px_margin = draw_w / ss_f * edge_to_bar_mm * 0.55
 
-        try:
-            skip_ov = bool(self._chk_skip_stirrup.IsChecked) if self._chk_skip_stirrup else False
-        except Exception:
-            skip_ov = False
         sel_ov_a = u""
         sel_ov_b = u""
         try:
@@ -899,19 +919,15 @@ class ColumnLayoutWizardController(object):
         except Exception:
             pass
 
-        if skip_ov:
+        try:
+            from column_stirrup_creator import build_stirrup_rect_and_tie_defs
+
+            rect_defs_ov, tie_defs_ov = build_stirrup_rect_and_tie_defs(
+                ba, bb, sel_ov_a, sel_ov_b
+            )
+        except Exception:
             rect_defs_ov = []
             tie_defs_ov = []
-        else:
-            try:
-                from column_stirrup_creator import build_stirrup_rect_and_tie_defs
-
-                rect_defs_ov, tie_defs_ov = build_stirrup_rect_and_tie_defs(
-                    ba, bb, sel_ov_a, sel_ov_b
-                )
-            except Exception:
-                rect_defs_ov = []
-                tie_defs_ov = []
 
         sb = _preview_plan_steel_bbox_px(
             nom_left,
@@ -1180,12 +1196,6 @@ class ColumnLayoutWizardController(object):
         inner_on,
     ):
         u"""Dibuja estribos, estribos interiores y trabas sobre el canvas de preview."""
-        try:
-            skip = bool(self._chk_skip_stirrup.IsChecked) if self._chk_skip_stirrup else False
-        except Exception:
-            skip = False
-        if skip:
-            return
         if not offs_a or not offs_b:
             return
 
@@ -1382,21 +1392,21 @@ class ColumnLayoutWizardController(object):
             from System.Windows.Interop import WindowInteropHelper
 
             from revit_wpf_window_position import (
-                position_wpf_window_top_center_work_area,
+                position_wpf_window_center_work_area,
                 revit_main_hwnd,
             )
 
             hwnd = revit_main_hwnd(self._uiapp)
             if hwnd:
                 WindowInteropHelper(self.window).Owner = hwnd
-            position_wpf_window_top_center_work_area(self.window)
+            position_wpf_window_center_work_area(self.window)
         except Exception:
             try:
                 from revit_wpf_window_position import (
-                    position_wpf_window_top_center_work_area,
+                    position_wpf_window_center_work_area,
                 )
 
-                position_wpf_window_top_center_work_area(self.window)
+                position_wpf_window_center_work_area(self.window)
             except Exception:
                 try:
                     from System.Windows import WindowStartupLocation
@@ -1442,6 +1452,7 @@ class ColumnLayoutWizardController(object):
         self._load_stirrup_for_section(sk)
         self._refresh_grid_preview()
         self._refresh_section_footer_hints()
+        self._apply_rejilla_window_layout()
 
     def _refresh_nav_buttons(self):
         if self._btn_prev is None:
@@ -1461,7 +1472,7 @@ class ColumnLayoutWizardController(object):
         last = self._section_idx >= len(self._ordered_keys) - 1
         try:
             self._btn_next.Content = (
-                u"Siguiente: Troceo →"
+                u"Siguiente: Esquema Vertical →"
                 if last
                 else u"Siguiente sección →"
             )
@@ -1524,28 +1535,27 @@ class ColumnLayoutWizardController(object):
             self._goto_troceo_step()
 
     def _apply_troceo_preferred_window_height(self):
-        u"""Ajusta la ventana al alto del área de trabajo (toda la altura útil de pantalla, p. ej. FHD)."""
+        u"""Paso esquema vertical: ventana del asistente maximizada."""
         win = self.window
         if win is None:
             return
+        grid = self._wizard_root_grid
         try:
-            from System.Windows import SystemParameters
-
-            wa = SystemParameters.WorkArea
-            h = float(wa.Height) - float(_TROCEO_WORKAREA_HEIGHT_TRIM_PX)
-            if h < 400.0:
-                h = 400.0
-            win.Height = h
+            if grid is not None and grid.RowDefinitions.Count > 2:
+                grid.RowDefinitions[2].Height = GridLength(1.0, GridUnitType.Star)
         except Exception:
             pass
         try:
-            from revit_wpf_window_position import (
-                position_wpf_window_top_center_work_area,
+            from column_reinforcement.ui.troceo_scheme_window import (
+                apply_troceo_scheme_window_maximized,
             )
-
-            position_wpf_window_top_center_work_area(win)
         except Exception:
-            pass
+            try:
+                from troceo_scheme_window import apply_troceo_scheme_window_maximized
+            except Exception:
+                apply_troceo_scheme_window_maximized = None
+        if apply_troceo_scheme_window_maximized is not None:
+            apply_troceo_scheme_window_maximized(win)
 
     def _on_cancel_step1(self, sender, args):
         try:
@@ -1652,6 +1662,7 @@ class ColumnLayoutWizardController(object):
                 if _bar_choices
                 else None
             ),
+            column_stirrup_policy_slot_store=self._stirrup_policy_by_troceo_slot,
             longitudinal_line_ubicacion_labels=_ubic_line_labels,
             longitudinal_line_scheme_by_label=_ubic_scheme_by_label,
         )
@@ -1674,14 +1685,33 @@ class ColumnLayoutWizardController(object):
         except Exception:
             pass
 
-    def _collect_stirrup_spacing_by_column_id(self):
-        u"""Traduce espaciamiento elegido por tramo del esquema (slot 0=base) a id de instancia Revit."""
+    def _troceo_policy_store(self):
+        ctrl = self._troceo_ctrl
+        if ctrl is None:
+            return self._stirrup_policy_by_troceo_slot
+        return getattr(ctrl, "_col_stirrup_policy_store", None) or self._stirrup_policy_by_troceo_slot
+
+    def _collect_stirrup_spacing_by_column_lot(self):
+        u"""Espaciamiento por columna y lote (0=T1 … 2=T3)."""
+        try:
+            from column_reinforcement.ui.troceo_scheme_window import (
+                STIRRUP_POLICY_THIRDS_L3,
+                _stirrup_policy_for_slot,
+                _stirrup_slot_lot_store_key,
+            )
+        except Exception:
+            from troceo_scheme_window import (
+                STIRRUP_POLICY_THIRDS_L3,
+                _stirrup_policy_for_slot,
+                _stirrup_slot_lot_store_key,
+            )
         try:
             from column_reinforcement_layout_rps import _element_id_iv
         except Exception:
             _element_id_iv = None
         ctrl = self._troceo_ctrl
         slot_store = self._stirrup_spacing_by_troceo_slot
+        policy_store = self._troceo_policy_store()
         by_col = {}
         if ctrl is None or not slot_store:
             return by_col
@@ -1689,26 +1719,55 @@ class ColumnLayoutWizardController(object):
         for _elem, _z, eid, slot in entries:
             try:
                 s = int(slot)
-                if s not in slot_store:
-                    continue
+                pol = _stirrup_policy_for_slot(policy_store, s)
+                lots = (
+                    [0, 1, 2]
+                    if pol == STIRRUP_POLICY_THIRDS_L3
+                    else [0]
+                )
+                col_key = None
                 if _element_id_iv is not None and _elem is not None:
-                    k = int(_element_id_iv(_elem))
-                    if k >= 0:
-                        by_col[k] = float(slot_store[s])
+                    col_key = int(_element_id_iv(_elem))
+                if col_key is None or col_key < 0:
+                    col_key = int(eid)
+                if col_key < 0:
+                    continue
+                for lot_i in lots:
+                    sk = _stirrup_slot_lot_store_key(s, lot_i)
+                    if sk not in slot_store and lot_i == 0 and s in slot_store:
+                        mm = float(slot_store[s])
+                    elif sk in slot_store:
+                        mm = float(slot_store[sk])
+                    else:
                         continue
-                by_col[int(eid)] = float(slot_store[s])
+                    if col_key not in by_col:
+                        by_col[col_key] = {}
+                    by_col[col_key][int(lot_i)] = mm
             except Exception:
                 pass
         return by_col
 
-    def _collect_stirrup_bar_type_by_column_id(self):
-        u"""Traduce tipo de estribo por tramo (slot) a id de instancia Revit."""
+    def _collect_stirrup_bar_type_by_column_lot(self):
+        u"""RebarBarType por columna y lote."""
+        try:
+            from column_reinforcement.ui.troceo_scheme_window import (
+                STIRRUP_POLICY_THIRDS_L3,
+                _stirrup_policy_for_slot,
+                _stirrup_slot_lot_store_key,
+            )
+        except Exception:
+            from troceo_scheme_window import (
+                STIRRUP_POLICY_THIRDS_L3,
+                _stirrup_policy_for_slot,
+                _stirrup_slot_lot_store_key,
+            )
         try:
             from column_reinforcement_layout_rps import _element_id_iv
         except Exception:
             _element_id_iv = None
         ctrl = self._troceo_ctrl
         slot_store = self._stirrup_bar_type_by_troceo_slot
+        policy_store = self._troceo_policy_store()
         by_col = {}
         if ctrl is None or not slot_store:
             return by_col
@@ -1716,17 +1775,93 @@ class ColumnLayoutWizardController(object):
         for _elem, _z, eid, slot in entries:
             try:
                 s = int(slot)
-                if s not in slot_store:
-                    continue
-                bt = slot_store[s]
-                if bt is None:
-                    continue
+                pol = _stirrup_policy_for_slot(policy_store, s)
+                lots = (
+                    [0, 1, 2]
+                    if pol == STIRRUP_POLICY_THIRDS_L3
+                    else [0]
+                )
+                col_key = None
                 if _element_id_iv is not None and _elem is not None:
-                    k = int(_element_id_iv(_elem))
-                    if k >= 0:
-                        by_col[k] = bt
+                    col_key = int(_element_id_iv(_elem))
+                if col_key is None or col_key < 0:
+                    col_key = int(eid)
+                if col_key < 0:
+                    continue
+                for lot_i in lots:
+                    sk = _stirrup_slot_lot_store_key(s, lot_i)
+                    bt = None
+                    if sk in slot_store:
+                        bt = slot_store[sk]
+                    elif lot_i == 0 and s in slot_store:
+                        bt = slot_store[s]
+                    if bt is None:
                         continue
-                by_col[int(eid)] = bt
+                    if col_key not in by_col:
+                        by_col[col_key] = {}
+                    by_col[col_key][int(lot_i)] = bt
+            except Exception:
+                pass
+        return by_col
+
+    def _collect_stirrup_policy_by_column_id(self):
+        try:
+            from column_reinforcement.ui.troceo_scheme_window import (
+                STIRRUP_POLICY_CONTINUOUS,
+                _stirrup_policy_for_slot,
+            )
+        except Exception:
+            from troceo_scheme_window import (
+                STIRRUP_POLICY_CONTINUOUS,
+                _stirrup_policy_for_slot,
+            )
+        try:
+            from column_reinforcement_layout_rps import _element_id_iv
+        except Exception:
+            _element_id_iv = None
+        ctrl = self._troceo_ctrl
+        policy_store = self._troceo_policy_store()
+        by_col = {}
+        if ctrl is None:
+            return by_col
+        entries = getattr(ctrl, "_row_entries", None) or []
+        for _elem, _z, eid, slot in entries:
+            try:
+                s = int(slot)
+                pol = _stirrup_policy_for_slot(policy_store, s)
+                if pol == STIRRUP_POLICY_CONTINUOUS:
+                    continue
+                col_key = None
+                if _element_id_iv is not None and _elem is not None:
+                    col_key = int(_element_id_iv(_elem))
+                if col_key is None or col_key < 0:
+                    col_key = int(eid)
+                if col_key >= 0:
+                    by_col[col_key] = pol
+            except Exception:
+                pass
+        return by_col
+
+    def _collect_stirrup_spacing_by_column_id(self):
+        u"""Mapa plano (lote 0 / Completo) para compatibilidad."""
+        lot_map = self._collect_stirrup_spacing_by_column_lot()
+        by_col = {}
+        for col_key, lots in (lot_map or {}).items():
+            try:
+                if 0 in lots:
+                    by_col[int(col_key)] = float(lots[0])
+            except Exception:
+                pass
+        return by_col
+
+    def _collect_stirrup_bar_type_by_column_id(self):
+        u"""Mapa plano (lote 0 / Completo) para compatibilidad."""
+        lot_map = self._collect_stirrup_bar_type_by_column_lot()
+        by_col = {}
+        for col_key, lots in (lot_map or {}).items():
+            try:
+                if 0 in lots:
+                    by_col[int(col_key)] = lots[0]
             except Exception:
                 pass
         return by_col
@@ -1750,6 +1885,9 @@ class ColumnLayoutWizardController(object):
                 stirrup_configs=dict(self._stirrup_section_data),
                 stirrup_spacing_by_column_id={},
                 stirrup_bar_type_by_column_id={},
+                stirrup_policy_by_column_id={},
+                stirrup_spacing_by_column_lot={},
+                stirrup_bar_type_by_column_lot={},
             )
         return ColumnLayoutWizardOutcome(
             cancelled=False,
@@ -1758,6 +1896,9 @@ class ColumnLayoutWizardController(object):
             stirrup_configs=dict(self._stirrup_section_data),
             stirrup_spacing_by_column_id=self._collect_stirrup_spacing_by_column_id(),
             stirrup_bar_type_by_column_id=self._collect_stirrup_bar_type_by_column_id(),
+            stirrup_policy_by_column_id=self._collect_stirrup_policy_by_column_id(),
+            stirrup_spacing_by_column_lot=self._collect_stirrup_spacing_by_column_lot(),
+            stirrup_bar_type_by_column_lot=self._collect_stirrup_bar_type_by_column_lot(),
         )
 
 

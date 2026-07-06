@@ -1,5 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Fachada de ejecución pyRevit/RPS para armado de columnas."""
+"""Fachada de ejecución pyRevit/RPS para armado de columnas.
+
+Punto oficial pyRevit (pushbutton): ``script.py`` carga este módulo con ``imp.load_source``
+y llama ``run_pyrevit`` con ``__revit__``.
+
+Alternativa (script legado como ``__main__``): ``column_reinforcement_layout_rps.run_pyrevit``
+delega aquí: reload del módulo legado, inyección doc/uidoc/__revit__, ejecución de ``main``
+vía ``LegacyColumnReinforcementService``.
+
+RPS con ``main`` ya resuelto: ``run_rps`` sin recargar el módulo legado.
+"""
 
 import importlib
 import os
@@ -55,6 +65,20 @@ def _run_with_legacy_main(revit_app, legacy_main, show_wpf=False):
 def run_pyrevit(revit_app):
     """Entrada desde pushbutton pyRevit."""
     _ensure_scripts_dir()
+    from column_reinforcement.revit.api.context import is_section_or_elevation_uiapp
+
+    if not is_section_or_elevation_uiapp(revit_app):
+        try:
+            from Autodesk.Revit.UI import TaskDialog
+
+            TaskDialog.Show(
+                u"Arainco: Armado Columnas",
+                u"Esta herramienta solo está disponible en vistas de sección o alzado.\n"
+                u"Abra o active una de esas vistas e intente de nuevo.",
+            )
+        except Exception:
+            pass
+        return None
     legacy = importlib.import_module("column_reinforcement_layout_rps")
     try:
         legacy = importlib.reload(legacy)

@@ -258,24 +258,6 @@ class RevisionViewModel(ObservableObject):
     def _close_win(self):
         if self._win is not None:
             try:
-                _close_with_fade(self._win)
+                self._win.Close()
             except Exception:
-                try:
-                    self._win.Close()
-                except Exception:
-                    pass
-
-
-def _close_with_fade(win):
-    """
-    Fade-out + slide-down antes de cerrar la ventana.
-    Importado aquí para no crear dependencia circular con ui/.
-    """
-    try:
-        from siguiente_revision.ui.revision_window import close_with_fade as _cwf
-        _cwf(win)
-    except Exception:
-        try:
-            win.Close()
-        except Exception:
-            pass
+                pass

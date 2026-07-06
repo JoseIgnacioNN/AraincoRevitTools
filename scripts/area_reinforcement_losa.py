@@ -26,9 +26,7 @@ _AR_REVIT_FAMILY_SYMBOL_CLR_TYPE = clr.GetClrType(_RDB.FamilySymbol)
 
 from System.Collections.Generic import List
 from System.Windows.Markup import XamlReader
-from System import Action, EventHandler
-from System.Windows import RoutedEventHandler, SizeToContent
-from System.Windows.Threading import DispatcherPriority
+from System.Windows import RoutedEventHandler
 from System.Windows.Input import Key, KeyBinding, ModifierKeys, ApplicationCommands, CommandBinding
 import System
 
@@ -38,7 +36,6 @@ from revit_wpf_window_position import (
 )
 
 from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
-from bimtools_paths import load_logo_bitmap_image
 
 from Autodesk.Revit.DB import (
     BuiltInCategory,
@@ -76,11 +73,10 @@ from Autodesk.Revit.DB.Structure import (
 from Autodesk.Revit.UI import TaskDialog, ExternalEvent, IExternalEventHandler
 from Autodesk.Revit.UI.Selection import ObjectType
 
-# Misma línea de diseño que Refuerzo Borde Losa (barras_bordes_losa_gancho_empotramiento).
+# Misma línea de diseño que Armado Muros (34_ArmadoMuros).
 _APPDOMAIN_WINDOW_KEY = "BIMTools.AreaReinforcementLosa.ActiveWindow"
+_APPDOMAIN_SESSION_KEY = "BIMTools.AreaReinforcementLosa.ActiveSession"
 _TOOL_TASK_DIALOG_TITLE = u"Arainco: Malla en Losa"
-_WINDOW_OPEN_MS = 180
-_WINDOW_CLOSE_MS = 180
 
 
 def _task_dialog_show(title, message, wpf_window=None):
@@ -140,6 +136,83 @@ def _clear_active_window():
         pass
 
 
+def _get_active_session():
+    try:
+        return System.AppDomain.CurrentDomain.GetData(_APPDOMAIN_SESSION_KEY)
+    except Exception:
+        return None
+
+
+def _set_active_session(session):
+    try:
+        System.AppDomain.CurrentDomain.SetData(_APPDOMAIN_SESSION_KEY, session)
+    except Exception:
+        pass
+
+
+def _clear_active_session():
+    try:
+        System.AppDomain.CurrentDomain.SetData(_APPDOMAIN_SESSION_KEY, None)
+    except Exception:
+        pass
+
+
+def _release_tool_singleton(session=None):
+    """Libera claves AppDomain y flags de la sesión (formulario o selección)."""
+    if session is not None:
+        try:
+            session._selection_in_progress = False
+        except Exception:
+            pass
+    _clear_active_session()
+    _clear_active_window()
+
+
+def _session_is_active(session):
+    """True solo si hay selección en curso o el formulario WPF sigue abierto."""
+    if session is None:
+        return False
+    try:
+        if bool(getattr(session, "_selection_in_progress", False)):
+            return True
+        if bool(getattr(session, "_form_was_shown", False)):
+            wpf = getattr(session, "_win", None)
+            if wpf is None:
+                return False
+            try:
+                return bool(wpf.IsVisible)
+            except Exception:
+                return False
+        return False
+    except Exception:
+        return False
+
+
+def _cleanup_stale_tool_state():
+    """Elimina sesiones huérfanas (p. ej. tras cancelar selección sin abrir el formulario)."""
+    session = _get_active_session()
+    if session is not None and not _session_is_active(session):
+        _release_tool_singleton(session)
+        return
+    wpf = _get_active_window()
+    if wpf is not None:
+        try:
+            if not wpf.IsVisible:
+                _clear_active_window()
+        except Exception:
+            _clear_active_window()
+
+
+def _show_initial_instruction_dialog(revit):
+    """Diálogo inicial WPF (tema oscuro BIMTools), igual que Armado Muros."""
+    try:
+        from area_reinforcement_losa_instruction_dialog import show_selection_instructions
+
+        return bool(show_selection_instructions(uiapp=revit))
+    except Exception:
+        return False
+
+
 _DEFAULT_SPACING_MM = 150
 # Offset de recubrimiento (mm) aplicado a las curvas del perímetro de la losa para el Area Reinforcement RPS.
 OFFSET_RECUBRIMIENTO_MM = 20.0
@@ -155,32 +228,99 @@ _AR_TAG_TYPE_MALLA_INFERIOR = u"Malla Inferior"
 _AR_TAG_TYPE_DOBLE_MALLA = u"Doble Malla"
 _AR_TAG_NORM_CASE_INSENSITIVE = True
 
-# Ancho del diálogo: fila de combos + pads GroupBox/chrome + borde ventana (sin hueco extra a la derecha).
-_AR_LOSA_INPUT_COLS_PER_ROW = 2
-_AR_LOSA_COMBO_WIDTH_PX = 110
-# Columna central @ (márgenes 6+6 + glifo): coherente con Grid Column Auto en XAML.
+# Ancho del diálogo: fila diámetro + @ + espaciado + pads (debe cuadrar con XAML).
+_AR_LOSA_COMBO_DIAM_WIDTH_PX = 128
+_AR_LOSA_COMBO_ESP_WIDTH_PX = 80
 _AR_LOSA_DIAM_ESP_AT_COL_PX = 28
 _AR_LOSA_BLOCK_PAD_H_PX = 16
-_AR_LOSA_GROUPBOX_PAD_H_PX = 16
-# Debe cuadrar con Padding horizontal del Border raíz del XAML (izq. + der.).
-_AR_LOSA_OUTER_PAD_H_PX = 28
-# Cabecera «Malla en Losa» + logo + cerrar (mínimo por si el contenido calculado es menor).
-_AR_LOSA_WIDTH_TITLE_MIN_PX = 288
+_AR_LOSA_GROUPBOX_PAD_H_PX = 20
+_AR_LOSA_OUTER_PAD_H_PX = 36
+# Pie: Cancelar + Colocar armaduras + margen estado.
+_AR_LOSA_WIDTH_FOOTER_MIN_PX = 400
 
 
-def _area_reinforcement_losa_form_width_px(input_cols_per_row=None, combo_width_px=None):
-    """
-    Ancho horizontal del formulario en px.
-    ``input_cols_per_row``: columnas de controles en la fila más ancha (Major/Minor: Diam. + Esp.).
-    ``combo_width_px``: ancho fijo de cada ComboBox (debe coincidir con el estilo ``Combo`` en XAML).
-    """
-    cols = int(input_cols_per_row or _AR_LOSA_INPUT_COLS_PER_ROW)
-    cols = max(1, cols)
-    c = int(combo_width_px or _AR_LOSA_COMBO_WIDTH_PX)
-    row_inner = cols * c + _AR_LOSA_DIAM_ESP_AT_COL_PX + _AR_LOSA_BLOCK_PAD_H_PX
+def _area_reinforcement_losa_form_width_px(
+    diam_width_px=None,
+    esp_width_px=None,
+):
+    """Ancho horizontal del formulario en px (alineado con columnas del XAML)."""
+    diam = int(diam_width_px or _AR_LOSA_COMBO_DIAM_WIDTH_PX)
+    esp = int(esp_width_px or _AR_LOSA_COMBO_ESP_WIDTH_PX)
+    row_inner = diam + _AR_LOSA_DIAM_ESP_AT_COL_PX + esp + _AR_LOSA_BLOCK_PAD_H_PX
     w = row_inner + _AR_LOSA_GROUPBOX_PAD_H_PX + _AR_LOSA_OUTER_PAD_H_PX
-    w = max(w, _AR_LOSA_WIDTH_TITLE_MIN_PX)
+    w = max(w, _AR_LOSA_WIDTH_FOOTER_MIN_PX)
     return int((int(w) + 3) // 4 * 4)
+
+
+def _mesh_row_xaml(diam_name, esp_name):
+    """Fila reutilizable: diámetro @ espaciado (mm)."""
+    dw = _AR_LOSA_COMBO_DIAM_WIDTH_PX
+    ew = _AR_LOSA_COMBO_ESP_WIDTH_PX
+    return u"""
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="{dw}"/>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="{ew}"/>
+                </Grid.ColumnDefinitions>
+                <ComboBox Grid.Column="0" x:Name="{diam}" Style="{{StaticResource Combo}}"
+                          Width="{dw}" MinWidth="{dw}" MaxWidth="{dw}" IsEditable="False">
+                  <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{{StaticResource ComboItem}}"/></ComboBox.ItemContainerStyle>
+                </ComboBox>
+                <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
+                           Foreground="#95B8CC" VerticalAlignment="Center"
+                           HorizontalAlignment="Center" Margin="8,0,8,0"/>
+                <ComboBox Grid.Column="2" x:Name="{esp}" Style="{{StaticResource Combo}}"
+                          Width="{ew}" MinWidth="{ew}" MaxWidth="{ew}" IsEditable="True">
+                  <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{{StaticResource ComboItem}}"/></ComboBox.ItemContainerStyle>
+                </ComboBox>
+              </Grid>""".format(dw=dw, ew=ew, diam=diam_name, esp=esp_name)
+
+
+def _mesh_groupbox_xaml(row_index, panel_name, chk_name, chk_label, major_diam, major_esp, minor_diam, minor_esp):
+    return u"""
+      <GroupBox Grid.Row="{row}" Style="{{StaticResource GbParams}}" Margin="0,0,0,8"
+                HorizontalAlignment="Stretch">
+        <GroupBox.Header>
+          <CheckBox x:Name="{chk}" IsChecked="True" Content="{label}"
+                    Foreground="#E8F4F8" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
+        </GroupBox.Header>
+        <StackPanel x:Name="{panel}" IsEnabled="True">
+          <Grid Margin="0,0,0,4">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="{dw}"/>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="{ew}"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Diámetro" Style="{{StaticResource LabelSmall}}"/>
+            <TextBlock Grid.Column="2" Text="Esp. (mm)" Style="{{StaticResource LabelSmall}}"
+                       HorizontalAlignment="Left"/>
+          </Grid>
+          <Border Background="#0a1620" CornerRadius="4" Padding="10,8" BorderBrush="#21465C"
+                  BorderThickness="1" Margin="0,0,0,6" HorizontalAlignment="Stretch">
+            <StackPanel>
+              <TextBlock Text="Luz Mayor" Foreground="#E8F4F8" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,6"/>
+              {major_row}
+            </StackPanel>
+          </Border>
+          <Border Background="#0a1620" CornerRadius="4" Padding="10,8" BorderBrush="#21465C"
+                  BorderThickness="1" HorizontalAlignment="Stretch">
+            <StackPanel>
+              <TextBlock Text="Luz Menor" Foreground="#E8F4F8" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,6"/>
+              {minor_row}
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </GroupBox>""".format(
+        row=row_index,
+        chk=chk_name,
+        label=chk_label,
+        panel=panel_name,
+        dw=_AR_LOSA_COMBO_DIAM_WIDTH_PX,
+        ew=_AR_LOSA_COMBO_ESP_WIDTH_PX,
+        major_row=_mesh_row_xaml(major_diam, major_esp),
+        minor_row=_mesh_row_xaml(minor_diam, minor_esp),
+    )
 
 
 def _element_id_int(eid):
@@ -1783,12 +1923,12 @@ class ColocarAreaReinforcementHandler(IExternalEventHandler):
                         try:
                             disp = getattr(win._win, "Dispatcher", None)
                             if disp:
-                                disp.Invoke(lambda: win._close_with_fade())
+                                disp.Invoke(lambda: win._close_window())
                             else:
-                                win._close_with_fade()
+                                win._close_window()
                         except Exception:
                             try:
-                                win._close_with_fade()
+                                win._close_window()
                             except Exception:
                                 try:
                                     win._win.Close()
@@ -1827,38 +1967,61 @@ class SeleccionarLosaHandler(IExternalEventHandler):
         from Autodesk.Revit.UI.Selection import ObjectType
         from Autodesk.Revit.DB import BuiltInCategory, Floor
         uidoc = uiapp.ActiveUIDocument
+        if uidoc is None:
+            win = self._window_ref()
+            if win is not None:
+                win._abort_session()
+            return
         doc = uidoc.Document
         win = self._window_ref()
         if not win:
+            _release_tool_singleton()
             return
+        floor_ids = []
+        pick_cancelled = False
         try:
-            win._document = doc
-            refs = list(uidoc.Selection.PickObjects(
-                ObjectType.Element,
-                u"Selecciona una o más losas. Finaliza con Finish o Cancel."
-            ))
-            if not refs:
-                pass
-            else:
-                floor_ids = []
-                for ref in refs:
-                    elem = doc.GetElement(ref.ElementId)
-                    if elem and elem.Category and _element_id_int(elem.Category.Id) == int(BuiltInCategory.OST_Floors):
-                        if isinstance(elem, Floor):
-                            floor_ids.append(ref.ElementId)
-                if floor_ids:
-                    win._floor_ids = floor_ids
-                    win._actualizar_info_losas(doc, floor_ids)
+            try:
+                win._selection_in_progress = True
+                win._document = doc
+                refs = list(uidoc.Selection.PickObjects(
+                    ObjectType.Element,
+                    u"Selecciona una o más losas. Finaliza con Finish o Cancel."
+                ))
+                if refs:
+                    for ref in refs:
+                        elem = doc.GetElement(ref.ElementId)
+                        if elem and elem.Category and _element_id_int(elem.Category.Id) == int(BuiltInCategory.OST_Floors):
+                            if isinstance(elem, Floor):
+                                floor_ids.append(ref.ElementId)
+                    if not floor_ids:
+                        TaskDialog.Show(
+                            _TOOL_TASK_DIALOG_TITLE,
+                            u"No se encontraron losas válidas en la selección.\n\n"
+                            u"Seleccione elementos de categoría Floor (losa).",
+                        )
+            except Exception as ex:
+                err = str(ex).lower()
+                if "cancel" in err or "operation" in err:
+                    pick_cancelled = True
                 else:
-                    pass
-        except Exception as ex:
-            err = str(ex).lower()
-            if "cancel" not in err and "operation" not in err:
-                _task_dialog_show("Malla en Losa - Error", str(ex), win._win)
+                    _task_dialog_show(
+                        _TOOL_TASK_DIALOG_TITLE,
+                        u"Error en la selección:\n\n{}".format(str(ex)),
+                        None,
+                    )
+            if floor_ids:
+                win._floor_ids = floor_ids
+                win._actualizar_info_losas(doc, floor_ids)
+                win.show_parameters_form()
+            elif pick_cancelled:
+                win._abort_session()
+            else:
+                win._abort_session()
         finally:
             try:
-                win._win.Show()
-                win._win.Activate()
+                win = self._window_ref()
+                if win is not None:
+                    win._selection_in_progress = False
             except Exception:
                 pass
 
@@ -1866,202 +2029,79 @@ class SeleccionarLosaHandler(IExternalEventHandler):
         return "SeleccionarLosa"
 
 
-# ── XAML — Misma línea de diseño que Refuerzo Borde Losa ─────────────────────
+# ── XAML — Misma línea de diseño que Armado Muros (34_ArmadoMuros) ───────────
 XAML = u"""
 <Window
-    x:Name="ArLosaWin"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Arainco - Malla en Losa"
+    Title="Arainco: Malla en Losa"
     SizeToContent="Height"
     WindowStartupLocation="Manual"
-    Background="Transparent"
-    AllowsTransparency="True"
+    Background="#071018"
     FontFamily="Segoe UI"
-    WindowStyle="None"
+    FontSize="12"
+    ShowInTaskbar="False"
     ResizeMode="NoResize"
-    Topmost="True"
     UseLayoutRounding="True">
-
-  <!--
-    Apertura: ScaleTransform en ArLosaRootScale (origen 0,0). Animar Window.Height en host Revit suele dejar ~1 px de alto.
-  -->
   <Window.Resources>
-    <Storyboard x:Key="ArLosaOpenGrowStoryboard">
-      <DoubleAnimation Storyboard.TargetName="ArLosaRootScale" Storyboard.TargetProperty="ScaleX"
-                       From="0" To="1" Duration="0:0:0.18" FillBehavior="HoldEnd">
-        <DoubleAnimation.EasingFunction>
-          <QuadraticEase EasingMode="EaseOut"/>
-        </DoubleAnimation.EasingFunction>
-      </DoubleAnimation>
-      <DoubleAnimation Storyboard.TargetName="ArLosaRootScale" Storyboard.TargetProperty="ScaleY"
-                       From="0" To="1" Duration="0:0:0.18" FillBehavior="HoldEnd">
-        <DoubleAnimation.EasingFunction>
-          <QuadraticEase EasingMode="EaseOut"/>
-        </DoubleAnimation.EasingFunction>
-      </DoubleAnimation>
-      <DoubleAnimation Storyboard.TargetName="ArLosaWin" Storyboard.TargetProperty="Opacity"
-                       From="0" To="1" Duration="0:0:0.18" FillBehavior="HoldEnd">
-        <DoubleAnimation.EasingFunction>
-          <QuadraticEase EasingMode="EaseOut"/>
-        </DoubleAnimation.EasingFunction>
-      </DoubleAnimation>
-    </Storyboard>
 """ + BIMTOOLS_DARK_STYLES_XML + u"""
   </Window.Resources>
 
-  <Border x:Name="ArLosaRootChrome" CornerRadius="10" Background="#0A1A2F" Padding="12"
-          BorderBrush="#1A3A4D" BorderThickness="1"
-          HorizontalAlignment="Stretch" ClipToBounds="True" RenderTransformOrigin="0,0">
-    <Border.Effect>
-      <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="0" Opacity="0.35"/>
-    </Border.Effect>
-    <Border.RenderTransform>
-      <ScaleTransform x:Name="ArLosaRootScale" ScaleX="0" ScaleY="0"/>
-    </Border.RenderTransform>
-  <Grid HorizontalAlignment="Stretch">
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="*"/>
-    </Grid.RowDefinitions>
+  <Border Background="#071018" BorderBrush="#21465C" BorderThickness="1" Padding="18">
+    <Grid>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
 
-    <Border x:Name="TitleBar" Grid.Row="0" Background="#0E1B32" CornerRadius="6" Padding="10,8" Margin="0,0,0,10"
-            BorderBrush="#21465C" BorderThickness="1" HorizontalAlignment="Stretch">
-      <Grid HorizontalAlignment="Stretch">
+      <StackPanel Grid.Row="0" Margin="0,0,0,10">
+        <TextBlock x:Name="TxtTitle" Text="Arainco: Malla en Losa"
+                   Foreground="#E8F4F8" FontSize="18" FontWeight="Bold"/>
+        <TextBlock x:Name="TxtSubtitle" Margin="0,6,0,0" Foreground="#95B8CC"
+                   TextWrapping="Wrap"
+                   Text="Configure malla superior e inferior (diámetro y espaciado) para las losas seleccionadas."/>
+      </StackPanel>
+""" + _mesh_groupbox_xaml(
+    1,
+    "PanelSuperiorContent",
+    "ChkMallaSuperior",
+    u"Malla superior",
+    "CmbExteriorMajorDiametro",
+    "CmbExteriorMajorEspaciamiento",
+    "CmbExteriorMinorDiametro",
+    "CmbExteriorMinorEspaciamiento",
+) + _mesh_groupbox_xaml(
+    2,
+    "PanelInferiorContent",
+    "ChkMallaInferior",
+    u"Malla inferior",
+    "CmbInteriorMajorDiametro",
+    "CmbInteriorMajorEspaciamiento",
+    "CmbInteriorMinorDiametro",
+    "CmbInteriorMinorEspaciamiento",
+) + u"""
+      <TextBlock Grid.Row="3" x:Name="TxtFooterHint" Foreground="#64748b" FontSize="10"
+                 TextWrapping="Wrap" Margin="0,4,0,0"
+                 Text="Ganchos según espesor de losa. Etiquetado automático en vista de planta activa."/>
+
+      <Grid Grid.Row="4" Margin="0,14,0,0">
         <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto"/>
           <ColumnDefinition Width="*"/>
           <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
-        <Image x:Name="ImgLogo" Width="40" Height="40" Grid.Column="0"
-               Stretch="Uniform" Margin="0,0,10,0" VerticalAlignment="Center"/>
-        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0">
-          <TextBlock Text="Malla en Losa"
-                     FontSize="15" FontWeight="SemiBold" Foreground="#E8F4F8"
-                     TextWrapping="Wrap"/>
+        <TextBlock x:Name="TxtEstado" Grid.Column="0" VerticalAlignment="Center"
+                   Foreground="#64748b" FontSize="10" TextWrapping="Wrap" Margin="0,0,12,0"/>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+          <Button x:Name="BtnCancelar" Content="Cancelar"
+                  Style="{StaticResource BtnSelectOutline}" MinWidth="110" Margin="0,0,10,0"/>
+          <Button x:Name="BtnColocar" Content="Colocar armaduras"
+                  Style="{StaticResource BtnPrimary}" MinWidth="180"/>
         </StackPanel>
-        <Button x:Name="BtnClose" Grid.Column="2"
-                Style="{StaticResource BtnCloseX_MinimalNoBg}"
-                VerticalAlignment="Center" HorizontalAlignment="Right" ToolTip="Cerrar"/>
       </Grid>
-    </Border>
-
-    <StackPanel Grid.Row="1" Margin="0,0,0,6" HorizontalAlignment="Stretch">
-      <Button x:Name="BtnSeleccionar" Content="Seleccionar losas en modelo"
-              Style="{StaticResource BtnSelectOutline}"
-              HorizontalAlignment="Stretch"/>
-    </StackPanel>
-
-    <GroupBox Grid.Row="2" Style="{StaticResource GbParams}" Margin="0" HorizontalAlignment="Left">
-      <GroupBox.Header>
-        <CheckBox x:Name="ChkMallaSuperior" IsChecked="True" Content="Malla superior"
-                  Foreground="#E8F4F8" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
-      </GroupBox.Header>
-      <StackPanel x:Name="PanelSuperiorContent" IsEnabled="True">
-        <Border Background="#0E1B32" CornerRadius="4" Padding="8,6" BorderBrush="#1A3A4D" BorderThickness="1" Margin="0,0,0,6" HorizontalAlignment="Left">
-          <StackPanel>
-            <TextBlock Text="Luz Mayor" Style="{StaticResource LabelSmall}" Margin="0,0,0,4"/>
-            <Grid HorizontalAlignment="Left">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="110"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="110"/>
-              </Grid.ColumnDefinitions>
-              <ComboBox Grid.Column="0" x:Name="CmbExteriorMajorDiametro" Style="{StaticResource Combo}" IsEditable="False">
-                <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
-              </ComboBox>
-              <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
-                         Foreground="#95B8CC" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="6,0,6,0"/>
-              <ComboBox Grid.Column="2" x:Name="CmbExteriorMajorEspaciamiento" Style="{StaticResource Combo}" IsEditable="True">
-                <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
-              </ComboBox>
-            </Grid>
-          </StackPanel>
-        </Border>
-        <Border Background="#0E1B32" CornerRadius="4" Padding="8,6" BorderBrush="#1A3A4D" BorderThickness="1" HorizontalAlignment="Left">
-          <StackPanel>
-            <TextBlock Text="Luz Menor" Style="{StaticResource LabelSmall}" Margin="0,0,0,4"/>
-            <Grid HorizontalAlignment="Left">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="110"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="110"/>
-              </Grid.ColumnDefinitions>
-              <ComboBox Grid.Column="0" x:Name="CmbExteriorMinorDiametro" Style="{StaticResource Combo}" IsEditable="False">
-                <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
-              </ComboBox>
-              <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
-                         Foreground="#95B8CC" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="6,0,6,0"/>
-              <ComboBox Grid.Column="2" x:Name="CmbExteriorMinorEspaciamiento" Style="{StaticResource Combo}" IsEditable="True">
-                <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
-              </ComboBox>
-            </Grid>
-          </StackPanel>
-        </Border>
-      </StackPanel>
-    </GroupBox>
-
-    <GroupBox Grid.Row="3" Style="{StaticResource GbParams}" Margin="0" HorizontalAlignment="Left">
-      <GroupBox.Header>
-        <CheckBox x:Name="ChkMallaInferior" IsChecked="True" Content="Malla inferior"
-                  Foreground="#E8F4F8" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
-      </GroupBox.Header>
-      <StackPanel x:Name="PanelInferiorContent" IsEnabled="True">
-        <Border Background="#0E1B32" CornerRadius="4" Padding="8,6" BorderBrush="#1A3A4D" BorderThickness="1" Margin="0,0,0,6" HorizontalAlignment="Left">
-          <StackPanel>
-            <TextBlock Text="Luz Mayor" Style="{StaticResource LabelSmall}" Margin="0,0,0,4"/>
-            <Grid HorizontalAlignment="Left">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="110"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="110"/>
-              </Grid.ColumnDefinitions>
-              <ComboBox Grid.Column="0" x:Name="CmbInteriorMajorDiametro" Style="{StaticResource Combo}" IsEditable="False">
-                <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
-              </ComboBox>
-              <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
-                         Foreground="#95B8CC" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="6,0,6,0"/>
-              <ComboBox Grid.Column="2" x:Name="CmbInteriorMajorEspaciamiento" Style="{StaticResource Combo}" IsEditable="True">
-                <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
-              </ComboBox>
-            </Grid>
-          </StackPanel>
-        </Border>
-        <Border Background="#0E1B32" CornerRadius="4" Padding="8,6" BorderBrush="#1A3A4D" BorderThickness="1" HorizontalAlignment="Left">
-          <StackPanel>
-            <TextBlock Text="Luz Menor" Style="{StaticResource LabelSmall}" Margin="0,0,0,4"/>
-            <Grid HorizontalAlignment="Left">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="110"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="110"/>
-              </Grid.ColumnDefinitions>
-              <ComboBox Grid.Column="0" x:Name="CmbInteriorMinorDiametro" Style="{StaticResource Combo}" IsEditable="False">
-                <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
-              </ComboBox>
-              <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
-                         Foreground="#95B8CC" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="6,0,6,0"/>
-              <ComboBox Grid.Column="2" x:Name="CmbInteriorMinorEspaciamiento" Style="{StaticResource Combo}" IsEditable="True">
-                <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
-              </ComboBox>
-            </Grid>
-          </StackPanel>
-        </Border>
-      </StackPanel>
-    </GroupBox>
-
-    <StackPanel Grid.Row="4" Margin="0,14,0,0" HorizontalAlignment="Stretch">
-      <Button x:Name="BtnColocar" Content="Colocar armaduras"
-              Style="{StaticResource BtnPrimary}"
-              HorizontalAlignment="Stretch"/>
-    </StackPanel>
-
-    <Border Grid.Row="5" Background="Transparent"/>
-  </Grid>
+    </Grid>
   </Border>
 </Window>
 """
@@ -2076,12 +2116,13 @@ class AreaReinforcementLosaWindow(object):
         self._area_reinforcement_type_id = None
         self._revit = revit
         self._close_on_finish = bool(close_on_finish)
+        self._form_was_shown = False
+        self._selection_in_progress = False
         self._win = XamlReader.Parse(XAML)
         self._form_width_px = float(_area_reinforcement_losa_form_width_px())
         self._win.Width = self._form_width_px
         self._win.MinWidth = self._form_width_px
         self._win.MaxWidth = self._form_width_px
-        self._open_grow_storyboard_started = False
         self._colocar_handler = ColocarAreaReinforcementHandler(
             weakref.ref(self),
             _get_default_area_reinforcement_type_id,
@@ -2093,27 +2134,9 @@ class AreaReinforcementLosaWindow(object):
         self._colocar_event = ExternalEvent.Create(self._colocar_handler)
         self._seleccion_handler = SeleccionarLosaHandler(weakref.ref(self))
         self._seleccion_event = ExternalEvent.Create(self._seleccion_handler)
-        self._is_closing_with_fade = False
-        self._base_top = None
         self._setup_ui()
         self._wire_commands()
         self._wire_lifecycle_handlers()
-        self._wire_open_grow_storyboard_completed()
-
-    def _wire_open_grow_storyboard_completed(self):
-        try:
-            sb = self._win.TryFindResource("ArLosaOpenGrowStoryboard")
-            if sb is not None:
-                sb.Completed += EventHandler(self._on_open_grow_storyboard_completed)
-        except Exception:
-            pass
-
-    def _on_open_grow_storyboard_completed(self, sender, args):
-        try:
-            self._win.MinWidth = self._form_width_px
-            self._win.MaxWidth = self._form_width_px
-        except Exception:
-            pass
 
     def _position_win_top_left_active_view(self):
         try:
@@ -2128,100 +2151,36 @@ class AreaReinforcementLosaWindow(object):
         except Exception:
             pass
 
-    def _begin_open_grow_storyboard(self):
-        """Tamaño con SizeToContent; esquina sup. izq. del área de vista; ScaleTransform 0→1 + opacidad."""
-        if getattr(self, "_open_grow_storyboard_started", False):
-            return
-        self._open_grow_storyboard_started = True
-        try:
-            from System import TimeSpan
-            from System.Windows import Duration
-            from System.Windows.Media import ScaleTransform
-
-            try:
-                self._win.BeginAnimation(self._win.OpacityProperty, None)
-            except Exception:
-                pass
-            sc = self._win.FindName("ArLosaRootScale")
-            if sc is not None:
-                try:
-                    sc.BeginAnimation(ScaleTransform.ScaleXProperty, None)
-                    sc.BeginAnimation(ScaleTransform.ScaleYProperty, None)
-                except Exception:
-                    pass
-                try:
-                    sc.ScaleX = 0.0
-                    sc.ScaleY = 0.0
-                except Exception:
-                    pass
-
-            fw = float(self._form_width_px)
-            self._win.Width = fw
-            try:
-                self._win.SizeToContent = SizeToContent.Height
-            except Exception:
-                pass
-            try:
-                self._win.UpdateLayout()
-            except Exception:
-                pass
-
-            self._position_win_top_left_active_view()
-            try:
-                self._base_top = float(self._win.Top)
-            except Exception:
-                pass
-
-            sb = self._win.TryFindResource("ArLosaOpenGrowStoryboard")
-            n = 0
-            if sb is not None:
-                try:
-                    n = int(sb.Children.Count)
-                except Exception:
-                    n = 0
-            if sb is None or n < 3:
-                try:
-                    if sc is not None:
-                        sc.ScaleX = 1.0
-                        sc.ScaleY = 1.0
-                    self._win.Opacity = 1.0
-                except Exception:
-                    pass
-                self._on_open_grow_storyboard_completed(None, None)
-                return
-            dur = Duration(TimeSpan.FromMilliseconds(float(_WINDOW_OPEN_MS)))
-            for i in range(n):
-                try:
-                    sb.Children[i].Duration = dur
-                except Exception:
-                    pass
-            sb.Begin(self._win, True)
-        except Exception:
-            try:
-                self._win.Width = float(self._form_width_px)
-                self._win.SizeToContent = SizeToContent.Height
-                self._win.Opacity = 1.0
-                sc = self._win.FindName("ArLosaRootScale")
-                if sc is not None:
-                    sc.ScaleX = 1.0
-                    sc.ScaleY = 1.0
-            except Exception:
-                pass
-            self._on_open_grow_storyboard_completed(None, None)
-
     def _actualizar_info_losa(self, floor, document):
         pass
 
+    def _set_estado(self, text):
+        try:
+            tb = self._win.FindName("TxtEstado")
+            if tb is not None:
+                tb.Text = text or u""
+        except Exception:
+            pass
+
     def _actualizar_info_losas(self, document, floor_ids):
-        pass
+        try:
+            n = len(floor_ids or [])
+            if n == 0:
+                self._set_estado(u"")
+            elif n == 1:
+                self._set_estado(u"1 losa seleccionada.")
+            else:
+                self._set_estado(u"{} losas seleccionadas.".format(n))
+        except Exception:
+            pass
 
     def _setup_ui(self):
-        btn_sel = self._win.FindName("BtnSeleccionar")
         btn_col = self._win.FindName("BtnColocar")
+        btn_cancel = self._win.FindName("BtnCancelar")
         if btn_col:
             btn_col.Click += RoutedEventHandler(self._on_colocar)
-        if btn_sel:
-            btn_sel.Click += RoutedEventHandler(self._on_seleccionar)
+        if btn_cancel:
+            btn_cancel.Click += RoutedEventHandler(self._on_cancelar)
         chk_sup = self._win.FindName("ChkMallaSuperior")
         chk_inf = self._win.FindName("ChkMallaInferior")
         if chk_sup:
@@ -2230,38 +2189,10 @@ class AreaReinforcementLosaWindow(object):
         if chk_inf:
             chk_inf.Checked += RoutedEventHandler(self._on_chk_malla_inferior_changed)
             chk_inf.Unchecked += RoutedEventHandler(self._on_chk_malla_inferior_changed)
-        try:
-            from System.Windows.Input import MouseButtonEventHandler
-
-            btn_close = self._win.FindName("BtnClose")
-            title_bar = self._win.FindName("TitleBar")
-            if title_bar is not None:
-                def _on_titlebar_down(sender, e):
-                    try:
-                        self._win.DragMove()
-                    except Exception:
-                        pass
-
-                title_bar.MouseLeftButtonDown += MouseButtonEventHandler(_on_titlebar_down)
-            if btn_close is not None:
-                def _on_close_click(sender, e):
-                    try:
-                        self._close_with_fade()
-                    except Exception:
-                        pass
-
-                btn_close.Click += RoutedEventHandler(_on_close_click)
-
-                def _on_close_down(sender, e):
-                    try:
-                        e.Handled = True
-                    except Exception:
-                        pass
-
-                btn_close.MouseLeftButtonDown += MouseButtonEventHandler(_on_close_down)
-        except Exception:
-            pass
         self._win.Loaded += RoutedEventHandler(self._on_window_loaded)
+
+    def _on_cancelar(self, sender, args):
+        self._close_window()
 
     def _on_chk_malla_superior_changed(self, sender, args):
         try:
@@ -2311,7 +2242,7 @@ class AreaReinforcementLosaWindow(object):
         try:
             def _on_closed(sender, args):
                 try:
-                    _clear_active_window()
+                    _release_tool_singleton(self)
                 except Exception:
                     pass
 
@@ -2322,7 +2253,7 @@ class AreaReinforcementLosaWindow(object):
     def _wire_commands(self):
         def _on_close_cmd(sender, e):
             try:
-                self._close_with_fade()
+                self._close_window()
             except Exception:
                 pass
 
@@ -2336,144 +2267,100 @@ class AreaReinforcementLosaWindow(object):
         except Exception:
             pass
 
-    def _close_with_fade(self):
-        """Inverso de ArLosaOpenGrowStoryboard: escala 1→0 y opacidad 1→0 (misma duración / EaseIn que fundación aislada)."""
-        if getattr(self, "_is_closing_with_fade", False):
-            return
-        self._is_closing_with_fade = True
+    def _close_window(self):
         try:
-            from System import TimeSpan
-            from System.Windows import Duration
-            from System.Windows.Media import ScaleTransform
-            from System.Windows.Media.Animation import DoubleAnimation, QuadraticEase, EasingMode
-
-            try:
-                self._win.BeginAnimation(self._win.OpacityProperty, None)
-                self._win.BeginAnimation(self._win.TopProperty, None)
-                self._win.BeginAnimation(self._win.WidthProperty, None)
-                self._win.BeginAnimation(self._win.HeightProperty, None)
-            except Exception:
-                pass
-
-            sc = self._win.FindName("ArLosaRootScale")
-            if sc is not None:
-                try:
-                    sc.BeginAnimation(ScaleTransform.ScaleXProperty, None)
-                    sc.BeginAnimation(ScaleTransform.ScaleYProperty, None)
-                except Exception:
-                    pass
-
-            dur = Duration(TimeSpan.FromMilliseconds(float(_WINDOW_CLOSE_MS)))
-            ease_in = QuadraticEase()
-            ease_in.EasingMode = EasingMode.EaseIn
-
-            def _da(from_v, to_v):
-                a = DoubleAnimation()
-                a.From = float(from_v)
-                a.To = float(to_v)
-                a.Duration = dur
-                a.EasingFunction = ease_in
-                return a
-
-            try:
-                sx0 = float(sc.ScaleX) if sc is not None else 1.0
-                sy0 = float(sc.ScaleY) if sc is not None else 1.0
-            except Exception:
-                sx0 = sy0 = 1.0
-            try:
-                op0 = float(self._win.Opacity)
-            except Exception:
-                op0 = 1.0
-
-            ax = _da(sx0, 0.0)
-            ay = _da(sy0, 0.0)
-            op_anim = _da(op0, 0.0)
-
-            def _on_done(sender, args):
-                try:
-                    self._win.Close()
-                except Exception:
-                    pass
-
-            op_anim.Completed += _on_done
-            if sc is not None:
-                sc.BeginAnimation(ScaleTransform.ScaleXProperty, ax)
-                sc.BeginAnimation(ScaleTransform.ScaleYProperty, ay)
-            self._win.BeginAnimation(self._win.OpacityProperty, op_anim)
+            self._win.Close()
         except Exception:
-            self._is_closing_with_fade = False
-            try:
-                self._win.Close()
-            except Exception:
-                pass
-
-    def _show_with_fade(self):
-        """
-        Muestra con opacidad 0; Width/Height/Opacity se animan desde el Storyboard (Window.Loaded → cola).
-        """
-        try:
-            try:
-                self._win.BeginAnimation(self._win.OpacityProperty, None)
-                self._win.BeginAnimation(self._win.TopProperty, None)
-                self._win.BeginAnimation(self._win.WidthProperty, None)
-                self._win.BeginAnimation(self._win.HeightProperty, None)
-            except Exception:
-                pass
-
-            self._win.Opacity = 0.0
-            if not self._win.IsVisible:
-                self._win.Show()
-            try:
-                self._win.UpdateLayout()
-            except Exception:
-                pass
-
-            try:
-                self._base_top = float(self._win.Top)
-            except Exception:
-                if self._base_top is None:
-                    self._base_top = 0.0
-
-            self._is_closing_with_fade = False
-            self._win.Activate()
-        except Exception:
-            try:
-                self._win.Opacity = 1.0
-            except Exception:
-                pass
-            try:
-                if not self._win.IsVisible:
-                    self._win.Show()
-                self._is_closing_with_fade = False
-                self._win.Activate()
-            except Exception:
-                pass
+            pass
 
     def _on_window_loaded(self, sender, args):
-        self._load_logo()
         self._cargar_combos()
         self._sync_malla_checkboxes()
         try:
-            self._win.Dispatcher.BeginInvoke(
-                Action(self._begin_open_grow_storyboard),
-                DispatcherPriority.Loaded,
-            )
+            btn = self._win.FindName("BtnColocar")
+            if btn is not None:
+                btn.Focus()
         except Exception:
+            pass
+
+    def begin_with_selection(self):
+        """Tras el TaskDialog inicial: lanza PickObjects sin mostrar el formulario WPF."""
+        try:
+            uidoc = self._revit.ActiveUIDocument
+        except Exception:
+            uidoc = None
+        if uidoc is None:
+            TaskDialog.Show(_TOOL_TASK_DIALOG_TITLE, u"No hay documento activo.")
+            self._abort_session()
+            return
+        self._document = uidoc.Document
+        self._form_was_shown = False
+        self._selection_in_progress = True
+        try:
+            self._seleccion_event.Raise()
+        except Exception:
+            self._selection_in_progress = False
+            self._abort_session()
+            raise
+
+    def _abort_session(self):
+        """Cancelación antes de abrir parámetros: libera singleton y cierra si hiciera falta."""
+        self._selection_in_progress = False
+        _release_tool_singleton(self)
+        try:
+            if self._win is not None and self._win.IsVisible:
+                self._win.Close()
+        except Exception:
+            pass
+
+    def show_parameters_form(self):
+        """Muestra el formulario de parámetros tras una selección válida de losas."""
+        uidoc = self._revit.ActiveUIDocument
+        if uidoc is None:
+            TaskDialog.Show(_TOOL_TASK_DIALOG_TITLE, u"No hay documento activo.")
+            self._abort_session()
+            return
+        hwnd = None
+        try:
+            from System.Windows.Interop import WindowInteropHelper
+
+            hwnd = revit_main_hwnd(self._revit.Application)
+            if hwnd:
+                helper = WindowInteropHelper(self._win)
+                helper.Owner = hwnd
+        except Exception:
+            pass
+        position_wpf_window_top_left_at_active_view(self._win, uidoc, hwnd)
+        self._document = uidoc.Document
+        self._form_was_shown = True
+        _set_active_window(self._win)
+        if not self._win.IsVisible:
+            self._win.Show()
+        self._win.Activate()
+
+    def _bind_diameter_combo(self, cmb, bar_disps, bar_types):
+        if cmb is None:
+            return
+        try:
+            cmb.ItemsSource = bar_disps
+            if bar_types:
+                cmb.SelectedIndex = min(1, len(bar_types) - 1) if len(bar_types) > 1 else 0
+        except Exception:
+            pass
+
+    def _bind_spacing_combo(self, cmb, espaciamientos, default_value=u"150"):
+        """Combo editable: ItemsSource + SelectedItem + Text (WPF no siempre sincroniza Text solo)."""
+        if cmb is None:
+            return
+        try:
+            cmb.ItemsSource = list(espaciamientos)
+            idx = 1
             try:
-                self._begin_open_grow_storyboard()
+                idx = list(espaciamientos).index(default_value)
             except Exception:
                 pass
-
-    def _load_logo(self):
-        """Logo corporativo en cabecera (no prioriza icon.png del botón de la cinta)."""
-        try:
-            img_ctrl = self._win.FindName("ImgLogo")
-            if not img_ctrl:
-                return
-            bmp = load_logo_bitmap_image()
-            if bmp is None:
-                return
-            img_ctrl.Source = bmp
+            cmb.SelectedIndex = idx
+            cmb.Text = default_value
         except Exception:
             pass
 
@@ -2494,20 +2381,9 @@ class AreaReinforcementLosaWindow(object):
         diam_names = ("CmbExteriorMajorDiametro", "CmbExteriorMinorDiametro", "CmbInteriorMajorDiametro", "CmbInteriorMinorDiametro")
         esp_names = ("CmbExteriorMajorEspaciamiento", "CmbExteriorMinorEspaciamiento", "CmbInteriorMajorEspaciamiento", "CmbInteriorMinorEspaciamiento")
         for name in diam_names:
-            cmb = self._win.FindName(name)
-            if cmb:
-                cmb.ItemsSource = bar_disps
-                if bar_types:
-                    cmb.SelectedIndex = min(1, len(bar_types) - 1) if len(bar_types) > 1 else 0
+            self._bind_diameter_combo(self._win.FindName(name), bar_disps, bar_types)
         for name in esp_names:
-            cmb = self._win.FindName(name)
-            if cmb:
-                cmb.ItemsSource = espaciamientos
-                cmb.SelectedIndex = 1  # 150 mm por defecto
-
-    def _on_seleccionar(self, sender, args):
-        self._win.Hide()
-        self._seleccion_event.Raise()
+            self._bind_spacing_combo(self._win.FindName(name), espaciamientos)
 
     def _on_colocar(self, sender, args):
         from Autodesk.Revit.DB import ElementId
@@ -2582,58 +2458,48 @@ class AreaReinforcementLosaWindow(object):
                 self._win,
             )
 
-    def show(self):
-        uidoc = self._revit.ActiveUIDocument
-        if uidoc is None:
-            _task_dialog_show(
-                _TOOL_TASK_DIALOG_TITLE,
-                u"No hay documento activo.",
-                self._win,
-            )
-            return
-        hwnd = None
-        try:
-            from System.Windows.Interop import WindowInteropHelper
-
-            hwnd = revit_main_hwnd(self._revit.Application)
-            if hwnd:
-                helper = WindowInteropHelper(self._win)
-                helper.Owner = hwnd
-        except Exception:
-            pass
-        position_wpf_window_top_left_at_active_view(self._win, uidoc, hwnd)
-        self._document = uidoc.Document
-        self._cargar_combos()
-        self._show_with_fade()
-
-
 def run(revit, close_on_finish=False):
-    """Punto de entrada: lanza la ventana Malla en Losa."""
-    existing = _get_active_window()
-    if existing is not None:
-        try:
-            from System.Windows import WindowState
+    """Punto de entrada: diálogo WPF → selección losas → formulario parámetros."""
+    _cleanup_stale_tool_state()
 
-            if existing.WindowState == WindowState.Minimized:
-                existing.WindowState = WindowState.Normal
-        except Exception:
-            pass
+    session = _get_active_session()
+    if _session_is_active(session):
+        existing_wpf = getattr(session, "_win", None) if session is not None else _get_active_window()
+        if existing_wpf is not None:
+            try:
+                from System.Windows import WindowState
+
+                if existing_wpf.WindowState == WindowState.Minimized:
+                    existing_wpf.WindowState = WindowState.Normal
+            except Exception:
+                pass
+            try:
+                existing_wpf.Show()
+            except Exception:
+                pass
+            try:
+                existing_wpf.Activate()
+                existing_wpf.Focus()
+            except Exception:
+                pass
         try:
-            existing.Show()
+            from area_reinforcement_losa_instruction_dialog import show_message_dialog
+
+            show_message_dialog(
+                _TOOL_TASK_DIALOG_TITLE,
+                u"La herramienta ya está en ejecución.",
+                uiapp=revit,
+            )
         except Exception:
-            pass
-        try:
-            existing.Activate()
-            existing.Focus()
-        except Exception:
-            pass
-        _task_dialog_show(
-            _TOOL_TASK_DIALOG_TITLE,
-            u"La herramienta ya está en ejecución.",
-            existing,
-        )
+            TaskDialog.Show(
+                _TOOL_TASK_DIALOG_TITLE,
+                u"La herramienta ya está en ejecución.",
+            )
+        return
+
+    if not _show_initial_instruction_dialog(revit):
         return
 
     w = AreaReinforcementLosaWindow(revit, close_on_finish=close_on_finish)
-    _set_active_window(w._win)
-    w.show()
+    _set_active_session(w)
+    w.begin_with_selection()

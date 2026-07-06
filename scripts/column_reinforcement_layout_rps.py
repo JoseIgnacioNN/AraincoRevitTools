@@ -80,6 +80,12 @@ de la contribuyente más cercana en XY (misma longitud tabulada hook/pata Ø que
 
 Compatible con RevitPythonShell (RPS) y pyRevit. Se admite selección múltiple (PickObjects).
 
+Tras el pick, se incluyen en el armado todas las columnas del proyecto con la misma
+**Numeracion Columna** (réplicas en planta y tramos no seleccionados del apilamiento).
+La configuración de troceo/estribos del apilamiento donde eligió el usuario se replica
+por índice de tramo a los demás apilamientos del mismo grupo. Despiece en lienzo y
+etiquetas de confinamiento: solo en la vista activa.
+
 """
 
 from __future__ import print_function
@@ -98,6 +104,7 @@ clr.AddReference("System.Drawing")
 from Autodesk.Revit.DB import (  # noqa: E402
     BooleanOperationsType,
     BooleanOperationsUtils,
+    BoundingBoxIntersectsFilter,
     BuiltInCategory,
     BuiltInParameter,
     Category,
@@ -114,12 +121,12 @@ from Autodesk.Revit.DB import (  # noqa: E402
     LocationCurve,
     LocationPoint,
     Options,
+    Outline,
     Plane,
     SketchPlane,
     Solid,
     StorageType,
     Transaction,
-    TransactionGroup,
     Transform,
     UnitTypeId,
     UnitUtils,
@@ -157,6 +164,14 @@ from System import Convert  # noqa: E402
 
 
 def _prepend_scripts_search_path():
+    """Inserta rutas candidatas al frente de ``sys.path``.
+
+    Se recorre ``dirs`` al revés al insertar, para que la **primera** entrada de
+    ``dirs`` quede finalmente en ``sys.path[0]``: directorio de este archivo (carpeta
+    ``scripts/`` del pushbutton o de la extensión), luego cwd, luego heurística
+    BIMTools bajo ``%USERPROFILE%``. Así las copias empaquetadas en el ``.pushbutton``
+    tienen prioridad sobre la extensión global del usuario.
+    """
     dirs = []
     try:
         d0 = os.path.dirname(os.path.abspath(__file__))
@@ -183,7 +198,7 @@ def _prepend_scripts_search_path():
     except Exception:
         pass
     seen_nd = set()
-    for d in dirs:
+    for d in reversed(dirs):
         if not d:
             continue
         try:
@@ -210,6 +225,11 @@ try:
     from bimtools_rebar_hook_lengths import hook_length_mm_from_nominal_diameter_mm
 except Exception:
     hook_length_mm_from_nominal_diameter_mm = None
+
+try:
+    from bimtools_rebar_hook_lengths import pata_eje_curve_loop_mm_desde_tabla_mm
+except Exception:
+    pata_eje_curve_loop_mm_desde_tabla_mm = None
 
 try:
     from column_reinforcement.geometry.schemes import (
@@ -417,6 +437,29 @@ class StructuralColumnFilter(ISelectionFilter):
 
     def AllowReference(self, reference, point):
         return False
+
+
+_ARMADO_COLUMNAS_DIALOG_TITLE = u"Arainco: Armado Columnas"
+
+
+def _show_armado_columnas_initial_instructions(uiapp=None):
+    """Instrucciones previas a la selección (WPF oscuro BIMTools, estilo Armado Muros)."""
+    try:
+        from armado_columnas_instruction_dialog import show_selection_instructions
+
+        return show_selection_instructions(uiapp=uiapp)
+    except Exception:
+        msg = (
+            u"Seleccione columnas estructurales en el modelo (una o varias).\n\n"
+            u"La herramienta abrirá un asistente para configurar la rejilla, "
+            u"troceo y parámetros.\n"
+            u"Generará barras longitudinales, estribos y el croquis de despiece "
+            u"en la vista activa.\n\n"
+            u"Pulse Aceptar para continuar con la selección.\n"
+            u"Puede cancelar la selección en cualquier momento con Esc."
+        )
+        TaskDialog.Show(_ARMADO_COLUMNAS_DIALOG_TITLE, msg)
+        return True
 
 
 def pick_structural_columns(uidoc):
@@ -949,6 +992,474 @@ def _build_troceo_scheme_rows(columns_ordered):
     return rows
 
 
+def _numeracion_columna_group_key(elem):
+    """Clave estable para agrupar pilares con el mismo diseño (5, P5, p5 → '5')."""
+    tok = _raw_numeracion_columna_value(elem)
+    if not tok:
+        return None
+    try:
+        s = unicode(tok).strip().upper()
+    except Exception:
+        s = u"{0}".format(tok).strip().upper()
+    if not s:
+        return None
+    if s.startswith(u"P"):
+        s = s[1:].strip()
+    return s or None
+
+
+def _plan_xy_key_for_column(col, xy_decimals=None):
+    """Huella en planta (pies internos redondeados) para apilamientos en un mismo eje."""
+    if col is None:
+        return None
+    if xy_decimals is None:
+        xy_decimals = int(XY_KEY_DECIMALS_DEFAULT)
+    cx = None
+    cy = None
+    try:
+        dims = get_column_dimensions(col)
+        cx = float(dims[3].X)
+        cy = float(dims[3].Y)
+    except Exception:
+        pass
+    if cx is None:
+        try:
+            loc = col.Location
+            crv = getattr(loc, "Curve", None)
+            if crv is not None:
+                p0 = crv.GetEndPoint(0)
+                p1 = crv.GetEndPoint(1)
+                cx = 0.5 * (float(p0.X) + float(p1.X))
+                cy = 0.5 * (float(p0.Y) + float(p1.Y))
+            else:
+                pt = getattr(loc, "Point", None)
+                if pt is not None:
+                    cx = float(pt.X)
+                    cy = float(pt.Y)
+        except Exception:
+            pass
+    if cx is None or cy is None:
+        return None
+    return (round(cx, int(xy_decimals)), round(cy, int(xy_decimals)))
+
+
+def _collect_structural_column_instances(doc):
+    if doc is None:
+        return []
+    try:
+        return list(
+            FilteredElementCollector(doc)
+            .OfCategory(BuiltInCategory.OST_StructuralColumns)
+            .WhereElementIsNotElementType()
+        )
+    except Exception:
+        return []
+
+
+def _expand_columns_by_numeracion_en_proyecto(doc, columns_selected):
+    """
+    Incluye todas las columnas del proyecto con la misma **Numeracion Columna**
+    que alguna columna seleccionada (réplicas en planta y tramos no elegidos).
+
+    Devuelve ``(columns_armado, info_dict)``; ``info_dict`` es ``None`` si no hubo expansión.
+    """
+    selected = list(columns_selected or [])
+    if not selected:
+        return selected, None
+
+    num_keys = set()
+    for col in selected:
+        nk = _numeracion_columna_group_key(col)
+        if nk:
+            num_keys.add(nk)
+
+    if not num_keys:
+        return selected, None
+
+    seen = set()
+    for col in selected:
+        iv = _element_id_iv(col)
+        if iv >= 0:
+            seen.add(iv)
+
+    added = []
+    out = list(selected)
+    for col in _collect_structural_column_instances(doc):
+        nk = _numeracion_columna_group_key(col)
+        if nk not in num_keys:
+            continue
+        iv = _element_id_iv(col)
+        if iv < 0 or iv in seen:
+            continue
+        seen.add(iv)
+        out.append(col)
+        added.append(col)
+
+    out.sort(key=_column_base_z_ft_for_sort)
+    if not added:
+        return out, None
+
+    labels = sorted(
+        {_format_pilar_label_from_numeracion_token(k) or k for k in num_keys}
+    )
+    return out, {
+        "added_count": len(added),
+        "selected_count": len(selected),
+        "total_count": len(out),
+        "numeracion_labels": labels,
+    }
+
+
+
+def _column_iv_set(columns):
+    out = set()
+    for col in columns or []:
+        iv = _element_id_iv(col)
+        if iv >= 0:
+            out.add(iv)
+    return out
+
+
+def _expand_lote_inicial_completar_apilamiento(doc, columns_selected):
+    selected = list(columns_selected or [])
+    if not selected:
+        return selected, None
+    selected_iv = _column_iv_set(selected)
+    num_xy_touch = set()
+    for col in selected:
+        nk = _numeracion_columna_group_key(col)
+        xy = _plan_xy_key_for_column(col)
+        if nk and xy is not None:
+            num_xy_touch.add((nk, xy))
+    if not num_xy_touch:
+        return selected, None
+    seen = set(selected_iv)
+    out = list(selected)
+    added = 0
+    for col in _collect_structural_column_instances(doc):
+        nk = _numeracion_columna_group_key(col)
+        xy = _plan_xy_key_for_column(col)
+        if nk is None or xy is None:
+            continue
+        if (nk, xy) not in num_xy_touch:
+            continue
+        iv = _element_id_iv(col)
+        if iv < 0 or iv in seen:
+            continue
+        seen.add(iv)
+        out.append(col)
+        added += 1
+    out.sort(key=_column_base_z_ft_for_sort)
+    if not added:
+        return out, None
+    return out, {"added_stack_count": int(added), "selected_count": len(selected), "total_count": len(out)}
+
+
+def _columns_propagacion_replicas(doc, columns_lote):
+    lote_iv = _column_iv_set(columns_lote)
+    num_keys = set()
+    for col in columns_lote or []:
+        nk = _numeracion_columna_group_key(col)
+        if nk:
+            num_keys.add(nk)
+    if not num_keys:
+        return []
+    out = []
+    for col in _collect_structural_column_instances(doc):
+        iv = _element_id_iv(col)
+        if iv < 0 or iv in lote_iv:
+            continue
+        nk = _numeracion_columna_group_key(col)
+        if nk in num_keys:
+            out.append(col)
+    out.sort(key=_column_base_z_ft_for_sort)
+    return out
+
+
+def _fill_dims_cache_for_columns(columns, dims_cache, omitidas_msgs):
+    for col in columns or []:
+        try:
+            width, depth, height, center_chk, grid_vs, grid_vl = get_column_dimensions(col)
+        except Exception as ex:
+            cid = getattr(col.Id, "IntegerValue", "?")
+            omitidas_msgs.append(u"Id {} — {}".format(cid, str(ex)))
+            continue
+        iv = _element_id_iv(col)
+        if iv < 0:
+            continue
+        sk = _canonical_section_mm_key(width, depth)
+        dims_cache[iv] = (width, depth, height, center_chk, grid_vs, grid_vl)
+
+
+def _line_plans_for_column_iv_set(line_plans, allowed_iv):
+    if not allowed_iv:
+        return [], set()
+    kept = []
+    kept_line_idx = set()
+    for lp in line_plans or []:
+        hit = False
+        for sj in lp.get("seg_jobs") or []:
+            hc = sj.get("host_col")
+            if hc is not None and _element_id_iv(hc) in allowed_iv:
+                hit = True
+                break
+            cset = sj.get("contrib_ids")
+            if cset and _contrib_ids_iv_set(cset) & allowed_iv:
+                hit = True
+                break
+        if hit:
+            kept.append(lp)
+            try:
+                kept_line_idx.add(int(lp.get("line_idx")))
+            except Exception:
+                pass
+    return kept, kept_line_idx
+
+
+def _line_rb_accum_for_line_indices(line_rb_accum, kept_line_idx):
+    if not line_rb_accum or not kept_line_idx:
+        return {}
+    out = {}
+    for k, v in line_rb_accum.items():
+        try:
+            if int(k) in kept_line_idx:
+                out[k] = v
+        except Exception:
+            pass
+    return out
+
+
+def _group_columns_into_stacks_by_numeracion(columns):
+    """
+    ``{numeracion_key: [stack, …]}``; cada *stack* = columnas mismo token + misma XY,
+    ordenadas de menor a mayor Z base.
+    """
+    buckets = defaultdict(lambda: defaultdict(list))
+    for col in columns or []:
+        nk = _numeracion_columna_group_key(col)
+        if not nk:
+            continue
+        xy = _plan_xy_key_for_column(col)
+        if xy is None:
+            continue
+        buckets[nk][xy].append(col)
+
+    out = {}
+    for nk, xy_map in buckets.items():
+        stacks = []
+        for _xy, cols in xy_map.items():
+            cols = list(cols)
+            cols.sort(key=_column_base_z_ft_for_sort)
+            stacks.append(cols)
+        stacks.sort(
+            key=lambda st: (
+                _column_base_z_ft_for_sort(st[0]) if st else 0.0,
+                _element_id_iv(st[0]) if st else 0,
+            )
+        )
+        out[nk] = stacks
+    return out
+
+
+def _pick_template_stack_for_selection(stacks, selected_iv):
+    """Stack con más columnas coincidentes con la selección (plantilla de armado)."""
+    if not stacks:
+        return None
+    best = None
+    best_score = -1
+    for stack in stacks:
+        score = 0
+        for col in stack:
+            iv = _element_id_iv(col)
+            if iv >= 0 and iv in selected_iv:
+                score += 1
+        if score > best_score:
+            best_score = score
+            best = stack
+    if best is not None and best_score > 0:
+        return best
+    return stacks[0]
+
+
+def _remap_flat_id_map_between_stacks(source_map, template_stack, target_stack):
+    """Copia valores del mapa plano por índice de tramo en el apilamiento."""
+    if not source_map or not template_stack or not target_stack:
+        return
+    t_sorted = sorted(template_stack, key=_column_base_z_ft_for_sort)
+    g_sorted = sorted(target_stack, key=_column_base_z_ft_for_sort)
+    n = min(len(t_sorted), len(g_sorted))
+    for i in range(n):
+        val = _map_lookup_for_column(source_map, t_sorted[i])
+        if val is None:
+            continue
+        for tk in _column_id_keys_for_map(g_sorted[i]):
+            source_map[tk] = val
+
+
+def _remap_nested_lot_map_between_stacks(source_map, template_stack, target_stack):
+    if not source_map or not template_stack or not target_stack:
+        return
+    t_sorted = sorted(template_stack, key=_column_base_z_ft_for_sort)
+    g_sorted = sorted(target_stack, key=_column_base_z_ft_for_sort)
+    n = min(len(t_sorted), len(g_sorted))
+    for i in range(n):
+        nested = _map_lookup_for_column(source_map, t_sorted[i])
+        if nested is None:
+            continue
+        try:
+            nested_copy = dict(nested)
+        except Exception:
+            nested_copy = nested
+        for tk in _column_id_keys_for_map(g_sorted[i]):
+            source_map[tk] = dict(nested_copy)
+
+
+def _propagate_wizard_maps_from_template_stack(
+    columns_armado,
+    columns_selected,
+    stirrup_spacing_by_column_id,
+    stirrup_bar_type_by_column_id,
+    stirrup_policy_by_column_id,
+    stirrup_spacing_by_column_lot,
+    stirrup_bar_type_by_column_lot,
+    wizard_troceo_outcome,
+):
+    """
+    Replica troceo/estribos del apilamiento plantilla (selección del usuario) al resto
+    de apilamientos con la misma numeración en el proyecto.
+    """
+    selected_iv = set()
+    for col in columns_selected or []:
+        iv = _element_id_iv(col)
+        if iv >= 0:
+            selected_iv.add(iv)
+
+    stacks_by_num = _group_columns_into_stacks_by_numeracion(columns_armado)
+    for _nk, stacks in stacks_by_num.items():
+        if len(stacks) < 2:
+            continue
+        template = _pick_template_stack_for_selection(stacks, selected_iv)
+        if template is None:
+            continue
+        for target in stacks:
+            if target is template:
+                continue
+            _remap_flat_id_map_between_stacks(
+                stirrup_spacing_by_column_id, template, target
+            )
+            _remap_flat_id_map_between_stacks(
+                stirrup_bar_type_by_column_id, template, target
+            )
+            _remap_flat_id_map_between_stacks(
+                stirrup_policy_by_column_id, template, target
+            )
+            _remap_nested_lot_map_between_stacks(
+                stirrup_spacing_by_column_lot, template, target
+            )
+            _remap_nested_lot_map_between_stacks(
+                stirrup_bar_type_by_column_lot, template, target
+            )
+            if wizard_troceo_outcome is not None:
+                pol = getattr(
+                    wizard_troceo_outcome,
+                    "troceo_empalme_policy_by_column_id",
+                    None,
+                )
+                if pol:
+                    _remap_flat_id_map_between_stacks(pol, template, target)
+
+
+def _columns_relevant_to_active_view(doc, view, columns):
+    """Columnas con caja en la vista (despiece / etiquetas confinamiento solo en vista activa)."""
+    if doc is None or view is None or not columns:
+        return []
+    out = []
+    for col in columns:
+        if col is None:
+            continue
+        bb = None
+        try:
+            bb = col.get_BoundingBox(view)
+        except Exception:
+            pass
+        if bb is None:
+            continue
+        out.append(col)
+    return out
+
+
+def _contrib_ids_iv_set(contrib_ids):
+    out = set()
+    for eid in contrib_ids or []:
+        try:
+            iv = int(eid.IntegerValue)
+        except Exception:
+            try:
+                iv = int(eid.Value)
+            except Exception:
+                iv = -1
+        if iv >= 0:
+            out.add(iv)
+    return out
+
+
+def _filter_linea_fierro_groups_for_columns(model_groups, label_map, columns_subset):
+    """Subconjunto de grupos de despiece ligados a columnas de la vista activa."""
+    if not model_groups:
+        return model_groups, label_map
+    allowed = set()
+    for col in columns_subset or []:
+        iv = _element_id_iv(col)
+        if iv >= 0:
+            allowed.add(iv)
+    if not allowed:
+        return model_groups, label_map
+
+    filtered = []
+    for g in model_groups:
+        hit = False
+        for sj in g.get("seg_jobs") or []:
+            hc = sj.get("host_col")
+            if hc is not None and _element_id_iv(hc) in allowed:
+                hit = True
+                break
+            cset = sj.get("contrib_ids")
+            if cset and _contrib_ids_iv_set(cset) & allowed:
+                hit = True
+                break
+        if hit:
+            filtered.append(g)
+
+    if len(filtered) == len(model_groups):
+        return model_groups, label_map
+
+    keys_kept = set()
+    for g in filtered:
+        k = g.get("key")
+        if k is not None:
+            keys_kept.add(k)
+
+    new_label = {}
+    for k, v in (label_map or {}).items():
+        if k in keys_kept:
+            new_label[k] = v
+
+    try:
+        from column_reinforcement.linea_fierro import (
+            linea_fierro_sort_index_from_letter,
+        )
+
+        filtered.sort(
+            key=lambda g: linea_fierro_sort_index_from_letter(
+                new_label.get(g.get("key"))
+            ),
+        )
+    except Exception:
+        pass
+
+    return filtered, new_label
+
+
 def _troceo_ubicacion_label_sort_key(lab):
     u"""Orden UI troceo: A, B, luego IA, IB, despu\u00e9s el resto alfab\u00e9tico."""
     try:
@@ -1286,6 +1797,151 @@ def _stirrup_bar_type_override_for_column(stirrup_bar_type_by_column_id, col):
     except Exception:
         pass
     return None
+
+
+def _column_id_keys_for_map(col):
+    u"""Claves posibles (Value / IntegerValue) para mapas por id de columna."""
+    keys = []
+    if col is None:
+        return keys
+    iv_v = _element_id_iv(col)
+    if iv_v >= 0:
+        keys.append(iv_v)
+    try:
+        iv_i = int(col.Id.IntegerValue)
+        if iv_i not in keys:
+            keys.append(iv_i)
+    except Exception:
+        pass
+    return keys
+
+
+def _map_lookup_for_column(d, col):
+    if not d or col is None:
+        return None
+    for k in _column_id_keys_for_map(col):
+        try:
+            if k in d:
+                return d[k]
+        except Exception:
+            pass
+    return None
+
+
+def _stirrup_policy_override_for_column(stirrup_policy_by_column_id, col):
+    u"""Política de estribos: ``continuous`` (completo) o ``thirds_l3``."""
+    try:
+        from column_stirrup_creator import STIRRUP_POLICY_CONTINUOUS
+    except Exception:
+        STIRRUP_POLICY_CONTINUOUS = u"continuous"
+    val = _map_lookup_for_column(stirrup_policy_by_column_id or {}, col)
+    if val == u"thirds_l3":
+        return u"thirds_l3"
+    return STIRRUP_POLICY_CONTINUOUS
+
+
+def _stirrup_lot_value_for_column(lot_map, col, lot_index, flat_map=None):
+    u"""Valor por lote (0=T1..2=T3); respaldo en mapa plano por columna."""
+    if col is None:
+        return None
+    nested = _map_lookup_for_column(lot_map or {}, col)
+    if nested is not None:
+        try:
+            if int(lot_index) in nested:
+                return nested[int(lot_index)]
+        except Exception:
+            pass
+        try:
+            if lot_index in nested:
+                return nested[lot_index]
+        except Exception:
+            pass
+    if flat_map is not None:
+        return _map_lookup_for_column(flat_map, col)
+    return None
+
+
+def _stirrup_lot_specs_for_column(
+    stirrup_policy_by_column_id,
+    stirrup_spacing_by_column_lot,
+    stirrup_bar_type_by_column_lot,
+    stirrup_spacing_by_column_id,
+    stirrup_bar_type_by_column_id,
+    col,
+    default_spacing_mm,
+    default_bar_type,
+):
+    u"""Devuelve ``(policy, lot_specs)``; ``lot_specs`` es lista de 3 tuplas o ``None``."""
+    try:
+        from column_stirrup_creator import (
+            STIRRUP_POLICY_CONTINUOUS,
+            STIRRUP_POLICY_THIRDS_L3,
+        )
+    except Exception:
+        STIRRUP_POLICY_CONTINUOUS = u"continuous"
+        STIRRUP_POLICY_THIRDS_L3 = u"thirds_l3"
+    policy = _stirrup_policy_override_for_column(
+        stirrup_policy_by_column_id,
+        col,
+    )
+    if policy != STIRRUP_POLICY_THIRDS_L3:
+        sp = _stirrup_lot_value_for_column(
+            stirrup_spacing_by_column_lot,
+            col,
+            0,
+            flat_map=stirrup_spacing_by_column_id,
+        )
+        if sp is None:
+            sp = _stirrup_spacing_mm_override_for_column(
+                stirrup_spacing_by_column_id,
+                col,
+            )
+        if sp is None:
+            sp = default_spacing_mm
+        bt = _stirrup_lot_value_for_column(
+            stirrup_bar_type_by_column_lot,
+            col,
+            0,
+            flat_map=stirrup_bar_type_by_column_id,
+        )
+        if bt is None:
+            bt = _stirrup_bar_type_override_for_column(
+                stirrup_bar_type_by_column_id,
+                col,
+            )
+        if bt is None:
+            bt = default_bar_type
+        return STIRRUP_POLICY_CONTINUOUS, None, float(sp), bt
+    specs = []
+    for lot_i in range(3):
+        sp = _stirrup_lot_value_for_column(
+            stirrup_spacing_by_column_lot,
+            col,
+            lot_i,
+            flat_map=stirrup_spacing_by_column_id if lot_i == 0 else None,
+        )
+        if sp is None and lot_i == 0:
+            sp = _stirrup_spacing_mm_override_for_column(
+                stirrup_spacing_by_column_id,
+                col,
+            )
+        if sp is None:
+            sp = default_spacing_mm
+        bt = _stirrup_lot_value_for_column(
+            stirrup_bar_type_by_column_lot,
+            col,
+            lot_i,
+            flat_map=stirrup_bar_type_by_column_id if lot_i == 0 else None,
+        )
+        if bt is None and lot_i == 0:
+            bt = _stirrup_bar_type_override_for_column(
+                stirrup_bar_type_by_column_id,
+                col,
+            )
+        if bt is None:
+            bt = default_bar_type
+        specs.append((float(sp), bt))
+    return STIRRUP_POLICY_THIRDS_L3, specs, float(specs[0][0]), specs[0][1]
 
 
 def _element_id_from_int(iv):
@@ -1630,7 +2286,10 @@ _REVOKE_EMBED_EXTRA_SHRINK_MM = 25.0
 
 # --- Fundaciones unidas bajo cara inferior columnas seleccionadas (Join Geometry, BB alineadas) -----
 # Estir −Z desde el arranque fusionado: ``altura_BB_fundación − _FOUNDATION_STRETCH_DEDUCTION_MM`` [mm].
+# Ese 50 mm es al **eje** de la barra; con pata L se corrige +Ø/2 en ``_apply_pata_l_cover_tangent_to_seg``
+# para dejar **50 mm a la tangente** en el nudo.
 _FOUNDATION_STRETCH_DEDUCTION_MM = 50.0
+COLUMN_PATA_L_COVER_TANGENT_MM = 50.0
 _FOUNDATION_JOIN_FACE_Z_TOLERANCE_MM = 35.0
 _FOUNDATION_JOIN_OVERLAP_XY_MM = 75.0
 _CAT_STRUCT_FOUNDATION_IV = int(BuiltInCategory.OST_StructuralFoundation)
@@ -2371,6 +3030,121 @@ def _build_vertical_square_prism_solid(px, py, z_start_ft, half_side_ft, height_
     return sol
 
 
+def _embed_probe_half_width_ft(bar_nominal_mm):
+    half_w_mm = (
+        float(bar_nominal_mm) / 2.0
+        + float(_EMBED_PROBE_XY_MARGIN_MM)
+    )
+    half_w_mm = max(half_w_mm, float(_EMBED_PROBE_MIN_HALF_SIDE_MM))
+    return UnitUtils.ConvertToInternalUnits(half_w_mm, UnitTypeId.Millimeters)
+
+
+def _embed_probe_world_outline(
+    fused_world,
+    dz_extend_top_ft,
+    max_foundation_down_ft,
+    bar_nominal_mm,
+):
+    """Envolvente 3D (pies) para acotar columnas candidatas al prisma de empotramiento."""
+    if not fused_world:
+        return None
+    half_w = _embed_probe_half_width_ft(bar_nominal_mm)
+    dz_e = abs(float(dz_extend_top_ft))
+    fund = max(0.0, float(max_foundation_down_ft))
+    min_x = min_y = min_z = float("inf")
+    max_x = max_y = max_z = float("-inf")
+    for base_xyz, span_z, _contrib_ids, _bar_enum_lab in fused_world:
+        if base_xyz is None:
+            continue
+        bx = float(base_xyz.X)
+        by = float(base_xyz.Y)
+        bz = float(base_xyz.Z)
+        span = float(span_z)
+        z_lo = bz - fund - dz_e
+        z_hi = bz + span + dz_e
+        min_x = min(min_x, bx - half_w)
+        max_x = max(max_x, bx + half_w)
+        min_y = min(min_y, by - half_w)
+        max_y = max(max_y, by + half_w)
+        min_z = min(min_z, z_lo)
+        max_z = max(max_z, z_hi)
+    if min_x > max_x or min_y > max_y or min_z > max_z:
+        return None
+    try:
+        return Outline(XYZ(min_x, min_y, min_z), XYZ(max_x, max_y, max_z))
+    except Exception:
+        return None
+
+
+def _collect_column_instances_for_embed_probe(doc, columns_ordered, outline):
+    """Columnas del lote + vecinas cuya BB intersecta la envolvente del empotramiento."""
+    seen = {}
+    for col in columns_ordered or []:
+        if col is None:
+            continue
+        try:
+            seen[int(col.Id.IntegerValue)] = col
+        except Exception:
+            pass
+    if doc is None:
+        return list(seen.values())
+    if outline is not None:
+        try:
+            bb_filter = BoundingBoxIntersectsFilter(outline)
+            nearby = (
+                FilteredElementCollector(doc)
+                .OfCategory(BuiltInCategory.OST_StructuralColumns)
+                .WhereElementIsNotElementType()
+                .WherePasses(bb_filter)
+            )
+            for col in nearby:
+                if col is None:
+                    continue
+                try:
+                    seen[int(col.Id.IntegerValue)] = col
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    if seen:
+        return list(seen.values())
+    try:
+        return list(
+            FilteredElementCollector(doc)
+            .OfCategory(BuiltInCategory.OST_StructuralColumns)
+            .WhereElementIsNotElementType()
+        )
+    except Exception:
+        return []
+
+
+def _build_column_solids_cache(column_instances, geom_opts):
+    """Precalcula sólidos por columna para pruebas de empotramiento repetidas."""
+    cache = {}
+    for col in column_instances or []:
+        if col is None:
+            continue
+        try:
+            iv = int(col.Id.IntegerValue)
+        except Exception:
+            continue
+        solids = list(_iter_solids_revit_element(col, geom_opts))
+        if solids:
+            cache[iv] = solids
+    return cache
+
+
+def _solids_for_embed_column(col, geom_opts, column_solid_cache=None):
+    if col is None:
+        return []
+    if column_solid_cache is not None:
+        try:
+            return column_solid_cache.get(int(col.Id.IntegerValue), [])
+        except Exception:
+            return []
+    return list(_iter_solids_revit_element(col, geom_opts))
+
+
 def embed_stretch_collides_any_column_solids(
     doc,
     xyz_base_xyz,
@@ -2380,6 +3154,7 @@ def embed_stretch_collides_any_column_solids(
     column_instances,
     geom_opts,
     contrib_elem_ids,
+    column_solid_cache=None,
 ):
     """
     ``True`` si el prisma de ensayo coincide con **el segmento geométrico del empotramiento +Z**:
@@ -2403,12 +3178,7 @@ def embed_stretch_collides_any_column_solids(
     h_extr = dz_e
     if h_extr <= 1e-12:
         return False
-    half_w_mm = (
-        float(bar_nominal_mm) / 2.0
-        + float(_EMBED_PROBE_XY_MARGIN_MM)
-    )
-    half_w_mm = max(half_w_mm, float(_EMBED_PROBE_MIN_HALF_SIDE_MM))
-    half_w_ft = UnitUtils.ConvertToInternalUnits(half_w_mm, UnitTypeId.Millimeters)
+    half_w_ft = _embed_probe_half_width_ft(bar_nominal_mm)
     probe = _build_vertical_square_prism_solid(
         float(xyz_base_xyz.X),
         float(xyz_base_xyz.Y),
@@ -2425,7 +3195,7 @@ def embed_stretch_collides_any_column_solids(
                 continue
             if omit_eid is not None and _element_ids_coinciden(col.Id, omit_eid):
                 continue
-            for sd in _iter_solids_revit_element(col, geom_opts):
+            for sd in _solids_for_embed_column(col, geom_opts, column_solid_cache):
                 if _solidos_intersectan_volumen(probe, sd):
                     return True
     except Exception:
@@ -2441,6 +3211,7 @@ def embed_start_collides_any_column_solids(
     column_instances,
     geom_opts,
     contrib_elem_ids,
+    column_solid_cache=None,
 ):
     """
 
@@ -2464,12 +3235,7 @@ def embed_start_collides_any_column_solids(
     z0 = z_suelo - dz_e
     if dz_e <= 1e-12:
         return False
-    half_w_mm = (
-        float(bar_nominal_mm) / 2.0
-        + float(_EMBED_PROBE_XY_MARGIN_MM)
-    )
-    half_w_mm = max(half_w_mm, float(_EMBED_PROBE_MIN_HALF_SIDE_MM))
-    half_w_ft = UnitUtils.ConvertToInternalUnits(half_w_mm, UnitTypeId.Millimeters)
+    half_w_ft = _embed_probe_half_width_ft(bar_nominal_mm)
     probe = _build_vertical_square_prism_solid(
         float(xyz_floor_fused_xyz.X),
         float(xyz_floor_fused_xyz.Y),
@@ -2486,7 +3252,7 @@ def embed_start_collides_any_column_solids(
                 continue
             if omit_eid is not None and _element_ids_coinciden(col.Id, omit_eid):
                 continue
-            for sd in _iter_solids_revit_element(col, geom_opts):
+            for sd in _solids_for_embed_column(col, geom_opts, column_solid_cache):
                 if _solidos_intersectan_volumen(probe, sd):
                     return True
     except Exception:
@@ -2693,6 +3459,61 @@ def _rebar_nominal_diameter_mm(bar_type):
         return None
 
 
+def _long_bar_radius_ft(bar_type=None, diameter_mm=None):
+    if bar_type is not None:
+        for attr in ("BarModelDiameter", "BarNominalDiameter", "BarDiameter"):
+            try:
+                v = getattr(bar_type, attr, None)
+                if v is not None:
+                    return 0.5 * float(v)
+            except Exception:
+                pass
+    if diameter_mm is not None:
+        try:
+            return UnitUtils.ConvertToInternalUnits(
+                0.5 * float(diameter_mm),
+                UnitTypeId.Millimeters,
+            )
+        except Exception:
+            return float(diameter_mm) / 304.8 * 0.5
+    return 0.0
+
+
+def _apply_pata_l_cover_tangent_to_seg(
+    zs,
+    span_seg,
+    want_bot_pata,
+    want_top_pata,
+    bar_type,
+    diameter_mm,
+    min_span_ft,
+):
+    """
+    Recubrimiento **a la tangente** (``COLUMN_PATA_L_COVER_TANGENT_MM``) en el nudo L.
+
+    Fundación / revertido dejan el eje a 50 mm de la cara; la tangente queda ~50 − Ø/2.
+    Pata inferior: sube el nudo Ø/2. Pata superior: acorta el tramo Ø/2 desde la cabeza.
+    """
+    if not want_bot_pata and not want_top_pata:
+        return float(zs), float(span_seg)
+    r_ft = _long_bar_radius_ft(bar_type, diameter_mm)
+    if r_ft <= 1e-12:
+        return float(zs), float(span_seg)
+    zs = float(zs)
+    span = float(span_seg)
+    min_s = max(float(min_span_ft), r_ft * 2.0)
+    if want_bot_pata and span > min_s:
+        dz = min(r_ft, span - min_s)
+        if dz > 1e-12:
+            zs += dz
+            span -= dz
+    if want_top_pata and span > min_s:
+        dz = min(r_ft, span - min_s)
+        if dz > 1e-12:
+            span -= dz
+    return zs, span
+
+
 def _resolve_rebar_bar_type_by_diameter_mm(document, target_mm):
     """
     ``RebarBarType`` más cercano al Ø nominal pedido. Devuelve
@@ -2821,28 +3642,6 @@ def _arma_len_mm_round_from_internal_ft(length_ft):
             return 0.0
 
 
-def _fingerprint_seg_linea_fierro(span_seg_ft, ok_pat_bot, ok_pat_top, pata_len_ft):
-    """
-    Huella de **un** tramo de la línea tras troceo: recto (solo Lz) o L con pata en bajo/arriba/ambos.
-    Tuplas ordenables y hashables para agrupar igual número y largos efectivos.
-    """
-    lz = _arma_len_mm_round_from_internal_ft(span_seg_ft)
-    lp = _arma_len_mm_round_from_internal_ft(pata_len_ft)
-    try:
-        bot = bool(ok_pat_bot)
-        top = bool(ok_pat_top)
-    except Exception:
-        bot = False
-        top = False
-    if bot and top:
-        return (3, lz, lp, lp)
-    if bot:
-        return (1, lz, lp)
-    if top:
-        return (2, lz, lp)
-    return (0, lz)
-
-
 def _linea_fierro_nombre_alfabetico(indice_cero):
     """0 → 'A', 25 → 'Z', 26 → 'AA' (estilo columna Excel)."""
     try:
@@ -2855,59 +3654,6 @@ def _linea_fierro_nombre_alfabetico(indice_cero):
         n, r = divmod(n - 1, 26)
         out = _chr(65 + r) + out
     return out
-
-
-def _aplicar_armadura_ubicacion_si_existe(rebar_element, valor_texto):
-    """Escribe ``Armadura_Ubicacion`` en el ``Rebar`` si el parámetro existe (mismo criterio que fundación/vigas)."""
-    if rebar_element is None or valor_texto is None:
-        return
-    try:
-        txt = unicode(valor_texto)
-    except Exception:
-        try:
-            txt = u"{0}".format(valor_texto)
-        except Exception:
-            return
-    try:
-        p = rebar_element.LookupParameter(COLUMN_ARMA_UBICACION_PARAM)
-        if p is None or p.IsReadOnly:
-            return
-        p.Set(txt)
-    except Exception:
-        pass
-
-
-def _apply_linea_fierro_armadura_ubicacion(assignments_list):
-    """
-    ``assignments_list``: ``[(rebar, key), ...]`` donde ``key`` discrimina líneas de fierro
-    (mismo ``key`` → misma letra A,B,…). Se asigna antes de ``Commit`` dentro de la misma transacción.
-    """
-    if not assignments_list:
-        return
-    nombre_por_key = _linea_fierro_label_map_from_assignments(assignments_list)
-    if not nombre_por_key:
-        return
-    for rb, k in assignments_list:
-        try:
-            nm = nombre_por_key.get(k)
-            if nm is None:
-                continue
-            _aplicar_armadura_ubicacion_si_existe(rb, nm)
-        except Exception:
-            continue
-
-
-def _linea_fierro_label_map_from_assignments(assignments_list):
-    """``key`` → etiqueta texto (orden estable ``sorted`` sobre claves de firma)."""
-    if not assignments_list:
-        return {}
-    try:
-        uniq = sorted({k for _rb, k in assignments_list})
-    except Exception:
-        return {}
-    return {k: _linea_fierro_nombre_alfabetico(i) for i, k in enumerate(uniq)}
-
-
 
 
 def _shape_display_name_normalized_column(value):
@@ -3179,10 +3925,47 @@ def create_vertical_rebar(document, pt, span_along_z, host, bar_type, comment_te
     return rb
 
 
+def _pata_eje_len_ft_from_tabla(bar_type, pata_len_ft_tabla):
+    """
+    Longitud del tramo horizontal del **eje** de curva para ``CreateFromCurves``.
+
+    ``pata_len_ft_tabla`` es el largo de tabla BIMTools (pata−Ø). Revit modela desde
+    el eje de la barra; si el eje mide lo mismo que la tabla, el largo modelado queda
+    ~tabla + Ø/2. Restamos medio Ø nominal al eje para que la barra coincida con la
+    tabla. El esquema en lienzo y el despiece usan el valor de tabla sin corrección.
+    """
+    lf = float(pata_len_ft_tabla)
+    if lf <= 1e-12:
+        return lf
+    d_mm = _rebar_nominal_diameter_mm(bar_type)
+    try:
+        tabla_mm = UnitUtils.ConvertFromInternalUnits(lf, UnitTypeId.Millimeters)
+    except Exception:
+        tabla_mm = lf * 304.8
+    eje_mm = None
+    if pata_eje_curve_loop_mm_desde_tabla_mm is not None:
+        try:
+            eje_mm = pata_eje_curve_loop_mm_desde_tabla_mm(tabla_mm, d_mm)
+        except Exception:
+            eje_mm = None
+    if eje_mm is None:
+        try:
+            d = float(int(round(float(d_mm or 0.0))))
+        except Exception:
+            d = 0.0
+        eje_mm = float(tabla_mm) - 0.5 * d if d > 1e-6 else float(tabla_mm)
+        eje_mm = max(40.0, float(eje_mm))
+    try:
+        return UnitUtils.ConvertToInternalUnits(float(eje_mm), UnitTypeId.Millimeters)
+    except Exception:
+        return lf
+
+
 def _pata_horizontal_leg_at_z(document, bx, by, z_level, contrib_elem_ids, pata_len_ft):
     """Pata en planta: desde la rejilla ``(bx,by)`` hacia el centro de columna contribuyente.
     Devuelve ``(pa,pb,ux,uy)`` con ``pa`` en el pie del eje principal y ``pb`` la punta horizontal.
-    ``None`` si no aplica."""
+    ``None`` si no aplica. ``pata_len_ft`` debe ser ya la longitud de **eje** (ver
+    ``_pata_eje_len_ft_from_tabla``)."""
     bx = float(bx)
     by = float(by)
     zr = float(z_level)
@@ -3244,6 +4027,9 @@ def create_longitudinal_rebar_with_optional_patas(
     intenta ``Rebar.CreateFromCurvesAndShape`` con la forma «02» ya definida
     en el proyecto; si no aplica o falla el API, usa ``CreateFromCurves``.
     Con **dos patas** tres segmentos, sólo ``CreateFromCurves``.
+
+    ``pata_len_ft`` es largo de **tabla**; aquí se convierte a eje (−Ø/2) solo para
+    las ``Curve`` del ``Rebar`` modelado.
     """
     bx = float(bx)
     by = float(by)
@@ -3257,6 +4043,8 @@ def create_longitudinal_rebar_with_optional_patas(
     foot = XYZ(bx, by, zs)
     head = XYZ(bx, by, z_top)
 
+    pata_eje_ft = _pata_eje_len_ft_from_tabla(bar_type, pata_len_ft)
+
     bot_leg = None
     top_leg = None
     if want_bottom_pata:
@@ -3266,7 +4054,7 @@ def create_longitudinal_rebar_with_optional_patas(
             by,
             zs,
             contrib_ids,
-            pata_len_ft,
+            pata_eje_ft,
         )
     if want_top_pata:
         top_leg = _pata_horizontal_leg_at_z(
@@ -3275,7 +4063,7 @@ def create_longitudinal_rebar_with_optional_patas(
             by,
             z_top,
             contrib_ids,
-            pata_len_ft,
+            pata_eje_ft,
         )
 
     curves = []
@@ -3479,6 +4267,284 @@ def _plane_from_column_location_curve_at_end(col, short_curve_tolerance_ft):
     if pl is None:
         return None
     return _horizontal_plane_z_snap_to_bbox(pl, col, use_top=True)
+
+
+TROCEO_EMPALME_POLICY_BASE = u"base"
+TROCEO_EMPALME_POLICY_MID_AXIS = u"mid_axis_split"
+
+
+def _troceo_empalme_policy_for_column(policy_by_column_id, col):
+    u"""Política de troceo por columna referencia; defecto = base (actual)."""
+    d = policy_by_column_id or {}
+    if col is None:
+        return TROCEO_EMPALME_POLICY_BASE
+    iv_v = _element_id_iv(col)
+    try:
+        if iv_v >= 0 and iv_v in d:
+            p = d[iv_v]
+            if p == TROCEO_EMPALME_POLICY_MID_AXIS:
+                return TROCEO_EMPALME_POLICY_MID_AXIS
+    except Exception:
+        pass
+    try:
+        iv_i = int(col.Id.IntegerValue)
+        if iv_i in d:
+            p = d[iv_i]
+            if p == TROCEO_EMPALME_POLICY_MID_AXIS:
+                return TROCEO_EMPALME_POLICY_MID_AXIS
+    except Exception:
+        pass
+    return TROCEO_EMPALME_POLICY_BASE
+
+
+def _plane_from_column_location_curve_midpoint(col, short_curve_tolerance_ft):
+    u"""Respaldo: punto medio del ``LocationCurve`` si no hay sólido."""
+    tol = abs(float(short_curve_tolerance_ft))
+    if tol < 1e-12:
+        tol = 1e-12
+    if col is None:
+        return None
+    try:
+        loc = col.Location
+        cr = getattr(loc, "Curve", None)
+        if cr is not None:
+            p0 = cr.GetEndPoint(0)
+            p1 = cr.GetEndPoint(1)
+            v = p1 - p0
+            if v.GetLength() >= tol:
+                n = v.Normalize()
+                p_mid = p0.Add(v.Multiply(0.5))
+                return Plane.CreateByNormalAndOrigin(n, p_mid)
+            return Plane.CreateByNormalAndOrigin(XYZ.BasisZ, p0)
+        pt_loc = getattr(loc, "Point", None)
+        if pt_loc is not None:
+            return Plane.CreateByNormalAndOrigin(XYZ.BasisZ, pt_loc)
+    except Exception:
+        return None
+    return None
+
+
+def _plane_from_column_geometric_mid_height(col, short_curve_tolerance_ft):
+    u"""
+    Plano ⟂ al eje en la **mitad de la altura geométrica** del sólido del pilar
+    (centro del volumen modelado; origen proyectado sobre el eje ``Location``).
+    """
+    tol = abs(float(short_curve_tolerance_ft))
+    if tol < 1e-12:
+        tol = 1e-12
+    if col is None:
+        return None
+    n_hat = _column_location_start_end_unit_vector(col, tol)
+    if n_hat is None:
+        n_hat = XYZ.BasisZ
+    p0 = None
+    try:
+        loc = col.Location
+        cr = getattr(loc, "Curve", None)
+        if cr is not None:
+            p0 = cr.GetEndPoint(0)
+        else:
+            pt_loc = getattr(loc, "Point", None)
+            if pt_loc is not None:
+                p0 = pt_loc
+    except Exception:
+        p0 = None
+    if p0 is None:
+        return _plane_from_column_location_curve_midpoint(col, tol)
+    zm, zM = _column_solid_vertex_z_min_max(col)
+    if zm is None or zM is None or abs(float(zM) - float(zm)) < tol:
+        return _plane_from_column_location_curve_midpoint(col, tol)
+    try:
+        rng = _solid_aggregate_vertex_ranges_ft(col)
+        if rng is not None:
+            cx = 0.5 * (float(rng[0]) + float(rng[1]))
+            cy = 0.5 * (float(rng[2]) + float(rng[3]))
+            cz = 0.5 * (float(rng[4]) + float(rng[5]))
+        else:
+            cx = float(p0.X)
+            cy = float(p0.Y)
+            cz = 0.5 * (float(zm) + float(zM))
+        c = XYZ(cx, cy, cz)
+        t = float((c - p0).DotProduct(n_hat))
+        origin = p0.Add(n_hat.Multiply(t))
+        return Plane.CreateByNormalAndOrigin(n_hat, origin)
+    except Exception:
+        pass
+    try:
+        z_mid = 0.5 * (float(zm) + float(zM))
+        nx = float(n_hat.X)
+        ny = float(n_hat.Y)
+        nz = float(n_hat.Z)
+        if abs(nz) >= 0.99 and (nx * nx + ny * ny) < 0.02:
+            return Plane.CreateByNormalAndOrigin(
+                n_hat,
+                XYZ(float(p0.X), float(p0.Y), z_mid),
+            )
+    except Exception:
+        pass
+    return _plane_from_column_location_curve_midpoint(col, tol)
+
+
+def _append_cut_plane_with_dup_z_handling(col, pl, used_z, z_dup_ft, tol_ft, use_top_for_dup):
+    u"""Añade plano con la misma lógica de Z duplicada que ``build_column_cut_planes_from_elements``."""
+    if pl is None:
+        return None
+    try:
+        n = pl.Normal
+        oz = float(pl.Origin.Z)
+        nx = float(n.X)
+        ny = float(n.Y)
+        nz = float(n.Z)
+        is_horiz = abs(nz) >= 0.99 and (nx * nx + ny * ny) < 0.02
+        if is_horiz:
+            dup = any(abs(oz - uz) < z_dup_ft for uz in used_z)
+            if dup:
+                pl2 = _plane_from_column_location_curve_at_end(col, tol_ft)
+                if pl2 is not None:
+                    try:
+                        oz2 = float(pl2.Origin.Z)
+                    except Exception:
+                        oz2 = oz
+                    if not any(abs(oz2 - uz) < z_dup_ft for uz in used_z):
+                        pl = pl2
+                        oz = oz2
+            used_z.append(oz)
+        else:
+            used_z.append(oz)
+    except Exception:
+        pass
+    return pl
+
+
+def build_a_bar_cut_planes_per_empalme_policy(columns, policy_by_column_id, tol_ft):
+    u"""
+    Planos A/IA: por columna, ``base`` = inicio de eje; ``mid_axis_split`` = mitad altura del sólido.
+    Devuelve ``(planes, policies)`` alineados (una política por plano).
+    """
+    tol = abs(float(tol_ft))
+    if tol < 1e-12:
+        tol = 1e-12
+    try:
+        z_dup_ft = UnitUtils.ConvertToInternalUnits(2.0, UnitTypeId.Millimeters)
+    except Exception:
+        z_dup_ft = tol * 500.0
+    used_z = []
+    planes = []
+    policies = []
+    for col in columns or []:
+        pol = _troceo_empalme_policy_for_column(policy_by_column_id, col)
+        if pol == TROCEO_EMPALME_POLICY_MID_AXIS:
+            pl = _plane_from_column_geometric_mid_height(col, tol)
+        else:
+            pl = _plane_from_column_location_curve(col, tol)
+        pl = _append_cut_plane_with_dup_z_handling(
+            col, pl, used_z, z_dup_ft, tol, False
+        )
+        if pl is not None:
+            planes.append(pl)
+            policies.append(pol)
+    return planes, policies
+
+
+def build_b_bar_cut_planes_per_empalme_policy(
+    columns,
+    policy_by_column_id,
+    tol_ft,
+    embed_mm_for_column_cb=None,
+):
+    u"""
+    Planos B/IB: mismo origen que A por columna; desplazamiento ``L(Ø)`` completo (base y mitad altura).
+    """
+    tol = abs(float(tol_ft))
+    if tol < 1e-12:
+        tol = 1e-12
+    try:
+        z_dup_ft = UnitUtils.ConvertToInternalUnits(2.0, UnitTypeId.Millimeters)
+    except Exception:
+        z_dup_ft = tol * 500.0
+    used_z = []
+    planes = []
+    policies = []
+    for col in columns or []:
+        pol = _troceo_empalme_policy_for_column(policy_by_column_id, col)
+        embed_mm = None
+        if embed_mm_for_column_cb is not None:
+            try:
+                embed_mm = float(embed_mm_for_column_cb(col))
+            except Exception:
+                embed_mm = None
+        if embed_mm is None or embed_mm < 1e-9:
+            embed_mm = float(_resolved_traslape_embed_mm(16.0, LAYOUT_EMBED_CONCRETE_GRADE) or 1140.0)
+        off_ft = float(embed_mm) / 304.8
+        if pol == TROCEO_EMPALME_POLICY_MID_AXIS:
+            pl0 = _plane_from_column_geometric_mid_height(col, tol)
+        else:
+            pl0 = _plane_from_column_location_curve(col, tol)
+        pl0 = _append_cut_plane_with_dup_z_handling(
+            col, pl0, used_z, z_dup_ft, tol, False
+        )
+        if pl0 is None:
+            continue
+        pl = _offset_cut_plane_along_column_axis(pl0, col, off_ft, tol)
+        if pl is not None:
+            planes.append(pl)
+            policies.append(pol)
+    return planes, policies
+
+
+def _split_z_span_by_planes_joint_policies(
+    bx, by, z_lo, z_hi, planes, plane_policies, tol_ft
+):
+    u"""
+    Como ``_split_z_span_by_planes`` pero devuelve también ``joint_policies``:
+    una política por junta entre tramo ``i`` y ``i+1`` (longitud = n_tramos - 1).
+    """
+    z_lo = float(z_lo)
+    z_hi = float(z_hi)
+    tt = abs(float(tol_ft))
+    if tt < 1e-12:
+        tt = 1e-12
+    merge_eps = max(tt * 4.0, tt)
+    if z_hi <= z_lo + tt:
+        return [], []
+    if not planes:
+        return [(z_lo, z_hi - z_lo)], []
+    cuts = [(z_lo, None)]
+    n_pl = min(len(planes), len(plane_policies or []))
+    for i in range(n_pl):
+        pl = planes[i]
+        pol = plane_policies[i]
+        zi = _z_cut_vertical_bar_xy_plane(bx, by, z_lo, z_hi, pl, tt)
+        if zi is None:
+            continue
+        cuts.append((float(zi), pol))
+    cuts.append((z_hi, None))
+    cuts.sort(key=lambda t: t[0])
+    merged_z = []
+    merged_pol = []
+    for zc, pc in cuts:
+        if not merged_z or zc > merged_z[-1] + merge_eps:
+            merged_z.append(zc)
+            merged_pol.append(pc)
+        elif pc is not None and merged_pol:
+            merged_pol[-1] = pc
+    if len(merged_z) < 2:
+        return [(z_lo, z_hi - z_lo)], []
+    segments = []
+    joint_policies = []
+    for i in range(len(merged_z) - 1):
+        a = merged_z[i]
+        b = merged_z[i + 1]
+        dz = b - a
+        if dz > tt * 4.0:
+            segments.append((a, dz))
+            jp = merged_pol[i + 1]
+            if jp is None:
+                jp = TROCEO_EMPALME_POLICY_BASE
+            joint_policies.append(jp)
+    if not segments:
+        return [(z_lo, z_hi - z_lo)], []
+    return segments, joint_policies
 
 
 def _z_cut_vertical_bar_xy_plane(bx, by, z_lo, z_hi, plane, tol_ft):
@@ -4225,6 +5291,14 @@ def main():
             "(RPS doc/uidoc o pyRevit __revit__)."
         )
 
+    _uiapp = None
+    try:
+        _uiapp = __revit__  # noqa: F821
+    except NameError:
+        pass
+    if not _show_armado_columnas_initial_instructions(uiapp=_uiapp):
+        return
+
     try:
         refs = pick_structural_columns(uidoc)
     except OperationCanceledException:
@@ -4235,13 +5309,17 @@ def main():
         TaskDialog.Show("Cancelado", "No seleccionaste ninguna columna.")
         return
 
-    columns_ordered = build_column_elements_ordered(doc, refs)
+    columns_selected = build_column_elements_ordered(doc, refs)
+    columns_lote, _lote_stack_info = _expand_lote_inicial_completar_apilamiento(
+        doc, columns_selected,
+    )
+    columns_lote_iv = _column_iv_set(columns_lote)
 
     section_buckets = defaultdict(list)
     dims_cache = {}
     omitidas_msgs = []
 
-    for col in columns_ordered:
+    for col in columns_lote:
         try:
             width, depth, height, center_chk, grid_vs, grid_vl = get_column_dimensions(col)
         except Exception as ex:
@@ -4301,7 +5379,7 @@ def main():
         )
         section_wizard_meta.append((sk, sec_title))
 
-    troceo_rows = _build_troceo_scheme_rows(columns_ordered)
+    troceo_rows = _build_troceo_scheme_rows(columns_lote)
 
     wiz = show_column_layout_wizard_singleton(
         section_wizard_meta,
@@ -4334,6 +5412,21 @@ def main():
         "stirrup_bar_type_by_column_id",
         None,
     ) or {}
+    stirrup_policy_by_column_id = getattr(
+        wiz,
+        "stirrup_policy_by_column_id",
+        None,
+    ) or {}
+    stirrup_spacing_by_column_lot = getattr(
+        wiz,
+        "stirrup_spacing_by_column_lot",
+        None,
+    ) or {}
+    stirrup_bar_type_by_column_lot = getattr(
+        wiz,
+        "stirrup_bar_type_by_column_lot",
+        None,
+    ) or {}
     wizard_troceo_outcome = wiz.troceo_outcome
     if wizard_troceo_outcome is None:
         wizard_troceo_outcome = TroceoSchemeOutcome(
@@ -4341,6 +5434,32 @@ def main():
             columns=[],
             segment_rebar_bar_type_ids=None,
         )
+
+    columns_propagacion = _columns_propagacion_replicas(doc, columns_lote)
+    if columns_propagacion:
+        _propagate_wizard_maps_from_template_stack(
+            columns_lote + columns_propagacion,
+            columns_selected,
+            stirrup_spacing_by_column_id,
+            stirrup_bar_type_by_column_id,
+            stirrup_policy_by_column_id,
+            stirrup_spacing_by_column_lot,
+            stirrup_bar_type_by_column_lot,
+            wizard_troceo_outcome,
+        )
+        _fill_dims_cache_for_columns(columns_propagacion, dims_cache, omitidas_msgs)
+
+    _active_view_for_docs = None
+    try:
+        if uidoc is not None:
+            _active_view_for_docs = uidoc.ActiveView
+    except Exception:
+        _active_view_for_docs = None
+    columns_despiece_anchor = _columns_relevant_to_active_view(
+        doc, _active_view_for_docs, columns_lote,
+    )
+    _lf_model_groups_despiece = None
+    _lf_label_map_despiece = None
 
     cover = 0.15
 
@@ -4416,666 +5535,776 @@ def main():
             u"Varias configuraciones por sección (revisar asistente — paso Rejilla)"
         )
 
+    rebars_for_3d_visibility = []
+    from column_reinforcement.linea_fierro import fingerprint_seg_linea_fierro
 
-    esperado_si_todas = 0
-    jobs = []
-
-    for col in columns_ordered:
-        iv = _element_id_iv(col)
-        if iv < 0 or iv not in dims_cache:
-            continue
-        width, depth, height, center, grid_vs, grid_vl = dims_cache[iv]
-        sk_col = _canonical_section_mm_key(width, depth)
-        cfg = section_grid_config[sk_col]
-        ba = int(cfg["bars_a"])
-        bb = int(cfg["bars_b"])
-        inc_in = bool(cfg["include_inner_outline"])
-        esperado_si_todas += hilos_esperados_una_columna(ba, bb, inc_in)
-
-        side_short = min(width, depth)
-        side_long = max(width, depth)
-        short_on_x = width <= depth
-
-        # Geometría alineada al pipeline de estribos: mismo plan_anchor, ejes lx/ly,
-        # dimensiones sa/sb y offset_long (cover + Ø_estribo + r_barra longitudinal).
-        _stir_geom = None
-        if _column_bar_geometry is not None:
-            try:
-                _scfg = stirrup_configs.get(sk_col)
-                _sbt = getattr(_scfg, "stirrup_bar_type", None) if _scfg else None
-                _ov_bt_geom = _stirrup_bar_type_override_for_column(
-                    stirrup_bar_type_by_column_id,
-                    col,
-                )
-                if _ov_bt_geom is not None:
-                    _sbt = _ov_bt_geom
-                if _sbt is None:
-                    _sbt = _early_bar_type
-                _stir_geom = _column_bar_geometry(
-                    col,
-                    stirrup_bar_type=_sbt,
-                    long_bar_diam_mm=_long_bar_model_diam_mm,
-                )
-            except Exception:
-                _stir_geom = None
-
-        if _stir_geom is not None:
-            _pt_center, _lx, _ly, _sa, _sb, _off_long = _stir_geom
-            pts = generate_bar_points(
-                _pt_center,
-                _sa,
-                _sb,
-                True,
-                ba,
-                bb,
-                _off_long,
-                inc_in,
-                _lx,
-                _ly,
-            )
-        else:
-            # Fallback: stirrup creator no disponible; usar ejes del transform y
-            # cover conservador (cubre cualquier Ø_estribo razonable).
-            pts = generate_bar_points(
-                center,
-                side_short,
-                side_long,
-                short_on_x,
-                ba,
-                bb,
-                cover,
-                inc_in,
-                grid_vs,
-                grid_vl,
-            )
-
-        jobs.append(dict(
-            height=height,
-            nominal_n=len(pts),
-            raw_pts=pts,
-            width=width,
-            depth=depth,
-            short_on_x=short_on_x,
-            elem=col,
-            section_key_mm=sk_col,
-            bars_a=ba,
-            bars_b=bb,
-            include_inner_outline=inc_in,
-        ))
-
-
-    if not jobs:
-        det = "\n".join(omitidas_msgs[:12])
-        if len(omitidas_msgs) > 12:
-            det += "\n…"
-        msg = (
-            "Ninguna columna pudo generarse (sección/rejilla)."
-            "\n{}".format(det)
-        )
-        TaskDialog.Show("Layout columna", msg)
-        return
-
-
-    nominal_pts_total = sum(int(jb["nominal_n"]) for jb in jobs)
-
-    curve_tol = doc.Application.ShortCurveTolerance
-
-    fused_world = fuse_vertical_world_intervals_from_jobs(jobs, curve_tol)
-
-    embed_extend_mm = _resolved_traslape_embed_mm(
-        LAYOUT_BAR_NOMINAL_DIAM_MM,
-        LAYOUT_EMBED_CONCRETE_GRADE,
-    )
-
-    dz_extend_top = 0.0
-    if embed_extend_mm is not None and float(embed_extend_mm) > 1e-9:
-        dz_extend_top = UnitUtils.ConvertToInternalUnits(
-            float(embed_extend_mm),
-            UnitTypeId.Millimeters,
-        )
-
-    revoke_shrink_mm_total = (
-        float(_REVOKE_EMBED_EXTRA_SHRINK_MM)
-        + float(LAYOUT_BAR_NOMINAL_DIAM_MM) / 2.0
-    )
-
-    dz_revoke_extra_shrink = 0.0
-    if dz_extend_top > 1e-12:
-        dz_revoke_extra_shrink = UnitUtils.ConvertToInternalUnits(
-            float(revoke_shrink_mm_total),
-            UnitTypeId.Millimeters,
-        )
-
-    if not fused_world:
-        TaskDialog.Show(
-            "Layout columna",
-
-            "No se generó ninguna barra (revisar tolerancia de curvas "
-
-            "o posiciones de rejilla).",
-        )
-        return
-
-    layout_bar_type, layout_bar_type_exact, layout_bar_type_delta_mm = (
-        _resolve_rebar_bar_type_by_diameter_mm(
-            doc,
-            float(LAYOUT_BAR_NOMINAL_DIAM_MM),
-        )
-    )
-    if layout_bar_type is None:
-        TaskDialog.Show(
-            "Layout columna",
-            u"No se encontró ningún RebarBarType en el proyecto. "
-            u"No se crearán barras de armadura.",
-        )
-        return
-
-    a_bar_cut_planes = []
-    b_bar_cut_planes = []
-    cols_plane = []
-    n_reference_columns_cut_planes = 0
-    troceo_segment_diams = None
-    troceo_segment_bar_type_ids = None
-    outcome_tc = wizard_troceo_outcome
+    conjunto_guid = None
     try:
-        if outcome_tc.skip_no_cut:
-            cols_plane = []
-            n_reference_columns_cut_planes = 0
-            a_bar_cut_planes = []
-            b_bar_cut_planes = []
-            troceo_segment_diams = None
-            troceo_segment_bar_type_ids = None
-        else:
-            cols_plane = (
-                list(outcome_tc.columns) if getattr(outcome_tc, "columns", None) else []
-            )
-            troceo_segment_bar_type_ids = getattr(
-                outcome_tc,
-                "segment_rebar_bar_type_ids",
-                None,
-            )
-            troceo_segment_diams = None
-            if troceo_segment_bar_type_ids:
-                troceo_segment_diams = []
-                for tid in troceo_segment_bar_type_ids:
-                    eid = _element_id_from_int(tid)
-                    el = doc.GetElement(eid) if eid is not None else None
-                    dm = _rebar_nominal_diameter_mm(el)
-                    troceo_segment_diams.append(
-                        float(dm)
-                        if dm is not None
-                        else float(LAYOUT_BAR_NOMINAL_DIAM_MM)
-                    )
-            n_reference_columns_cut_planes = len(cols_plane)
-            a_bar_cut_planes = []
-            b_bar_cut_planes = []
-            if cols_plane:
-                a_bar_cut_planes = build_column_cut_planes_from_elements(
-                    cols_plane,
-                    curve_tol,
-                )
-                b_bar_cut_planes = build_b_bar_cut_planes_from_elements(
-                    cols_plane,
-                    curve_tol,
-                    float(dz_extend_top),
-                )
-    except Exception as ex:
-        try:
-            TaskDialog.Show(
-                u"Arainco: Esquema de troceo",
-                u"No se aplicaron planos de troceo.\n\n{}".format(ex),
-            )
-        except Exception:
-            pass
-        a_bar_cut_planes = []
-        b_bar_cut_planes = []
-        cols_plane = []
-        n_reference_columns_cut_planes = 0
-        troceo_segment_diams = None
-        troceo_segment_bar_type_ids = None
-
-    if (
-        troceo_segment_diams
-        and cols_plane
-        and n_reference_columns_cut_planes > 0
-    ):
-        try:
-            d_max_mm = max(
-                float(x) for x in troceo_segment_diams if float(x) > 1e-9
-            )
-            emb_b = _resolved_traslape_embed_mm(
-                d_max_mm,
-                LAYOUT_EMBED_CONCRETE_GRADE,
-            )
-            dz_b = 0.0
-            if emb_b is not None and float(emb_b) > 1e-9:
-                dz_b = UnitUtils.ConvertToInternalUnits(
-                    float(emb_b),
-                    UnitTypeId.Millimeters,
-                )
-            b_bar_cut_planes = build_b_bar_cut_planes_from_elements(
-                cols_plane,
-                curve_tol,
-                float(dz_b),
-            )
-        except Exception:
-            pass
-
-    troceo_z_cuts_ft_sorted = _troceo_sorted_cut_z_ft_from_planes(a_bar_cut_planes)
-    troceo_n_ui_segs = 0
-    if troceo_segment_bar_type_ids:
-        troceo_n_ui_segs = len(troceo_segment_bar_type_ids)
-    elif troceo_segment_diams:
-        troceo_n_ui_segs = len(troceo_segment_diams)
-    troceo_use_z_mid_for_ui_seg = (
-        troceo_n_ui_segs > 0
-        and len(troceo_z_cuts_ft_sorted) + 1 == troceo_n_ui_segs
-    )
-
-    col_iv_fund_down_ft = build_selected_columns_foundation_down_ft(
-        doc,
-        columns_ordered,
-    )
-
-    pata_hook_mm = float(
-        _resolved_pata_hook_mm_for_revert(
-            LAYOUT_BAR_NOMINAL_DIAM_MM,
-            LAYOUT_EMBED_CONCRETE_GRADE,
+        from conjunto_guid import (
+            finalizar_armadura_conjunto_guid_ejecucion,
+            iniciar_armadura_conjunto_guid_ejecucion,
+            stamp_armadura_conjunto_guid_en_rebars,
         )
-    )
-    pata_hook_ft = 0.0
-    if pata_hook_mm > 1e-6:
-        pata_hook_ft = UnitUtils.ConvertToInternalUnits(
-            float(pata_hook_mm),
-            UnitTypeId.Millimeters,
-        )
-
-    _sketch_plane_cache.clear()
-
-    try:
-        column_instances_embed = list(
-            FilteredElementCollector(doc)
-            .OfCategory(BuiltInCategory.OST_StructuralColumns)
-            .WhereElementIsNotElementType()
-        )
+        conjunto_guid = iniciar_armadura_conjunto_guid_ejecucion()
     except Exception:
-        column_instances_embed = []
+        conjunto_guid = None
+        finalizar_armadura_conjunto_guid_ejecucion = None
+        stamp_armadura_conjunto_guid_en_rebars = None
 
-    embed_geom_opts = _geometry_options_structure_solids()
+    txn_armadura = Transaction(doc, u"Arainco: Armadura Columnas")
+    txn_armadura.Start()
 
-    hilos_totales_real = 0
-
-    n_kept_embed_collision = 0
-    n_reverted_embed_air = 0
-
-    n_kept_embed_start_collision = 0
-    n_reverted_embed_start_air = 0
-
-    n_hilos_foundation_down_stretch = 0
-
-    n_patitas_revert_embed = 0
-    n_patitas_foundation_down = 0
-
-    scheme_histogram = Counter()
-
-    vrf_marker_half_ft = 0.0
-    ls_scheme_corner_id = None
-    ls_scheme_edge_id = None
-    if _SCHEME_VERIFY_MARKER_ENABLED:
-        try:
-            vrf_marker_half_ft = UnitUtils.ConvertToInternalUnits(
-                float(_SCHEME_VERIFY_MARKER_HALF_MM),
-                UnitTypeId.Millimeters,
-            )
-        except Exception:
-            vrf_marker_half_ft = 0.0
-        ls_scheme_corner_id, ls_scheme_edge_id = (
-            _scheme_verify_resolve_pair_linestyle_ids(doc)
-        )
-
-    ls_cut_plane_id = None
-    if _CUT_PLANE_MARKER_ENABLED:
-        try:
-            ls_cut_plane_id = _resolve_cut_plane_linestyle_id(doc)
-        except Exception:
-            ls_cut_plane_id = None
-
-    n_scheme_verify_markers_drawn = 0
-
-    n_cut_plane_marker_elems = 0
-
-    n_a_bar_extra_segments_from_cut_planes = 0
-
-    n_b_bar_extra_segments_from_cut_planes = 0
-
-    bar_type_cache = {}
-    line_plans = []
-    _pb_layout = None
-    _pbar_layout_open = False
-    for line_idx, (base_xyz, span_z, contrib_ids, bar_enum_lab) in enumerate(
-        fused_world
-    ):
-        min_len_z = float(curve_tol) * 4.0
-        span_draw_after_top = float(span_z)
-        reverted_embed = False
-        kept_top_embed = False
-        if dz_extend_top > 1e-12:
-            if embed_stretch_collides_any_column_solids(
-                doc,
-                base_xyz,
-                float(span_z),
-                dz_extend_top,
-                float(LAYOUT_BAR_NOMINAL_DIAM_MM),
-                column_instances_embed,
-                embed_geom_opts,
-                contrib_ids,
-            ):
-                kept_top_embed = True
-                span_draw_after_top = float(span_z) + float(dz_extend_top)
-                n_kept_embed_collision += 1
-            else:
-                reverted_embed = True
-                n_reverted_embed_air += 1
-                span_draw_after_top = max(
-                    float(span_z) - float(dz_revoke_extra_shrink),
-                    min_len_z,
-                )
-
-        dz_fdown_ft = _contrib_max_foundation_down_ft(
-            contrib_ids,
-            col_iv_fund_down_ft,
-        )
-        if dz_fdown_ft > 1e-12:
-            n_hilos_foundation_down_stretch += 1
-
-        z_lo_core = float(base_xyz.Z) - float(dz_fdown_ft)
-        core_height = float(dz_fdown_ft) + float(span_z)
-        z_hi_core = z_lo_core + core_height
-
-        bx = float(base_xyz.X)
-        by = float(base_xyz.Y)
-        btag = str(bar_enum_lab or "").strip()
-
-        segments = [(z_lo_core, core_height)]
-        if a_bar_cut_planes and is_a_split_scheme(btag):
-            segs_try = _split_z_span_by_planes(
-                bx,
-                by,
-                z_lo_core,
-                z_hi_core,
-                a_bar_cut_planes,
-                float(curve_tol),
-            )
-            if segs_try:
-                segments = segs_try
-                if len(segs_try) > 1:
-                    n_a_bar_extra_segments_from_cut_planes += int(len(segs_try) - 1)
-
-        if b_bar_cut_planes and is_b_split_scheme(btag):
-            segs_b = _split_z_span_by_planes(
-                bx,
-                by,
-                z_lo_core,
-                z_hi_core,
-                b_bar_cut_planes,
-                float(curve_tol),
-            )
-            if segs_b:
-                segments = segs_b
-                if len(segs_b) > 1:
-                    n_b_bar_extra_segments_from_cut_planes += int(len(segs_b) - 1)
-
-        seg_list = [[float(s[0]), float(s[1])] for s in segments]
-
-        if dz_extend_top > 1e-12 and seg_list:
-            li = len(seg_list) - 1
-            zs_l = seg_list[li][0]
-            dsz_l = seg_list[li][1]
-            if kept_top_embed:
-                seg_list[li][1] = dsz_l + float(dz_extend_top)
-            elif reverted_embed:
-                delta_h = float(span_z) - float(span_draw_after_top)
-                if delta_h > 1e-12:
-                    seg_list[li][1] = max(dsz_l - delta_h, min_len_z)
-
-        if dz_extend_top > 1e-12 and dz_fdown_ft <= 1e-12 and seg_list:
-            if embed_start_collides_any_column_solids(
-                doc,
-                base_xyz,
-                dz_extend_top,
-                float(LAYOUT_BAR_NOMINAL_DIAM_MM),
-                column_instances_embed,
-                embed_geom_opts,
-                contrib_ids,
-            ):
-                seg_list[0][0] -= float(dz_extend_top)
-                seg_list[0][1] += float(dz_extend_top)
-                n_kept_embed_start_collision += 1
-            else:
-                span_draw_eff = float(span_draw_after_top)
-                span_draw_floor = max(
-                    span_draw_eff - float(dz_revoke_extra_shrink),
-                    min_len_z,
-                )
-                revoke_delta = span_draw_eff - span_draw_floor
-                if revoke_delta > 1e-12:
-                    seg_list[0][0] += revoke_delta
-                    seg_list[0][1] -= revoke_delta
-                n_reverted_embed_start_air += 1
-
-        if not seg_list:
-            continue
-        z_line_start = seg_list[0][0]
-        z_top_whole = seg_list[-1][0] + seg_list[-1][1]
-        span_vertical = z_top_whole - z_line_start
-
-        n_seg_total = len(seg_list)
-        seg_jobs = []
-        for seg_i, row in enumerate(seg_list):
-            zs = row[0]
-            dsz = row[1]
-            span_seg = float(dsz)
-            z_mid_seg = float(zs) + 0.5 * float(span_seg)
-            if troceo_use_z_mid_for_ui_seg:
-                troceo_ui_i = _troceo_ui_segment_index_for_z_mid(
-                    z_mid_seg,
-                    troceo_z_cuts_ft_sorted,
-                    troceo_n_ui_segs,
-                    seg_i,
-                )
-            else:
-                troceo_ui_i = int(seg_i)
-            if troceo_segment_bar_type_ids:
-                _tid = (
-                    troceo_segment_bar_type_ids[troceo_ui_i]
-                    if troceo_ui_i < len(troceo_segment_bar_type_ids)
-                    else troceo_segment_bar_type_ids[-1]
-                )
-                if _tid not in bar_type_cache:
-                    _eid = _element_id_from_int(_tid)
-                    _el = doc.GetElement(_eid) if _eid is not None else None
-                    bar_type_cache[_tid] = (
-                        _el if _el is not None else layout_bar_type
-                    )
-                layout_bar_type_seg = bar_type_cache[_tid]
-                d_mm_seg = _rebar_nominal_diameter_mm(layout_bar_type_seg)
-                if d_mm_seg is None:
-                    d_mm_seg = float(LAYOUT_BAR_NOMINAL_DIAM_MM)
-                else:
-                    d_mm_seg = float(d_mm_seg)
-            else:
-                d_mm_seg = _troceo_nominal_diam_mm_for_seg_index(
-                    troceo_segment_diams,
-                    troceo_ui_i,
-                    LAYOUT_BAR_NOMINAL_DIAM_MM,
-                )
-                if d_mm_seg not in bar_type_cache:
-                    bt_seg, _, _ = _resolve_rebar_bar_type_by_diameter_mm(
-                        doc,
-                        float(d_mm_seg),
-                    )
-                    bar_type_cache[d_mm_seg] = (
-                        bt_seg if bt_seg is not None else layout_bar_type
-                    )
-                layout_bar_type_seg = bar_type_cache[d_mm_seg]
-            embed_mm_seg = _resolved_traslape_embed_mm(
-                d_mm_seg,
-                LAYOUT_EMBED_CONCRETE_GRADE,
-            )
-            dz_extend_seg = 0.0
-            if embed_mm_seg is not None and float(embed_mm_seg) > 1e-9:
-                dz_extend_seg = UnitUtils.ConvertToInternalUnits(
-                    float(embed_mm_seg),
-                    UnitTypeId.Millimeters,
-                )
-            if (
-                n_seg_total > 1
-                and is_lap_extension_scheme(btag)
-                and dz_extend_seg > 1e-12
-                and seg_i < n_seg_total - 1
-            ):
-                span_seg += float(dz_extend_seg)
-            pata_hook_mm_seg = float(
-                _resolved_pata_hook_mm_for_revert(
-                    d_mm_seg,
-                    LAYOUT_EMBED_CONCRETE_GRADE,
-                )
-            )
-            pata_hook_ft_seg = 0.0
-            if pata_hook_mm_seg > 1e-6:
-                pata_hook_ft_seg = UnitUtils.ConvertToInternalUnits(
-                    float(pata_hook_mm_seg),
-                    UnitTypeId.Millimeters,
-                )
-            want_bot_pata = (
-                seg_i == 0
-                and dz_fdown_ft > 1e-12
-                and pata_hook_ft_seg > 1e-12
-            )
-            want_top_pata = (
-                seg_i == n_seg_total - 1
-                and reverted_embed
-                and pata_hook_ft_seg > 1e-12
-            )
-            z_for_host = float(zs) + float(span_seg) * 0.5
-            if want_bot_pata and want_top_pata:
-                pass
-            elif want_bot_pata:
-                _band = min(
-                    max(float(span_seg) * 0.12, float(curve_tol) * 24.0),
-                    float(span_seg) * 0.45,
-                )
-                z_for_host = float(zs) + _band
-            elif want_top_pata:
-                _band = min(
-                    max(float(span_seg) * 0.12, float(curve_tol) * 24.0),
-                    float(span_seg) * 0.45,
-                )
-                z_for_host = float(zs) + float(span_seg) - _band
-            host_col = _nearest_contrib_column_for_xyz(
-                doc,
-                bx,
-                by,
-                z_for_host,
-                contrib_ids,
-            )
-            seg_jobs.append(
-                {
-                    "troceo_ui_i": int(troceo_ui_i),
-                    "seg_i": int(seg_i),
-                    "zs": float(zs),
-                    "span_seg": float(span_seg),
-                    "host_col": host_col,
-                    "layout_bar_type_seg": layout_bar_type_seg,
-                    "bar_enum_lab": bar_enum_lab,
-                    "want_bot_pata": want_bot_pata,
-                    "want_top_pata": want_top_pata,
-                    "pata_hook_ft_seg": float(pata_hook_ft_seg),
-                    "contrib_ids": contrib_ids,
-                }
-            )
-        line_plans.append(
+    _armado_phases = [
+        {
+            "columns": list(columns_lote),
+            "linea_fierro_despiece": True,
+            "confinement_tags": True,
+        },
+    ]
+    if columns_propagacion:
+        _armado_phases.append(
             {
-                "line_idx": line_idx,
-                "bx": bx,
-                "by": by,
-                "z_line_start": z_line_start,
-                "span_vertical": span_vertical,
-                "n_seg_total": n_seg_total,
-                "btag": btag,
-                "bar_enum_lab": bar_enum_lab,
-                "seg_jobs": seg_jobs,
+                "columns": list(columns_propagacion),
+                "linea_fierro_despiece": False,
+                "confinement_tags": False,
             }
         )
 
-    # ── Tabla de largos reales por (bar_enum, troceo_ui_i) ──────────────────
-    # Calculada desde seg_jobs —mismas curvas que se usarán en CreateFromCurves—
-    # sin crear ninguna barra ni abrir transacciones.
-    # Clave: (bar_enum_lab_str, troceo_ui_i_int)
-    # Valor: (lz_mm, lp_mm, has_bot_pata, has_top_pata)
-    #   lz_mm = tronco vertical; lp_mm = largo de pata (si aplica, igual en ambos extremos).
-    preview_bar_lengths_by_ubic_tramo = {}
-    for lp_pbl in line_plans:
-        lab_pbl = str(lp_pbl.get("bar_enum_lab") or "").strip()
-        for sj_pbl in lp_pbl.get("seg_jobs") or []:
-            _lz = _arma_len_mm_round_from_internal_ft(sj_pbl["span_seg"])
-            _lp = _arma_len_mm_round_from_internal_ft(sj_pbl["pata_hook_ft_seg"])
-            _kb = bool(sj_pbl["want_bot_pata"])
-            _kt = bool(sj_pbl["want_top_pata"])
-            _key = (lab_pbl, int(sj_pbl["troceo_ui_i"]))
-            # Si varios hilos con la misma etiqueta/tramo difieren, conservar el mayor tronco
-            existing = preview_bar_lengths_by_ubic_tramo.get(_key)
-            if existing is None or float(_lz) > float(existing[0]):
-                preview_bar_lengths_by_ubic_tramo[_key] = (_lz, _lp, _kb, _kt)
-    # ────────────────────────────────────────────────────────────────────────
-
-    max_tramo_ui = -1
-    for lp in line_plans:
-        for sj in lp["seg_jobs"]:
-            if sj["troceo_ui_i"] > max_tramo_ui:
-                max_tramo_ui = sj["troceo_ui_i"]
-
-    n_tramos = max(0, max_tramo_ui + 1)
-    has_stirrups = any(
-        not getattr(cfg, "skip", True) for cfg in stirrup_configs.values()
-    )
-    total_pb_steps = 1 + n_tramos + 1
-    if total_pb_steps < 1:
-        total_pb_steps = 1
-
-    _COL_PBAR_BASE = u"Arainco: Columnas armado longitudinal"
-    _pb_layout = _column_layout_pbar_start(
-        _column_layout_pbar_phase_title(_COL_PBAR_BASE, total_pb_steps),
-        total_pb_steps,
-    )
-    _pbar_layout_open = False
-    if _pb_layout is not None:
-        try:
-            _pb_layout.__enter__()
-            _pbar_layout_open = True
-        except Exception:
-            _pb_layout = None
-
-
-    rebars_for_3d_visibility = []
-
-    tg_layout = TransactionGroup(
-        doc, u"Arainco: Armado longitudinal columnas por tramos"
-    )
-    tg_layout.Start()
-
     try:
-        _column_layout_pbar_step(
-            _pb_layout,
-            0,
-            total_pb_steps,
-            u"Arainco: Columnas (marcadores planos corte)",
-        )
-        txn_markers = Transaction(
-            doc, u"Arainco: Marcadores planos corte fusion global columnas"
-        )
-        txn_markers.Start()
-        try:
+        for _armado_phase in _armado_phases:
+            columns_ordered = _armado_phase["columns"]
+            _phase_enable_linea_fierro_docs = bool(
+                _armado_phase["linea_fierro_despiece"]
+            )
+            _phase_enable_confinement_tags = bool(
+                _armado_phase.get("confinement_tags", _armado_phase.get("mra"))
+            )
+
+            esperado_si_todas = 0
+            jobs = []
+
+            for col in columns_ordered:
+                iv = _element_id_iv(col)
+                if iv < 0 or iv not in dims_cache:
+                    continue
+                width, depth, height, center, grid_vs, grid_vl = dims_cache[iv]
+                sk_col = _canonical_section_mm_key(width, depth)
+                cfg = section_grid_config[sk_col]
+                ba = int(cfg["bars_a"])
+                bb = int(cfg["bars_b"])
+                inc_in = bool(cfg["include_inner_outline"])
+                esperado_si_todas += hilos_esperados_una_columna(ba, bb, inc_in)
+    
+                side_short = min(width, depth)
+                side_long = max(width, depth)
+                short_on_x = width <= depth
+    
+                # Geometría alineada al pipeline de estribos: mismo plan_anchor, ejes lx/ly,
+                # dimensiones sa/sb y offset_long (cover + Ø_estribo + r_barra longitudinal).
+                _stir_geom = None
+                if _column_bar_geometry is not None:
+                    try:
+                        _scfg = stirrup_configs.get(sk_col)
+                        _sbt = getattr(_scfg, "stirrup_bar_type", None) if _scfg else None
+                        _ov_bt_geom = _stirrup_bar_type_override_for_column(
+                            stirrup_bar_type_by_column_id,
+                            col,
+                        )
+                        if _ov_bt_geom is not None:
+                            _sbt = _ov_bt_geom
+                        if _sbt is None:
+                            _sbt = _early_bar_type
+                        _stir_geom = _column_bar_geometry(
+                            col,
+                            stirrup_bar_type=_sbt,
+                            long_bar_diam_mm=_long_bar_model_diam_mm,
+                        )
+                    except Exception:
+                        _stir_geom = None
+    
+                if _stir_geom is not None:
+                    _pt_center, _lx, _ly, _sa, _sb, _off_long = _stir_geom
+                    pts = generate_bar_points(
+                        _pt_center,
+                        _sa,
+                        _sb,
+                        True,
+                        ba,
+                        bb,
+                        _off_long,
+                        inc_in,
+                        _lx,
+                        _ly,
+                    )
+                else:
+                    # Fallback: stirrup creator no disponible; usar ejes del transform y
+                    # cover conservador (cubre cualquier Ø_estribo razonable).
+                    pts = generate_bar_points(
+                        center,
+                        side_short,
+                        side_long,
+                        short_on_x,
+                        ba,
+                        bb,
+                        cover,
+                        inc_in,
+                        grid_vs,
+                        grid_vl,
+                    )
+    
+                jobs.append(dict(
+                    height=height,
+                    nominal_n=len(pts),
+                    raw_pts=pts,
+                    width=width,
+                    depth=depth,
+                    short_on_x=short_on_x,
+                    elem=col,
+                    section_key_mm=sk_col,
+                    bars_a=ba,
+                    bars_b=bb,
+                    include_inner_outline=inc_in,
+                ))
+    
+    
+            if not jobs:
+                det = "\n".join(omitidas_msgs[:12])
+                if len(omitidas_msgs) > 12:
+                    det += "\n…"
+                msg = (
+                    "Ninguna columna pudo generarse (sección/rejilla)."
+                    "\n{}".format(det)
+                )
+                if _phase_enable_linea_fierro_docs:
+                    TaskDialog.Show("Layout columna", msg)
+                    return
+                continue
+    
+    
+            nominal_pts_total = sum(int(jb["nominal_n"]) for jb in jobs)
+    
+            curve_tol = doc.Application.ShortCurveTolerance
+    
+            fused_world = fuse_vertical_world_intervals_from_jobs(jobs, curve_tol)
+    
+            embed_extend_mm = _resolved_traslape_embed_mm(
+                LAYOUT_BAR_NOMINAL_DIAM_MM,
+                LAYOUT_EMBED_CONCRETE_GRADE,
+            )
+    
+            dz_extend_top = 0.0
+            if embed_extend_mm is not None and float(embed_extend_mm) > 1e-9:
+                dz_extend_top = UnitUtils.ConvertToInternalUnits(
+                    float(embed_extend_mm),
+                    UnitTypeId.Millimeters,
+                )
+    
+            revoke_shrink_mm_total = (
+                float(_REVOKE_EMBED_EXTRA_SHRINK_MM)
+                + float(LAYOUT_BAR_NOMINAL_DIAM_MM) / 2.0
+            )
+    
+            dz_revoke_extra_shrink = 0.0
+            if dz_extend_top > 1e-12:
+                dz_revoke_extra_shrink = UnitUtils.ConvertToInternalUnits(
+                    float(revoke_shrink_mm_total),
+                    UnitTypeId.Millimeters,
+                )
+    
+            if not fused_world:
+                TaskDialog.Show(
+                    "Layout columna",
+    
+                    "No se generó ninguna barra (revisar tolerancia de curvas "
+    
+                    "o posiciones de rejilla).",
+                )
+                if _phase_enable_linea_fierro_docs:
+                    return
+                continue
+    
+            layout_bar_type, layout_bar_type_exact, layout_bar_type_delta_mm = (
+                _resolve_rebar_bar_type_by_diameter_mm(
+                    doc,
+                    float(LAYOUT_BAR_NOMINAL_DIAM_MM),
+                )
+            )
+            if layout_bar_type is None:
+                TaskDialog.Show(
+                    "Layout columna",
+                    u"No se encontró ningún RebarBarType en el proyecto. "
+                    u"No se crearán barras de armadura.",
+                )
+                return
+    
+            a_bar_cut_planes = []
+            b_bar_cut_planes = []
+            a_plane_policies = []
+            b_plane_policies = []
+            troceo_empalme_policy_by_column_id = {}
+            cols_plane = []
+            n_reference_columns_cut_planes = 0
+            troceo_segment_diams = None
+            troceo_segment_bar_type_ids = None
+            outcome_tc = wizard_troceo_outcome
+            try:
+                if outcome_tc.skip_no_cut:
+                    cols_plane = []
+                    n_reference_columns_cut_planes = 0
+                    a_bar_cut_planes = []
+                    b_bar_cut_planes = []
+                    troceo_segment_diams = None
+                    troceo_segment_bar_type_ids = None
+                else:
+                    cols_plane = (
+                        list(outcome_tc.columns) if getattr(outcome_tc, "columns", None) else []
+                    )
+                    troceo_segment_bar_type_ids = getattr(
+                        outcome_tc,
+                        "segment_rebar_bar_type_ids",
+                        None,
+                    )
+                    troceo_segment_diams = None
+                    if troceo_segment_bar_type_ids:
+                        troceo_segment_diams = []
+                        for tid in troceo_segment_bar_type_ids:
+                            eid = _element_id_from_int(tid)
+                            el = doc.GetElement(eid) if eid is not None else None
+                            dm = _rebar_nominal_diameter_mm(el)
+                            troceo_segment_diams.append(
+                                float(dm)
+                                if dm is not None
+                                else float(LAYOUT_BAR_NOMINAL_DIAM_MM)
+                            )
+                    n_reference_columns_cut_planes = len(cols_plane)
+                    troceo_empalme_policy_by_column_id = dict(
+                        getattr(outcome_tc, "troceo_empalme_policy_by_column_id", None) or {}
+                    )
+                    a_bar_cut_planes = []
+                    b_bar_cut_planes = []
+                    a_plane_policies = []
+                    b_plane_policies = []
+                    if cols_plane:
+    
+                        a_bar_cut_planes, a_plane_policies = (
+                            build_a_bar_cut_planes_per_empalme_policy(
+                                cols_plane,
+                                troceo_empalme_policy_by_column_id,
+                                curve_tol,
+                            )
+                        )
+    
+                        def _embed_mm_ref_col(_col):
+                            z_mid_ft = None
+                            try:
+                                loc = _col.Location
+                                cr = getattr(loc, "Curve", None)
+                                if cr is not None:
+                                    z_mid_ft = float(cr.Evaluate(0.5, True).Z)
+                            except Exception:
+                                z_mid_ft = None
+                            if z_mid_ft is None:
+                                zm, zM = _column_solid_vertex_z_min_max(_col)
+                                if zm is not None and zM is not None:
+                                    z_mid_ft = 0.5 * (float(zm) + float(zM))
+                            _n_ui = 0
+                            if troceo_segment_bar_type_ids:
+                                _n_ui = len(troceo_segment_bar_type_ids)
+                            elif troceo_segment_diams:
+                                _n_ui = len(troceo_segment_diams)
+                            _z_cuts = _troceo_sorted_cut_z_ft_from_planes(a_bar_cut_planes)
+                            _ui_i = 0
+                            if z_mid_ft is not None and _n_ui > 0 and _z_cuts:
+                                _ui_i = _troceo_ui_segment_index_for_z_mid(
+                                    z_mid_ft,
+                                    _z_cuts,
+                                    _n_ui,
+                                    0,
+                                )
+                            _dmm = _troceo_nominal_diam_mm_for_seg_index(
+                                troceo_segment_diams,
+                                _ui_i,
+                                LAYOUT_BAR_NOMINAL_DIAM_MM,
+                            )
+                            return _resolved_traslape_embed_mm(
+                                _dmm,
+                                LAYOUT_EMBED_CONCRETE_GRADE,
+                            )
+    
+                        b_bar_cut_planes, b_plane_policies = (
+                            build_b_bar_cut_planes_per_empalme_policy(
+                                cols_plane,
+                                troceo_empalme_policy_by_column_id,
+                                curve_tol,
+                                _embed_mm_ref_col,
+                            )
+                        )
+            except Exception as ex:
+                try:
+                    TaskDialog.Show(
+                        u"Arainco: Esquema de troceo",
+                        u"No se aplicaron planos de troceo.\n\n{}".format(ex),
+                    )
+                except Exception:
+                    pass
+                a_bar_cut_planes = []
+                b_bar_cut_planes = []
+                cols_plane = []
+                n_reference_columns_cut_planes = 0
+                troceo_segment_diams = None
+                troceo_segment_bar_type_ids = None
+    
+            troceo_z_cuts_ft_sorted = _troceo_sorted_cut_z_ft_from_planes(a_bar_cut_planes)
+            troceo_n_ui_segs = 0
+            if troceo_segment_bar_type_ids:
+                troceo_n_ui_segs = len(troceo_segment_bar_type_ids)
+            elif troceo_segment_diams:
+                troceo_n_ui_segs = len(troceo_segment_diams)
+            troceo_use_z_mid_for_ui_seg = (
+                troceo_n_ui_segs > 0
+                and len(troceo_z_cuts_ft_sorted) + 1 == troceo_n_ui_segs
+            )
+    
+            col_iv_fund_down_ft = build_selected_columns_foundation_down_ft(
+                doc,
+                columns_ordered,
+            )
+    
+            _active_view_for_docs = None
+    
+            pata_hook_mm = float(
+                _resolved_pata_hook_mm_for_revert(
+                    LAYOUT_BAR_NOMINAL_DIAM_MM,
+                    LAYOUT_EMBED_CONCRETE_GRADE,
+                )
+            )
+            pata_hook_ft = 0.0
+            if pata_hook_mm > 1e-6:
+                pata_hook_ft = UnitUtils.ConvertToInternalUnits(
+                    float(pata_hook_mm),
+                    UnitTypeId.Millimeters,
+                )
+    
+            _sketch_plane_cache.clear()
+    
+            _max_fund_down_ft = 0.0
+            if col_iv_fund_down_ft:
+                try:
+                    _max_fund_down_ft = max(
+                        float(v) for v in col_iv_fund_down_ft.values()
+                    )
+                except Exception:
+                    _max_fund_down_ft = 0.0
+            _embed_probe_outline = _embed_probe_world_outline(
+                fused_world,
+                dz_extend_top,
+                _max_fund_down_ft,
+                float(LAYOUT_BAR_NOMINAL_DIAM_MM),
+            )
+            column_instances_embed = _collect_column_instances_for_embed_probe(
+                doc,
+                columns_ordered,
+                _embed_probe_outline,
+            )
+            embed_geom_opts = _geometry_options_structure_solids()
+            column_solid_cache_embed = _build_column_solids_cache(
+                column_instances_embed,
+                embed_geom_opts,
+            )
+    
+            hilos_totales_real = 0
+    
+            n_kept_embed_collision = 0
+            n_reverted_embed_air = 0
+    
+            n_kept_embed_start_collision = 0
+            n_reverted_embed_start_air = 0
+    
+            n_hilos_foundation_down_stretch = 0
+    
+            n_patitas_revert_embed = 0
+            n_patitas_foundation_down = 0
+    
+            scheme_histogram = Counter()
+    
+            vrf_marker_half_ft = 0.0
+            ls_scheme_corner_id = None
+            ls_scheme_edge_id = None
+            if _SCHEME_VERIFY_MARKER_ENABLED:
+                try:
+                    vrf_marker_half_ft = UnitUtils.ConvertToInternalUnits(
+                        float(_SCHEME_VERIFY_MARKER_HALF_MM),
+                        UnitTypeId.Millimeters,
+                    )
+                except Exception:
+                    vrf_marker_half_ft = 0.0
+                ls_scheme_corner_id, ls_scheme_edge_id = (
+                    _scheme_verify_resolve_pair_linestyle_ids(doc)
+                )
+    
+            ls_cut_plane_id = None
+            if _CUT_PLANE_MARKER_ENABLED:
+                try:
+                    ls_cut_plane_id = _resolve_cut_plane_linestyle_id(doc)
+                except Exception:
+                    ls_cut_plane_id = None
+    
+            n_scheme_verify_markers_drawn = 0
+    
+            n_cut_plane_marker_elems = 0
+    
+            n_a_bar_extra_segments_from_cut_planes = 0
+    
+            n_b_bar_extra_segments_from_cut_planes = 0
+    
+            bar_type_cache = {}
+            line_plans = []
+            _pb_layout = None
+            _pbar_layout_open = False
+            for line_idx, (base_xyz, span_z, contrib_ids, bar_enum_lab) in enumerate(
+                fused_world
+            ):
+                min_len_z = float(curve_tol) * 4.0
+                span_draw_after_top = float(span_z)
+                reverted_embed = False
+                kept_top_embed = False
+                if dz_extend_top > 1e-12:
+                    if embed_stretch_collides_any_column_solids(
+                        doc,
+                        base_xyz,
+                        float(span_z),
+                        dz_extend_top,
+                        float(LAYOUT_BAR_NOMINAL_DIAM_MM),
+                        column_instances_embed,
+                        embed_geom_opts,
+                        contrib_ids,
+                        column_solid_cache=column_solid_cache_embed,
+                    ):
+                        kept_top_embed = True
+                        span_draw_after_top = float(span_z) + float(dz_extend_top)
+                        n_kept_embed_collision += 1
+                    else:
+                        reverted_embed = True
+                        n_reverted_embed_air += 1
+                        span_draw_after_top = max(
+                            float(span_z) - float(dz_revoke_extra_shrink),
+                            min_len_z,
+                        )
+    
+                dz_fdown_ft = _contrib_max_foundation_down_ft(
+                    contrib_ids,
+                    col_iv_fund_down_ft,
+                )
+                if dz_fdown_ft > 1e-12:
+                    n_hilos_foundation_down_stretch += 1
+    
+                z_lo_core = float(base_xyz.Z) - float(dz_fdown_ft)
+                core_height = float(dz_fdown_ft) + float(span_z)
+                z_hi_core = z_lo_core + core_height
+    
+                bx = float(base_xyz.X)
+                by = float(base_xyz.Y)
+                btag = str(bar_enum_lab or "").strip()
+    
+                segments = [(z_lo_core, core_height)]
+                joint_lap_policies = []
+                if a_bar_cut_planes and is_a_split_scheme(btag):
+                    segs_try, joint_lap_policies = _split_z_span_by_planes_joint_policies(
+                        bx,
+                        by,
+                        z_lo_core,
+                        z_hi_core,
+                        a_bar_cut_planes,
+                        a_plane_policies,
+                        float(curve_tol),
+                    )
+                    if segs_try:
+                        segments = segs_try
+                        if len(segs_try) > 1:
+                            n_a_bar_extra_segments_from_cut_planes += int(len(segs_try) - 1)
+    
+                if b_bar_cut_planes and is_b_split_scheme(btag):
+                    segs_b, joint_lap_policies = _split_z_span_by_planes_joint_policies(
+                        bx,
+                        by,
+                        z_lo_core,
+                        z_hi_core,
+                        b_bar_cut_planes,
+                        b_plane_policies,
+                        float(curve_tol),
+                    )
+                    if segs_b:
+                        segments = segs_b
+                        if len(segs_b) > 1:
+                            n_b_bar_extra_segments_from_cut_planes += int(len(segs_b) - 1)
+    
+                seg_list = [[float(s[0]), float(s[1])] for s in segments]
+    
+                if dz_extend_top > 1e-12 and seg_list:
+                    li = len(seg_list) - 1
+                    zs_l = seg_list[li][0]
+                    dsz_l = seg_list[li][1]
+                    if kept_top_embed:
+                        seg_list[li][1] = dsz_l + float(dz_extend_top)
+                    elif reverted_embed:
+                        delta_h = float(span_z) - float(span_draw_after_top)
+                        if delta_h > 1e-12:
+                            seg_list[li][1] = max(dsz_l - delta_h, min_len_z)
+    
+                if dz_extend_top > 1e-12 and dz_fdown_ft <= 1e-12 and seg_list:
+                    if embed_start_collides_any_column_solids(
+                        doc,
+                        base_xyz,
+                        dz_extend_top,
+                        float(LAYOUT_BAR_NOMINAL_DIAM_MM),
+                        column_instances_embed,
+                        embed_geom_opts,
+                        contrib_ids,
+                        column_solid_cache=column_solid_cache_embed,
+                    ):
+                        seg_list[0][0] -= float(dz_extend_top)
+                        seg_list[0][1] += float(dz_extend_top)
+                        n_kept_embed_start_collision += 1
+                    else:
+                        span_draw_eff = float(span_draw_after_top)
+                        span_draw_floor = max(
+                            span_draw_eff - float(dz_revoke_extra_shrink),
+                            min_len_z,
+                        )
+                        revoke_delta = span_draw_eff - span_draw_floor
+                        if revoke_delta > 1e-12:
+                            seg_list[0][0] += revoke_delta
+                            seg_list[0][1] -= revoke_delta
+                        n_reverted_embed_start_air += 1
+    
+                if not seg_list:
+                    continue
+                z_line_start = seg_list[0][0]
+                z_top_whole = seg_list[-1][0] + seg_list[-1][1]
+                span_vertical = z_top_whole - z_line_start
+    
+                n_seg_total = len(seg_list)
+                seg_jobs = []
+                for seg_i, row in enumerate(seg_list):
+                    zs = row[0]
+                    dsz = row[1]
+                    span_seg = float(dsz)
+                    z_mid_seg = float(zs) + 0.5 * float(span_seg)
+                    if troceo_use_z_mid_for_ui_seg:
+                        troceo_ui_i = _troceo_ui_segment_index_for_z_mid(
+                            z_mid_seg,
+                            troceo_z_cuts_ft_sorted,
+                            troceo_n_ui_segs,
+                            seg_i,
+                        )
+                    else:
+                        troceo_ui_i = int(seg_i)
+                    if troceo_segment_bar_type_ids:
+                        _tid = (
+                            troceo_segment_bar_type_ids[troceo_ui_i]
+                            if troceo_ui_i < len(troceo_segment_bar_type_ids)
+                            else troceo_segment_bar_type_ids[-1]
+                        )
+                        if _tid not in bar_type_cache:
+                            _eid = _element_id_from_int(_tid)
+                            _el = doc.GetElement(_eid) if _eid is not None else None
+                            bar_type_cache[_tid] = (
+                                _el if _el is not None else layout_bar_type
+                            )
+                        layout_bar_type_seg = bar_type_cache[_tid]
+                        d_mm_seg = _rebar_nominal_diameter_mm(layout_bar_type_seg)
+                        if d_mm_seg is None:
+                            d_mm_seg = float(LAYOUT_BAR_NOMINAL_DIAM_MM)
+                        else:
+                            d_mm_seg = float(d_mm_seg)
+                    else:
+                        d_mm_seg = _troceo_nominal_diam_mm_for_seg_index(
+                            troceo_segment_diams,
+                            troceo_ui_i,
+                            LAYOUT_BAR_NOMINAL_DIAM_MM,
+                        )
+                        if d_mm_seg not in bar_type_cache:
+                            bt_seg, _, _ = _resolve_rebar_bar_type_by_diameter_mm(
+                                doc,
+                                float(d_mm_seg),
+                            )
+                            bar_type_cache[d_mm_seg] = (
+                                bt_seg if bt_seg is not None else layout_bar_type
+                            )
+                        layout_bar_type_seg = bar_type_cache[d_mm_seg]
+                    embed_mm_seg = _resolved_traslape_embed_mm(
+                        d_mm_seg,
+                        LAYOUT_EMBED_CONCRETE_GRADE,
+                    )
+                    dz_extend_seg = 0.0
+                    if embed_mm_seg is not None and float(embed_mm_seg) > 1e-9:
+                        dz_extend_seg = UnitUtils.ConvertToInternalUnits(
+                            float(embed_mm_seg),
+                            UnitTypeId.Millimeters,
+                        )
+                    if (
+                        n_seg_total > 1
+                        and is_lap_extension_scheme(btag)
+                        and dz_extend_seg > 1e-12
+                    ):
+                        half_ft = float(dz_extend_seg) * 0.5
+                        if seg_i < n_seg_total - 1:
+                            _jp_top = (
+                                joint_lap_policies[seg_i]
+                                if seg_i < len(joint_lap_policies)
+                                else TROCEO_EMPALME_POLICY_BASE
+                            )
+                            if _jp_top == TROCEO_EMPALME_POLICY_MID_AXIS:
+                                span_seg += half_ft
+                            else:
+                                span_seg += float(dz_extend_seg)
+                        if seg_i > 0:
+                            _jp_bot = (
+                                joint_lap_policies[seg_i - 1]
+                                if (seg_i - 1) < len(joint_lap_policies)
+                                else TROCEO_EMPALME_POLICY_BASE
+                            )
+                            if _jp_bot == TROCEO_EMPALME_POLICY_MID_AXIS:
+                                zs = float(zs) - half_ft
+                                span_seg += half_ft
+                    pata_hook_mm_seg = float(
+                        _resolved_pata_hook_mm_for_revert(
+                            d_mm_seg,
+                            LAYOUT_EMBED_CONCRETE_GRADE,
+                        )
+                    )
+                    pata_hook_ft_seg = 0.0
+                    if pata_hook_mm_seg > 1e-6:
+                        pata_hook_ft_seg = UnitUtils.ConvertToInternalUnits(
+                            float(pata_hook_mm_seg),
+                            UnitTypeId.Millimeters,
+                        )
+                    want_bot_pata = (
+                        seg_i == 0
+                        and dz_fdown_ft > 1e-12
+                        and pata_hook_ft_seg > 1e-12
+                    )
+                    want_top_pata = (
+                        seg_i == n_seg_total - 1
+                        and reverted_embed
+                        and pata_hook_ft_seg > 1e-12
+                    )
+                    min_len_z = float(curve_tol) * 4.0
+                    if want_bot_pata or want_top_pata:
+                        zs, span_seg = _apply_pata_l_cover_tangent_to_seg(
+                            zs,
+                            span_seg,
+                            want_bot_pata,
+                            want_top_pata,
+                            layout_bar_type_seg,
+                            d_mm_seg,
+                            min_len_z,
+                        )
+                    z_for_host = float(zs) + float(span_seg) * 0.5
+                    if want_bot_pata and want_top_pata:
+                        pass
+                    elif want_bot_pata:
+                        _band = min(
+                            max(float(span_seg) * 0.12, float(curve_tol) * 24.0),
+                            float(span_seg) * 0.45,
+                        )
+                        z_for_host = float(zs) + _band
+                    elif want_top_pata:
+                        _band = min(
+                            max(float(span_seg) * 0.12, float(curve_tol) * 24.0),
+                            float(span_seg) * 0.45,
+                        )
+                        z_for_host = float(zs) + float(span_seg) - _band
+                    host_col = _nearest_contrib_column_for_xyz(
+                        doc,
+                        bx,
+                        by,
+                        z_for_host,
+                        contrib_ids,
+                    )
+                    seg_jobs.append(
+                        {
+                            "troceo_ui_i": int(troceo_ui_i),
+                            "seg_i": int(seg_i),
+                            "zs": float(zs),
+                            "span_seg": float(span_seg),
+                            "host_col": host_col,
+                            "layout_bar_type_seg": layout_bar_type_seg,
+                            "bar_enum_lab": bar_enum_lab,
+                            "want_bot_pata": want_bot_pata,
+                            "want_top_pata": want_top_pata,
+                            "pata_hook_ft_seg": float(pata_hook_ft_seg),
+                            "contrib_ids": contrib_ids,
+                        }
+                    )
+                line_plans.append(
+                    {
+                        "line_idx": line_idx,
+                        "bx": bx,
+                        "by": by,
+                        "z_line_start": z_line_start,
+                        "span_vertical": span_vertical,
+                        "n_seg_total": n_seg_total,
+                        "btag": btag,
+                        "bar_enum_lab": bar_enum_lab,
+                        "seg_jobs": seg_jobs,
+                    }
+                )
+    
+            # ── Tabla de largos reales por (bar_enum, troceo_ui_i) ──────────────────
+            # Calculada desde seg_jobs —mismas curvas que se usarán en CreateFromCurves—
+            # sin crear ninguna barra ni abrir transacciones.
+            # Clave: (bar_enum_lab_str, troceo_ui_i_int)
+            # Valor: (lz_mm, lp_mm, has_bot_pata, has_top_pata)
+            #   lz_mm = tronco vertical; lp_mm = largo de pata (si aplica, igual en ambos extremos).
+            preview_bar_lengths_by_ubic_tramo = {}
+            for lp_pbl in line_plans:
+                lab_pbl = str(lp_pbl.get("bar_enum_lab") or "").strip()
+                for sj_pbl in lp_pbl.get("seg_jobs") or []:
+                    _lz = _arma_len_mm_round_from_internal_ft(sj_pbl["span_seg"])
+                    _lp = _arma_len_mm_round_from_internal_ft(sj_pbl["pata_hook_ft_seg"])
+                    _kb = bool(sj_pbl["want_bot_pata"])
+                    _kt = bool(sj_pbl["want_top_pata"])
+                    _key = (lab_pbl, int(sj_pbl["troceo_ui_i"]))
+                    # Si varios hilos con la misma etiqueta/tramo difieren, conservar el mayor tronco
+                    existing = preview_bar_lengths_by_ubic_tramo.get(_key)
+                    if existing is None or float(_lz) > float(existing[0]):
+                        preview_bar_lengths_by_ubic_tramo[_key] = (_lz, _lp, _kb, _kt)
+            # ────────────────────────────────────────────────────────────────────────
+    
+            max_tramo_ui = -1
+            for lp in line_plans:
+                for sj in lp["seg_jobs"]:
+                    if sj["troceo_ui_i"] > max_tramo_ui:
+                        max_tramo_ui = sj["troceo_ui_i"]
+    
+            n_tramos = max(0, max_tramo_ui + 1)
+            has_stirrups = any(
+                not getattr(cfg, "skip", True) for cfg in stirrup_configs.values()
+            )
+            total_pb_steps = 1 + n_tramos + 1
+            if total_pb_steps < 1:
+                total_pb_steps = 1
+    
+            _COL_PBAR_BASE = u"Arainco: Columnas armado longitudinal"
+            _pb_layout = _column_layout_pbar_start(
+                _column_layout_pbar_phase_title(_COL_PBAR_BASE, total_pb_steps),
+                total_pb_steps,
+            )
+            _pbar_layout_open = False
+            if _pb_layout is not None:
+                try:
+                    _pb_layout.__enter__()
+                    _pbar_layout_open = True
+                except Exception:
+                    _pb_layout = None
+
+            _column_layout_pbar_step(
+                _pb_layout,
+                0,
+                total_pb_steps,
+                u"Arainco: Columnas (marcadores planos corte)",
+            )
             if (
                 _CUT_PLANE_MARKER_ENABLED
                 and cols_plane
@@ -5105,28 +6334,17 @@ def main():
                         )
                     except Exception:
                         n_cut_plane_marker_elems = 0
-            txn_markers.Commit()
-        except Exception:
-            if txn_markers.HasStarted():
-                txn_markers.RollBack()
-            raise
-
-        line_rb_accum = defaultdict(list)
-        line_marker_done = set()
-
-        for tramo_k in range(0, max_tramo_ui + 1):
-            _column_layout_pbar_step(
-                _pb_layout,
-                1 + tramo_k,
-                total_pb_steps,
-                u"Arainco: Columnas (Structural Rebar por tramo)",
-            )
-            txn_bar = Transaction(
-                doc,
-                u"Arainco: Structural Rebar columnas tramo {}".format(tramo_k + 1),
-            )
-            txn_bar.Start()
-            try:
+    
+            line_rb_accum = defaultdict(list)
+            line_marker_done = set()
+    
+            for tramo_k in range(0, max_tramo_ui + 1):
+                _column_layout_pbar_step(
+                    _pb_layout,
+                    1 + tramo_k,
+                    total_pb_steps,
+                    u"Arainco: Columnas (Structural Rebar por tramo)",
+                )
                 for lp in line_plans:
                     line_idx = lp["line_idx"]
                     bx = lp["bx"]
@@ -5162,7 +6380,7 @@ def main():
                         except Exception:
                             pass
                         try:
-                            fp_seg = _fingerprint_seg_linea_fierro(
+                            fp_seg = fingerprint_seg_linea_fierro(
                                 sj["span_seg"],
                                 ok_pat_bot,
                                 ok_pat_top,
@@ -5204,290 +6422,352 @@ def main():
                             if mk:
                                 n_scheme_verify_markers_drawn += 1
                             line_marker_done.add(line_idx)
-                txn_bar.Commit()
-            except Exception:
-                if txn_bar.HasStarted():
-                    txn_bar.RollBack()
-                raise
-            if uidoc is not None:
-                try:
-                    uidoc.RefreshActiveView()
-                except Exception:
-                    pass
-
-        _column_layout_pbar_step(
-            _pb_layout,
-            1 + n_tramos,
-            total_pb_steps,
-            u"Arainco: Columnas (parámetro línea fierro)",
-        )
-
-        arma_line_assignments = []
-        for lp in line_plans:
-            line_idx = lp["line_idx"]
-            n_seg_total = lp["n_seg_total"]
-            items = line_rb_accum.get(line_idx)
-            if not items:
-                continue
-            items_sorted = sorted(items, key=lambda x: (x[0], x[1]))
-            line_rebars_fierro = [x[2] for x in items_sorted]
-            line_fps_fierro = [x[3] for x in items_sorted]
-            if (
-                line_fps_fierro
-                and len(line_fps_fierro) == len(line_rebars_fierro)
-                and len(line_fps_fierro) == n_seg_total
-            ):
-                try:
-                    _k_lf = (len(line_fps_fierro), tuple(line_fps_fierro))
-                    for _rb_lf in line_rebars_fierro:
-                        arma_line_assignments.append((_rb_lf, _k_lf))
-                except Exception:
-                    pass
-
-        txn_lf = Transaction(  
-            doc, u"Arainco: Parámetro línea fierro armadura ubicación columnas"
-        )
-        txn_lf.Start()
-        try:
-            _apply_linea_fierro_armadura_ubicacion(arma_line_assignments)
-            txn_lf.Commit()
-        except Exception:
-            if txn_lf.HasStarted():
-                txn_lf.RollBack()
-            raise
-
-        tg_layout.Assimilate()
-    except Exception:
-        tg_layout.RollBack()
-        raise
-    finally:
-        if _pbar_layout_open and _pb_layout is not None:
-            try:
-                _pb_layout.__exit__(None, None, None)
-            except Exception:
-                pass
-
-    if has_stirrups:
-        try:
-            import sys as _sys
-            if "column_stirrup_creator" in _sys.modules:
-                del _sys.modules["column_stirrup_creator"]
-        except Exception:
-            pass
-        _stir_import_err = None
-        try:
-            from column_stirrup_creator import create_stirrups_for_column as _csc
-        except Exception as _e:
-            _csc = None
-            _stir_import_err = str(_e)
-        if _csc is None:
-            TaskDialog.Show(
-                u"Arainco: Armado Columnas",
-                u"No se pudo importar column_stirrup_creator.\n\n{}".format(
-                    _stir_import_err or u""
-                ),
+    
+            _column_layout_pbar_step(
+                _pb_layout,
+                1 + n_tramos,
+                total_pb_steps,
+                u"Arainco: Columnas (parámetro línea fierro)",
             )
-        else:
-            hook_135 = _resolve_hook_135(doc)
-            # Usar el mismo diámetro modelo resuelto antes del bucle de jobs
-            # para que la rejilla de estribos sea idéntica a la de barras longitudinales.
-            _n_stir_total = 0
-            _stir_errors = []
-            _stir_col_list = []
-            for _col_s in columns_ordered:
-                _iv_s = _element_id_iv(_col_s)
-                if _iv_s < 0 or _iv_s not in dims_cache:
-                    continue
-                _w_s, _d_s = dims_cache[_iv_s][0], dims_cache[_iv_s][1]
-                _sk_s = _canonical_section_mm_key(_w_s, _d_s)
-                _cfg_s = stirrup_configs.get(_sk_s)
-                if _cfg_s is None or getattr(_cfg_s, "skip", True):
-                    continue
-                _stir_col_list.append(_col_s)
-
-            def _stir_col_sort_key(cm):
-                try:
-                    z0 = _column_base_z_ft_for_sort(cm)
-                except Exception:
-                    z0 = 0.0
-                try:
-                    eid = int(cm.Id.IntegerValue)
-                except Exception:
-                    try:
-                        eid = int(cm.Id.Value)
-                    except Exception:
-                        eid = 0
-                return (z0, eid)
-
-            _stir_col_list.sort(key=_stir_col_sort_key)
-
-            n_stir_cols = len(_stir_col_list)
-            _COL_STIR_PBAR_BASE = u"Arainco: Estribos columnas"
-            _pb_stir = None
-            _pb_stir_open = False
-            if n_stir_cols > 0:
-                _pb_stir = _column_layout_pbar_start(
-                    _column_layout_pbar_phase_title(
-                        _COL_STIR_PBAR_BASE, n_stir_cols
-                    ),
-                    n_stir_cols,
+    
+            if _phase_enable_linea_fierro_docs:
+                from column_reinforcement.linea_fierro import (
+                    apply_linea_fierro_armadura_ubicacion,
+                    collect_linea_fierro_model_groups,
                 )
-                if _pb_stir is not None:
-                    try:
-                        _pb_stir.__enter__()
-                        _pb_stir_open = True
-                    except Exception:
-                        _pb_stir = None
+                arma_line_assignments, _lf_label_map, _lf_model_groups = (
+                    collect_linea_fierro_model_groups(
+                        line_plans, line_rb_accum,
+                    )
+                )
+                apply_linea_fierro_armadura_ubicacion(arma_line_assignments)
+                _lf_model_groups_despiece = _lf_model_groups
+                _lf_label_map_despiece = _lf_label_map
 
-            try:
-                tg_stir = TransactionGroup(doc, u"Arainco: Estribos columnas")
-                tg_stir.Start()
-                try:
-                    for _i_stir, _col_s in enumerate(_stir_col_list):
-                        _column_layout_pbar_step(
-                            _pb_stir,
-                            _i_stir,
-                            n_stir_cols,
-                            _COL_STIR_PBAR_BASE,
+                _view_despiece = None
+                if uidoc is not None:
+                    try:
+                        _view_despiece = uidoc.ActiveView
+                    except Exception:
+                        _view_despiece = _active_view_for_docs
+                else:
+                    _view_despiece = _active_view_for_docs
+                _cols_despiece_filter = (
+                    columns_despiece_anchor
+                    if columns_despiece_anchor
+                    else columns_lote
+                )
+                _cols_despiece_draw = (
+                    columns_despiece_anchor
+                    if columns_despiece_anchor
+                    else columns_lote
+                )
+                if (
+                    _lf_model_groups_despiece
+                    and _lf_label_map_despiece
+                    and _view_despiece is not None
+                ):
+                    from column_reinforcement.linea_fierro_despiece_drafting import (
+                        generate_despiece_in_active_section_view,
+                    )
+
+                    _lf_groups_dv, _lf_label_dv = (
+                        _filter_linea_fierro_groups_for_columns(
+                            _lf_model_groups_despiece,
+                            _lf_label_map_despiece,
+                            _cols_despiece_filter,
                         )
+                    )
+                    if not _lf_groups_dv or not _lf_label_dv:
+                        _lf_groups_dv = _lf_model_groups_despiece
+                        _lf_label_dv = _lf_label_map_despiece
+                    if _lf_groups_dv and _lf_label_dv:
+                        try:
+                            generate_despiece_in_active_section_view(
+                                doc,
+                                _view_despiece,
+                                _cols_despiece_draw,
+                                _lf_groups_dv,
+                                _lf_label_dv,
+                                _rebar_nominal_diameter_mm,
+                                manage_transaction=False,
+                                uidoc=uidoc,
+                            )
+                        except Exception as ex_dv:
+                            try:
+                                TaskDialog.Show(
+                                    u"Arainco: Armado Columnas",
+                                    u"No se pudo generar la vista de despiece:\n\n{0}".format(
+                                        ex_dv
+                                    ),
+                                )
+                            except Exception:
+                                pass
+    
+            if _pbar_layout_open and _pb_layout is not None:
+                try:
+                    _pb_layout.__exit__(None, None, None)
+                except Exception:
+                    pass
+    
+            if has_stirrups:
+                try:
+                    import sys as _sys
+                    if "column_stirrup_creator" in _sys.modules:
+                        del _sys.modules["column_stirrup_creator"]
+                except Exception:
+                    pass
+                _stir_import_err = None
+                try:
+                    from column_stirrup_creator import create_stirrups_for_column as _csc
+                except Exception as _e:
+                    _csc = None
+                    _stir_import_err = str(_e)
+                if _csc is None:
+                    TaskDialog.Show(
+                        u"Arainco: Armado Columnas",
+                        u"No se pudo importar column_stirrup_creator.\n\n{}".format(
+                            _stir_import_err or u""
+                        ),
+                    )
+                else:
+                    hook_135 = _resolve_hook_135(doc)
+                    # Usar el mismo diámetro modelo resuelto antes del bucle de jobs
+                    # para que la rejilla de estribos sea idéntica a la de barras longitudinales.
+                    _n_stir_total = 0
+                    _stir_errors = []
+                    _stir_col_list = []
+                    for _col_s in columns_ordered:
                         _iv_s = _element_id_iv(_col_s)
-                        if _iv_s < 0:
+                        if _iv_s < 0 or _iv_s not in dims_cache:
                             continue
                         _w_s, _d_s = dims_cache[_iv_s][0], dims_cache[_iv_s][1]
                         _sk_s = _canonical_section_mm_key(_w_s, _d_s)
                         _cfg_s = stirrup_configs.get(_sk_s)
-                        _gcfg = section_grid_config.get(_sk_s, {})
-                        _val_a = int(_gcfg.get("bars_a", 4))
-                        _val_b = int(_gcfg.get("bars_b", 6))
-                        _sbt = getattr(_cfg_s, "stirrup_bar_type", None)
-                        _ov_bt = _stirrup_bar_type_override_for_column(
-                            stirrup_bar_type_by_column_id,
-                            _col_s,
+                        if _cfg_s is None or getattr(_cfg_s, "skip", True):
+                            continue
+                        _stir_col_list.append(_col_s)
+    
+                    def _stir_col_sort_key(cm):
+                        try:
+                            z0 = _column_base_z_ft_for_sort(cm)
+                        except Exception:
+                            z0 = 0.0
+                        try:
+                            eid = int(cm.Id.IntegerValue)
+                        except Exception:
+                            try:
+                                eid = int(cm.Id.Value)
+                            except Exception:
+                                eid = 0
+                        return (z0, eid)
+    
+                    _stir_col_list.sort(key=_stir_col_sort_key)
+    
+                    n_stir_cols = len(_stir_col_list)
+                    _COL_STIR_PBAR_BASE = u"Arainco: Estribos columnas"
+                    _pb_stir = None
+                    _pb_stir_open = False
+                    if n_stir_cols > 0:
+                        _pb_stir = _column_layout_pbar_start(
+                            _column_layout_pbar_phase_title(
+                                _COL_STIR_PBAR_BASE, n_stir_cols
+                            ),
+                            n_stir_cols,
                         )
-                        if _ov_bt is not None:
-                            _sbt = _ov_bt
-                        _spacing_mm = float(
-                            getattr(_cfg_s, "spacing_mm", 200.0)
-                        )
-                        _ov_sp = _stirrup_spacing_mm_override_for_column(
-                            stirrup_spacing_by_column_id,
-                            _col_s,
-                        )
-                        if _ov_sp is not None:
-                            _spacing_mm = float(_ov_sp)
-                        if _sbt is None:
-                            _sbt = _early_bar_type
-                        if _sbt is None:
-                            _stir_errors.append(
-                                u"Columna Id {}: sin tipo RebarBarType para estribo (def\u00edna \u00d8 en Troceo o cargue tipos en el proyecto).".format(
-                                    _col_s.Id.IntegerValue
+                        if _pb_stir is not None:
+                            try:
+                                _pb_stir.__enter__()
+                                _pb_stir_open = True
+                            except Exception:
+                                _pb_stir = None
+    
+                    try:
+                        for _i_stir, _col_s in enumerate(_stir_col_list):
+                            _column_layout_pbar_step(
+                                _pb_stir,
+                                _i_stir,
+                                n_stir_cols,
+                                _COL_STIR_PBAR_BASE,
+                            )
+                            _iv_s = _element_id_iv(_col_s)
+                            if _iv_s < 0:
+                                continue
+                            _w_s, _d_s = dims_cache[_iv_s][0], dims_cache[_iv_s][1]
+                            _sk_s = _canonical_section_mm_key(_w_s, _d_s)
+                            _cfg_s = stirrup_configs.get(_sk_s)
+                            _gcfg = section_grid_config.get(_sk_s, {})
+                            _val_a = int(_gcfg.get("bars_a", 4))
+                            _val_b = int(_gcfg.get("bars_b", 6))
+                            _sbt = getattr(_cfg_s, "stirrup_bar_type", None)
+                            _ov_bt = _stirrup_bar_type_override_for_column(
+                                stirrup_bar_type_by_column_id,
+                                _col_s,
+                            )
+                            if _ov_bt is not None:
+                                _sbt = _ov_bt
+                            _spacing_mm = float(
+                                getattr(_cfg_s, "spacing_mm", 200.0)
+                            )
+                            _stir_policy, _lot_specs, _spacing_mm, _sbt = (
+                                _stirrup_lot_specs_for_column(
+                                    stirrup_policy_by_column_id,
+                                    stirrup_spacing_by_column_lot,
+                                    stirrup_bar_type_by_column_lot,
+                                    stirrup_spacing_by_column_id,
+                                    stirrup_bar_type_by_column_id,
+                                    _col_s,
+                                    _spacing_mm,
+                                    _sbt,
                                 )
                             )
-                            continue
-                        txn_s = Transaction(
-                            doc,
-                            u"Arainco: Estribos columna {}".format(
-                                _col_s.Id.IntegerValue
-                            ),
-                        )
-                        txn_s.Start()
-                        try:
-                            _n = _csc(
-                                doc,
-                                _col_s,
-                                _val_a,
-                                _val_b,
-                                str(getattr(_cfg_s, "sel_a_text", u"")),
-                                str(getattr(_cfg_s, "sel_b_text", u"")),
-                                _sbt,
-                                hook_135,
-                                float(_spacing_mm),
-                                cover_mm=25.0,
-                                long_bar_diam_mm=_long_bar_model_diam_mm,
-                                collect_rebars=rebars_for_3d_visibility,
-                            )
-                            _n_stir_total += _n
-                            if _n == 0:
+                            if _sbt is None:
+                                _sbt = _early_bar_type
+                            if _sbt is None:
                                 _stir_errors.append(
-                                    u"Columna Id {}: 0 estribos creados".format(
+                                    u"Columna Id {}: sin tipo RebarBarType para estribo (def\u00edna \u00d8 en Troceo o cargue tipos en el proyecto).".format(
                                         _col_s.Id.IntegerValue
                                     )
                                 )
-                            txn_s.Commit()
+                                continue
+                            _stirrups_ordered = []
+                            _stir_pres_view = None
                             if uidoc is not None:
                                 try:
-                                    uidoc.RefreshActiveView()
+                                    _stir_pres_view = uidoc.ActiveView
                                 except Exception:
-                                    pass
-                        except Exception as _es:
-                            if txn_s.HasStarted():
-                                txn_s.RollBack()
-                            _stir_errors.append(
-                                u"Columna Id {}: {}".format(
-                                    _col_s.Id.IntegerValue, str(_es)
+                                    _stir_pres_view = None
+                            try:
+                                _n = _csc(
+                                    doc,
+                                    _col_s,
+                                    _val_a,
+                                    _val_b,
+                                    str(getattr(_cfg_s, "sel_a_text", u"")),
+                                    str(getattr(_cfg_s, "sel_b_text", u"")),
+                                    _sbt,
+                                    hook_135,
+                                    float(_spacing_mm),
+                                    cover_mm=25.0,
+                                    long_bar_diam_mm=_long_bar_model_diam_mm,
+                                    collect_rebars=rebars_for_3d_visibility,
+                                    collect_stirrup_rebars_ordered=_stirrups_ordered,
+                                    stirrup_policy=_stir_policy,
+                                    stirrup_lot_specs=_lot_specs,
+                                    presentation_view=_stir_pres_view,
                                 )
-                            )
-                    tg_stir.Assimilate()
-                except Exception as _eg:
-                    try:
-                        tg_stir.RollBack()
-                    except Exception:
-                        pass
-                    TaskDialog.Show(
-                        u"Arainco: Armado Columnas",
-                        u"Error en TransactionGroup de estribos:\n{}".format(
-                            str(_eg)
-                        ),
-                    )
-                else:
-                    if _stir_errors:
-                        det = u"\n".join(_stir_errors[:10])
-                        if len(_stir_errors) > 10:
-                            det += u"\n…"
-                        TaskDialog.Show(
-                            u"Arainco: Armado Columnas",
-                            u"{} estribo(s) creados. Advertencias:\n\n{}".format(
-                                _n_stir_total, det
-                            ),
-                        )
-            finally:
-                if _pb_stir_open and _pb_stir is not None:
-                    try:
-                        _pb_stir.__exit__(None, None, None)
-                    except Exception:
-                        pass
+                                _n_stir_total += _n
+                                if (
+                                    _stirrups_ordered
+                                    and uidoc is not None
+                                    and _phase_enable_confinement_tags
+                                    and _element_id_iv(_col_s) in columns_lote_iv
+                                ):
+                                    try:
+                                        from column_stirrup_tags import (
+                                            create_stirrup_tags_for_column,
+                                        )
 
-    if rebars_for_3d_visibility:
-        _txn_3d = Transaction(
-            doc,
-            u"Arainco: Armadura columnas visible en vistas 3D",
-        )
-        try:
-            _txn_3d.Start()
+                                        _tag_errs = []
+                                        create_stirrup_tags_for_column(
+                                            doc,
+                                            uidoc.ActiveView,
+                                            _col_s,
+                                            _stirrups_ordered,
+                                            errors=_tag_errs,
+                                            stirrup_policy=_stir_policy,
+                                            val_a=_val_a,
+                                            val_b=_val_b,
+                                            sel_a_text=str(
+                                                getattr(_cfg_s, "sel_a_text", u"")
+                                            ),
+                                            sel_b_text=str(
+                                                getattr(_cfg_s, "sel_b_text", u"")
+                                            ),
+                                        )
+                                        for _te in _tag_errs:
+                                            _stir_errors.append(_te)
+                                    except Exception as _etag:
+                                        _stir_errors.append(
+                                            u"Columna Id {0} etiquetas confinamiento: {1}".format(
+                                                _col_s.Id.IntegerValue, _etag
+                                            )
+                                        )
+                                if _n == 0:
+                                    _stir_errors.append(
+                                        u"Columna Id {}: 0 estribos creados".format(
+                                            _col_s.Id.IntegerValue
+                                        )
+                                    )
+                            except Exception as _es:
+                                _stir_errors.append(
+                                    u"Columna Id {}: {}".format(
+                                        _col_s.Id.IntegerValue, str(_es)
+                                    )
+                                )
+                        if _stir_errors:
+                            det = u"\n".join(_stir_errors[:10])
+                            if len(_stir_errors) > 10:
+                                det += u"\n…"
+                            TaskDialog.Show(
+                                u"Arainco: Armado Columnas",
+                                u"{} estribo(s) creados. Advertencias:\n\n{}".format(
+                                    _n_stir_total, det
+                                ),
+                            )
+                    finally:
+                        if _pb_stir_open and _pb_stir is not None:
+                            try:
+                                _pb_stir.__exit__(None, None, None)
+                            except Exception:
+                                pass
+
+        # fin fases armado (lote → despiece → estribos; luego propagación)
+
+        if rebars_for_3d_visibility and stamp_armadura_conjunto_guid_en_rebars:
+            try:
+                stamp_armadura_conjunto_guid_en_rebars(
+                    rebars_for_3d_visibility,
+                    conjunto_guid=conjunto_guid,
+                )
+            except Exception:
+                pass
+
+        if rebars_for_3d_visibility:
             try:
                 apply_rebar_unobscured_in_3d_views(
                     doc, rebars_for_3d_visibility
                 )
-                _txn_3d.Commit()
             except Exception:
-                if _txn_3d.HasStarted():
-                    _txn_3d.RollBack()
-        except Exception:
-            pass
+                pass
+
+        txn_armadura.Commit()
+        if uidoc is not None:
+            try:
+                uidoc.RefreshActiveView()
+            except Exception:
+                pass
+    except Exception:
+        if txn_armadura.HasStarted() and not txn_armadura.HasEnded():
+            txn_armadura.RollBack()
+        raise
+    finally:
+        if finalizar_armadura_conjunto_guid_ejecucion is not None:
+            try:
+                finalizar_armadura_conjunto_guid_ejecucion()
+            except Exception:
+                pass
 
 
 def run_pyrevit(revit_app):
-    """Compatibilidad pyRevit: delega en la fachada modular."""
-    try:
-        global doc, uidoc, __revit__
-        __revit__ = revit_app
-        uidoc = revit_app.ActiveUIDocument
-        doc = uidoc.Document if uidoc is not None else None
-    except Exception:
-        pass
-    from column_reinforcement.runner import run_rps
+    """Compatibilidad pyRevit / ``__main__``: misma secuencia que el pushbutton.
 
-    return run_rps(revit_app, main)
+    Delega en ``column_reinforcement.runner.run_pyrevit`` (reload del módulo legado,
+    inyección doc/uidoc/__revit__, luego main).
+    """
+    from column_reinforcement.runner import run_pyrevit as _runner_run_pyrevit
+
+    return _runner_run_pyrevit(revit_app)
 
 
 if __name__ == "__main__":

@@ -281,6 +281,62 @@ def _orientacion_ganchos_unificada_segun_z_proyecto(line, norm_vec, eje_referenc
         return RebarHookOrientation.Right
 
 
+def _invert_hook_orientation(o):
+    if o == RebarHookOrientation.Right:
+        return RebarHookOrientation.Left
+    return RebarHookOrientation.Right
+
+
+def _orient_tries_para_ganchos(
+    line, nvec, eje_referencia_z_ganchos, es_capa_inferior, gancho_en_inicio, gancho_en_fin
+):
+    """
+    Pares (inicio, fin) para ``CreateFromCurves*``.
+    Capa inferior: primero orientación invertida (patas hacia el alma / arriba).
+
+    Solo aplicar ``es_capa_inferior=True`` si ``nvec`` **no** está ya negado respecto a la
+    capa superior (p. ej. fundación). En armado de vigas la inferior pasa ``−norm`` y debe
+    usar ``es_capa_inferior=False`` para no anular la inversión.
+    """
+    hook_primary = _orientacion_ganchos_unificada_segun_z_proyecto(
+        line, nvec, eje_referencia_z=eje_referencia_z_ganchos
+    )
+    inv_primary = (
+        _invert_hook_orientation(hook_primary),
+        _invert_hook_orientation(hook_primary),
+    )
+    rl_lr = (
+        (RebarHookOrientation.Right, RebarHookOrientation.Left),
+        (RebarHookOrientation.Left, RebarHookOrientation.Right),
+    )
+    same = (
+        (RebarHookOrientation.Right, RebarHookOrientation.Right),
+        (RebarHookOrientation.Left, RebarHookOrientation.Left),
+    )
+    if es_capa_inferior:
+        ordered = inv_primary + rl_lr + ((hook_primary, hook_primary),) + same
+    else:
+        ordered = ((hook_primary, hook_primary),) + rl_lr + same + inv_primary
+    orient_tries = []
+    seen = set()
+    for pair in ordered:
+        if pair in seen:
+            continue
+        seen.add(pair)
+        orient_tries.append(pair)
+    if gancho_en_inicio != gancho_en_fin:
+        for pair in (
+            (RebarHookOrientation.Right, RebarHookOrientation.Left),
+            (RebarHookOrientation.Left, RebarHookOrientation.Right),
+            (RebarHookOrientation.Right, RebarHookOrientation.Right),
+            (RebarHookOrientation.Left, RebarHookOrientation.Left),
+        ):
+            if pair not in seen:
+                seen.add(pair)
+                orient_tries.append(pair)
+    return orient_tries
+
+
 def _norm_desde_eje_v_cara_perpendicular_a_barra(line, marco):
     """
     Vector ``XYZ`` para la sobrecarga ``norm`` de ``CreateFromCurves*``, a partir del
@@ -720,6 +776,7 @@ def _intentar_create_from_curves_minimo_extremos(
     normales_prioridad=None,
     gancho_en_inicio=True,
     gancho_en_fin=True,
+    es_capa_inferior=False,
 ):
     """
     Igual que :func:`_intentar_create_from_curves_minimo` pero con ganchos opcionales
@@ -743,12 +800,6 @@ def _intentar_create_from_curves_minimo_extremos(
     )
     seen = []
     bool_pairs = ((True, False),)
-    orient_pairs = (
-        (RebarHookOrientation.Right, RebarHookOrientation.Left),
-        (RebarHookOrientation.Left, RebarHookOrientation.Right),
-        (RebarHookOrientation.Right, RebarHookOrientation.Right),
-        (RebarHookOrientation.Left, RebarHookOrientation.Left),
-    )
 
     doc_key = _doc_title_safe(document)
     win = _REBAR_MIN_WIN.get(doc_key) if doc_key else None
@@ -779,21 +830,29 @@ def _intentar_create_from_curves_minimo_extremos(
                     return r
         return None
 
-    # Probar primero la combinación ganadora de ejecuciones previas.
+    # Probar primero la combinación ganadora de ejecuciones previas (por capa sup/inf).
     if win is not None:
-        win_nv_key, win_so, win_eo = win
-        for nvec in normals:
-            if nvec is None:
-                continue
+        try:
+            win_nv_key, win_so, win_eo, win_inf = win
+        except Exception:
             try:
-                nv_key = (round(nvec.X, 6), round(nvec.Y, 6), round(nvec.Z, 6))
+                win_nv_key, win_so, win_eo = win
+                win_inf = False
             except Exception:
-                nv_key = None
-            if nv_key == win_nv_key:
-                r = _attempt_single(nvec, win_so, win_eo)
-                if r:
-                    return r, nvec
-                break
+                win_nv_key = win_so = win_eo = win_inf = None
+        if win_nv_key is not None and win_inf == bool(es_capa_inferior):
+            for nvec in normals:
+                if nvec is None:
+                    continue
+                try:
+                    nv_key = (round(nvec.X, 6), round(nvec.Y, 6), round(nvec.Z, 6))
+                except Exception:
+                    nv_key = None
+                if nv_key == win_nv_key:
+                    r = _attempt_single(nvec, win_so, win_eo)
+                    if r:
+                        return r, nvec
+                    break
 
     for nvec in normals:
         if nvec is None:
@@ -802,23 +861,21 @@ def _intentar_create_from_curves_minimo_extremos(
         if key in seen:
             continue
         seen.append(key)
-        hook_primary = _orientacion_ganchos_unificada_segun_z_proyecto(
-            line, nvec, eje_referencia_z=eje_referencia_z_ganchos
+        orient_tries = _orient_tries_para_ganchos(
+            line,
+            nvec,
+            eje_referencia_z_ganchos,
+            es_capa_inferior,
+            gancho_en_inicio,
+            gancho_en_fin,
         )
-        orient_tries = [
-            (hook_primary, hook_primary),
-            (RebarHookOrientation.Right, RebarHookOrientation.Left),
-            (RebarHookOrientation.Left, RebarHookOrientation.Right),
-        ]
-        if gancho_en_inicio != gancho_en_fin:
-            orient_tries.extend(orient_pairs)
         for so, eo in orient_tries:
             r = _attempt_single(nvec, so, eo)
             if r:
                 if doc_key is not None:
                     try:
                         nv_key = (round(nvec.X, 6), round(nvec.Y, 6), round(nvec.Z, 6))
-                        _REBAR_MIN_WIN[doc_key] = (nv_key, so, eo)
+                        _REBAR_MIN_WIN[doc_key] = (nv_key, so, eo, bool(es_capa_inferior))
                     except Exception:
                         pass
                 return r, nvec
@@ -1490,6 +1547,7 @@ def _intentar_create_from_curves_and_shape(
     cara_paralela=None,
     eje_referencia_z_ganchos=None,
     normales_prioridad=None,
+    es_capa_inferior=False,
 ):
     """
     Camino principal: ``norm`` desde **BasisZ** de la cara paralela cercana (si hay), luego marco inferior.
@@ -1563,15 +1621,22 @@ def _intentar_create_from_curves_and_shape(
         hook_o = _orientacion_ganchos_unificada_segun_z_proyecto(
             line, nv, eje_referencia_z=eje_referencia_z_ganchos
         )
-        r = _try_nv_hook(nv, hook_o)
-        if r:
-            if doc_key is not None:
-                try:
-                    nv_key = (round(nv.X, 5), round(nv.Y, 5), round(nv.Z, 5))
-                    _REBAR_AND_SHAPE_WIN[doc_key] = (nv_key, hook_o)
-                except Exception:
-                    pass
-            return r, nv
+        hook_tries = [hook_o]
+        hook_inv = _invert_hook_orientation(hook_o)
+        if es_capa_inferior:
+            hook_tries.insert(0, hook_inv)
+        else:
+            hook_tries.append(hook_inv)
+        for hook_try in hook_tries:
+            r = _try_nv_hook(nv, hook_try)
+            if r:
+                if doc_key is not None:
+                    try:
+                        nv_key = (round(nv.X, 5), round(nv.Y, 5), round(nv.Z, 5))
+                        _REBAR_AND_SHAPE_WIN[doc_key] = (nv_key, hook_try)
+                    except Exception:
+                        pass
+                return r, nv
     return None, None
 
 
@@ -1617,6 +1682,7 @@ def crear_rebar_desde_curva_linea_con_ganchos(
     normales_prioridad=None,
     gancho_en_inicio=True,
     gancho_en_fin=True,
+    es_capa_inferior=False,
 ):
     """
     Crea un ``Rebar`` con la curva dada (``Line``) y ganchos opcionales por extremo.
@@ -1638,6 +1704,7 @@ def crear_rebar_desde_curva_linea_con_ganchos(
             para orientar los ganchos hacia el interior del hormigón.
         gancho_en_inicio: si ``False``, el extremo inicial de la línea no tendrá gancho.
         gancho_en_fin: si ``False``, el extremo final no tendrá gancho.
+        es_capa_inferior: si ``True``, prioriza orientaciones de gancho invertidas (patas hacia el alma).
 
     Returns:
         tuple: ``(rebar | None, mensaje_error | None, norm_createfromcurves | None)``.
@@ -1674,6 +1741,7 @@ def crear_rebar_desde_curva_linea_con_ganchos(
             cara_paralela=cara_paralela,
             eje_referencia_z_ganchos=eje_referencia_z_ganchos,
             normales_prioridad=normales_prioridad,
+            es_capa_inferior=es_capa_inferior,
         )
     if r is not None:
         return r, None, nv
@@ -1690,6 +1758,7 @@ def crear_rebar_desde_curva_linea_con_ganchos(
         normales_prioridad=normales_prioridad,
         gancho_en_inicio=gancho_en_inicio,
         gancho_en_fin=gancho_en_fin,
+        es_capa_inferior=es_capa_inferior,
     )
     if r2 is not None:
         return r2, None, nv2

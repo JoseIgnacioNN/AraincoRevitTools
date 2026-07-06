@@ -44,7 +44,7 @@ from revit_wpf_window_position import (
 )
 
 from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
-from bimtools_paths import get_logo_paths
+from bimtools_paths import get_logo_paths, get_pushbutton_dir
 
 _APPDOMAIN_WINDOW_KEY = "BIMTools.BordeLosaGanchoEmpotramiento.ActiveWindow"
 _TOOL_TASK_DIALOG_TITLE = u"Arainco: Refuerzo Borde Losa"
@@ -236,7 +236,8 @@ _ENFIERRADO_SHAFT_PASADA_XAML = u"""
     >
   <Window.Resources>
 """ + BIMTOOLS_DARK_STYLES_XML + u"""
-    <Style x:Key="ComboStretch" TargetType="ComboBox" BasedOn="{StaticResource Combo}">
+    <!-- No reutilizar x:Key ComboStretch: ya existe en BIMTOOLS_DARK_STYLES_XML. -->
+    <Style x:Key="ComboStretchBdLosa" TargetType="ComboBox" BasedOn="{StaticResource Combo}">
       <Setter Property="VerticalAlignment" Value="Center"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
       <Setter Property="HorizontalAlignment" Value="Stretch"/>
@@ -262,7 +263,7 @@ _ENFIERRADO_SHAFT_PASADA_XAML = u"""
     <Style x:Key="SpinnerSuffixTextBdLosa" TargetType="TextBlock" BasedOn="{StaticResource SpinnerSuffixText}">
       <Setter Property="Margin" Value="4,0,10,0"/>
     </Style>
-    <Style x:Key="ComboDiamSpinnerLook" TargetType="ComboBox" BasedOn="{StaticResource ComboStretch}">
+    <Style x:Key="ComboDiamSpinnerLook" TargetType="ComboBox" BasedOn="{StaticResource ComboStretchBdLosa}">
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="ComboBox">
@@ -1113,10 +1114,13 @@ class EnfierradoShaftPasadaWindow(object):
             try:
                 from pyrevit import script
 
+                _pb = get_pushbutton_dir()
+                if not _pb:
+                    _pb = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                 script.get_logger().warn(
                     u"[barras_bordes_losa_gancho_empotramiento] Ningún logo encontrado. Coloque "
                     u"empresa_logo.png, logo_empresa.png o logo.png en la carpeta del botón: "
-                    + _ENFIERRADO_PASADA_PUSHBUTTON
+                    + unicode(_pb or u"(pushbutton)")
                 )
             except Exception:
                 pass
@@ -2126,7 +2130,7 @@ class EnfierradoShaftPasadaWindow(object):
         try:
             from System.Windows.Interop import WindowInteropHelper
 
-            hwnd = _revit_main_hwnd(self._revit.Application)
+            hwnd = revit_main_hwnd(self._revit.Application)
             if hwnd:
                 helper = WindowInteropHelper(self._win)
                 helper.Owner = hwnd

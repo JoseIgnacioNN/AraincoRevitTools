@@ -143,7 +143,6 @@ from revit_wpf_window_position import (
 )
 
 from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
-from bimtools_paths import get_logo_paths
 
 _APPDOMAIN_WINDOW_KEY = "BIMTools.WallFoundationReinforcement.ActiveWindow"
 
@@ -735,17 +734,16 @@ def _wf_aplicar_presentacion_solo_barra_central_planta(view, rebars):
     for rb in rebars:
         _wf_rebar_presentacion_solo_centro_en_vista(view, rb)
 
-_WINDOW_OPEN_MS = 180
-_WINDOW_CLOSE_MS = 180
-_SV_MAX_H = 620.0
 
 _FUND_INPUT_COLS_PER_ROW = 2
 _FUND_COMBO_WIDTH_PX = 110
 _FUND_DIAM_ESP_AT_COL_PX = 28
 _FUND_BLOCK_PAD_H_PX = 16
 _FUND_GROUPBOX_PAD_H_PX = 16
-_FUND_OUTER_PAD_H_PX = 28
-_FUND_WIDTH_TITLE_MIN_PX = 288
+_FUND_OUTER_PAD_H_PX = 36
+_FUND_ARM_INFO_GROUPBOX_EXTRA_H_PX = 12
+_FUND_WIDTH_TITLE_MIN_PX = 420
+_FUND_WIDTH_FOOTER_MIN_PX = 300
 
 
 def _mm_to_ft(mm):
@@ -770,8 +768,16 @@ def _fund_form_width_px():
     cols = max(1, int(_FUND_INPUT_COLS_PER_ROW))
     c = int(_FUND_COMBO_WIDTH_PX)
     row_inner = cols * c + _FUND_DIAM_ESP_AT_COL_PX + _FUND_BLOCK_PAD_H_PX
-    w = row_inner + _FUND_GROUPBOX_PAD_H_PX + _FUND_OUTER_PAD_H_PX
-    w = max(w, _FUND_WIDTH_TITLE_MIN_PX)
+    w_content = (
+        row_inner
+        + _FUND_GROUPBOX_PAD_H_PX
+        + _FUND_ARM_INFO_GROUPBOX_EXTRA_H_PX
+    )
+    w = max(
+        w_content + _FUND_OUTER_PAD_H_PX,
+        _FUND_WIDTH_TITLE_MIN_PX,
+        _FUND_WIDTH_FOOTER_MIN_PX + _FUND_OUTER_PAD_H_PX,
+    )
     return int((int(w) + 3) // 4 * 4)
 
 
@@ -2190,67 +2196,55 @@ def _ubicar_punto_eje_menos_recorte(p0, p1, tangent, recorte_ft):
     return p0.Add(tu.Multiply(recorte_ft)), p1.Subtract(tu.Multiply(recorte_ft))
 
 
-# --- XAML (mismo chrome oscuro que ``enfierrado_fundacion_aislada``) -----------------
-_WF_XAML = u"""
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        x:Name="WallFoundWin"
-        Title="Armadura Fundacion Corrida"
-        SizeToContent="Height" MaxHeight="920" WindowStartupLocation="Manual"
-        Background="Transparent" AllowsTransparency="True" FontFamily="Segoe UI"
-        WindowStyle="None" ResizeMode="NoResize" Topmost="True" UseLayoutRounding="True">
+# --- XAML (chrome alineado con ``armado_muros_preview_ui`` / fundación aislada) ----
+_WF_XAML = (
+    u"""
+<Window
+    x:Name="WallFoundWin"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Arainco: Armadura Fundacion Corrida"
+    SizeToContent="Height"
+    MaxHeight="920"
+    WindowStartupLocation="Manual"
+    Background="#071018"
+    FontFamily="Segoe UI"
+    FontSize="12"
+    ShowInTaskbar="False"
+    ResizeMode="NoResize"
+    Topmost="True"
+    UseLayoutRounding="True">
   <Window.Resources>
-    <Storyboard x:Key="FundOpenGrowStoryboard">
-      <DoubleAnimation Storyboard.TargetName="WallRootScale" Storyboard.TargetProperty="ScaleX"
-                       From="0" To="1" Duration="0:0:0.18" FillBehavior="HoldEnd">
-        <DoubleAnimation.EasingFunction><QuadraticEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
-      </DoubleAnimation>
-      <DoubleAnimation Storyboard.TargetName="WallRootScale" Storyboard.TargetProperty="ScaleY"
-                       From="0" To="1" Duration="0:0:0.18" FillBehavior="HoldEnd">
-        <DoubleAnimation.EasingFunction><QuadraticEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
-      </DoubleAnimation>
-      <DoubleAnimation Storyboard.TargetName="WallFoundWin" Storyboard.TargetProperty="Opacity"
-                       From="0" To="1" Duration="0:0:0.18" FillBehavior="HoldEnd">
-        <DoubleAnimation.EasingFunction><QuadraticEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
-      </DoubleAnimation>
-    </Storyboard>
 """ + BIMTOOLS_DARK_STYLES_XML + u"""
   </Window.Resources>
-  <Border x:Name="WallRootChrome" CornerRadius="10" Background="#0A1A2F" Padding="12"
-          BorderBrush="#1A3A4D" BorderThickness="1" ClipToBounds="True" RenderTransformOrigin="0,0">
-    <Border.Effect>
-      <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="0" Opacity="0.35"/>
-    </Border.Effect>
-    <Border.RenderTransform>
-      <ScaleTransform x:Name="WallRootScale" ScaleX="0" ScaleY="0"/>
-    </Border.RenderTransform>
-    <Grid>
+  <Border Background="#071018" BorderBrush="#21465C" BorderThickness="1" Padding="18">
+    <Grid HorizontalAlignment="Stretch">
       <Grid.RowDefinitions>
-        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
-      <Border x:Name="TitleBar" Grid.Row="0" Background="#0E1B32" CornerRadius="6" Padding="10,8" Margin="0,0,0,10"
-              BorderBrush="#21465C" BorderThickness="1" HorizontalAlignment="Stretch">
-        <Grid HorizontalAlignment="Stretch">
-          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-          <Image x:Name="ImgLogo" Grid.Column="0" Width="40" Height="40"
-                 Stretch="Uniform" Margin="0,0,10,0" VerticalAlignment="Center"/>
-          <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0">
-            <TextBlock Text="Armadura Fundacion Corrida" FontSize="15" FontWeight="SemiBold"
-                       Foreground="#E8F4F8" TextWrapping="Wrap"/>
-          </StackPanel>
-          <Button x:Name="BtnClose" Grid.Column="2" Style="{StaticResource BtnCloseX_MinimalNoBg}" ToolTip="Cerrar"
-                  VerticalAlignment="Center" HorizontalAlignment="Right"/>
-        </Grid>
-      </Border>
-      <ScrollViewer x:Name="SvContenido" Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="620">
+
+      <StackPanel Grid.Row="0" Margin="0,0,0,10">
+        <TextBlock Text="Arainco: Armadura Fundacion Corrida" Foreground="#E8F4F8" FontSize="18" FontWeight="Bold"
+                   TextWrapping="Wrap"/>
+        <TextBlock x:Name="TxtSubtitle" Margin="0,6,0,0" Foreground="#95B8CC" TextWrapping="Wrap"
+                   Text="Selecciona fundaciones corrida (Wall Foundation) y configura armadura transversal y longitudinal."/>
+      </StackPanel>
+
+      <ScrollViewer x:Name="SvContenido" Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="600" Margin="0,0,0,2">
         <StackPanel HorizontalAlignment="Stretch">
-          <Button x:Name="BtnPick" Content="Seleccionar Fundaciones" Style="{StaticResource BtnSelectOutline}"
-                  HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
-          <GroupBox Style="{StaticResource GbParams}" Margin="0" HorizontalAlignment="Left">
+          <StackPanel Margin="0,0,0,10" HorizontalAlignment="Stretch">
+            <Button x:Name="BtnPick" Content="Seleccionar fundaciones en modelo"
+                    Style="{StaticResource BtnSelectOutline}"
+                    HorizontalAlignment="Stretch" Padding="12,8"/>
+          </StackPanel>
+
+          <GroupBox Style="{StaticResource GbParams}" Margin="0,0,0,0" HorizontalAlignment="Stretch">
             <GroupBox.Header>
               <Grid VerticalAlignment="Center">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Informacion Armaduras" Foreground="#E8F4F8" FontWeight="SemiBold" FontSize="12"
+                <TextBlock Grid.Column="0" Text="Informacion Armaduras" Foreground="#E8F4F8" FontWeight="Bold" FontSize="12"
                            VerticalAlignment="Center" HorizontalAlignment="Left"/>
                 <ComboBox x:Name="CmbDosificacionHormigon" Grid.Column="1" Style="{StaticResource Combo}" Margin="16,0,0,0"
                           IsEditable="False" IsReadOnly="True" VerticalAlignment="Center" HorizontalAlignment="Right"
@@ -2260,111 +2254,101 @@ _WF_XAML = u"""
               </Grid>
             </GroupBox.Header>
             <StackPanel>
-              <!-- Tarjeta interior: título + fila de dos controles (boceto). -->
-              <StackPanel x:Name="PanelTrans" Margin="0,0,0,0">
-                <Border Background="#0E1B32" CornerRadius="4" Padding="8,8,8,8" BorderBrush="#1A3A4D" BorderThickness="1"
-                        Margin="0,0,0,8" HorizontalAlignment="Left">
-                  <StackPanel>
-                    <TextBlock Text="Transversales" Foreground="#95B8CC" FontWeight="SemiBold" FontSize="11"
-                               HorizontalAlignment="Left" Margin="0,0,0,8"/>
-                    <Grid HorizontalAlignment="Left">
+              <StackPanel x:Name="PanelTrans" Margin="0,0,0,10">
+                <TextBlock Text="Transversales" Foreground="#95B8CC" FontWeight="SemiBold" FontSize="11"
+                           HorizontalAlignment="Left" Margin="0,0,0,8"/>
+                <Grid HorizontalAlignment="Center">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="110"/>
+                  </Grid.ColumnDefinitions>
+                  <ComboBox Grid.Column="0" x:Name="CmbTransDiam" Style="{StaticResource Combo}" IsEditable="False" IsReadOnly="True">
+                    <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
+                  </ComboBox>
+                  <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
+                             Foreground="#95B8CC" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,0,8,0"/>
+                  <Border Grid.Column="2" Width="110" Height="24" CornerRadius="5" Background="#050E18"
+                          BorderBrush="#1A3A4D" BorderThickness="1" SnapsToDevicePixels="True">
+                    <Grid>
                       <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="110"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="110"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="18"/>
                       </Grid.ColumnDefinitions>
-                      <ComboBox Grid.Column="0" x:Name="CmbTransDiam" Style="{StaticResource Combo}" IsEditable="False" IsReadOnly="True">
-                        <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
-                      </ComboBox>
-                      <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
-                                 Foreground="#95B8CC" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="6,0,6,0"/>
-                      <Border Grid.Column="2" Width="110" Height="24" CornerRadius="4" Background="#050E18"
-                              BorderBrush="#1A3A4D" BorderThickness="1" SnapsToDevicePixels="True">
+                      <TextBox x:Name="TxtTransSep" Grid.Column="0" Style="{StaticResource CantSpinnerText}"
+                               Text="100" Padding="6,0,6,0" VerticalContentAlignment="Center"
+                               ToolTip="Separación transversal (mm): 100 a 400, paso 10"/>
+                      <Border Grid.Column="1" Background="#11253D" BorderBrush="#1A3A4D"
+                              BorderThickness="1,0,0,0" CornerRadius="0,5,5,0" ClipToBounds="True">
                         <Grid>
-                          <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="18"/>
-                          </Grid.ColumnDefinitions>
-                          <TextBox x:Name="TxtTransSep" Grid.Column="0" Style="{StaticResource CantSpinnerText}"
-                                   Text="100" VerticalContentAlignment="Center"
-                                   ToolTip="Separación transversal (mm): 100 a 400, paso 10"/>
-                          <Border Grid.Column="1" Background="#0E1B32" BorderBrush="#1A3A4D"
-                                  BorderThickness="1,0,0,0" CornerRadius="0,4,4,0" ClipToBounds="True">
-                            <Grid>
-                              <Grid.RowDefinitions>
-                                <RowDefinition Height="*"/>
-                                <RowDefinition Height="*"/>
-                              </Grid.RowDefinitions>
-                              <RepeatButton x:Name="BtnTransSepUp" Grid.Row="0" Style="{StaticResource SpinRepeatBtn}" Content="▲"
-                                            ToolTip="Más 10 mm (máx. 400 mm)"/>
-                              <RepeatButton x:Name="BtnTransSepDown" Grid.Row="1" Style="{StaticResource SpinRepeatBtn}" Content="▼"
-                                            ToolTip="Menos 10 mm (mín. 100 mm)"/>
-                            </Grid>
-                          </Border>
+                          <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="*"/>
+                          </Grid.RowDefinitions>
+                          <RepeatButton x:Name="BtnTransSepUp" Grid.Row="0" Style="{StaticResource SpinRepeatBtn}" Content="▲"
+                                        ToolTip="Más 10 mm (máx. 400 mm)"/>
+                          <RepeatButton x:Name="BtnTransSepDown" Grid.Row="1" Style="{StaticResource SpinRepeatBtn}" Content="▼"
+                                        ToolTip="Menos 10 mm (mín. 100 mm)"/>
                         </Grid>
                       </Border>
                     </Grid>
-                  </StackPanel>
-                </Border>
+                  </Border>
+                </Grid>
               </StackPanel>
+
               <StackPanel x:Name="PanelLong" Margin="0,0,0,0">
-                <Border Background="#0E1B32" CornerRadius="4" Padding="8,8,8,8" BorderBrush="#1A3A4D" BorderThickness="1"
-                        HorizontalAlignment="Left">
-                  <StackPanel>
-                    <TextBlock Text="Longitudinales" Foreground="#95B8CC" FontWeight="SemiBold" FontSize="11"
-                               HorizontalAlignment="Left" Margin="0,0,0,8"/>
-                    <Grid HorizontalAlignment="Left">
+                <TextBlock Text="Longitudinales" Foreground="#95B8CC" FontWeight="SemiBold" FontSize="11"
+                           HorizontalAlignment="Left" Margin="0,0,0,8"/>
+                <Grid HorizontalAlignment="Center">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="110"/>
+                  </Grid.ColumnDefinitions>
+                  <ComboBox Grid.Column="0" x:Name="CmbLongDiam" Style="{StaticResource Combo}" IsEditable="False" IsReadOnly="True">
+                    <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
+                  </ComboBox>
+                  <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
+                             Foreground="#95B8CC" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,0,8,0"/>
+                  <Border Grid.Column="2" Width="110" Height="24" CornerRadius="5" Background="#050E18"
+                          BorderBrush="#1A3A4D" BorderThickness="1" SnapsToDevicePixels="True">
+                    <Grid>
                       <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="110"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="110"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="18"/>
                       </Grid.ColumnDefinitions>
-                      <ComboBox Grid.Column="0" x:Name="CmbLongDiam" Style="{StaticResource Combo}" IsEditable="False" IsReadOnly="True">
-                        <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
-                      </ComboBox>
-                      <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
-                                 Foreground="#95B8CC" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="6,0,6,0"/>
-                      <Border Grid.Column="2" Width="110" Height="24" CornerRadius="4" Background="#050E18"
-                              BorderBrush="#1A3A4D" BorderThickness="1" SnapsToDevicePixels="True" Margin="0">
+                      <TextBox x:Name="TxtLongSep" Grid.Column="0" Style="{StaticResource CantSpinnerText}"
+                               Text="100" Padding="6,0,6,0" VerticalContentAlignment="Center"
+                               ToolTip="Separación longitudinal (mm): 100 a 400, paso 10"/>
+                      <Border Grid.Column="1" Background="#11253D" BorderBrush="#1A3A4D"
+                              BorderThickness="1,0,0,0" CornerRadius="0,5,5,0" ClipToBounds="True">
                         <Grid>
-                          <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="18"/>
-                          </Grid.ColumnDefinitions>
-                          <TextBox x:Name="TxtLongSep" Grid.Column="0" Style="{StaticResource CantSpinnerText}"
-                                   Text="100" VerticalContentAlignment="Center"
-                                   ToolTip="Separación longitudinal (mm): 100 a 400, paso 10"/>
-                          <Border Grid.Column="1" Background="#0E1B32" BorderBrush="#1A3A4D"
-                                  BorderThickness="1,0,0,0" CornerRadius="0,4,4,0" ClipToBounds="True">
-                            <Grid>
-                              <Grid.RowDefinitions>
-                                <RowDefinition Height="*"/>
-                                <RowDefinition Height="*"/>
-                              </Grid.RowDefinitions>
-                              <RepeatButton x:Name="BtnLongSepUp" Grid.Row="0" Style="{StaticResource SpinRepeatBtn}" Content="▲"
-                                            ToolTip="Más 10 mm (máx. 400 mm)"/>
-                              <RepeatButton x:Name="BtnLongSepDown" Grid.Row="1" Style="{StaticResource SpinRepeatBtn}" Content="▼"
-                                            ToolTip="Menos 10 mm (mín. 100 mm)"/>
-                            </Grid>
-                          </Border>
+                          <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="*"/>
+                          </Grid.RowDefinitions>
+                          <RepeatButton x:Name="BtnLongSepUp" Grid.Row="0" Style="{StaticResource SpinRepeatBtn}" Content="▲"
+                                        ToolTip="Más 10 mm (máx. 400 mm)"/>
+                          <RepeatButton x:Name="BtnLongSepDown" Grid.Row="1" Style="{StaticResource SpinRepeatBtn}" Content="▼"
+                                        ToolTip="Menos 10 mm (mín. 100 mm)"/>
                         </Grid>
                       </Border>
                     </Grid>
-                    <Border x:Name="BorderTroceo" Visibility="Collapsed" Margin="0,10,0,0" HorizontalAlignment="Stretch"
-                            Background="#050E18" BorderBrush="#1A3A4D" BorderThickness="1" CornerRadius="4" Padding="8,8,8,8">
-                      <StackPanel>
-                        <TextBlock Text="Troceo longitudinal (&gt; 12 m de eje)" Style="{StaticResource Label}" Margin="0,0,0,4"/>
-                        <Grid Margin="0,0,0,6">
-                          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                          <StackPanel Grid.Column="0">
-                            <TextBlock Text="Largo máx. tramo (mm)" Foreground="#95B8CC" FontSize="10"/>
-                            <TextBox x:Name="TxtMaxBarMm" Style="{StaticResource CantSpinnerText}" Background="#050E18"
-                                     BorderBrush="#1A3A4D" BorderThickness="1" Padding="4" Text="12000"/>
-                          </StackPanel>
-                          <StackPanel Grid.Column="2">
-                            <TextBlock Text="Empalme / traslape (mm)" Foreground="#95B8CC" FontSize="10"/>
-                            <TextBox x:Name="TxtLapMm" Style="{StaticResource CantSpinnerText}" Background="#050E18"
-                                     BorderBrush="#1A3A4D" BorderThickness="1" Padding="4" Text="600"/>
-                          </StackPanel>
-                        </Grid>
+                  </Border>
+                </Grid>
+                <Border x:Name="BorderTroceo" Visibility="Collapsed" Margin="0,10,0,0" HorizontalAlignment="Stretch"
+                        Background="#0a1620" BorderBrush="#21465C" BorderThickness="1" CornerRadius="4" Padding="8,8,8,8">
+                  <StackPanel>
+                    <TextBlock Text="Troceo longitudinal (&gt; 12 m de eje)" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                    <Grid Margin="0,0,0,6">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <StackPanel Grid.Column="0">
+                        <TextBlock Text="Largo máx. tramo (mm)" Foreground="#95B8CC" FontSize="10"/>
+                        <TextBox x:Name="TxtMaxBarMm" Style="{StaticResource CantSpinnerText}" Background="#050E18"
+                                 BorderBrush="#1A3A4D" BorderThickness="1" Padding="4" Text="12000"/>
                       </StackPanel>
-                    </Border>
+                      <StackPanel Grid.Column="2">
+                        <TextBlock Text="Empalme / traslape (mm)" Foreground="#95B8CC" FontSize="10"/>
+                        <TextBox x:Name="TxtLapMm" Style="{StaticResource CantSpinnerText}" Background="#050E18"
+                                 BorderBrush="#1A3A4D" BorderThickness="1" Padding="4" Text="600"/>
+                      </StackPanel>
+                    </Grid>
                   </StackPanel>
                 </Border>
               </StackPanel>
@@ -2372,14 +2356,31 @@ _WF_XAML = u"""
           </GroupBox>
         </StackPanel>
       </ScrollViewer>
-      <StackPanel Grid.Row="2" Margin="0" HorizontalAlignment="Stretch">
-        <Border Height="4" Background="Transparent"/>
-        <Button x:Name="BtnColocar" Content="Colocar Armadura" Style="{StaticResource BtnPrimary}" HorizontalAlignment="Stretch"/>
-      </StackPanel>
+
+      <Grid Grid.Row="2" Margin="0,14,0,0">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock x:Name="TxtEstado" Grid.Row="0"
+                   Foreground="#64748b" FontSize="10" TextWrapping="Wrap" Margin="0,0,0,8"/>
+        <Grid Grid.Row="1">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="8"/>
+            <ColumnDefinition Width="*"/>
+          </Grid.ColumnDefinitions>
+          <Button x:Name="BtnCancelar" Grid.Column="0" Content="Cancelar"
+                  Style="{StaticResource BtnSelectOutline}" HorizontalAlignment="Stretch"/>
+          <Button x:Name="BtnColocar" Grid.Column="2" Content="Colocar armadura"
+                  Style="{StaticResource BtnPrimary}" HorizontalAlignment="Stretch"/>
+        </Grid>
+      </Grid>
     </Grid>
   </Border>
 </Window>
 """
+)
 
 
 def _wf_apply_selection_uidoc(uidoc, wf_id):
@@ -3450,9 +3451,6 @@ class WallFoundationReinforcementWindow(object):
         self._document = None
         self._wf_id = None
         self._entries = []
-        self._is_closing_with_fade = False
-        self._open_grow_storyboard_started = False
-        self._base_top = None
         self._form_width_px = float(_fund_form_width_px())
 
         from System.Windows import RoutedEventHandler
@@ -3481,7 +3479,6 @@ class WallFoundationReinforcementWindow(object):
         self._wire_ui(RoutedEventHandler)
         self._wire_keys(ApplicationCommands, CommandBinding, KeyBinding, Key, ModifierKeys)
         self._wire_lifecycle()
-        self._wire_storyboard_completed()
         self._wire_activate_resel()
 
     def _wire_activate_resel(self):
@@ -3502,10 +3499,8 @@ class WallFoundationReinforcementWindow(object):
 
     def _wire_lifecycle(self):
         from System import EventHandler
-        from System.Windows import RoutedEventHandler
 
         self._win.Closed += EventHandler(self._on_win_closed)
-        self._win.Loaded += RoutedEventHandler(self._on_loaded)
 
     def _on_win_closed(self, sender, args):
         _clear_appdomain_window_key()
@@ -3534,73 +3529,6 @@ class WallFoundationReinforcementWindow(object):
         except Exception:
             pass
 
-    def _wire_storyboard_completed(self):
-        try:
-            from System import EventHandler
-
-            sb = self._win.TryFindResource("FundOpenGrowStoryboard")
-            if sb is not None:
-                sb.Completed += EventHandler(self._on_open_storyboard_completed)
-        except Exception:
-            pass
-
-    def _on_open_storyboard_completed(self, sender, args):
-        try:
-            self._win.MinWidth = float(self._form_width_px)
-            self._win.MaxWidth = float(self._form_width_px)
-        except Exception:
-            pass
-
-    def _on_loaded(self, s, a):
-        try:
-            from System import Action
-            from System.Windows.Threading import DispatcherPriority
-
-            self._win.Dispatcher.BeginInvoke(
-                Action(self._begin_open_sb),
-                DispatcherPriority.Loaded,
-            )
-        except Exception:
-            self._begin_open_sb()
-
-    def _begin_open_sb(self):
-        if self._open_grow_storyboard_started:
-            return
-        self._open_grow_storyboard_started = True
-        try:
-            from System import TimeSpan
-            from System.Windows import Duration, SizeToContent
-            from System.Windows.Media import ScaleTransform
-
-            sc = self._win.FindName("WallRootScale")
-            if sc is not None:
-                sc.ScaleX = 0.0
-                sc.ScaleY = 0.0
-            self._win.Width = float(self._form_width_px)
-            try:
-                self._win.SizeToContent = SizeToContent.Height
-            except Exception:
-                pass
-            self._position_win()
-            sb = self._win.TryFindResource("FundOpenGrowStoryboard")
-            if sb is None:
-                if sc is not None:
-                    sc.ScaleX = sc.ScaleY = 1.0
-                self._win.Opacity = 1.0
-                return
-            dur = Duration(TimeSpan.FromMilliseconds(float(_WINDOW_OPEN_MS)))
-            try:
-                for i in range(int(sb.Children.Count)):
-                    sb.Children[i].Duration = dur
-            except Exception:
-                pass
-            sb.Begin(self._win, True)
-        except Exception:
-            try:
-                self._win.Opacity = 1.0
-            except Exception:
-                pass
-
     def _step_sep(self, tb, delta):
         if tb is None:
             return
@@ -3612,63 +3540,16 @@ class WallFoundationReinforcementWindow(object):
         v = _snap_sep_mm(v, _SEP_MM_DEFAULT)
         tb.Text = unicode(int(v))
 
-    def _position_win(self):
-        try:
-            uidoc = self._revit.ActiveUIDocument if self._revit else None
-            hwnd = None
-            if self._revit is not None:
-                try:
-                    hwnd = revit_main_hwnd(self._revit.Application)
-                except Exception:
-                    pass
-            position_wpf_window_top_left_at_active_view(self._win, uidoc, hwnd)
-        except Exception:
-            pass
-
     def _wire_ui(self, RoutedEventHandler):
-        from System.IO import FileAccess, FileMode, FileStream
-        from System.Windows.Media.Imaging import BitmapCacheOption, BitmapImage
-        from System.Windows.Input import MouseButtonEventHandler
-
-        img = self._win.FindName("ImgLogo")
-        if img is not None:
-            for pth in get_logo_paths():
-                if os.path.isfile(pth):
-                    stream = None
-                    try:
-                        stream = FileStream(pth, FileMode.Open, FileAccess.Read)
-                        bmp = BitmapImage()
-                        bmp.BeginInit()
-                        bmp.StreamSource = stream
-                        bmp.CacheOption = BitmapCacheOption.OnLoad
-                        bmp.EndInit()
-                        bmp.Freeze()
-                        img.Source = bmp
-                        try:
-                            self._win.Icon = bmp
-                        except Exception:
-                            pass
-                    finally:
-                        if stream is not None:
-                            try:
-                                stream.Dispose()
-                            except Exception:
-                                pass
-                    break
         bp = self._win.FindName("BtnPick")
         if bp is not None:
             bp.Click += RoutedEventHandler(lambda s, e: self._pick_event.Raise())
-        bc = self._win.FindName("BtnClose")
-        if bc is not None:
-            bc.Click += RoutedEventHandler(lambda s, e: self._close())
+        btn_cancel = self._win.FindName("BtnCancelar")
+        if btn_cancel is not None:
+            btn_cancel.Click += RoutedEventHandler(lambda s, e: self._close())
         bcol = self._win.FindName("BtnColocar")
         if bcol is not None:
             bcol.Click += RoutedEventHandler(lambda s, e: self._col_event.Raise())
-        tb = self._win.FindName("TitleBar")
-        if tb is not None:
-            tb.MouseLeftButtonDown += MouseButtonEventHandler(
-                lambda s, e: self._win.DragMove()
-            )
         def _bind_sep(tb_name, up_name, dn_name):
             tb = self._win.FindName(tb_name)
             bu = self._win.FindName(up_name)
@@ -3793,79 +3674,18 @@ class WallFoundationReinforcementWindow(object):
             tlap.Text = unicode(int(round(v)))
 
     def _close(self):
-        if getattr(self, "_is_closing_with_fade", False):
-            return
         try:
-            self._enqueue_eliminar_secciones_revision()
+            self._win.Close()
         except Exception:
             pass
-        self._is_closing_with_fade = True
-        try:
-            from System import TimeSpan
-            from System.Windows import Duration
-            from System.Windows.Media import ScaleTransform
-            from System.Windows.Media.Animation import DoubleAnimation, QuadraticEase, EasingMode
 
-            sc = self._win.FindName("WallRootScale")
-            dur = Duration(TimeSpan.FromMilliseconds(float(_WINDOW_CLOSE_MS)))
-            ease_in = QuadraticEase()
-            ease_in.EasingMode = EasingMode.EaseIn
-
-            def _da(f0, f1):
-                a = DoubleAnimation()
-                a.From = float(f0)
-                a.To = float(f1)
-                a.Duration = dur
-                a.EasingFunction = ease_in
-                return a
-
+    def _set_estado(self, text):
+        tb = self._win.FindName("TxtEstado")
+        if tb is not None:
             try:
-                sx0 = float(sc.ScaleX) if sc is not None else 1.0
-                sy0 = float(sc.ScaleY) if sc is not None else 1.0
-            except Exception:
-                sx0 = sy0 = 1.0
-            try:
-                op0 = float(self._win.Opacity)
-            except Exception:
-                op0 = 1.0
-
-            op_anim = _da(op0, 0.0)
-            ax = _da(sx0, 0.0)
-            ay = _da(sy0, 0.0)
-
-            from System import EventHandler
-
-            def _done(sender, args):
-                try:
-                    self._win.Close()
-                except Exception:
-                    pass
-
-            op_anim.Completed += EventHandler(_done)
-            if sc is not None:
-                sc.BeginAnimation(ScaleTransform.ScaleXProperty, ax)
-                sc.BeginAnimation(ScaleTransform.ScaleYProperty, ay)
-            self._win.BeginAnimation(self._win.OpacityProperty, op_anim)
-        except Exception:
-            try:
-                self._enqueue_eliminar_secciones_revision()
+                tb.Text = text or u""
             except Exception:
                 pass
-            try:
-                self._win.Close()
-            except Exception:
-                pass
-            self._is_closing_with_fade = False
-
-    def _show_with_fade(self):
-        try:
-            self._win.Opacity = 0.0
-            if not self._win.IsVisible:
-                self._win.Show()
-            self._win.Activate()
-        except Exception:
-            pass
-        self._is_closing_with_fade = False
 
     def _cargar_combos(self):
         doc = self._document
@@ -3917,7 +3737,7 @@ class WallFoundationReinforcementWindow(object):
         uidoc = self._revit.ActiveUIDocument
         if uidoc is None:
             TaskDialog.Show(
-                u"Wall Foundation Reinforcement",
+                u"Arainco: Armadura Fundacion Corrida",
                 u"No hay documento activo.",
             )
             return
@@ -3939,7 +3759,13 @@ class WallFoundationReinforcementWindow(object):
         _normalize_sep_tb(self._win.FindName("TxtTransSep"))
         _normalize_sep_tb(self._win.FindName("TxtLongSep"))
         self._refresh_troceo_panel()
-        self._show_with_fade()
+        self._set_estado(u"")
+        try:
+            if not self._win.IsVisible:
+                self._win.Show()
+            self._win.Activate()
+        except Exception:
+            pass
         try:
             System.AppDomain.CurrentDomain.SetData(_APPDOMAIN_WINDOW_KEY, self._win)
         except Exception:
@@ -3967,7 +3793,7 @@ def run_pyrevit(revit):
             existing = None
         if ok and existing is not None:
             _task_dialog_show(
-                u"Arainco: Wall Foundation Reinforcement",
+                u"Arainco: Armadura Fundacion Corrida",
                 u"La herramienta ya está en ejecución.",
                 existing,
             )

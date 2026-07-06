@@ -377,31 +377,42 @@ def _rebar_array_length_internal(acc):
 
 
 def _rebar_cantidad_posiciones(rebar):
-    try:
-        return int(rebar.Quantity)
-    except Exception:
+    """Posiciones del reparto (máximo entre Quantity y NumberOfBarPositions)."""
+    best = 1
+    for getter in (
+        lambda: int(rebar.NumberOfBarPositions),
+        lambda: int(rebar.GetNumberOfBarPositions()),
+        lambda: int(rebar.Quantity),
+    ):
         try:
-            return int(rebar.NumberOfBarPositions)
+            n = int(getter())
+            if n > best:
+                best = n
         except Exception:
-            return 1
+            pass
+    return best
 
 
-def desactivar_extremos_rebar_set(rebar, document):
+def ajustar_inclusion_extremos_rebar_set(rebar, document, include_first=True, include_last=True):
     """
-    En un ``Rebar`` con reparto (más de una posición), desactiva la primera y la última
-    barra del conjunto (``includeFirstBar`` / ``includeLastBar`` = False) manteniendo la
-    regla de layout, separación y longitud de conjunto actuales.
+    Reaplica el layout shape-driven con ``includeFirstBar`` / ``includeLastBar`` explícitos.
 
-    No aplica a conjunto de una sola posición, a regla *Single* ni si hay menos de 3 posiciones
-    (desactivar ambos extremos requiere al menos 3 posiciones iniciales).
-
+    :param include_first: ``True`` mantiene la 1.ª posición; ``False`` la excluye.
+    :param include_last: ``True`` mantiene la última posición; ``False`` la excluye.
     :returns: ``True`` si se aplicó un cambio de layout; ``False`` si no aplica o falló.
     """
     if rebar is None or not isinstance(rebar, Rebar):
         return False
-    n = _rebar_cantidad_posiciones(rebar)
-    if n < 3:
+    if include_first and include_last:
         return False
+
+    n = _rebar_cantidad_posiciones(rebar)
+    if not include_first and not include_last:
+        if n < 3:
+            return False
+    elif n < 2:
+        return False
+
     try:
         acc = rebar.GetShapeDrivenAccessor()
     except Exception:
@@ -419,7 +430,7 @@ def desactivar_extremos_rebar_set(rebar, document):
         b_side = bool(acc.BarsOnNormalSide)
     except Exception:
         b_side = True
-    inc0, inc1 = False, False
+    inc0, inc1 = bool(include_first), bool(include_last)
     nbars = n
 
     def _aplicar(b_side_):
@@ -467,3 +478,58 @@ def desactivar_extremos_rebar_set(rebar, document):
         except Exception:
             continue
     return False
+
+
+def _excluir_barras_extremos_por_indice(rebar, include_first, include_last):
+    """
+    Fallback: ``SetBarIncluded(False, índice)`` cuando el layout no acepta
+    ``includeFirstBar`` / ``includeLastBar``.
+    """
+    if rebar is None or not isinstance(rebar, Rebar):
+        return False
+    n = _rebar_cantidad_posiciones(rebar)
+    if n < 2:
+        return False
+    if not include_first and not include_last and n < 3:
+        return False
+    ok = False
+    if not include_first:
+        try:
+            rebar.SetBarIncluded(False, 0)
+            ok = True
+        except Exception:
+            pass
+    if not include_last:
+        try:
+            rebar.SetBarIncluded(False, int(n) - 1)
+            ok = True
+        except Exception:
+            pass
+    return ok
+
+
+def ajustar_inclusion_extremos_rebar_set_con_fallback(
+    rebar, document, include_first=True, include_last=True,
+):
+    """Layout shape-driven; si falla, ``SetBarIncluded`` en extremos."""
+    if ajustar_inclusion_extremos_rebar_set(
+        rebar, document, include_first, include_last,
+    ):
+        return True
+    if include_first and include_last:
+        return False
+    return _excluir_barras_extremos_por_indice(rebar, include_first, include_last)
+
+
+def desactivar_extremos_rebar_set(rebar, document):
+    """
+    En un ``Rebar`` con reparto (más de una posición), desactiva la primera y la última
+    barra del conjunto (``includeFirstBar`` / ``includeLastBar`` = False) manteniendo la
+    regla de layout, separación y longitud de conjunto actuales.
+
+    No aplica a conjunto de una sola posición, a regla *Single* ni si hay menos de 3 posiciones
+    (desactivar ambos extremos requiere al menos 3 posiciones iniciales).
+
+    :returns: ``True`` si se aplicó un cambio de layout; ``False`` si no aplica o falló.
+    """
+    return ajustar_inclusion_extremos_rebar_set_con_fallback(rebar, document, False, False)

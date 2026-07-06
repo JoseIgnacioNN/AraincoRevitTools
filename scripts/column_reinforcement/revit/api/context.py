@@ -2,6 +2,47 @@
 """Contexto Revit aislado de la capa de aplicación."""
 
 
+def is_section_or_elevation_view(view):
+    """True si la vista es sección o alzado (no planta, 3D, drafting, etc.)."""
+    if view is None:
+        return False
+    try:
+        if view.IsTemplate:
+            return False
+    except Exception:
+        pass
+    try:
+        from Autodesk.Revit.DB import ViewDrafting, ViewSection, ViewType
+
+        try:
+            if isinstance(view, ViewDrafting):
+                return False
+        except Exception:
+            pass
+        try:
+            if isinstance(view, ViewSection):
+                return True
+        except Exception:
+            pass
+        try:
+            vt = view.ViewType
+            return vt == ViewType.Section or vt == ViewType.Elevation
+        except Exception:
+            return False
+    except Exception:
+        return False
+
+
+def is_section_or_elevation_uiapp(uiapp):
+    try:
+        uidoc = uiapp.ActiveUIDocument
+        if uidoc is None:
+            return False
+        return is_section_or_elevation_view(uidoc.ActiveView)
+    except Exception:
+        return False
+
+
 class RevitExecutionContext(object):
     """Agrupa objetos host sin que las capas puras importen Revit API."""
 

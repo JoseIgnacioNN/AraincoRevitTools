@@ -3,6 +3,8 @@
 
 La lógica concreta permanece en el motor legado durante la fase 1; este archivo
 marca el contrato para mover filtros y `PickObjects` sin contaminar servicios.
+
+Stubs / preparación: sin referencias runtime actuales. Ver ``DEPENDENCIES.md``.
 """
 
 

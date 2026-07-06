@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Adapter de escritura de Structural Rebar."""
+"""Adapter de escritura de Structural Rebar.
+
+Stubs / preparación: sin referencias runtime actuales. Ver ``DEPENDENCIES.md``.
+"""
 
 
 class RebarWriter(object):

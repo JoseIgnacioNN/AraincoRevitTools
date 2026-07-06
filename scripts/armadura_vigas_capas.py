@@ -701,6 +701,38 @@ def _beam_frame(curve):
     return axis, width_dir, depth_dir, p0, p1, ln
 
 
+def _beam_width_dir_from_host(host, curve):
+    """
+    Ancho ⟂ eje alineado con la cara superior del sólido (vigas rotadas en planta).
+    Mismo criterio que ``colocar_estribos._beam_layout_axes`` / ``colocar_rebar._layout_v_dir``.
+    """
+    if host is None or curve is None:
+        return None
+    try:
+        p0 = curve.GetEndPoint(0)
+        p1 = curve.GetEndPoint(1)
+        axis = (p1 - p0).Normalize()
+    except Exception:
+        return None
+    if axis is None or axis.GetLength() < 1e-9:
+        return None
+    try:
+        from geometria_viga_cara_superior_detalle import obtener_cara_superior_framing
+
+        sup = obtener_cara_superior_framing(host)
+        if sup is not None:
+            n_sup = sup.FaceNormal.Normalize()
+            w = n_sup.CrossProduct(axis)
+            if w.GetLength() > 1e-9:
+                return w.Normalize()
+    except Exception:
+        pass
+    frame = _beam_frame(curve)
+    if frame:
+        return frame[1]
+    return None
+
+
 def _beam_curve_length_ft(elem):
     try:
         c = elem.Location.Curve
@@ -995,6 +1027,43 @@ def _collect_solids_from_host_element(elem):
     return out
 
 
+def _host_solid_tessellation_points(elems):
+    """
+    Vértices de mallas de sólidos del host (contorno real del hormigón).
+    Las 8 esquinas del AABB inflan el ancho proyectado en vigas no alineadas a X/Y.
+    """
+    pts = []
+    for e in elems or []:
+        for solid in _collect_solids_from_host_element(e):
+            try:
+                faces = solid.Faces
+            except Exception:
+                continue
+            for fi in range(faces.Size):
+                try:
+                    mesh = faces.get_Item(fi).Triangulate()
+                except Exception:
+                    continue
+                if mesh is None:
+                    continue
+                for ti in range(mesh.NumTriangles):
+                    try:
+                        tri = mesh.get_Triangle(ti)
+                        for vi in range(3):
+                            pts.append(tri.get_Vertex(vi))
+                    except Exception:
+                        continue
+    return pts
+
+
+def _profile_points_for_lateral_span(elems):
+    """Puntos de sección para proyecciones en ancho/canto; AABB solo si no hay sólido."""
+    pts = _host_solid_tessellation_points(elems)
+    if pts:
+        return pts
+    return _union_bbox_corners_from_elems(elems)
+
+
 def _merge_axis_intervals(intervals):
     """Une intervalos [a,b] en R (pies a lo largo del parámetro de curva)."""
     if not intervals:
@@ -1123,8 +1192,79 @@ def _axis_bbox_t_span_clamped(p0, p1, host, margin):
     return (t_u0, t_u1)
 
 
+def _axis_bbox_t_span_clamped_profile(p0, p1, profile_elems, margin):
+    """Unión de proyecciones bbox de varias vigas colineales sobre p0→p1."""
+    raw = p1 - p0
+    ln = float(raw.GetLength())
+    if ln < 1e-9:
+        return None
+    m = float(margin)
+    t_u0 = None
+    t_u1 = None
+    for el in profile_elems or []:
+        if el is None:
+            continue
+        span = _axis_bbox_t_span_clamped(p0, p1, el, margin)
+        if span is None:
+            continue
+        a, b = span
+        t_u0 = a if t_u0 is None else min(t_u0, a)
+        t_u1 = b if t_u1 is None else max(t_u1, b)
+    if t_u0 is None or t_u1 is None or t_u1 <= t_u0 + 1e-6:
+        return (m, ln - m)
+    return (max(t_u0, m), min(t_u1, ln - m))
+
+
+def _axis_solid_span_params_profile(p0, p1, lateral_offset, profile_elems):
+    """
+    Tramo dentro del hormigón a lo largo del eje; con varias vigas colineales usa el
+    envolvente de todos los intervalos (cadena fusionada), no solo el tramo del host.
+    """
+    elems = [e for e in (profile_elems or []) if e is not None]
+    if not elems:
+        return None
+    try:
+        off = lateral_offset if lateral_offset is not None else XYZ(0, 0, 0)
+        a = p0 + off
+        b = p1 + off
+        ln_seg = Line.CreateBound(a, b)
+        clen = float(ln_seg.Length)
+    except Exception:
+        return None
+    if clen < 1e-9:
+        return None
+
+    solids = []
+    for el in elems:
+        solids.extend(_collect_solids_from_host_element(el))
+    if not solids:
+        return None
+
+    acc = []
+    for solid in solids:
+        acc.extend(_solid_line_inside_param_intervals(ln_seg, solid))
+    merged = _merge_axis_intervals(acc)
+    if not merged:
+        return None
+
+    if len(elems) == 1:
+        mid = 0.5 * clen
+        span = _best_merged_span_for_midpoint(merged, clen, mid)
+        if span is None:
+            return None
+        s0, s1 = span
+    else:
+        s0 = float(merged[0][0])
+        s1 = float(merged[-1][1])
+
+    if s1 <= s0 + 1e-9:
+        return None
+    return (max(0.0, s0), min(clen, s1))
+
+
 def _axis_cover_trim_endpoints(
-    p0, p1, host, cov_ft, bar_diam_ft=0.0, lateral_offset_xyz=None
+    p0, p1, host, cov_ft, bar_diam_ft=0.0, lateral_offset_xyz=None,
+    solid_profile_elems=None,
 ):
     """
     Eje de barra recortado al hormigón del host: proyección del bbox sobre p0→p1,
@@ -1144,12 +1284,25 @@ def _axis_cover_trim_endpoints(
     ax = raw.Normalize()
     margin = float(cov_ft) + 0.5 * max(float(bar_diam_ft), 1e-6)
 
-    bb_span = _axis_bbox_t_span_clamped(p0, p1, host, margin)
+    profile = list(solid_profile_elems or [])
+    if not profile and host is not None:
+        profile = [host]
+    multi_profile = len(profile) > 1
+
+    if multi_profile:
+        bb_span = _axis_bbox_t_span_clamped_profile(p0, p1, profile, margin)
+    else:
+        bb_span = _axis_bbox_t_span_clamped(p0, p1, host, margin)
 
     sol_span = None
-    if lateral_offset_xyz is not None:
-        solids = _collect_solids_from_host_element(host)
-        sol_span = _axis_solid_span_params(p0, p1, lateral_offset_xyz, solids)
+    if lateral_offset_xyz is not None and profile:
+        if multi_profile:
+            sol_span = _axis_solid_span_params_profile(
+                p0, p1, lateral_offset_xyz, profile
+            )
+        else:
+            solids = _collect_solids_from_host_element(host)
+            sol_span = _axis_solid_span_params(p0, p1, lateral_offset_xyz, solids)
         if sol_span:
             s0, s1 = sol_span
             s0 = max(s0, margin)
@@ -1185,6 +1338,49 @@ def _rebar_shapes_simple_line_only(shapes):
     if not shapes:
         return []
     return [s for s in shapes if getattr(s, "SimpleLine", False)]
+
+
+def _rebar_centerline_extrema_along_n(rebar, n_section, bar_index=0):
+    """Proyección min/max de la línea central del rebar sobre ``n_section``."""
+    if rebar is None or n_section is None:
+        return None
+    try:
+        n = n_section.Normalize()
+    except Exception:
+        return None
+    crvs = None
+    try:
+        from Autodesk.Revit.DB.Structure import MultiplanarOption
+
+        mpo = MultiplanarOption.IncludeOnlyPlanarBar
+        crvs = list(rebar.GetCenterlineCurves(False, False, False, mpo, int(bar_index)))
+    except Exception:
+        crvs = None
+    if not crvs:
+        try:
+            crvs = list(rebar.GetCenterlineCurves(False, False, False))
+        except Exception:
+            return None
+    rmin = rmax = None
+    for crv in crvs or []:
+        pts = []
+        try:
+            pts = list(crv.Tessellate())
+        except Exception:
+            try:
+                pts = [crv.GetEndPoint(0), crv.GetEndPoint(1)]
+            except Exception:
+                continue
+        for pt in pts:
+            try:
+                s = float(pt.DotProduct(n))
+            except Exception:
+                continue
+            rmin = s if rmin is None else min(rmin, s)
+            rmax = s if rmax is None else max(rmax, s)
+    if rmin is None:
+        return None
+    return rmin, rmax
 
 
 def _hook_bbox_extrema_along_n(rebar, host, n_section, host_elems_union=None):
@@ -1223,6 +1419,21 @@ def _hook_bbox_extrema_along_n(rebar, host, n_section, host_elems_union=None):
     return (hmin, hmax, rmin, rmax)
 
 
+def _hook_rebar_extrema_along_n(rebar, host, n_section, host_elems_union=None):
+    """
+    Extremos del rebar sobre ``n_section``: preferir línea central (pata L real) y
+    respaldar con bbox si la centerline no está disponible.
+    """
+    d = _hook_bbox_extrema_along_n(rebar, host, n_section, host_elems_union)
+    if d is None:
+        return None
+    _hmin, _hmax, rmin_bb, rmax_bb = d
+    cl = _rebar_centerline_extrema_along_n(rebar, n_section, 0)
+    if cl is not None:
+        return float(cl[0]), float(cl[1])
+    return float(rmin_bb), float(rmax_bb)
+
+
 def _hook_stickout_penalty_ft(
     rebar, host, n_section, es_capa_inferior, host_elems_union=None
 ):
@@ -1234,7 +1445,11 @@ def _hook_stickout_penalty_ft(
     d = _hook_bbox_extrema_along_n(rebar, host, n_section, host_elems_union)
     if d is None:
         return 1e9
-    hmin, hmax, rmin, rmax = d
+    hmin, hmax, _rmin_bb, _rmax_bb = d
+    ext = _hook_rebar_extrema_along_n(rebar, host, n_section, host_elems_union)
+    if ext is None:
+        return 1e9
+    rmin, rmax = ext
     tol = 0.02  # ~6 mm; ignora rozamiento numérico
     if es_capa_inferior:
         return max(0.0, float(hmin) - float(rmin) - tol)
@@ -1255,12 +1470,17 @@ def _hook_orientation_rank_key(
     Clave para minimizar (mejor primero):
     - Inferior: menos salida por -n, luego rmin lo más alto posible (ganchos hacia el alma).
     - Superior: menos salida por +n, luego rmax lo más bajo posible (ganchos hacia abajo, no fuera del ala).
+    Usa ``GetCenterlineCurves`` para medir la pata L (el bbox solo suele empatar en 0).
     En empates finales se prefiere RL/LR frente a LL/RR.
     """
     d = _hook_bbox_extrema_along_n(rebar, host, n_section, host_elems_union)
     if d is None:
         return None
-    hmin, hmax, rmin, rmax = d
+    hmin, hmax, _rmin_bb, _rmax_bb = d
+    ext = _hook_rebar_extrema_along_n(rebar, host, n_section, host_elems_union)
+    if ext is None:
+        return None
+    rmin, rmax = ext
     tol = 0.02
     pen_inf = max(0.0, float(hmin) - float(rmin) - tol)
     pen_sup = max(0.0, float(rmax) - float(hmax) - tol)
@@ -1271,21 +1491,32 @@ def _hook_orientation_rank_key(
 
 
 def _optimize_hook_orientations(
-    rebar, host, n_section, es_capa_inferior, host_elems_union=None
+    rebar,
+    host,
+    n_section,
+    es_capa_inferior,
+    host_elems_union=None,
+    document=None,
+    gancho_en_inicio=True,
+    gancho_en_fin=True,
 ):
     """
-    Tras crear el rebar set, ajusta Left/Right en ambos extremos para meter los ganchos en el host.
+    Tras crear el rebar set, ajusta Left/Right en extremos con gancho para meter las patas L en el host.
     El primer intento de CreateFromCurvesAndShape puede dejar ganchos hacia afuera; esto no cambia el layout.
 
     Nota API Revit: SetHookOrientation vive en Rebar, no en RebarShapeDrivenAccessor (si se llama al
     accessor, falla en silencio dentro del try/except y los ganchos no se corrigen).
 
-    Con solo la penalización de salida del bbox, la capa superior suele empatar en 0 entre varias
-    orientaciones y quedaba la primera del bucle (a menudo mala). Se añade rmax/rmin y preferencia RL/LR.
+    Prueba las 4 combinaciones Left/Right midiendo salida con ``GetCenterlineCurves`` (no solo bbox).
+
+    ``document``: si se pasa, se llama a ``Regenerate`` tras cada orientación de prueba para que la
+    centerline refleje la geometría real del gancho (sin esto todas las variantes suelen empatar).
     """
     if rebar is None or n_section is None:
         return
     if host is None and not host_elems_union:
+        return
+    if not gancho_en_inicio and not gancho_en_fin:
         return
     opts = (
         (RebarHookOrientation.Left, RebarHookOrientation.Left),
@@ -1294,13 +1525,27 @@ def _optimize_hook_orientations(
         (RebarHookOrientation.Right, RebarHookOrientation.Right),
     )
 
+    def _regen():
+        if document is None:
+            return
+        try:
+            document.Regenerate()
+        except Exception:
+            pass
+
+    def _apply_pair(o0, o1):
+        if gancho_en_inicio:
+            rebar.SetHookOrientation(0, o0)
+        if gancho_en_fin:
+            rebar.SetHookOrientation(1, o1)
+
     best_key = None
     best_pair = None
     for o0, o1 in opts:
         pair = (o0, o1)
         try:
-            rebar.SetHookOrientation(0, o0)
-            rebar.SetHookOrientation(1, o1)
+            _apply_pair(o0, o1)
+            _regen()
             key = _hook_orientation_rank_key(
                 rebar, host, n_section, es_capa_inferior, pair, host_elems_union
             )
@@ -1313,8 +1558,8 @@ def _optimize_hook_orientations(
             best_pair = pair
     if best_pair is not None:
         try:
-            rebar.SetHookOrientation(0, best_pair[0])
-            rebar.SetHookOrientation(1, best_pair[1])
+            _apply_pair(best_pair[0], best_pair[1])
+            _regen()
         except Exception:
             pass
 
@@ -1350,6 +1595,16 @@ def _width_half_span_ft(width_ft, cover_ft, bar_diam_ft):
     if half <= 0:
         half = max(0.02 * float(width_ft), 1e-4)
     return half
+
+
+def _resolve_lateral_w_scalar(w_s, w_face_sign, w_ft, cov_ft, bar_diam_ft):
+    """Escalar en w_lay hacia la cara lateral; fallback y tope por ancho de tipo."""
+    half_w = _width_half_span_ft(w_ft, cov_ft, bar_diam_ft)
+    if w_s is None:
+        return float(w_face_sign) * half_w
+    if half_w > 1e-9 and abs(w_s) > half_w + 1e-6:
+        return float(w_face_sign) * half_w
+    return w_s
 
 
 def _depth_half_span_ft(depth_ft, cover_ft, bar_diam_ft):
@@ -1434,7 +1689,7 @@ def _depth_span_along_n_from_bbox(
 def _lateral_w_scalar_from_bbox(host_elems, curve_mid, w_lay, w_face_sign, cov_ft, bar_diam_ft):
     """
     Proyección escalar en w_lay (desde curve_mid) del eje de barra en la cara lateral interior.
-    Evita usar ±half_w respecto al eje analítico cuando éste no coincide con el centro de alma.
+    Usa teselas del sólido (no esquinas AABB) para vigas rotadas en planta.
     """
     if not host_elems or w_lay is None:
         return None
@@ -1444,7 +1699,7 @@ def _lateral_w_scalar_from_bbox(host_elems, curve_mid, w_lay, w_face_sign, cov_f
         return None
     if w_unit.GetLength() < 1e-9:
         return None
-    hc = _union_bbox_corners_from_elems(host_elems)
+    hc = _profile_points_for_lateral_span(host_elems)
     if not hc:
         return None
     projs = [float((c - curve_mid).DotProduct(w_unit)) for c in hc]
@@ -1709,7 +1964,12 @@ def _create_layer_rebar_set(
         return 0
 
     _optimize_hook_orientations(
-        r, host, n_section, es_capa_inferior, host_elems_for_hooks
+        r,
+        host,
+        n_section,
+        es_capa_inferior,
+        host_elems_for_hooks,
+        document=document,
     )
 
     return _rebar_quantity(r)
@@ -1770,6 +2030,146 @@ def _create_layer_rebar_set_try_hosts(
     return 0
 
 
+try:
+    from armado_vigas.revit.pata_l_sketch import aplicar_patas_l_polilinea
+except Exception:
+    aplicar_patas_l_polilinea = None
+
+try:
+    from geometria_empotramiento_extremos import MODO_GANCHO, _hook_mm_desde_diametro
+except Exception:
+    MODO_GANCHO = u"gancho"
+    _hook_mm_desde_diametro = None
+
+
+def _lateral_diam_mm_from_bar_type(bar_type):
+    try:
+        d_ft = float(bar_type.BarNominalDiameter)
+        if d_ft > 0:
+            return int(round(d_ft * 304.8))
+    except Exception:
+        pass
+    return 16
+
+
+def _default_lateral_extremo_meta(diam_mm):
+    hook_mm = 0.0
+    if _hook_mm_desde_diametro is not None:
+        try:
+            hook_mm = float(_hook_mm_desde_diametro(diam_mm))
+        except Exception:
+            hook_mm = 0.0
+    return {
+        u"modo": MODO_GANCHO,
+        u"pata_l": True,
+        u"hook_mm": hook_mm,
+    }
+
+
+def _lateral_gancho_en_extremo(meta):
+    """True si el extremo lleva pata L (criterio igual que longitudinales)."""
+    if not meta:
+        return False
+    if meta.get(u"modo") == MODO_GANCHO:
+        return True
+    if meta.get(u"pata_l"):
+        try:
+            return float(meta.get(u"hook_mm") or 0.0) > 0.1
+        except Exception:
+            return True
+    return False
+
+
+def _lateral_n_face_exterior(w_lay, w_face_sign):
+    try:
+        return w_lay.Multiply(float(w_face_sign)).Normalize()
+    except Exception:
+        return w_lay
+
+
+def _lateral_tiene_rebar_hook(rebar):
+    if rebar is None:
+        return False
+    inv = ElementId.InvalidElementId
+    for end_idx in (0, 1):
+        try:
+            hid = rebar.GetHookTypeId(int(end_idx))
+            if hid is not None and hid != inv:
+                try:
+                    if int(hid.IntegerValue) > 0:
+                        return True
+                except Exception:
+                    return True
+        except Exception:
+            continue
+    return False
+
+
+def _lateral_asegurar_sin_hooks(rebar, document=None):
+    if rebar is None:
+        return False
+    inv = ElementId.InvalidElementId
+    try:
+        rebar.SetHookTypeId(0, inv)
+        rebar.SetHookTypeId(1, inv)
+    except Exception:
+        return False
+    if document is not None:
+        try:
+            document.Regenerate()
+        except Exception:
+            pass
+    return not _lateral_tiene_rebar_hook(rebar)
+
+
+def _norm_list_lateral_layout(n_plane):
+    """Normal de reparto = canto (``n_plane``), no ancho de cara sup/inf."""
+    if n_plane is None:
+        return []
+    try:
+        n = n_plane.Normalize()
+        return [n, n.Negate()]
+    except Exception:
+        return [n_plane]
+
+
+def _crear_lateral_rebar_recto_sin_ganchos(
+    document, host, bar_type, line, n_face_ext, n_plane
+):
+    """
+    Barra lateral recta sin ``RebarHookType``.
+
+    El layout fijo se extiende a lo largo de ``n_plane`` (canto en sección), no de
+    ``n_face × tangente`` (criterio de longitudinales sup/inf).
+
+    Returns:
+        ``(rebar_o_None, metodo_usado)``
+    """
+    if document is None or host is None or bar_type is None or line is None:
+        return None, u"args_invalidos"
+    norm_list = _norm_list_lateral_layout(n_plane)
+    if norm_list:
+        try:
+            from armado_vigas.revit.colocar_rebar import _crear_rebar_recto
+
+            rb, err, _nv = _crear_rebar_recto(
+                document, host, bar_type, line, False, norm_list
+            )
+            if rb is not None:
+                return rb, u"crear_rebar_recto:n_plane"
+            if err:
+                return None, u"crear_rebar_recto:{0}".format(err[:80])
+        except Exception as ex:
+            try:
+                return None, u"crear_rebar_recto:ex:{0!s}".format(ex)[:80]
+            except Exception:
+                return None, u"crear_rebar_recto:ex"
+    rb2 = _rebar_straight_from_line(document, host, bar_type, n_plane, line)
+    if rb2 is not None:
+        return rb2, u"CreateFromCurves_sin_hook:n_plane"
+    return None, u"CreateFromCurves_sin_hook:fallback"
+
+
 def _create_lateral_rebar_set(
     document,
     host,
@@ -1792,11 +2192,15 @@ def _create_lateral_rebar_set(
     shapes=None,
     hook_type=None,
     lateral_profile_elems=None,
+    collected_rebars=None,
+    lateral_clear_mm=None,
+    collision_ctx=None,
 ):
     """
     Una instancia Rebar por cara lateral; reparto en canto con SetLayoutAsFixedNumber (normal = n).
     Ancho/canto desde bbox de vigas solamente (no columnas vecinas en la unión).
-    Sin plan_shift. CreateFromCurves y fallback con forma del proyecto.
+    Sin plan_shift. Sin ``RebarHook``: recta con ``crear_rebar_desde_curva_linea_con_ganchos``
+    (ganchos desactivados) y pata L como polilínea (``aplicar_patas_l_polilinea``).
     """
     if n_bars < 1:
         return 0
@@ -1819,14 +2223,18 @@ def _create_lateral_rebar_set(
     if not prof:
         prof = [host] if host else []
 
-    _lat_clear_ft = _mm_to_ft(_LATERAL_CLEAR_FROM_FLEXURAL_MM)
+    _lat_clear_mm_val = (
+        float(lateral_clear_mm)
+        if lateral_clear_mm is not None
+        else _LATERAL_CLEAR_FROM_FLEXURAL_MM
+    )
+    _lat_clear_ft = _mm_to_ft(_lat_clear_mm_val)
     curve_mid_axis = p0 + axis * (0.5 * float((p1 - p0).DotProduct(axis)))
     bbox_w_pre = prof
     w_s_pre = _lateral_w_scalar_from_bbox(
         bbox_w_pre, curve_mid_axis, w_lay, w_face_sign, cov_ft, d_bar
     )
-    if w_s_pre is None:
-        w_s_pre = float(w_face_sign) * _width_half_span_ft(w_ft, cov_ft, d_bar)
+    w_s_pre = _resolve_lateral_w_scalar(w_s_pre, w_face_sign, w_ft, cov_ft, d_bar)
     depth_pre = None
     if prof:
         depth_pre = _depth_span_along_n_from_bbox(
@@ -1849,17 +2257,46 @@ def _create_lateral_rebar_set(
             _lat_clear_ft,
         )
     n_mid_pre = depth_pre[0] if depth_pre else 0.0
-    lateral_off_trim = w_lay * w_s_pre + n_plane * n_mid_pre
 
-    pa, pb = _axis_cover_trim_endpoints(
-        p0, p1, host, cov_ft, d_bar, lateral_off_trim
-    )
-    if pa is not None and pb is not None:
-        p_axis0, p_axis1 = pa, pb
+    meta_i = meta_f = None
+    if collision_ctx and collision_ctx.get(u"axis_line_prepared"):
+        axis_ln = collision_ctx.get(u"axis_line")
+        meta_i = collision_ctx.get(u"meta_inicio")
+        meta_f = collision_ctx.get(u"meta_fin")
+        if axis_ln is None:
+            return 0
+        try:
+            p_axis0 = axis_ln.GetEndPoint(0)
+            p_axis1 = axis_ln.GetEndPoint(1)
+        except Exception:
+            return 0
     else:
-        m_end = cov_ft + 0.5 * max(d_bar, 1e-6)
-        p_axis0 = p0 + axis * max(a0, m_end)
-        p_axis1 = p1 - axis * max(a1, m_end)
+        pa, pb = _axis_cover_trim_endpoints(
+            p0, p1, host, cov_ft, d_bar, None, solid_profile_elems=prof
+        )
+        if pa is not None and pb is not None:
+            p_axis0, p_axis1 = pa, pb
+        else:
+            m_end = cov_ft + 0.5 * max(d_bar, 1e-6)
+            p_axis0 = p0 + axis * max(a0, m_end)
+            p_axis1 = p1 - axis * max(a1, m_end)
+        if collision_ctx:
+            try:
+                from armado_vigas.revit.laterales_colision import (
+                    apply_lateral_collision_rules,
+                )
+
+                ln_axis, meta_i, meta_f = apply_lateral_collision_rules(
+                    document,
+                    Line.CreateBound(p_axis0, p_axis1),
+                    collision_ctx,
+                )
+                if ln_axis is None:
+                    return 0
+                p_axis0 = ln_axis.GetEndPoint(0)
+                p_axis1 = ln_axis.GetEndPoint(1)
+            except Exception:
+                meta_i = meta_f = None
 
     curve_mid = p_axis0 + (p_axis1 - p_axis0) * 0.5
     depth_res = None
@@ -1895,8 +2332,7 @@ def _create_lateral_rebar_set(
     w_s = _lateral_w_scalar_from_bbox(
         bbox_w, curve_mid, w_lay, w_face_sign, cov_ft, d_bar
     )
-    if w_s is None:
-        w_s = float(w_face_sign) * _width_half_span_ft(w_ft, cov_ft, d_bar)
+    w_s = _resolve_lateral_w_scalar(w_s, w_face_sign, w_ft, cov_ft, d_bar)
 
     # plan_shift (centro bbox en ancho) empuja la línea fuera de la cara lateral; no usar aquí.
     _lat_shift = XYZ(0, 0, 0)
@@ -1912,38 +2348,25 @@ def _create_lateral_rebar_set(
     q0 = p_axis0 + w_lay * w_s + n_plane * n_off + _lat_shift
     q1 = p_axis1 + w_lay * w_s + n_plane * n_off + _lat_shift
     try:
-        ln = Line.CreateBound(q1, q0)
+        ln = Line.CreateBound(q0, q1)
     except Exception:
         return 0
 
-    shapes_lat = _rebar_shapes_simple_line_only(shapes)
-    if not shapes_lat:
-        shapes_lat = shapes
+    diam_mm = _lateral_diam_mm_from_bar_type(bar_type)
+    n_face_ext = _lateral_n_face_exterior(w_lay, w_face_sign)
 
-    r = _rebar_straight_from_line(document, host, bar_type, n_plane, ln)
-    if not r:
-        r = _rebar_straight_with_shape_fallback(
-            document, host, bar_type, n_plane, ln, shapes_lat, hook_type
-        )
+    r, _metodo_recto = _crear_lateral_rebar_recto_sin_ganchos(
+        document, host, bar_type, ln, n_face_ext, n_plane
+    )
     if not r:
         return 0
 
-    if n_bars > 1:
-        acc0 = None
+    if not _lateral_asegurar_sin_hooks(r, document):
         try:
-            acc0 = r.GetShapeDrivenAccessor()
+            document.Delete(r.Id)
         except Exception:
             pass
-        if acc0 is None and shapes_lat and hook_type:
-            try:
-                document.Delete(r.Id)
-            except Exception:
-                pass
-            r = _rebar_straight_with_shape_fallback(
-                document, host, bar_type, n_plane, ln, shapes_lat, hook_type
-            )
-            if not r:
-                return 0
+        return 0
 
     if not _apply_fixed_number_layout(r, n_bars, array_len):
         try:
@@ -1952,13 +2375,217 @@ def _create_lateral_rebar_set(
             pass
         return 0
 
-    try:
-        wh = w_lay.Multiply(float(w_face_sign))
-    except Exception:
-        wh = w_lay * float(w_face_sign)
-    _optimize_hook_orientations(r, host, wh, False, prof)
+    gi = _lateral_gancho_en_extremo(meta_i)
+    gf = _lateral_gancho_en_extremo(meta_f)
+    meta_i_use = meta_i if meta_i is not None else (
+        _default_lateral_extremo_meta(diam_mm) if gi else None
+    )
+    meta_f_use = meta_f if meta_f is not None else (
+        _default_lateral_extremo_meta(diam_mm) if gf else None
+    )
+    if gi or gf:
+        fn_pata = aplicar_patas_l_polilinea
+        fn_dir_lat = None
+        if fn_pata is None:
+            try:
+                from armado_vigas.revit.pata_l_sketch import (
+                    _dir_pata_l_lateral_alma,
+                    aplicar_patas_l_polilinea as fn_pata,
+                )
+                fn_dir_lat = _dir_pata_l_lateral_alma
+            except Exception:
+                fn_pata = None
+        else:
+            try:
+                from armado_vigas.revit.pata_l_sketch import _dir_pata_l_lateral_alma
+
+                fn_dir_lat = _dir_pata_l_lateral_alma
+            except Exception:
+                fn_dir_lat = None
+
+        if fn_pata is not None:
+
+            def _leg_dir_lateral(tangent):
+                if fn_dir_lat is not None:
+                    return fn_dir_lat(tangent, w_lay, w_face_sign, n_plane)
+                return None
+
+            def _relayout_lateral(rb_new):
+                if n_bars <= 1:
+                    return True
+                return _apply_fixed_number_layout(rb_new, n_bars, array_len)
+
+            r2, err_pata = fn_pata(
+                document,
+                r,
+                host,
+                n_face_ext,
+                gi,
+                gf,
+                meta_inicio=meta_i_use,
+                meta_fin=meta_f_use,
+                diam_mm=diam_mm,
+                leg_dir_fn=_leg_dir_lateral,
+                layout_fallback=_relayout_lateral if n_bars > 1 else None,
+                norm_candidatos=_norm_list_lateral_layout(n_plane),
+            )
+            if not err_pata:
+                r = r2
+                _lateral_asegurar_sin_hooks(r, document)
+
+    if _lateral_tiene_rebar_hook(r):
+        try:
+            document.Delete(r.Id)
+        except Exception:
+            pass
+        return 0
+
+    if collected_rebars is not None:
+        try:
+            collected_rebars.append(r)
+        except Exception:
+            pass
 
     return _rebar_quantity(r)
+
+
+def _lateral_probe_line_for_host_order(
+    document,
+    hosts_try,
+    p0,
+    p1,
+    axis,
+    axis_off,
+    w_lay,
+    n_plane,
+    w_face_sign,
+    bar_type,
+    w_ft,
+    d_ft,
+    cov_ft,
+    lateral_profile_elems,
+    host_elems_for_hooks,
+    axis_off_p0=None,
+    axis_off_p1=None,
+    lateral_clear_mm=None,
+    collision_ctx=None,
+):
+    """Línea guía en cara lateral (sin crear Rebar) para ordenar hosts por colisión."""
+    host = None
+    for h in hosts_try or []:
+        if h is not None:
+            host = h
+            break
+    if host is None:
+        return None
+
+    a0 = float(axis_off) if axis_off_p0 is None else float(axis_off_p0)
+    a1 = float(axis_off) if axis_off_p1 is None else float(axis_off_p1)
+    try:
+        d_bar = float(bar_type.BarNominalDiameter)
+        if d_bar <= 0:
+            d_bar = float(getattr(bar_type, "BarModelDiameter", 0) or 0)
+        if d_bar <= 0:
+            d_bar = 0.04
+    except Exception:
+        d_bar = 0.04
+
+    prof = (
+        _dedupe_elements_by_id(lateral_profile_elems)
+        if lateral_profile_elems is not None
+        else _beam_elems_for_lateral_bbox(host_elems_for_hooks, host)
+    )
+    if not prof:
+        prof = [host]
+
+    _lat_clear_mm_val = (
+        float(lateral_clear_mm)
+        if lateral_clear_mm is not None
+        else _LATERAL_CLEAR_FROM_FLEXURAL_MM
+    )
+    _lat_clear_ft = _mm_to_ft(_lat_clear_mm_val)
+    curve_mid_axis = p0 + axis * (0.5 * float((p1 - p0).DotProduct(axis)))
+    w_s_pre = _lateral_w_scalar_from_bbox(
+        prof, curve_mid_axis, w_lay, w_face_sign, cov_ft, d_bar
+    )
+    w_s_pre = _resolve_lateral_w_scalar(w_s_pre, w_face_sign, w_ft, cov_ft, d_bar)
+    depth_pre = _depth_span_along_n_from_bbox(
+        prof,
+        curve_mid_axis + w_lay * w_s_pre,
+        n_plane,
+        cov_ft,
+        d_bar,
+        _lat_clear_ft,
+        _lat_clear_ft,
+    )
+    if depth_pre is None:
+        depth_pre = _depth_span_along_n_from_bbox(
+            [host],
+            curve_mid_axis + w_lay * w_s_pre,
+            n_plane,
+            cov_ft,
+            d_bar,
+            _lat_clear_ft,
+            _lat_clear_ft,
+        )
+    n_mid_pre = depth_pre[0] if depth_pre else 0.0
+
+    if collision_ctx and collision_ctx.get(u"axis_line_prepared"):
+        axis_ln = collision_ctx.get(u"axis_line")
+        if axis_ln is None:
+            return None
+        try:
+            p_axis0 = axis_ln.GetEndPoint(0)
+            p_axis1 = axis_ln.GetEndPoint(1)
+        except Exception:
+            return None
+    else:
+        pa, pb = _axis_cover_trim_endpoints(
+            p0, p1, host, cov_ft, d_bar, None, solid_profile_elems=prof
+        )
+        if pa is not None and pb is not None:
+            p_axis0, p_axis1 = pa, pb
+        else:
+            m_end = cov_ft + 0.5 * max(d_bar, 1e-6)
+            p_axis0 = p0 + axis * max(a0, m_end)
+            p_axis1 = p1 - axis * max(a1, m_end)
+
+    curve_mid = p_axis0 + (p_axis1 - p_axis0) * 0.5
+    depth_res = _depth_span_along_n_from_bbox(
+        prof,
+        curve_mid,
+        n_plane,
+        cov_ft,
+        d_bar,
+        _lat_clear_ft,
+        _lat_clear_ft,
+    )
+    if depth_res is None:
+        depth_res = _depth_span_along_n_from_bbox(
+            [host],
+            curve_mid,
+            n_plane,
+            cov_ft,
+            d_bar,
+            _lat_clear_ft,
+            _lat_clear_ft,
+        )
+    if depth_res is None:
+        n_strip_mid = 0.0
+    else:
+        n_strip_mid, _usable_half = depth_res
+
+    w_s = _lateral_w_scalar_from_bbox(
+        prof, curve_mid, w_lay, w_face_sign, cov_ft, d_bar
+    )
+    w_s = _resolve_lateral_w_scalar(w_s, w_face_sign, w_ft, cov_ft, d_bar)
+    n_off = n_strip_mid
+    q0 = p_axis0 + w_lay * w_s + n_plane * n_off
+    q1 = p_axis1 + w_lay * w_s + n_plane * n_off
+    try:
+        return Line.CreateBound(q0, q1)
+    except Exception:
+        return None
 
 
 def _create_lateral_rebar_set_try_hosts(
@@ -1983,8 +2610,46 @@ def _create_lateral_rebar_set_try_hosts(
     shapes=None,
     hook_type=None,
     lateral_profile_elems=None,
+    collected_rebars=None,
+    lateral_clear_mm=None,
+    collision_ctx=None,
 ):
-    for host in hosts_try:
+    hosts_ordered = list(hosts_try or [])
+    if collision_ctx:
+        try:
+            from armado_vigas.revit.laterales_colision import (
+                prioritize_lateral_hosts,
+            )
+
+            probe_ln = _lateral_probe_line_for_host_order(
+                document,
+                hosts_try,
+                p0,
+                p1,
+                axis,
+                axis_off,
+                w_lay,
+                n_plane,
+                w_face_sign,
+                bar_type,
+                w_ft,
+                d_ft,
+                cov_ft,
+                lateral_profile_elems,
+                host_elems_for_hooks,
+                axis_off_p0,
+                axis_off_p1,
+                lateral_clear_mm,
+                collision_ctx,
+            )
+            if probe_ln is not None:
+                hosts_ordered = prioritize_lateral_hosts(
+                    document, hosts_ordered, probe_ln, collision_ctx
+                )
+        except Exception:
+            pass
+
+    for host in hosts_ordered:
         if host is None:
             continue
         n = _create_lateral_rebar_set(
@@ -2009,6 +2674,9 @@ def _create_lateral_rebar_set_try_hosts(
             shapes,
             hook_type,
             lateral_profile_elems,
+            collected_rebars,
+            lateral_clear_mm,
+            collision_ctx,
         )
         if n > 0:
             return n
@@ -2346,10 +3014,13 @@ def _place_lateral_on_beam(
     n_lat,
     shapes=None,
     hook_type=None,
+    collected_rebars=None,
+    lateral_clear_mm=None,
+    collision_ctx=None,
 ):
     """
     Barras laterales en ambas caras del alma (±w); reparto en altura.
-    Eje solo en la viga; posición en ancho/canto desde bbox; fallback con forma del proyecto.
+    Eje solo en la viga; posición en ancho/canto desde bbox; patas L polilínea en extremos.
     """
     if n_lat < 1 or bar_type_lat is None:
         return 0, None
@@ -2382,6 +3053,9 @@ def _place_lateral_on_beam(
     if not frame2:
         return 0, u"Viga casi vertical o curva inválida."
     axis, width_dir, _, p0, p1, beam_len = frame2
+    w_face = _beam_width_dir_from_host(elem, line_adj)
+    if w_face is not None:
+        width_dir = w_face
     if beam_len <= 2.0 * cov + 1e-4:
         return 0, u"Viga demasiado corta para el recubrimiento."
     axis_off = cov
@@ -2397,6 +3071,33 @@ def _place_lateral_on_beam(
     hosts_try = _dedupe_elements_by_id(neigh + [elem])
     lateral_plan = XYZ(0, 0, 0)
     lateral_prof = _dedupe_elements_by_id([elem])
+
+    if collision_ctx:
+        try:
+            from armado_vigas.revit.laterales_colision import (
+                prepare_lateral_axis_collision,
+            )
+
+            try:
+                d_probe = float(bar_type_lat.BarNominalDiameter)
+            except Exception:
+                d_probe = 0.04
+            prepare_lateral_axis_collision(
+                document,
+                p0,
+                p1,
+                t_axis,
+                collision_ctx,
+                elem,
+                cov,
+                d_probe,
+                lateral_prof,
+                axis_off,
+                axis_off_p0,
+                axis_off_p1,
+            )
+        except Exception:
+            pass
 
     creados = 0
     errs = []
@@ -2423,6 +3124,9 @@ def _place_lateral_on_beam(
             shapes,
             hook_type,
             lateral_prof,
+            collected_rebars,
+            lateral_clear_mm,
+            collision_ctx,
         )
         if n > 0:
             creados += n
@@ -2444,6 +3148,9 @@ def _place_lateral_on_beam_aligned_chain(
     n_lat,
     shapes=None,
     hook_type=None,
+    collected_rebars=None,
+    lateral_clear_mm=None,
+    collision_ctx=None,
 ):
     """
     Vigas colineales: misma geometría que capas sup/inf (_place_layers_on_beam_aligned_chain):
@@ -2463,6 +3170,9 @@ def _place_lateral_on_beam_aligned_chain(
             n_lat,
             shapes,
             hook_type,
+            collected_rebars,
+            lateral_clear_mm,
+            collision_ctx,
         )
 
     bd = [_beam_placement_data(document, e) for e in chain_elems]
@@ -2514,6 +3224,9 @@ def _place_lateral_on_beam_aligned_chain(
         return 0, u"Cadena: eje casi vertical."
 
     axis_m, width_dir_m, depth_dir_m, p0m, p1m, beam_len = frame_merged
+    w_face = _beam_width_dir_from_host(chain_elems[0], line_merged)
+    if w_face is not None:
+        width_dir_m = w_face
     axis_off = cov
     if beam_len <= 2.0 * cov + 1e-4:
         return 0, u"Cadena demasiado corta para el recubrimiento."
@@ -2544,6 +3257,33 @@ def _place_lateral_on_beam_aligned_chain(
         neigh + sorted(chain_elems, key=_beam_curve_length_ft, reverse=True)
     )
 
+    if collision_ctx:
+        try:
+            from armado_vigas.revit.laterales_colision import (
+                prepare_lateral_axis_collision,
+            )
+
+            try:
+                d_probe = float(bar_type_lat.BarNominalDiameter)
+            except Exception:
+                d_probe = 0.04
+            prepare_lateral_axis_collision(
+                document,
+                p0m,
+                p1m,
+                t_axis,
+                collision_ctx,
+                chain_elems[0],
+                cov,
+                d_probe,
+                lateral_prof,
+                axis_off,
+                axis_off_p0,
+                axis_off_p1,
+            )
+        except Exception:
+            pass
+
     errs = []
     creados = 0
     for sgn in (1.0, -1.0):
@@ -2569,6 +3309,9 @@ def _place_lateral_on_beam_aligned_chain(
             shapes,
             hook_type,
             lateral_prof,
+            collected_rebars,
+            lateral_clear_mm,
+            collision_ctx,
         )
         if n > 0:
             creados += n
@@ -2585,7 +3328,15 @@ def _place_lateral_on_beam_aligned_chain(
     fer = []
     for e in chain_elems:
         ne, el = _place_lateral_on_beam(
-            document, e, bar_type_lat, n_lat, shapes, hook_type
+            document,
+            e,
+            bar_type_lat,
+            n_lat,
+            shapes,
+            hook_type,
+            collected_rebars,
+            lateral_clear_mm,
+            collision_ctx,
         )
         sub += ne
         if ne == 0 and el:

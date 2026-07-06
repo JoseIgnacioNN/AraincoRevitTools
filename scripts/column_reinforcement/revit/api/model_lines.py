@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Adapter de escritura de líneas modelo."""
+"""Adapter de escritura de líneas modelo.
+
+Stubs / preparación: sin referencias runtime actuales. Ver ``DEPENDENCIES.md``.
+"""
 
 
 class ModelLineWriter(object):

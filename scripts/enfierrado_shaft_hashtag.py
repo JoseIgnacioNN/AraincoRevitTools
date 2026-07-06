@@ -207,6 +207,11 @@ SHAFT_REBAR_HOOK_ORIENT_ALWAYS_LEFT = False
 # Tras crear barras: rotación de gancho 180° — Revit 2026 ``SetTerminationRotationAngle``; antes vía parámetro/API antigua.
 SHAFT_REBAR_HOOK_ROTATION_PARAM_DEGREES = 180.0
 
+# Parámetro de instancia Rebar (proyecto): ubicación / línea de fierro.
+ARMA_UBICACION_PARAM_NAME = u"Armadura_Ubicacion"
+# Valor para refuerzo en borde de losa (herramienta gancho + empotramiento).
+BORDE_LOSA_ARMA_UBICACION_VALUE = u"Fi"
+
 
 def _mm_to_ft(mm):
     return float(mm) / 304.8
@@ -4685,6 +4690,93 @@ def _apply_armadura_largo_total_to_rebars(doc, rebar_ids, avisos):
             n_ok += 1
 
 
+def _set_armadura_ubicacion_on_rebars(doc, rebar_ids, valor_texto, avisos=None):
+    """Escribe ``Armadura_Ubicacion`` en cada ``Rebar`` de ``rebar_ids`` (si el parámetro es editable)."""
+    if doc is None or not rebar_ids or valor_texto is None:
+        return
+    try:
+        txt = unicode(valor_texto)
+    except Exception:
+        return
+    n_ok = 0
+    n_missing = 0
+    for rid in rebar_ids:
+        try:
+            rb = doc.GetElement(rid)
+        except Exception:
+            rb = None
+        if not isinstance(rb, Rebar):
+            continue
+        try:
+            p = rb.LookupParameter(ARMA_UBICACION_PARAM_NAME)
+            if p is None or p.IsReadOnly:
+                n_missing += 1
+                continue
+            p.Set(txt)
+            n_ok += 1
+        except Exception:
+            n_missing += 1
+    if n_ok == 0 and n_missing > 0 and avisos is not None:
+        try:
+            avisos.append(
+                u"Armadura_Ubicacion: no se pudo asignar «{0}» (parámetro ausente o solo lectura).".format(
+                    txt
+                )
+            )
+        except Exception:
+            pass
+
+
+def _apply_rebar_unobscured_in_view(doc, rebar_ids, view, avisos=None):
+    """
+    «View Unobscured» (+ sólido en vista cuando la API lo permite) solo en las barras creadas,
+    en la vista donde se ejecutó la herramienta.
+    """
+    if doc is None or not rebar_ids or view is None:
+        return
+    try:
+        from Autodesk.Revit.DB import View
+
+        if not isinstance(view, View):
+            return
+    except Exception:
+        return
+    n_ok = 0
+    for rid in rebar_ids:
+        try:
+            rb = doc.GetElement(rid)
+        except Exception:
+            rb = None
+        if not isinstance(rb, Rebar):
+            continue
+        applied = False
+        try:
+            rb.SetUnobscuredInView(view, True)
+            applied = True
+        except Exception:
+            pass
+        try:
+            rb.SetSolidInView(view, True)
+        except Exception:
+            try:
+                fn = getattr(rb, "SetSolidInView", None)
+                if fn is not None:
+                    fn(view, True)
+            except Exception:
+                pass
+        if applied:
+            n_ok += 1
+    if n_ok == 0 and avisos is not None:
+        try:
+            avisos.append(
+                u"View Unobscured: no se aplicó en la vista «{0}».".format(
+                    getattr(view, "Name", None) or u"(vista)"
+                )
+            )
+        except Exception:
+            pass
+
+
 def _set_rebar_termination_hook_rotation_radians(rebar, end_idx, radians):
     """
     Rotación fuera de plano del gancho/cruceta en el extremo de la barra (unidades internas: radianes).
@@ -7585,6 +7677,8 @@ def crear_enfierrado_shaft_hashtag(
     normalize_parallel_segment_direction=True,
     apply_armadura_largo_total=False,
     hook_orientation_from_face_normal=False,
+    armadura_ubicacion_text=None,
+    apply_unobscured_in_view=None,
 ):
     """
     Por cada cara válida: todos los tramos inferiores válidos (perímetro exterior de la cara)
@@ -7631,6 +7725,12 @@ def crear_enfierrado_shaft_hashtag(
     apply_armadura_largo_total: si True, escribe ``Armadura_Largo Total`` como suma de los largos
     de tramo de forma (parámetros A, B, C… tipo longitud en la instancia), tras `Regenerate`,
     no como suma de curvas de eje.
+
+    armadura_ubicacion_text: si no es None, valor para ``Armadura_Ubicacion`` en todas las barras
+    creadas (``rebar_ids_all``), antes del Commit.
+
+    apply_unobscured_in_view: si no es None, ``SetUnobscuredInView`` (y sólido en vista si aplica)
+    en cada barra creada respecto a esa vista (p. ej. vista activa al colocar).
 
     hook_orientation_from_face_normal: si True (p. ej. herramienta «Borde losa gancho y
     empotramiento»), la referencia de creación es **-FaceNormal** en 3D (``n_bar_create``, sin normalizar); la
@@ -8687,6 +8787,22 @@ def crear_enfierrado_shaft_hashtag(
             except Exception:
                 pass
 
+        if armadura_ubicacion_text and rebar_ids_all:
+            try:
+                _set_armadura_ubicacion_on_rebars(
+                    doc, rebar_ids_all, armadura_ubicacion_text, avisos=avisos
+                )
+            except Exception:
+                pass
+
+        if apply_unobscured_in_view is not None and rebar_ids_all:
+            try:
+                _apply_rebar_unobscured_in_view(
+                    doc, rebar_ids_all, apply_unobscured_in_view, avisos=avisos
+                )
+            except Exception:
+                pass
+
         if t is not None:
             t.Commit()
     except Exception as ex:
@@ -8778,6 +8894,8 @@ def crear_enfierrado_bordes_losa_gancho_y_empotramiento(
         normalize_parallel_segment_direction=False,
         apply_armadura_largo_total=True,
         hook_orientation_from_face_normal=True,
+        armadura_ubicacion_text=BORDE_LOSA_ARMA_UBICACION_VALUE,
+        apply_unobscured_in_view=tag_view,
     )
 
 

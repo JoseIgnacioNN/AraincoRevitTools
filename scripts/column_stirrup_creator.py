@@ -30,6 +30,7 @@ from Autodesk.Revit.DB.Structure import (
     RebarBarType,
     RebarHookOrientation,
     RebarHookType,
+    RebarPresentationMode,
     RebarStyle,
 )
 
@@ -370,39 +371,60 @@ def _column_geom_anchor_and_sizes_ft(column, lx, ly, lz, ref_on_plane, band_half
 # Orientaciones de gancho
 # ---------------------------------------------------------------------------
 
-def _column_tie_hook_orientations(pt1, pt2, plane_normal, axis_point_xyz):
-    u"""Par de orientaciones de gancho para una traba recta, orientando hacia el interior."""
-    dvec = pt2.Subtract(pt1)
-    ln = dvec.GetLength()
+def _column_tie_hook_flip(orient):
+    if orient == RebarHookOrientation.Left:
+        return RebarHookOrientation.Right
+    return RebarHookOrientation.Left
+
+
+def _column_tie_hook_orient_inward(tangent, plane_normal, at_pt, interior_pt):
+    u"""``RebarHookOrientation`` para gancho 135° hacia ``interior_pt`` desde ``at_pt``."""
+    try:
+        ln = float(tangent.GetLength())
+    except Exception:
+        ln = 0.0
     if ln < 1e-12:
-        return RebarHookOrientation.Left, RebarHookOrientation.Left
-    t = dvec.Multiply(1.0 / ln)
-    pn_len = plane_normal.GetLength()
+        return RebarHookOrientation.Left
+    t = tangent.Multiply(1.0 / ln)
+    try:
+        pn_len = float(plane_normal.GetLength())
+    except Exception:
+        pn_len = 0.0
     if pn_len < 1e-12:
-        return RebarHookOrientation.Left, RebarHookOrientation.Left
+        return RebarHookOrientation.Left
     n = plane_normal.Multiply(1.0 / pn_len)
-    mid = pt1.Add(pt2.Subtract(pt1).Multiply(0.5))
-    to_axis = axis_point_xyz.Subtract(mid)
+    to_axis = interior_pt.Subtract(at_pt)
     h = float(to_axis.DotProduct(n))
     to_plane = to_axis.Subtract(n.Multiply(h))
     tpl = float(to_plane.GetLength())
     if tpl < 1e-12:
-        return RebarHookOrientation.Left, RebarHookOrientation.Left
+        return RebarHookOrientation.Left
     d_in = to_plane.Multiply(1.0 / tpl)
+    lat = n.CrossProduct(t)
+    l = float(lat.GetLength())
+    if l < 1e-12:
+        return RebarHookOrientation.Left
+    lat_u = lat.Multiply(1.0 / l)
+    return (
+        RebarHookOrientation.Right
+        if float(lat_u.DotProduct(d_in)) < 0.0
+        else RebarHookOrientation.Left
+    )
 
-    def _side(tang):
-        lat = n.CrossProduct(tang)
-        l = float(lat.GetLength())
-        if l < 1e-12:
-            return RebarHookOrientation.Left
-        lat_u = lat.Multiply(1.0 / l)
-        return (
-            RebarHookOrientation.Right
-            if float(lat_u.DotProduct(d_in)) < 0.0
-            else RebarHookOrientation.Left
-        )
 
-    return _side(t), _side(t.Negate())
+def _column_tie_hook_orientations(pt1, pt2, plane_normal, interior_pt):
+    u"""Par de orientaciones de gancho para una traba recta; ambos ganchos hacia el interior."""
+    t_fwd = pt2.Subtract(pt1)
+    t_back = pt1.Subtract(pt2)
+    o_start = _column_tie_hook_flip(
+        _column_tie_hook_orient_inward(
+            t_fwd.Negate(), plane_normal, pt1, interior_pt,
+        ),
+    )
+    o_end = _column_tie_hook_orient_inward(
+        t_back.Negate(), plane_normal, pt2, interior_pt,
+    )
+    return o_start, o_end
 
 
 # ---------------------------------------------------------------------------
@@ -698,6 +720,25 @@ def column_bar_geometry(col, stirrup_bar_type=None, cover_mm=25.0, long_bar_diam
     return plan_anchor, lx, ly, sa, sb, offset_long_ft
 
 
+STIRRUP_POLICY_CONTINUOUS = u"continuous"
+STIRRUP_POLICY_THIRDS_L3 = u"thirds_l3"
+
+
+def apply_stirrup_first_last_presentation(rebar, view):
+    u"""
+    Presentación **Show First and Last Rebar in Rebar Set** en *view*
+    (``RebarPresentationMode.FirstLast``).
+    """
+    if rebar is None or view is None:
+        return
+    try:
+        if not rebar.CanApplyPresentationMode(view):
+            return
+        rebar.SetPresentationMode(view, RebarPresentationMode.FirstLast)
+    except Exception:
+        pass
+
+
 def create_stirrups_for_column(
     doc,
     col,
@@ -711,6 +752,10 @@ def create_stirrups_for_column(
     cover_mm=25.0,
     long_bar_diam_mm=16.0,
     collect_rebars=None,
+    collect_stirrup_rebars_ordered=None,
+    stirrup_policy=None,
+    stirrup_lot_specs=None,
+    presentation_view=None,
 ):
     u"""
     Crea estribos y trabas para *col* dentro de una transacción activa.
@@ -719,6 +764,11 @@ def create_stirrups_for_column(
     coherente con ``RebarBarType.BarModelDiameter`` de las barras creadas.
 
     ``collect_rebars``: si es una lista, se añade cada ``Rebar`` creado (rectos y trabas).
+    ``collect_stirrup_rebars_ordered``: lista opcional; mismo contenido en orden de
+    creación (perimetral → interiores → trabas) para etiquetas de confinamiento.
+
+    ``presentation_view``: si se indica, aplica **Show first and last** a cada estribo
+    creado en esa vista (p. ej. vista activa del armado).
 
     Devuelve el número de ``Rebar`` creados.
     Propaga excepciones para que el llamante pueda registrarlas y hacer rollback.
@@ -817,7 +867,27 @@ def create_stirrups_for_column(
         array_length = h_col + foundation_drop_ft
         if array_length <= 0.0:
             array_length = 1.0
-        spacing_ft = spacing_mm / 304.8
+
+        _policy = stirrup_policy or STIRRUP_POLICY_CONTINUOUS
+        if _policy == STIRRUP_POLICY_THIRDS_L3:
+            _lot_specs = list(stirrup_lot_specs or [])
+            if len(_lot_specs) < 3:
+                _fallback = (float(spacing_mm), stirrup_bar_type)
+                while len(_lot_specs) < 3:
+                    _lot_specs.append(_fallback)
+            _lot_specs = _lot_specs[:3]
+            _seg_len = float(array_length) / 3.0
+            if _seg_len <= 1e-9:
+                _seg_len = float(array_length)
+            _segments = [
+                (0.0, _seg_len, _lot_specs[0]),
+                (_seg_len, _seg_len, _lot_specs[1]),
+                (2.0 * _seg_len, _seg_len, _lot_specs[2]),
+            ]
+        else:
+            _segments = [
+                (0.0, float(array_length), (float(spacing_mm), stirrup_bar_type)),
+            ]
 
         val_a = int(val_a)
         val_b = int(val_b)
@@ -832,106 +902,134 @@ def create_stirrups_for_column(
         def _center_along_b(i):
             return -sb / 2.0 + offset_long + float(i) * gap_b
 
-        for idx_a, idx_b, sp_a, sp_b in rect_defs:
-            # Eje A (lx): parcial → patas tangentes a centros de barras; completo → perimetral.
-            if sp_a < val_a - 1:
-                x_left = _center_along_a(idx_a) - tangent_inset_ft
-                x_right = _center_along_a(idx_a + sp_a) + tangent_inset_ft
-                w_span = x_right - x_left
-                x_s = x_left
-            else:
-                w_span = sa - 2.0 * offset_axis
-                x_s = -sa / 2.0 + offset_axis + float(idx_a) * gap_a
+        for _z_off_ft, _array_len_ft, (_sp_mm, _sbt_lot) in _segments:
+            if _sbt_lot is None:
+                continue
+            try:
+                _spacing_ft_lot = float(_sp_mm) / 304.8
+            except Exception:
+                _spacing_ft_lot = float(spacing_mm) / 304.8
+            if _array_len_ft <= 1e-9:
+                continue
+            try:
+                _plan_lot = plan_anchor_rebar.Add(lz_up.Multiply(float(_z_off_ft)))
+            except Exception:
+                _plan_lot = plan_anchor_rebar
 
-            # Eje B (ly): ídem.
-            if sp_b < val_b - 1:
-                y_low = _center_along_b(idx_b) - tangent_inset_ft
-                y_high = _center_along_b(idx_b + sp_b) + tangent_inset_ft
-                h_span = y_high - y_low
-                y_s = y_low
-            else:
-                h_span = sb - 2.0 * offset_axis
-                y_s = -sb / 2.0 + offset_axis + float(idx_b) * gap_b
+            for idx_a, idx_b, sp_a, sp_b in rect_defs:
+                # Eje A (lx): parcial → patas tangentes a centros de barras; completo → perimetral.
+                if sp_a < val_a - 1:
+                    x_left = _center_along_a(idx_a) - tangent_inset_ft
+                    x_right = _center_along_a(idx_a + sp_a) + tangent_inset_ft
+                    w_span = x_right - x_left
+                    x_s = x_left
+                else:
+                    w_span = sa - 2.0 * offset_axis
+                    x_s = -sa / 2.0 + offset_axis + float(idx_a) * gap_a
 
-            pt1 = plan_anchor_rebar + lx.Multiply(x_s) + ly.Multiply(y_s)
-            pt2 = pt1 + lx.Multiply(w_span)
-            pt3 = pt2 + ly.Multiply(h_span)
-            pt4 = pt1 + ly.Multiply(h_span)
-            # Path CW desde pt2 (BR): BR→BL→TL→TR→BR.
-            # El gancho cae en la esquina inferior (pt2), dejando ambas
-            # esquinas superiores con doblez recto 90° simétricas entre sí.
-            pts4 = [pt2, pt1, pt4, pt3, pt2]
-            curves = List[Curve]()
-            for k in range(4):
-                pa_k, pb_k = pts4[k], pts4[k + 1]
-                if pa_k.DistanceTo(pb_k) > 0.01:
-                    curves.Add(Line.CreateBound(pa_k, pb_k))
-            if curves.Count > 0:
-                rebar, _ = _rebar_stirrup_create_try_normals(
-                    curves, col, stirrup_bar_type, hook_135_type, hook_135_type,
-                    lz_norm_candidates,
-                    RebarHookOrientation.Right,
-                    RebarHookOrientation.Right,
-                    doc,
-                )
-                if rebar is not None:
-                    rebar.GetShapeDrivenAccessor().SetLayoutAsMaximumSpacing(
-                        spacing_ft, array_length, True, True, False
-                    )
-                    n_created += 1
-                    if collect_rebars is not None:
-                        try:
-                            collect_rebars.append(rebar)
-                        except Exception:
-                            pass
+                # Eje B (ly): ídem.
+                if sp_b < val_b - 1:
+                    y_low = _center_along_b(idx_b) - tangent_inset_ft
+                    y_high = _center_along_b(idx_b + sp_b) + tangent_inset_ft
+                    h_span = y_high - y_low
+                    y_s = y_low
+                else:
+                    h_span = sb - 2.0 * offset_axis
+                    y_s = -sb / 2.0 + offset_axis + float(idx_b) * gap_b
 
-        for idx, is_a in tie_defs:
-            if is_a:
-                x_tie = tie_axis_shift_toward_section_center(
-                    _center_along_a(idx),
-                    long_bar_r_ft,
-                    tie_index=idx,
-                    bar_count=val_a,
-                )
-                pt1 = (
-                    plan_anchor_rebar
-                    + lx.Multiply(x_tie)
-                    + ly.Multiply(-sb / 2.0 + offset_axis)
-                )
-                pt2 = pt1 + ly.Multiply(sb - 2.0 * offset_axis)
-            else:
-                y_tie = tie_axis_shift_toward_section_center(
-                    _center_along_b(idx),
-                    long_bar_r_ft,
-                    tie_index=idx,
-                    bar_count=val_b,
-                )
-                pt1 = (
-                    plan_anchor_rebar
-                    + lx.Multiply(-sa / 2.0 + offset_axis)
-                    + ly.Multiply(y_tie)
-                )
-                pt2 = pt1 + lx.Multiply(sa - 2.0 * offset_axis)
-            if pt1.DistanceTo(pt2) > 0.01:
+                pt1 = _plan_lot + lx.Multiply(x_s) + ly.Multiply(y_s)
+                pt2 = pt1 + lx.Multiply(w_span)
+                pt3 = pt2 + ly.Multiply(h_span)
+                pt4 = pt1 + ly.Multiply(h_span)
+                # Path CW desde pt2 (BR): BR→BL→TL→TR→BR.
+                pts4 = [pt2, pt1, pt4, pt3, pt2]
                 curves = List[Curve]()
-                curves.Add(Line.CreateBound(pt1, pt2))
-                mid_tie = pt1.Add(pt2.Subtract(pt1).Multiply(0.5))
-                axis_ref = _plan_anchor_for_column_ft(col, trans, mid_tie)
-                o_start, o_end = _column_tie_hook_orientations(pt1, pt2, lz, axis_ref)
-                rebar, _ = _rebar_stirrup_create_try_normals(
-                    curves, col, stirrup_bar_type, hook_135_type, hook_135_type,
-                    lz_norm_candidates, o_start, o_end, doc,
-                )
-                if rebar is not None:
-                    rebar.GetShapeDrivenAccessor().SetLayoutAsMaximumSpacing(
-                        spacing_ft, array_length, True, True, False
+                for k in range(4):
+                    pa_k, pb_k = pts4[k], pts4[k + 1]
+                    if pa_k.DistanceTo(pb_k) > 0.01:
+                        curves.Add(Line.CreateBound(pa_k, pb_k))
+                if curves.Count > 0:
+                    rebar, _ = _rebar_stirrup_create_try_normals(
+                        curves, col, _sbt_lot, hook_135_type, hook_135_type,
+                        lz_norm_candidates,
+                        RebarHookOrientation.Right,
+                        RebarHookOrientation.Right,
+                        doc,
                     )
-                    n_created += 1
-                    if collect_rebars is not None:
-                        try:
-                            collect_rebars.append(rebar)
-                        except Exception:
-                            pass
+                    if rebar is not None:
+                        rebar.GetShapeDrivenAccessor().SetLayoutAsMaximumSpacing(
+                            _spacing_ft_lot, _array_len_ft, True, True, False
+                        )
+                        n_created += 1
+                        if collect_rebars is not None:
+                            try:
+                                collect_rebars.append(rebar)
+                            except Exception:
+                                pass
+                        if collect_stirrup_rebars_ordered is not None:
+                            try:
+                                collect_stirrup_rebars_ordered.append(rebar)
+                            except Exception:
+                                pass
+                        apply_stirrup_first_last_presentation(
+                            rebar, presentation_view
+                        )
+
+            for idx, is_a in tie_defs:
+                if is_a:
+                    x_tie = tie_axis_shift_toward_section_center(
+                        _center_along_a(idx),
+                        long_bar_r_ft,
+                        tie_index=idx,
+                        bar_count=val_a,
+                    )
+                    pt1 = (
+                        _plan_lot
+                        + lx.Multiply(x_tie)
+                        + ly.Multiply(-sb / 2.0 + offset_axis)
+                    )
+                    pt2 = pt1 + ly.Multiply(sb - 2.0 * offset_axis)
+                else:
+                    y_tie = tie_axis_shift_toward_section_center(
+                        _center_along_b(idx),
+                        long_bar_r_ft,
+                        tie_index=idx,
+                        bar_count=val_b,
+                    )
+                    pt1 = (
+                        _plan_lot
+                        + lx.Multiply(-sa / 2.0 + offset_axis)
+                        + ly.Multiply(y_tie)
+                    )
+                    pt2 = pt1 + lx.Multiply(sa - 2.0 * offset_axis)
+                if pt1.DistanceTo(pt2) > 0.01:
+                    curves = List[Curve]()
+                    curves.Add(Line.CreateBound(pt1, pt2))
+                    o_start, o_end = _column_tie_hook_orientations(
+                        pt1, pt2, lz, _plan_lot,
+                    )
+                    rebar, _ = _rebar_stirrup_create_try_normals(
+                        curves, col, _sbt_lot, hook_135_type, hook_135_type,
+                        lz_norm_candidates, o_start, o_end, doc,
+                    )
+                    if rebar is not None:
+                        rebar.GetShapeDrivenAccessor().SetLayoutAsMaximumSpacing(
+                            _spacing_ft_lot, _array_len_ft, True, True, False
+                        )
+                        n_created += 1
+                        if collect_rebars is not None:
+                            try:
+                                collect_rebars.append(rebar)
+                            except Exception:
+                                pass
+                        if collect_stirrup_rebars_ordered is not None:
+                            try:
+                                collect_stirrup_rebars_ordered.append(rebar)
+                            except Exception:
+                                pass
+                        apply_stirrup_first_last_presentation(
+                            rebar, presentation_view
+                        )
 
     except Exception:
         raise

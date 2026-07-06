@@ -62,6 +62,19 @@ except Exception:
 _SINGLETON_KEY = u"Arainco.column_reinforcement.TroceoSchemeSingleton"
 
 
+def apply_troceo_scheme_window_maximized(win):
+    u"""Despliega el formulario del esquema vertical maximizado (ventana propia o asistente)."""
+    if win is None:
+        return
+    try:
+        from System.Windows import SizeToContent, WindowState
+
+        win.SizeToContent = SizeToContent.Manual
+        win.WindowState = WindowState.Maximized
+    except Exception:
+        pass
+
+
 def wire_wpf_numeric_stepper(tb, btn_inc, btn_dec, minimum=1, maximum=999):
     u"""Enlaza botones +/− a un ``TextBox`` con entero acotado (sigue permitiendo edición manual)."""
     if tb is None:
@@ -171,6 +184,7 @@ _BR_ENTRY_BD = SolidColorBrush(_hex_to_color("#1A3A4D"))
 _TROCEO_DATUM_REF_TAG = u"TroceoDatumRef"
 _BR_TROCEO_DATUM_REF = SolidColorBrush(_hex_to_color("#dc2626"))
 _TROCEO_SHAFT_TRAMO_LABEL_TAG = u"TroceoShaftTramoLabel"
+_TROCEO_SHAFT_TRAMO_FILL_TAG = u"TroceoShaftTramoFill"
 _LONGITUDINAL_DIAM_COMBO_TAG = u"TroceoLongitudinalDiamCombo"
 _TROCEO_BAR_TYPES_MSG_TAG = u"TroceoBarTypesMsg"
 # Etiquetas «Tramo n» junto al combo Ø longitudinal (se quitan con los combos).
@@ -359,8 +373,10 @@ def _add_left_segment_dims_vertical(
     sl,
     z_index,
     layout_scale=1.0,
+    section_label_left_x=None,
+    section_zone_w=None,
 ):
-    """Sección corto×largo solo como ``800x1000`` (sin unidad), texto rotado −90°, centrado en el tramo."""
+    u"""Sección ``400×600`` rotada −90°; centrada en su columna si se indica ``section_label_left_x``."""
     try:
         from System import Double
         from System.Windows import Size
@@ -388,9 +404,15 @@ def _add_left_segment_dims_vertical(
     except Exception:
         box_w = 80.0
         box_h = 14.0
-    pad = 6.0 * ls
+    pad = _TROCEO_SECTION_LABEL_PAD_PX * ls
     try:
-        Canvas.SetLeft(tb, max(1.0, shaft_left_x - box_w - pad))
+        if section_label_left_x is not None and section_zone_w is not None:
+            zone_l = float(section_label_left_x)
+            zone_w = max(float(section_zone_w), box_w + 2.0 * pad)
+            left_x = zone_l + max(pad, (zone_w - box_w) / 2.0)
+        else:
+            left_x = max(1.0, float(shaft_left_x) - box_w - pad)
+        Canvas.SetLeft(tb, left_x)
         Canvas.SetTop(tb, y_top + max((hpx - box_h) / 2.0, 0.0))
         Panel.SetZIndex(tb, int(z_index))
     except Exception:
@@ -430,6 +452,107 @@ def _shaft_brushes_for_tramo(tramo_no):
     bl = _TROCEO_TRAMO_SHAFT_BG_BRUSHES
     idx = (max(1, int(tramo_no)) - 1) % len(bl)
     return bl[idx], _BR_UNSEL_BD
+
+
+def _tramo_number_at_canvas_y(y_px, bands):
+    u"""Tramo 1-based que contiene la cota Y en pantalla."""
+    try:
+        y = float(y_px)
+    except Exception:
+        return 1
+    for y_top_cell, h_cell, tramo_no in bands or []:
+        try:
+            y0 = float(y_top_cell)
+            y1 = y0 + float(h_cell)
+        except Exception:
+            continue
+        if y0 - 1e-6 <= y <= y1 + 1e-6:
+            return int(tramo_no)
+    return 1
+
+
+def _remove_troceo_shaft_tramo_fills(canvas):
+    if canvas is None:
+        return
+    to_remove = []
+    try:
+        for ch in canvas.Children:
+            try:
+                if ch.Tag == _TROCEO_SHAFT_TRAMO_FILL_TAG:
+                    to_remove.append(ch)
+            except Exception:
+                pass
+        for ch in to_remove:
+            canvas.Children.Remove(ch)
+    except Exception:
+        pass
+
+
+def _paint_troceo_shaft_tramo_fills(canvas, shaft_x, shaft_w, slot_to_y_span, bands, cut_ys):
+    u"""
+    Relleno del fuste por subtramos entre l\u00edneas de corte (incl. mitad de altura dentro de un slot).
+    """
+    if canvas is None or not slot_to_y_span:
+        return
+    try:
+        sx = float(shaft_x)
+        sw = max(4.0, float(shaft_w))
+    except Exception:
+        return
+    cuts_all = []
+    for c in cut_ys or []:
+        try:
+            cuts_all.append(float(c))
+        except Exception:
+            pass
+    _remove_troceo_shaft_tramo_fills(canvas)
+    for _sl, span in (slot_to_y_span or {}).items():
+        if not span or len(span) < 2:
+            continue
+        try:
+            y_top = float(span[0])
+            y_bot = float(span[1])
+        except Exception:
+            continue
+        if y_bot <= y_top + 0.5:
+            continue
+        interior = [y_top]
+        for c in cuts_all:
+            if y_top + 1e-3 < c < y_bot - 1e-3:
+                interior.append(c)
+        interior.append(y_bot)
+        bnds = sorted(set(interior))
+        for i in range(len(bnds) - 1):
+            ya = float(bnds[i])
+            yb = float(bnds[i + 1])
+            dz = yb - ya
+            if dz < 0.5:
+                continue
+            ym = ya + 0.5 * dz
+            tno = _tramo_number_at_canvas_y(ym, bands)
+            bg, _ = _shaft_brushes_for_tramo(tno)
+            rect = Rectangle()
+            rect.Width = sw
+            rect.Height = dz
+            rect.Fill = bg
+            try:
+                rect.Stroke = None
+            except Exception:
+                pass
+            try:
+                rect.Tag = _TROCEO_SHAFT_TRAMO_FILL_TAG
+            except Exception:
+                pass
+            Canvas.SetLeft(rect, sx)
+            Canvas.SetTop(rect, ya)
+            try:
+                Panel.SetZIndex(rect, 11)
+            except Exception:
+                pass
+            try:
+                canvas.Children.Add(rect)
+            except Exception:
+                pass
 
 
 def _slot_to_tramo_number_from_bands(slot, bands, slot_to_y_span):
@@ -697,6 +820,24 @@ _TROCEO_STIRRUP_COMBO_BAR_TYPE_W_PX = 58.0
 # Solo si no hay combo de tipo (caso raro).
 _TROCEO_STIRRUP_COMBO_SPACING_W_PX = 46.0
 _TROCEO_STIRRUP_COMBO_PAIR_GAP_PX = 6.0
+# Más separación del fuste para estribos + etiqueta de sección + política (legibilidad).
+_TROCEO_SHAFT_X_BASE_PX = 96.0
+_TROCEO_SHAFT_LABEL_MARGIN_PX = 10.0
+_TROCEO_SECTION_LABEL_PAD_PX = 10.0
+_TROCEO_POLICY_SECTION_GAP_PX = 14.0
+_TROCEO_STIRRUP_INTER_COL_GAP_PX = 8.0
+_TROCEO_EMPALME_POLICY_COL_W_PX = 100.0
+# Mismos valores que column_reinforcement_layout_rps (troceo_empalme_policy_by_column_id).
+TROCEO_EMPALME_POLICY_BASE = u"base"
+TROCEO_EMPALME_POLICY_MID_AXIS = u"mid_axis_split"
+_TROCEO_EMPALME_POLICY_UI_CHOICES = (
+    (u"Base", TROCEO_EMPALME_POLICY_BASE),
+    (u"Mitad altura", TROCEO_EMPALME_POLICY_MID_AXIS),
+)
+
+
+def _troceo_empalme_policy_combo_width_px(layout_scale):
+    return max(float(_TROCEO_EMPALME_POLICY_COL_W_PX) * float(layout_scale), 88.0)
 
 
 def _stirrup_combo_row_width_px(layout_scale, has_bar_type_combo=True):
@@ -729,6 +870,163 @@ _STIRRUP_SPACING_MM_CHOICES = (
     u"300",
 )
 
+STIRRUP_POLICY_CONTINUOUS = u"continuous"
+STIRRUP_POLICY_THIRDS_L3 = u"thirds_l3"
+_STIRRUP_POLICY_UI_CHOICES = (
+    (u"Completo", STIRRUP_POLICY_CONTINUOUS),
+    (u"L/3", STIRRUP_POLICY_THIRDS_L3),
+)
+_STIRRUP_LOT_LABELS = (u"T1", u"T2", u"T3")
+# Espaciamiento por defecto en extremos al activar política L/3 (T1 inferior, T3 superior).
+_STIRRUP_L3_T1_T3_DEFAULT_SPACING_MM = 100.0
+
+
+def _stirrup_slot_lot_store_key(slot, lot_index=0):
+    u"""Clave compuesta tramo esquema × lote vertical (0=T1 inferior … 2=T3)."""
+    return int(slot) * 3 + int(lot_index)
+
+
+def _stirrup_policy_for_slot(policy_store, slot):
+    if policy_store is None:
+        return STIRRUP_POLICY_CONTINUOUS
+    try:
+        if policy_store.get(int(slot)) == STIRRUP_POLICY_THIRDS_L3:
+            return STIRRUP_POLICY_THIRDS_L3
+    except Exception:
+        pass
+    return STIRRUP_POLICY_CONTINUOUS
+
+
+def _stirrup_spacing_from_store(store, store_key, slot, elem, default_cb):
+    if store is None:
+        return None
+    try:
+        if int(store_key) in store:
+            return float(store[int(store_key)])
+    except Exception:
+        pass
+    try:
+        if int(store_key) == _stirrup_slot_lot_store_key(slot, 0) and int(slot) in store:
+            return float(store[int(slot)])
+    except Exception:
+        pass
+    if default_cb is not None and elem is not None:
+        try:
+            return float(default_cb(elem))
+        except Exception:
+            pass
+    return None
+
+
+def _stirrup_bar_type_from_store(store, store_key, slot, elem, default_cb, choices):
+    if store is None:
+        return None
+    bt = None
+    try:
+        if int(store_key) in store:
+            bt = store[int(store_key)]
+    except Exception:
+        bt = None
+    if bt is None:
+        try:
+            if int(slot) in store:
+                bt = store[int(slot)]
+        except Exception:
+            bt = None
+    if bt is None and default_cb is not None and elem is not None:
+        try:
+            bt = default_cb(elem)
+        except Exception:
+            bt = None
+    return bt
+
+
+def _stirrup_policy_combo_width_px(layout_scale):
+    u"""Ancho fijo del combo «Completo» / «L/3» (evita invadir la columna de sección)."""
+    return max(58.0, 54.0 * float(layout_scale))
+
+
+def _stirrup_lote_label_col_width_px(layout_scale):
+    return max(26.0, 22.0 * float(layout_scale))
+
+
+def _measure_section_label_bounds(dims_cache, layout_scale):
+    u"""Ancho/alto del bloque «400×600» rotado −90° (mismo criterio que en el lienzo)."""
+    ls = float(layout_scale)
+    max_w = 0.0
+    max_h = 0.0
+    try:
+        from System import Double
+        from System.Windows import Size
+        from System.Windows.Controls import TextBlock
+        from System.Windows.Media import RotateTransform
+        from System.Windows import FontWeights
+    except Exception:
+        return max(48.0 * ls, 36.0), max(14.0 * ls, 12.0)
+    for _eid, pair in (dims_cache or {}).items():
+        ss, sl = pair
+        if ss is None or sl is None:
+            continue
+        cap = u"{0}x{1}".format(int(ss), int(sl))
+        for base_fs in (7.5 * ls, 8.25 * ls):
+            tb = TextBlock()
+            tb.Text = cap
+            tb.FontSize = float(base_fs)
+            tb.FontWeight = FontWeights.SemiBold
+            tb.LayoutTransform = RotateTransform(-90.0)
+            try:
+                tb.Measure(Size(Double.PositiveInfinity, Double.PositiveInfinity))
+                max_w = max(max_w, float(tb.DesiredSize.Width))
+                max_h = max(max_h, float(tb.DesiredSize.Height))
+            except Exception:
+                pass
+    if max_w < 1.0:
+        max_w = 48.0 * ls
+    if max_h < 1.0:
+        max_h = 14.0 * ls
+    return max_w, max_h
+
+
+def _troceo_stirrup_strip_x_layout(shaft_x, dims_cache, layout_scale, combo_w_px):
+    u"""
+    Columnas fijas (izq. → der.): Lote | Ø+Esp. | Política | Sección | fuste.
+    Devuelve posiciones X en el mismo sistema que ``shaft_x``.
+    """
+    ls = float(layout_scale)
+    max_rot_w, max_rot_h = _measure_section_label_bounds(dims_cache, ls)
+    pad = _TROCEO_SECTION_LABEL_PAD_PX * ls
+    shaft_margin = _TROCEO_SHAFT_LABEL_MARGIN_PX * ls
+    pol_sec_gap = _TROCEO_POLICY_SECTION_GAP_PX * ls
+    inter_col = _TROCEO_STIRRUP_INTER_COL_GAP_PX * ls
+    lote_gap = max(5.0, 4.5 * ls)
+
+    section_w = max(
+        float(max_rot_w) + 2.0 * pad,
+        float(max_rot_h) + 2.0 * pad,
+        52.0 * ls,
+    )
+    policy_w = _stirrup_policy_combo_width_px(ls)
+    lote_w = _stirrup_lote_label_col_width_px(ls)
+
+    section_right = float(shaft_x) - shaft_margin
+    section_left = section_right - section_w
+    policy_right = section_left - pol_sec_gap
+    policy_x = policy_right - policy_w
+    combo_right = policy_x - inter_col
+    combo_left = combo_right - float(combo_w_px)
+    lote_col_x = combo_left - lote_gap - lote_w
+
+    return {
+        u"section_left": section_left,
+        u"section_right": section_right,
+        u"section_w": section_w,
+        u"policy_x": policy_x,
+        u"policy_w": policy_w,
+        u"combo_left_x": combo_left,
+        u"lote_col_x": lote_col_x,
+        u"strip_left": lote_col_x,
+    }
+
 
 def _bar_tramo_equal_bands(y_top_col, y_bot, m):
     """Reparto vertical uniforme entre ``y_top_col`` y ``y_bot`` (respaldo). Orden: tramo 1 abajo."""
@@ -748,8 +1046,10 @@ def _bar_tramo_equal_bands(y_top_col, y_bot, m):
     return bands
 
 
-def _bar_tramo_y_bands_from_cuts(sel_slots, slot_to_y_bottom, top_pad, stack_h):
-    """Bandas en pantalla con cortes en las Y de troceo (borde inferior del bloque de cada referencia)."""
+def _bar_tramo_y_bands_from_cuts(
+    sel_slots, slot_to_y_bottom, top_pad, stack_h, slot_to_cut_y=None
+):
+    u"""Bandas del fuste entre cotas de troceo/empalme (Y base o mitad de tramo por referencia)."""
     y_bot = float(top_pad) + float(stack_h)
     y_top_col = float(top_pad)
     m = max(1, len(sel_slots) + 1)
@@ -757,13 +1057,17 @@ def _bar_tramo_y_bands_from_cuts(sel_slots, slot_to_y_bottom, top_pad, stack_h):
         return _bar_tramo_equal_bands(y_top_col, y_bot, 1)
     eps = 0.5
     cuts = []
+    cut_src = slot_to_cut_y if slot_to_cut_y else {}
     for s in sel_slots or []:
         try:
             ii = int(s)
-            if ii in slot_to_y_bottom:
+            yy = None
+            if ii in cut_src:
+                yy = float(cut_src[ii])
+            elif ii in slot_to_y_bottom:
                 yy = float(slot_to_y_bottom[ii])
-                if (y_top_col + eps) <= yy <= (y_bot - eps):
-                    cuts.append(yy)
+            if yy is not None and (y_top_col + eps) <= yy <= (y_bot - eps):
+                cuts.append(yy)
         except Exception:
             pass
     cuts = sorted(set(cuts))
@@ -1403,6 +1707,7 @@ class TroceoSchemeOutcome(object):
         skip_no_cut=False,
         columns=None,
         segment_rebar_bar_type_ids=None,
+        troceo_empalme_policy_by_column_id=None,
     ):
         self.cancelled = bool(cancelled)
         self.skip_no_cut = bool(skip_no_cut)
@@ -1412,6 +1717,13 @@ class TroceoSchemeOutcome(object):
             if segment_rebar_bar_type_ids is not None
             else None
         )
+        _pol = {}
+        for _k, _v in (troceo_empalme_policy_by_column_id or {}).items():
+            try:
+                _pol[int(_k)] = unicode(_v)
+            except Exception:
+                pass
+        self.troceo_empalme_policy_by_column_id = _pol
 
 
 def _load_xaml_text():
@@ -1447,6 +1759,7 @@ class TroceoSchemeController(object):
         column_stirrup_bar_type_slot_store=None,
         column_stirrup_bar_type_choices=None,
         column_stirrup_bar_type_default_cb=None,
+        column_stirrup_policy_slot_store=None,
         longitudinal_line_ubicacion_labels=None,
         longitudinal_line_scheme_by_label=None,
     ):
@@ -1543,6 +1856,13 @@ class TroceoSchemeController(object):
         self._col_stirrup_bar_choices = list(column_stirrup_bar_type_choices or [])
         self._col_stirrup_bar_default_cb = column_stirrup_bar_type_default_cb
         self._col_bar_type_evt_suppress = False
+        self._col_stirrup_policy_store = column_stirrup_policy_slot_store
+        if self._col_stirrup_policy_store is None:
+            self._col_stirrup_policy_store = {}
+        self._col_policy_evt_suppress = False
+        self._troceo_empalme_policy_by_slot = {}
+        self._troceo_empalme_policy_combos = {}
+        self._troceo_empalme_policy_evt_suppress = False
         if self._embedded:
             self.window = parent_window
             self._blocks_host = blocks_host
@@ -1612,7 +1932,6 @@ class TroceoSchemeController(object):
         self._last_viewport_refit_h = None
         self._viewport_refit_running = False
         self._populate_blocks()
-        self._sync_diameter_panel()
         self._wire_buttons()
         self._schedule_scroll_scheme_to_bottom()
         self._hook_embedded_viewport_refit()
@@ -1694,7 +2013,6 @@ class TroceoSchemeController(object):
         self._viewport_refit_running = True
         try:
             self._populate_blocks(skip_reveal=True)
-            self._sync_diameter_panel()
             try:
                 self._refresh_all_shaft_styles()
             except Exception:
@@ -1909,7 +2227,7 @@ class TroceoSchemeController(object):
             sel = set(self._sel_slots) if self._sel_slots else set()
         except Exception:
             sel = set()
-        bands = _bar_tramo_y_bands_from_cuts(sel, slot_map, top_pad, stack_h)
+        bands = self._bar_tramo_bands_for_layout(sel, lay)
         try:
             ls = float(lay.get(u"layout_scale", 1.0))
         except Exception:
@@ -1956,7 +2274,7 @@ class TroceoSchemeController(object):
             bar_x0 = float(lay[u"bar_x0"])
             ls = float(lay.get(u"layout_scale", 1.0))
             sel = getattr(self, "_sel_slots", None) or set()
-            bands = _bar_tramo_y_bands_from_cuts(sel, slot_map, top_pad, stack_h)
+            bands = self._bar_tramo_bands_for_layout(sel, lay)
             trom_x0 = float(lay.get(u"tramo_label_x0", bar_x0 - 48.0))
             col_w = float(lay.get(u"tramo_label_col_w", 44.0))
             slot_y_span = lay.get(u"slot_to_y_span") or {}
@@ -2066,7 +2384,7 @@ class TroceoSchemeController(object):
             sel = set(self._sel_slots) if self._sel_slots else set()
         except Exception:
             sel = set()
-        bands = _bar_tramo_y_bands_from_cuts(sel, slot_map, top_pad, stack_h)
+        bands = self._bar_tramo_bands_for_layout(sel, lay)
         concrete_grade = None
         try:
             ls_f = float(lay.get(u"layout_scale", 1.0))
@@ -2448,8 +2766,12 @@ class TroceoSchemeController(object):
         combo_w_px,
         combo_h_px,
         layout_scale,
+        store_key=None,
+        band_y_top=None,
+        band_hpx=None,
+        lot_label=None,
     ):
-        u"""Combo mm junto al tramo del fuste (clave interna: índice de tramo ``slot``, único por fila)."""
+        u"""Combo mm junto al tramo del fuste (``store_key`` = tramo×lote)."""
         if self._col_spacing_store is None:
             return
         if canvas is None:
@@ -2484,19 +2806,25 @@ class TroceoSchemeController(object):
             pass
         for sp in _STIRRUP_SPACING_MM_CHOICES:
             cb.Items.Add(sp)
-        mm_val = None
-        try:
-            if int(slot) in self._col_spacing_store:
-                mm_val = float(self._col_spacing_store[int(slot)])
-        except Exception:
-            mm_val = None
-        if mm_val is None and self._col_spacing_default_cb is not None:
-            try:
-                mm_val = float(self._col_spacing_default_cb(elem))
-            except Exception:
-                mm_val = None
+        if store_key is None:
+            store_key = _stirrup_slot_lot_store_key(slot, 0)
+        mm_val = _stirrup_spacing_from_store(
+            self._col_spacing_store,
+            store_key,
+            slot,
+            elem,
+            self._col_spacing_default_cb,
+        )
         if mm_val is None:
-            mm_val = 200.0
+            try:
+                _sk = int(store_key)
+                _lot_i = int(_sk) % 3
+                if _lot_i in (0, 2):
+                    mm_val = float(_STIRRUP_L3_T1_T3_DEFAULT_SPACING_MM)
+                else:
+                    mm_val = 200.0
+            except Exception:
+                mm_val = 200.0
         sp_str = str(int(round(mm_val)))
         pick = 4
         for i, it in enumerate(_STIRRUP_SPACING_MM_CHOICES):
@@ -2522,7 +2850,7 @@ class TroceoSchemeController(object):
             pass
 
         try:
-            cb.Tag = int(slot)
+            cb.Tag = int(store_key)
         except Exception:
             pass
 
@@ -2533,17 +2861,16 @@ class TroceoSchemeController(object):
                 it = sender.SelectedItem
                 if it is None:
                     return
-                slot_i = int(sender.Tag)
-                self._col_spacing_store[slot_i] = float(str(it))
+                sk_i = int(sender.Tag)
+                self._col_spacing_store[sk_i] = float(str(it))
             except Exception:
                 pass
 
         cb.SelectionChanged += _on_stirrup_spacing_sel
         try:
-            top = float(y_top) + max(
-                (float(hpx) - float(cb_h)) / 2.0,
-                0.0,
-            )
+            _by = float(band_y_top) if band_y_top is not None else float(y_top)
+            _bh = float(band_hpx) if band_hpx is not None else float(hpx)
+            top = _by + max((_bh - float(cb_h)) / 2.0, 0.0)
         except Exception:
             top = float(y_top)
         Canvas.SetLeft(cb, float(combo_left_x))
@@ -2638,6 +2965,195 @@ class TroceoSchemeController(object):
         except Exception:
             pass
 
+    def _troceo_empalme_policy_for_slot(self, slot):
+        try:
+            p = self._troceo_empalme_policy_by_slot.get(int(slot))
+            if p == TROCEO_EMPALME_POLICY_MID_AXIS:
+                return TROCEO_EMPALME_POLICY_MID_AXIS
+        except Exception:
+            pass
+        return TROCEO_EMPALME_POLICY_BASE
+
+    def _sync_stirrup_policy_with_troceo_empalme(self, slot):
+        u"""Mitad altura (empalme) \u2192 estribos L/3; Base \u2192 Completo (solo con Define Empalme)."""
+        if self._col_stirrup_policy_store is None:
+            return False
+        try:
+            slot_i = int(slot)
+        except Exception:
+            return False
+        if slot_i not in self._sel_slots:
+            return False
+        troceo_pol = self._troceo_empalme_policy_for_slot(slot_i)
+        if troceo_pol == TROCEO_EMPALME_POLICY_MID_AXIS:
+            new_st = STIRRUP_POLICY_THIRDS_L3
+        else:
+            new_st = STIRRUP_POLICY_CONTINUOUS
+        old_st = _stirrup_policy_for_slot(self._col_stirrup_policy_store, slot_i)
+        if old_st == new_st:
+            return False
+        self._col_stirrup_policy_store[slot_i] = new_st
+        if new_st == STIRRUP_POLICY_THIRDS_L3:
+            self._init_lot_stores_from_slot(slot_i)
+        try:
+            self._populate_blocks(skip_reveal=True)
+        except Exception:
+            pass
+        try:
+            self._update_troceo_datum_reference_lines()
+            self._refresh_all_shaft_styles()
+            self._sync_shaft_tramo_band_labels()
+            self._refresh_bar_tramos_ladder()
+        except Exception:
+            pass
+        return True
+
+    def _sync_troceo_empalme_policy_combo_state(self, slot):
+        cb = (self._troceo_empalme_policy_combos or {}).get(int(slot))
+        if cb is None:
+            return
+        try:
+            active = int(slot) in self._sel_slots
+            cb.IsEnabled = bool(active)
+            cb.Opacity = 1.0 if active else 0.45
+        except Exception:
+            pass
+
+    def _sync_all_troceo_empalme_policy_combos(self):
+        for slot in (self._troceo_empalme_policy_combos or {}).keys():
+            self._sync_troceo_empalme_policy_combo_state(slot)
+
+    def _place_troceo_empalme_policy_combo(
+        self,
+        canvas,
+        policy_x,
+        y_top,
+        hpx,
+        slot,
+        policy_w_px,
+        combo_h_px,
+        layout_scale,
+    ):
+        u"""Combo Base / Mitad altura; solo activo si «Define Empalme» está marcado."""
+        if canvas is None:
+            return
+        try:
+            from System.Windows.Controls import ComboBox, ToolTip
+        except Exception:
+            return
+        ls = float(layout_scale)
+        cb_w = max(float(policy_w_px), 80.0)
+        cb_h = max(float(combo_h_px), 20.0)
+        pv = _stirrup_combo_vertical_padding_px(ls)
+        cb = ComboBox()
+        self._apply_scheme_spacing_combo_look(cb)
+        try:
+            cb.Width = cb_w
+            cb.MaxWidth = cb_w
+            cb.MinHeight = cb_h
+            cb.Height = cb_h
+            cb.FontSize = max(7.5, 8.0 * ls)
+            cb.Padding = Thickness(3.0, pv, 3.0, pv)
+        except Exception:
+            pass
+        for _lbl, _val in _TROCEO_EMPALME_POLICY_UI_CHOICES:
+            cb.Items.Add(_lbl)
+        pol = self._troceo_empalme_policy_for_slot(slot)
+        pick = 1 if pol == TROCEO_EMPALME_POLICY_MID_AXIS else 0
+        self._troceo_empalme_policy_evt_suppress = True
+        try:
+            cb.SelectedIndex = int(pick)
+        except Exception:
+            pass
+        finally:
+            self._troceo_empalme_policy_evt_suppress = False
+        try:
+            if int(slot) not in self._troceo_empalme_policy_by_slot:
+                self._troceo_empalme_policy_by_slot[int(slot)] = pol
+        except Exception:
+            pass
+        try:
+            tip = ToolTip()
+            tip.Content = (
+                u"Base: troceo en inicio del eje; estribos Completo. "
+                u"Mitad altura: troceo al 50 % del sólido; estribos L/3 (T1\u2013T3); "
+                u"traslapo 50/50 en la junta."
+            )
+            cb.ToolTip = tip
+        except Exception:
+            pass
+        cb.Tag = int(slot)
+
+        def _on_pol_sel(sender, args):
+            if self._troceo_empalme_policy_evt_suppress:
+                return
+            try:
+                slot_i = int(sender.Tag)
+                ix = int(sender.SelectedIndex)
+                if 0 <= ix < len(_TROCEO_EMPALME_POLICY_UI_CHOICES):
+                    self._troceo_empalme_policy_by_slot[slot_i] = (
+                        _TROCEO_EMPALME_POLICY_UI_CHOICES[ix][1]
+                    )
+            except Exception:
+                pass
+            try:
+                if self._sync_stirrup_policy_with_troceo_empalme(slot_i):
+                    return
+            except Exception:
+                pass
+            try:
+                self._update_troceo_datum_reference_lines()
+                self._refresh_all_shaft_styles()
+                self._sync_shaft_tramo_band_labels()
+                self._refresh_bar_tramos_ladder()
+            except Exception:
+                pass
+
+        cb.SelectionChanged += _on_pol_sel
+        try:
+            top = float(y_top) + max((float(hpx) - float(cb_h)) / 2.0, 0.0)
+        except Exception:
+            top = float(y_top)
+        Canvas.SetLeft(cb, float(policy_x))
+        Canvas.SetTop(cb, top)
+        try:
+            Panel.SetZIndex(cb, 14)
+        except Exception:
+            pass
+        canvas.Children.Add(cb)
+        self._troceo_empalme_policy_combos[int(slot)] = cb
+        self._sync_troceo_empalme_policy_combo_state(int(slot))
+
+    def _collect_troceo_empalme_policy_by_column_id(self):
+        u"""Política troceo por id de instancia Revit (solo filas con empalme)."""
+        try:
+            from column_reinforcement_layout_rps import _element_id_iv
+        except Exception:
+            _element_id_iv = None
+        out = {}
+        for _elem, _z, eid, slot in getattr(self, "_row_entries", None) or []:
+            try:
+                s = int(slot)
+            except Exception:
+                continue
+            if s not in self._sel_slots:
+                continue
+            pol = self._troceo_empalme_policy_for_slot(s)
+            k = None
+            if _element_id_iv is not None and _elem is not None:
+                try:
+                    k = int(_element_id_iv(_elem))
+                except Exception:
+                    k = None
+            if k is None or k < 0:
+                try:
+                    k = int(eid)
+                except Exception:
+                    continue
+            if k >= 0:
+                out[k] = pol
+        return out
+
     def _adjust_define_empalme_checkboxes_vs_long_combo(
         self, seg_layout, slot_to_y_bottom, top_pad, stack_h, layout_scale
     ):
@@ -2653,24 +3169,32 @@ class TroceoSchemeController(object):
         ls = float(layout_scale)
         try:
             sel = set(self._sel_slots) if self._sel_slots else set()
+            slot_span = {}
+            for y_t, hp, sl, _ in seg_layout:
+                try:
+                    y0 = float(y_t)
+                    slot_span[int(sl)] = (y0, y0 + float(hp))
+                except Exception:
+                    pass
+            cut_map = {}
+            for sl in sel:
+                yc = self._troceo_datum_y_px_for_slot(
+                    sl, slot_to_y_bottom or {}, slot_span
+                )
+                if yc is not None:
+                    cut_map[int(sl)] = float(yc)
             bands = _bar_tramo_y_bands_from_cuts(
                 sel,
                 slot_to_y_bottom or {},
                 float(top_pad),
                 float(stack_h),
+                slot_to_cut_y=cut_map,
             )
         except Exception:
             return
         if not bands:
             return
         h_cb = float(_stirrup_combo_compact_height_px(ls))
-        slot_span = {}
-        for y_t, hp, sl, _ in seg_layout:
-            try:
-                y0 = float(y_t)
-                slot_span[int(sl)] = (y0, y0 + float(hp))
-            except Exception:
-                continue
 
         def _overlaps(cya, cyb, t0, t1):
             return (min(cyb, t1) - max(cya, t0)) > 0.5
@@ -2752,8 +3276,11 @@ class TroceoSchemeController(object):
         combo_w_px,
         combo_h_px,
         layout_scale,
+        store_key=None,
+        band_y_top=None,
+        band_hpx=None,
     ):
-        u"""Combo tipo/di\u00e1metro de estribo por tramo (misma clave ``slot`` que el espaciamiento)."""
+        u"""Combo tipo/di\u00e1metro de estribo por tramo/lote (``store_key``)."""
         if self._col_stirrup_bar_store is None:
             return
         if not self._col_stirrup_bar_choices:
@@ -2793,17 +3320,16 @@ class TroceoSchemeController(object):
                 cb.Items.Add(_lb)
             except Exception:
                 cb.Items.Add(unicode(_lb))
-        bt_target = None
-        try:
-            if int(slot) in self._col_stirrup_bar_store:
-                bt_target = self._col_stirrup_bar_store[int(slot)]
-        except Exception:
-            bt_target = None
-        if bt_target is None and self._col_stirrup_bar_default_cb is not None:
-            try:
-                bt_target = self._col_stirrup_bar_default_cb(elem)
-            except Exception:
-                bt_target = None
+        if store_key is None:
+            store_key = _stirrup_slot_lot_store_key(slot, 0)
+        bt_target = _stirrup_bar_type_from_store(
+            self._col_stirrup_bar_store,
+            store_key,
+            slot,
+            elem,
+            self._col_stirrup_bar_default_cb,
+            self._col_stirrup_bar_choices,
+        )
         pick = 0
         _stirrup_pick_matched = False
         if bt_target is not None:
@@ -2834,28 +3360,25 @@ class TroceoSchemeController(object):
             if 0 <= int(pick) < len(self._col_stirrup_bar_choices):
                 _chosen_bt = self._col_stirrup_bar_choices[int(pick)][1]
                 if bt_target is None:
-                    self._col_stirrup_bar_store[int(slot)] = _chosen_bt
+                    self._col_stirrup_bar_store[int(store_key)] = _chosen_bt
                 elif _stirrup_pick_matched:
-                    self._col_stirrup_bar_store[int(slot)] = _chosen_bt
+                    self._col_stirrup_bar_store[int(store_key)] = _chosen_bt
                 else:
                     try:
-                        if int(slot) not in self._col_stirrup_bar_store:
-                            self._col_stirrup_bar_store[int(slot)] = bt_target
+                        if int(store_key) not in self._col_stirrup_bar_store:
+                            self._col_stirrup_bar_store[int(store_key)] = bt_target
                     except Exception:
                         pass
         except Exception:
             pass
         try:
             tip = ToolTip()
-            tip.Content = u"Tipo / \u00d8 estribos \u00b7 Tramo {0} \u00b7 Id {1}".format(
-                int(slot),
-                int(eid),
-            )
+            tip.Content = u"Tipo / \u00d8 estribos \u00b7 Id {0}".format(int(eid))
             cb.ToolTip = tip
         except Exception:
             pass
         try:
-            cb.Tag = int(slot)
+            cb.Tag = int(store_key)
         except Exception:
             pass
 
@@ -2863,10 +3386,10 @@ class TroceoSchemeController(object):
             if self._col_bar_type_evt_suppress:
                 return
             try:
-                slot_i = int(sender.Tag)
+                sk_i = int(sender.Tag)
                 ix = int(sender.SelectedIndex)
                 if 0 <= ix < len(self._col_stirrup_bar_choices):
-                    self._col_stirrup_bar_store[slot_i] = self._col_stirrup_bar_choices[ix][
+                    self._col_stirrup_bar_store[sk_i] = self._col_stirrup_bar_choices[ix][
                         1
                     ]
             except Exception:
@@ -2874,10 +3397,9 @@ class TroceoSchemeController(object):
 
         cb.SelectionChanged += _on_stirrup_bar_type_sel
         try:
-            top = float(y_top) + max(
-                (float(hpx) - float(cb_h)) / 2.0,
-                0.0,
-            )
+            _by = float(band_y_top) if band_y_top is not None else float(y_top)
+            _bh = float(band_hpx) if band_hpx is not None else float(hpx)
+            top = _by + max((_bh - float(cb_h)) / 2.0, 0.0)
         except Exception:
             top = float(y_top)
         Canvas.SetLeft(cb, float(combo_left_x))
@@ -2890,6 +3412,355 @@ class TroceoSchemeController(object):
             canvas.Children.Add(cb)
         except Exception:
             pass
+
+    def _init_lot_stores_from_slot(self, slot):
+        u"""Al activar L/3: T1/T3 esp. 100 mm; T2 copia Ø/esp del lote único si faltan."""
+        sk0 = _stirrup_slot_lot_store_key(slot, 0)
+        for lot_i in range(3):
+            sk = _stirrup_slot_lot_store_key(slot, lot_i)
+            if self._col_spacing_store is not None:
+                try:
+                    if lot_i in (0, 2):
+                        self._col_spacing_store[sk] = float(
+                            _STIRRUP_L3_T1_T3_DEFAULT_SPACING_MM
+                        )
+                    elif sk not in self._col_spacing_store:
+                        if sk0 in self._col_spacing_store:
+                            self._col_spacing_store[sk] = float(
+                                self._col_spacing_store[sk0]
+                            )
+                        elif int(slot) in self._col_spacing_store:
+                            self._col_spacing_store[sk] = float(
+                                self._col_spacing_store[int(slot)]
+                            )
+                except Exception:
+                    pass
+            if self._col_stirrup_bar_store is not None:
+                try:
+                    if sk not in self._col_stirrup_bar_store:
+                        if sk0 in self._col_stirrup_bar_store:
+                            self._col_stirrup_bar_store[sk] = self._col_stirrup_bar_store[
+                                sk0
+                            ]
+                        elif int(slot) in self._col_stirrup_bar_store:
+                            self._col_stirrup_bar_store[sk] = self._col_stirrup_bar_store[
+                                int(slot)
+                            ]
+                except Exception:
+                    pass
+
+    def _draw_stirrup_third_guides(self, canvas, shaft_x, y_top, hpx, shaft_w, ls):
+        u"""Líneas horizontales T1|T2|T3 en el fuste (política L/3)."""
+        if canvas is None or float(hpx) < 6.0:
+            return
+        try:
+            from System.Windows.Shapes import Line
+            from System.Windows.Media import SolidColorBrush
+        except Exception:
+            return
+        try:
+            brush = _BR_MUTED
+        except Exception:
+            return
+        third = float(hpx) / 3.0
+        x0 = float(shaft_x)
+        x1 = x0 + float(shaft_w)
+        for k in (1, 2):
+            try:
+                y_line = float(y_top) + third * float(k)
+                ln = Line()
+                ln.X1 = x0
+                ln.X2 = x1
+                ln.Y1 = y_line
+                ln.Y2 = y_line
+                ln.Stroke = brush
+                ln.StrokeThickness = max(0.75, 0.85 * float(ls))
+                ln.StrokeDashArray = [3.0, 2.0]
+                try:
+                    Panel.SetZIndex(ln, 11)
+                except Exception:
+                    pass
+                canvas.Children.Add(ln)
+            except Exception:
+                pass
+
+    def _place_stirrup_lot_label(
+        self,
+        canvas,
+        lote_x,
+        y_top,
+        hpx,
+        lot_label,
+        layout_scale,
+        band_y_top=None,
+        band_hpx=None,
+    ):
+        if canvas is None or not lot_label:
+            return
+        try:
+            from System import Double
+            from System.Windows import Size
+            from System.Windows.Controls import TextBlock
+        except Exception:
+            return
+        ls = float(layout_scale)
+        tb = TextBlock()
+        tb.Text = unicode(lot_label)
+        try:
+            tb.Foreground = _BR_MUTED
+            tb.FontSize = max(8.0, 8.5 * ls)
+        except Exception:
+            pass
+        try:
+            _by = float(band_y_top) if band_y_top is not None else float(y_top)
+            _bh = float(band_hpx) if band_hpx is not None else float(hpx)
+            tb.Measure(Size(Double.PositiveInfinity, Double.PositiveInfinity))
+            lh = float(tb.DesiredSize.Height)
+            top = _by + max((_bh - lh) / 2.0, 0.0)
+            lw = float(tb.DesiredSize.Width)
+            Canvas.SetLeft(
+                tb,
+                float(lote_x)
+                + max(0.0, (_stirrup_lote_label_col_width_px(ls) - lw) / 2.0),
+            )
+            Canvas.SetTop(tb, top)
+            Panel.SetZIndex(tb, 8)
+            canvas.Children.Add(tb)
+        except Exception:
+            pass
+
+    def _place_segment_stirrup_policy_combo(
+        self,
+        canvas,
+        policy_x,
+        y_top,
+        hpx,
+        slot,
+        eid,
+        policy_w_px,
+        combo_h_px,
+        layout_scale,
+    ):
+        if self._col_stirrup_policy_store is None or canvas is None:
+            return
+        try:
+            from System.Windows.Controls import ComboBox, ToolTip
+        except Exception:
+            return
+        ls = float(layout_scale)
+        cb_w = max(float(policy_w_px), 36.0)
+        cb_h = max(float(combo_h_px), 20.0)
+        pv = _stirrup_combo_vertical_padding_px(ls)
+        cb = ComboBox()
+        self._apply_scheme_spacing_combo_look(cb)
+        try:
+            cb.MinWidth = cb_w
+            cb.Width = cb_w
+            cb.MaxWidth = cb_w
+            cb.Height = cb_h
+            cb.MaxHeight = cb_h
+            cb.FontSize = max(8.0, 8.25 * ls)
+            cb.Padding = Thickness(3.0, pv, 3.0, pv)
+            cb.HorizontalAlignment = HorizontalAlignment.Left
+        except Exception:
+            pass
+        for _lbl, _val in _STIRRUP_POLICY_UI_CHOICES:
+            cb.Items.Add(_lbl)
+        pol = _stirrup_policy_for_slot(self._col_stirrup_policy_store, slot)
+        pick = 0 if pol == STIRRUP_POLICY_CONTINUOUS else 1
+        self._col_policy_evt_suppress = True
+        try:
+            cb.SelectedIndex = int(pick)
+        except Exception:
+            pass
+        finally:
+            self._col_policy_evt_suppress = False
+        try:
+            if int(slot) not in self._col_stirrup_policy_store:
+                self._col_stirrup_policy_store[int(slot)] = pol
+        except Exception:
+            pass
+        try:
+            tip = ToolTip()
+            tip.Content = (
+                u"Completo: un \u00d8 y espaciamiento en toda la columna. "
+                u"L/3: tres lotes (T1\u2013T3) con \u00d8 y esp. independientes."
+            )
+            cb.ToolTip = tip
+        except Exception:
+            pass
+        cb.Tag = int(slot)
+
+        def _on_policy_sel(sender, args):
+            if self._col_policy_evt_suppress:
+                return
+            try:
+                slot_i = int(sender.Tag)
+                ix = int(sender.SelectedIndex)
+                if ix < 0 or ix >= len(_STIRRUP_POLICY_UI_CHOICES):
+                    return
+                new_pol = _STIRRUP_POLICY_UI_CHOICES[ix][1]
+                old_pol = _stirrup_policy_for_slot(
+                    self._col_stirrup_policy_store,
+                    slot_i,
+                )
+                self._col_stirrup_policy_store[slot_i] = new_pol
+                if (
+                    new_pol == STIRRUP_POLICY_THIRDS_L3
+                    and old_pol != STIRRUP_POLICY_THIRDS_L3
+                ):
+                    self._init_lot_stores_from_slot(slot_i)
+                self._populate_blocks(skip_reveal=True)
+            except Exception:
+                pass
+
+        cb.SelectionChanged += _on_policy_sel
+        try:
+            top = float(y_top) + max((float(hpx) - float(cb_h)) / 2.0, 0.0)
+        except Exception:
+            top = float(y_top)
+        Canvas.SetLeft(cb, float(policy_x))
+        Canvas.SetTop(cb, top)
+        try:
+            Panel.SetZIndex(cb, 9)
+        except Exception:
+            pass
+        canvas.Children.Add(cb)
+
+    def _place_column_stirrup_row_controls(
+        self,
+        canvas,
+        lote_x,
+        combo_left_x,
+        policy_x,
+        y_top,
+        hpx,
+        slot,
+        eid,
+        elem,
+        stirrup_diam_w_px,
+        stirrup_spacing_w_px,
+        stirrup_combo_h_px,
+        policy_w_px,
+        ls,
+        _has_stirrup_bar_combo,
+        stirrup_combo_inner_gap_px,
+        shaft_x,
+        shaft_w,
+    ):
+        u"""Ø, esp. y política por columna; tres lotes si L/3."""
+        if self._col_spacing_store is None:
+            return
+        pol = _stirrup_policy_for_slot(self._col_stirrup_policy_store, slot)
+        _spacing_x_base = float(combo_left_x)
+        if _has_stirrup_bar_combo and stirrup_diam_w_px > 0.5:
+            _diam_x = float(combo_left_x)
+        else:
+            _diam_x = _spacing_x_base
+        if pol == STIRRUP_POLICY_THIRDS_L3:
+            self._draw_stirrup_third_guides(
+                canvas, shaft_x, y_top, hpx, shaft_w, ls
+            )
+            third_h = float(hpx) / 3.0
+            for lot_i in range(3):
+                band_y = float(y_top) + third_h * float(lot_i)
+                sk = _stirrup_slot_lot_store_key(slot, lot_i)
+                self._place_stirrup_lot_label(
+                    canvas,
+                    lote_x,
+                    y_top,
+                    hpx,
+                    _STIRRUP_LOT_LABELS[lot_i],
+                    ls,
+                    band_y_top=band_y,
+                    band_hpx=third_h,
+                )
+                if _has_stirrup_bar_combo and stirrup_diam_w_px > 0.5:
+                    self._place_segment_stirrup_bar_type_combo(
+                        canvas,
+                        _diam_x,
+                        y_top,
+                        hpx,
+                        int(slot),
+                        eid,
+                        elem,
+                        stirrup_diam_w_px,
+                        stirrup_combo_h_px,
+                        ls,
+                        store_key=sk,
+                        band_y_top=band_y,
+                        band_hpx=third_h,
+                    )
+                    _sp_x = (
+                        float(_diam_x)
+                        + float(stirrup_diam_w_px)
+                        + float(stirrup_combo_inner_gap_px)
+                    )
+                else:
+                    _sp_x = _spacing_x_base
+                self._place_segment_stirrup_spacing_combo(
+                    canvas,
+                    _sp_x,
+                    y_top,
+                    hpx,
+                    int(slot),
+                    eid,
+                    elem,
+                    stirrup_spacing_w_px,
+                    stirrup_combo_h_px,
+                    ls,
+                    store_key=sk,
+                    band_y_top=band_y,
+                    band_hpx=third_h,
+                )
+        else:
+            sk = _stirrup_slot_lot_store_key(slot, 0)
+            if _has_stirrup_bar_combo and stirrup_diam_w_px > 0.5:
+                self._place_segment_stirrup_bar_type_combo(
+                    canvas,
+                    _diam_x,
+                    y_top,
+                    hpx,
+                    int(slot),
+                    eid,
+                    elem,
+                    stirrup_diam_w_px,
+                    stirrup_combo_h_px,
+                    ls,
+                    store_key=sk,
+                )
+                _sp_x = (
+                    float(_diam_x)
+                    + float(stirrup_diam_w_px)
+                    + float(stirrup_combo_inner_gap_px)
+                )
+            else:
+                _sp_x = _spacing_x_base
+            self._place_segment_stirrup_spacing_combo(
+                canvas,
+                _sp_x,
+                y_top,
+                hpx,
+                int(slot),
+                eid,
+                elem,
+                stirrup_spacing_w_px,
+                stirrup_combo_h_px,
+                ls,
+                store_key=sk,
+            )
+        if policy_x is not None:
+            self._place_segment_stirrup_policy_combo(
+                canvas,
+                policy_x,
+                y_top,
+                hpx,
+                int(slot),
+                eid,
+                policy_w_px,
+                stirrup_combo_h_px,
+                ls,
+            )
 
     def _prepare_scheme_header_for_paint(self):
         u"""Canvas fijo encima del ScrollViewer; vaciar antes de repintar el esquema."""
@@ -2925,7 +3796,14 @@ class TroceoSchemeController(object):
         bar_x0,
         long_combo_w=None,
         empalme_header_cx=None,
+        troceo_empalme_header_cx=None,
+        troceo_empalme_header_w_px=None,
         bubble_cx=None,
+        lote_col_x=None,
+        policy_x=None,
+        policy_w_px=None,
+        section_left_x=None,
+        section_zone_w_px=None,
     ):
         u"""Encabezados centrados sobre controles; \u00d8 Long. sobre el combo (Tramo queda a la izquierda en el esquema)."""
         if header_cv is None:
@@ -3025,6 +3903,79 @@ class TroceoSchemeController(object):
             except Exception:
                 pass
             header_cv.Children.Add(tbs)
+            if lote_col_x is not None:
+                try:
+                    lcx = float(lote_col_x)
+                    lote_w = _stirrup_lote_label_col_width_px(ls)
+                    tbl = TextBlock()
+                    tbl.Text = u"Lote"
+                    _apply_troceo_scheme_header_text_style(tbl, ls)
+                    _center_tb(tbl, lcx + lote_w / 2.0, hy)
+                    try:
+                        Panel.SetZIndex(tbl, hz_t)
+                    except Exception:
+                        pass
+                    header_cv.Children.Add(tbl)
+                except Exception:
+                    pass
+            if policy_x is not None and policy_w_px is not None:
+                try:
+                    pw = float(policy_w_px)
+                    if pw > 0.5:
+                        tbp = TextBlock()
+                        tbp.Text = u"Pol\u00edtica"
+                        _apply_troceo_scheme_header_text_style(tbp, ls)
+                        _center_tb(tbp, float(policy_x) + pw / 2.0, hy)
+                        try:
+                            Panel.SetZIndex(tbp, hz_t)
+                        except Exception:
+                            pass
+                        header_cv.Children.Add(tbp)
+                except Exception:
+                    pass
+            if section_left_x is not None and section_zone_w_px is not None:
+                try:
+                    tbsct = TextBlock()
+                    tbsct.Text = u"Secci\u00f3n"
+                    _apply_troceo_scheme_header_text_style(tbsct, ls)
+                    _center_tb(
+                        tbsct,
+                        float(section_left_x) + float(section_zone_w_px) / 2.0,
+                        hy,
+                    )
+                    try:
+                        Panel.SetZIndex(tbsct, hz_t)
+                    except Exception:
+                        pass
+                    header_cv.Children.Add(tbsct)
+                except Exception:
+                    pass
+        if troceo_empalme_header_cx is not None:
+            try:
+                tcx = float(troceo_empalme_header_cx)
+            except Exception:
+                tcx = None
+            if tcx is not None:
+                tb_tr = TextBlock()
+                tb_tr.Text = u"Troceo"
+                _apply_troceo_scheme_header_text_style(tb_tr, ls)
+                try:
+                    from System.Windows.Controls import ToolTip
+
+                    tip_tr = ToolTip()
+                    tip_tr.Content = (
+                        u"Base: inicio de eje. Mitad altura: mitad del sólido; "
+                        u"B con L(Ø); traslapo 50/50 en la junta."
+                    )
+                    tb_tr.ToolTip = tip_tr
+                except Exception:
+                    pass
+                _center_tb(tb_tr, tcx, hy)
+                try:
+                    Panel.SetZIndex(tb_tr, hz_t)
+                except Exception:
+                    pass
+                header_cv.Children.Add(tb_tr)
         if empalme_header_cx is not None:
             try:
                 ecx = float(empalme_header_cx)
@@ -3123,6 +4074,7 @@ class TroceoSchemeController(object):
             self._scheme_canvas = None
             self._bar_ladder_layout = None
             self._troceo_layout_scale = 1.0
+            self._sync_diameter_panel()
             return
         ls = float(_TROCEO_LAYOUT_SCALE)
         self._troceo_layout_scale = ls
@@ -3131,7 +4083,7 @@ class TroceoSchemeController(object):
         shaft_w = 20.0 * ls
         bar_ladder_w = 18.0 * ls
         foundation_w = 34.0 * ls
-        shaft_x_base = 72.0 * ls
+        shaft_x_base = float(_TROCEO_SHAFT_X_BASE_PX) * ls
         seg_base = float(_TROCEO_SEG_UNIFORM_BASE_PX) * ls
         max_stack = float(_MAX_TROCEO_STACK_PX) * ls
         vcap = getattr(self, "_viewport_stack_budget_px", None)
@@ -3149,6 +4101,18 @@ class TroceoSchemeController(object):
             )
         elif n * seg_uniform > max_stack:
             seg_uniform = max(min_seg, max_stack / float(n))
+        try:
+            _pol_store = getattr(self, u"_col_stirrup_policy_store", None) or {}
+            _need_l3_h = _stirrup_combo_compact_height_px(ls) * 3.0 + 10.0 * ls
+            for _m in models:
+                if (
+                    _stirrup_policy_for_slot(_pol_store, _m.get(u"slot", 0))
+                    == STIRRUP_POLICY_THIRDS_L3
+                ):
+                    seg_uniform = max(float(seg_uniform), float(_need_l3_h))
+                    break
+        except Exception:
+            pass
         seg_px = [float(seg_uniform)] * n
         stack_h = float(n) * seg_uniform
         if stack_h > max_stack + 1e-6:
@@ -3162,27 +4126,7 @@ class TroceoSchemeController(object):
             eid = int(m[u"eid"])
             if eid not in dims_cache:
                 dims_cache[eid] = _column_plan_dims_short_long_mm(m.get(u"elem"))
-        max_rot_w = 0.0
-        try:
-            from System import Double
-            from System.Windows import Size
-            from System.Windows.Media import RotateTransform
-
-            for fs in (7.5 * ls, 8.25 * ls):
-                for _eid, pair in dims_cache.items():
-                    ss, sl = pair
-                    if ss is None or sl is None:
-                        continue
-                    cap = u"{0}x{1}".format(int(ss), int(sl))
-                    tb = TextBlock()
-                    tb.Text = cap
-                    tb.FontSize = float(fs)
-                    tb.FontWeight = FontWeights.SemiBold
-                    tb.LayoutTransform = RotateTransform(-90.0)
-                    tb.Measure(Size(Double.PositiveInfinity, Double.PositiveInfinity))
-                    max_rot_w = max(max_rot_w, float(tb.DesiredSize.Width))
-        except Exception:
-            max_rot_w = 60.0 * ls
+        max_rot_w, _max_rot_h = _measure_section_label_bounds(dims_cache, ls)
         tick_x0_b = shaft_x_base - 8.0 * ls
         bubble_r = 8.0 * ls
         # Menos hueco escalerilla-burbuja: acota el ancho útil y aleja el símbolo del borde derecho (menos scroll horizontal).
@@ -3191,10 +4135,13 @@ class TroceoSchemeController(object):
         long_cb_w = float(_stirrup_combo_row_width_px(ls, True))
         fuste_to_empalme_gap = 3.0 * ls
         between_empalme_long = max(4.0, 3.75 * ls)
+        troceo_pol_w_px = _troceo_empalme_policy_combo_width_px(ls)
+        troceo_pol_gap_px = max(4.0, 3.5 * ls)
         empalme_chk_reserve = max(108.0, 104.0 * ls)
         trom_label_col_w = max(40.0, 38.0 * ls)
         shaft_right_b = shaft_x_base + shaft_w
-        empalme_x_b = shaft_right_b + fuste_to_empalme_gap
+        troceo_pol_x_b = shaft_right_b + fuste_to_empalme_gap
+        empalme_x_b = troceo_pol_x_b + troceo_pol_w_px + troceo_pol_gap_px
         after_checkbox_b = empalme_x_b + empalme_chk_reserve
         trom_label_x0_b = after_checkbox_b + between_empalme_long
         long_x_b = trom_label_x0_b + trom_label_col_w
@@ -3222,6 +4169,21 @@ class TroceoSchemeController(object):
             )
             combo_gap_px = 10.0 * ls
             combo_left_reserve_px = 12.0 * ls
+            stirrup_policy_w_px = _stirrup_policy_combo_width_px(ls)
+            stirrup_lote_col_w_px = _stirrup_lote_label_col_width_px(ls)
+            stirrup_policy_gap_px = max(
+                _TROCEO_STIRRUP_INTER_COL_GAP_PX * ls, 6.0
+            )
+            stirrup_lote_gap_px = max(5.0, 4.5 * ls)
+            _strip_pre = _troceo_stirrup_strip_x_layout(
+                shaft_x_base,
+                dims_cache,
+                ls,
+                combo_w_px,
+            )
+            stirrup_controls_w_px = (
+                float(shaft_x_base) - float(_strip_pre[u"strip_left"])
+            )
         else:
             stirrup_spacing_w_px = 0.0
             stirrup_diam_w_px = 0.0
@@ -3230,14 +4192,29 @@ class TroceoSchemeController(object):
             combo_w_px = 0.0
             combo_gap_px = 0.0
             combo_left_reserve_px = 0.0
-        left_dim_b = (
-            shaft_x_base
-            - max_rot_w
-            - pad_dim
-            - combo_w_px
-            - combo_gap_px
-            - combo_left_reserve_px
-        )
+            stirrup_policy_w_px = 0.0
+            stirrup_lote_col_w_px = 0.0
+            stirrup_policy_gap_px = 0.0
+            stirrup_lote_gap_px = 0.0
+            stirrup_controls_w_px = 0.0
+            _strip_pre = None
+        if self._col_spacing_store is not None and combo_w_px > 0.5:
+            left_dim_b = (
+                float(_strip_pre[u"strip_left"])
+                - combo_gap_px
+                - combo_left_reserve_px
+            )
+        else:
+            section_label_clearance_px = (
+                float(max_rot_w) + float(pad_dim) + max(6.0, 5.0 * ls)
+            )
+            left_dim_b = (
+                shaft_x_base
+                - section_label_clearance_px
+                - combo_w_px
+                - combo_gap_px
+                - combo_left_reserve_px
+            )
         content_left = min(tick_x0_b, left_dim_b, fx_b)
         content_right = max(
             bubble_cx_b + bubble_r + 3.0 * ls,
@@ -3257,15 +4234,35 @@ class TroceoSchemeController(object):
         trom_label_x0 = trom_label_x0_b + offset_x
         bubble_cx = bubble_cx_b + offset_x
         fx = fx_b + offset_x
-        combo_left_x = (
-            shaft_x_base
-            - max_rot_w
-            - pad_dim
-            - combo_gap_px
-            - combo_w_px
-            - combo_left_reserve_px
-            + offset_x
-        )
+        section_left_x = None
+        section_zone_w_px = None
+        if self._col_spacing_store is not None and combo_w_px > 0.5:
+            _strip = _troceo_stirrup_strip_x_layout(
+                float(shaft_x),
+                dims_cache,
+                ls,
+                combo_w_px,
+            )
+            policy_x = float(_strip[u"policy_x"])
+            combo_left_x = float(_strip[u"combo_left_x"])
+            lote_col_x = float(_strip[u"lote_col_x"])
+            section_left_x = float(_strip[u"section_left"])
+            section_zone_w_px = float(_strip[u"section_w"])
+            stirrup_policy_w_px = float(_strip[u"policy_w"])
+        else:
+            policy_x = None
+            lote_col_x = None
+            combo_left_x = (
+                shaft_x_base
+                - max_rot_w
+                - pad_dim
+                - combo_gap_px
+                - combo_w_px
+                - combo_left_reserve_px
+                + offset_x
+            )
+        self._scheme_section_label_left = section_left_x
+        self._scheme_section_zone_w = section_zone_w_px
         self._scheme_canvas = cv
         spx_h = float(combo_left_x)
         if self._col_spacing_store is not None and combo_w_px > 0.5:
@@ -3289,11 +4286,11 @@ class TroceoSchemeController(object):
             ls,
             level_strings,
         )
+        troceo_pol_x = troceo_pol_x_b + offset_x
+        empalme_x = empalme_x_b + offset_x
+        troceo_pol_header_cx = float(troceo_pol_x) + float(troceo_pol_w_px) / 2.0
         empalme_header_cx = (
-            float(shaft_x)
-            + float(shaft_w)
-            + fuste_to_empalme_gap
-            + float(empalme_chk_reserve) / 2.0
+            float(empalme_x) + float(empalme_chk_reserve) / 2.0
         )
         self._paint_fixed_scheme_headers(
             getattr(self, "_scheme_header_canvas", None),
@@ -3311,8 +4308,17 @@ class TroceoSchemeController(object):
             shaft_w,
             bar_x0,
             long_cb_w,
-            empalme_header_cx,
-            bubble_cx,
+            empalme_header_cx=empalme_header_cx,
+            troceo_empalme_header_cx=troceo_pol_header_cx,
+            troceo_empalme_header_w_px=troceo_pol_w_px,
+            bubble_cx=bubble_cx,
+            lote_col_x=lote_col_x,
+            policy_x=policy_x,
+            policy_w_px=(
+                stirrup_policy_w_px if self._col_spacing_store is not None else None
+            ),
+            section_left_x=section_left_x,
+            section_zone_w_px=section_zone_w_px,
         )
         _draw_foundation(cv, fx, fy, foundation_w, found_h)
         brd_list = []
@@ -3326,12 +4332,17 @@ class TroceoSchemeController(object):
             z_mm = float(m[u"z_mm"])
             z_m = z_mm / 1000.0
             display_lev = u"{0:.3f}".format(z_m)
-            bg_br, bd_br = _shaft_brushes_for_tramo(1)
+            _, bd_br = _shaft_brushes_for_tramo(1)
             brd = Border()
             brd.Tag = int(slot)
             brd.Width = shaft_w
             brd.Height = hpx
-            brd.Background = bg_br
+            try:
+                from System.Windows.Media import Brushes
+
+                brd.Background = Brushes.Transparent
+            except Exception:
+                brd.Background = _BR_ENTRY_BG
             brd.BorderBrush = bd_br
             _th0, _cr0 = _shaft_segment_border_and_radius(int(slot), n, ls, False)
             brd.BorderThickness = _th0
@@ -3376,10 +4387,24 @@ class TroceoSchemeController(object):
                 sl_dim,
                 3,
                 layout_scale=ls,
+                section_label_left_x=getattr(
+                    self, u"_scheme_section_label_left", None
+                ),
+                section_zone_w=getattr(self, u"_scheme_section_zone_w", None),
+            )
+            self._place_troceo_empalme_policy_combo(
+                cv,
+                troceo_pol_x,
+                y,
+                hpx,
+                int(slot),
+                troceo_pol_w_px,
+                stirrup_combo_h_px if self._col_spacing_store else _stirrup_combo_compact_height_px(ls),
+                ls,
             )
             self._place_segment_define_empalme_checkbox(
                 cv,
-                float(shaft_x) + float(shaft_w) + fuste_to_empalme_gap,
+                empalme_x,
                 max(52.0, float(empalme_chk_reserve) - 2.0 * ls),
                 y,
                 hpx,
@@ -3387,34 +4412,25 @@ class TroceoSchemeController(object):
                 ls,
             )
             if self._col_spacing_store is not None and combo_w_px > 0.5:
-                _spacing_x = float(combo_left_x)
-                if _has_stirrup_bar_combo and stirrup_diam_w_px > 0.5:
-                    self._place_segment_stirrup_bar_type_combo(
-                        cv,
-                        combo_left_x,
-                        y,
-                        hpx,
-                        int(slot),
-                        eid,
-                        m.get(u"elem"),
-                        stirrup_diam_w_px,
-                        stirrup_combo_h_px,
-                        ls,
-                    )
-                    _spacing_x = float(combo_left_x) + float(
-                        stirrup_diam_w_px
-                    ) + float(stirrup_combo_inner_gap_px)
-                self._place_segment_stirrup_spacing_combo(
+                self._place_column_stirrup_row_controls(
                     cv,
-                    _spacing_x,
+                    lote_col_x,
+                    combo_left_x,
+                    policy_x,
                     y,
                     hpx,
                     int(slot),
                     eid,
                     m.get(u"elem"),
+                    stirrup_diam_w_px,
                     stirrup_spacing_w_px,
                     stirrup_combo_h_px,
+                    stirrup_policy_w_px,
                     ls,
+                    _has_stirrup_bar_combo,
+                    stirrup_combo_inner_gap_px,
+                    shaft_x,
+                    shaft_w,
                 )
             seg_layout.append((y, hpx, slot, display_lev))
             y += hpx
@@ -3504,7 +4520,8 @@ class TroceoSchemeController(object):
             zi += 20
             cv.Children.Add(lab)
         self._update_troceo_datum_reference_lines()
-        self._refresh_bar_tramos_ladder()
+        # Repoblar Ø longitudinal: _populate_blocks recrea el canvas y destruye los combos previos.
+        self._sync_diameter_panel()
         if skip_reveal:
             for brd in brd_list:
                 try:
@@ -3515,8 +4532,73 @@ class TroceoSchemeController(object):
         else:
             self._start_blocks_reveal_animation(brd_list)
 
+    def _troceo_cut_y_by_slot(self, sel_slots=None, lay=None):
+        u"""Mapa slot \u2192 Y de corte en pantalla (coherente con l\u00edneas rojas)."""
+        if lay is None:
+            lay = getattr(self, "_bar_ladder_layout", None)
+        if lay is None:
+            return {}
+        if sel_slots is None:
+            sel_slots = getattr(self, "_sel_slots", None) or set()
+        bot_map = lay.get(u"slot_to_y_bottom") or {}
+        span_map = lay.get(u"slot_to_y_span") or {}
+        out = {}
+        for s in sel_slots or []:
+            y = self._troceo_datum_y_px_for_slot(s, bot_map, span_map)
+            if y is not None:
+                try:
+                    out[int(s)] = float(y)
+                except Exception:
+                    pass
+        return out
+
+    def _bar_tramo_bands_for_layout(self, sel_slots=None, lay=None):
+        u"""Bandas de tramo del fuste usando cortes de empalme (entre l\u00edneas rojas)."""
+        if lay is None:
+            lay = getattr(self, "_bar_ladder_layout", None)
+        if lay is None:
+            return []
+        if sel_slots is None:
+            sel_slots = getattr(self, "_sel_slots", None) or set()
+        try:
+            top_pad = float(lay[u"top_pad"])
+            stack_h = float(lay[u"stack_h"])
+            bot_map = lay.get(u"slot_to_y_bottom") or {}
+        except Exception:
+            return []
+        return _bar_tramo_y_bands_from_cuts(
+            sel_slots,
+            bot_map,
+            top_pad,
+            stack_h,
+            slot_to_cut_y=self._troceo_cut_y_by_slot(sel_slots, lay),
+        )
+
+    def _troceo_datum_y_px_for_slot(self, slot, bot_map, span_map):
+        u"""Y de la l\u00ednea roja: base del tramo (Base) o mitad visual (Mitad altura)."""
+        try:
+            sl = int(slot)
+        except Exception:
+            return None
+        if self._troceo_empalme_policy_for_slot(sl) == TROCEO_EMPALME_POLICY_MID_AXIS:
+            span = (span_map or {}).get(sl)
+            if span is not None:
+                try:
+                    y_top = float(span[0])
+                    y_bot = float(span[1])
+                    return 0.5 * (y_top + y_bot)
+                except Exception:
+                    pass
+        yb = (bot_map or {}).get(sl)
+        if yb is not None:
+            try:
+                return float(yb)
+            except Exception:
+                pass
+        return None
+
     def _update_troceo_datum_reference_lines(self):
-        u"""L\u00ednea roja en la base del tramo seleccionado (referencia troceo/traslape). Sin selecci\u00f3n no se muestra nada."""
+        u"""L\u00ednea roja de referencia de troceo por tramo con empalme (base o mitad del fuste)."""
         cv = getattr(self, "_scheme_canvas", None)
         lay = getattr(self, "_bar_ladder_layout", None)
         if cv is None or lay is None:
@@ -3531,38 +4613,53 @@ class TroceoSchemeController(object):
             shaft_w = float(lay[u"shaft_w"])
             cv_w = float(cv.Width)
             bot_map = lay.get(u"slot_to_y_bottom") or {}
+            span_map = lay.get(u"slot_to_y_span") or {}
             _xref_lo = max(0.0, shaft_x - 6.0 * ls)
             _xref_hi = min(cv_w, shaft_x + shaft_w + 6.0 * ls)
             for sl in sorted(int(s) for s in sel):
-                yb = bot_map.get(int(sl))
-                if yb is not None:
+                y_ref = self._troceo_datum_y_px_for_slot(sl, bot_map, span_map)
+                if y_ref is not None:
                     _add_troceo_datum_reference_line(
-                        cv, float(yb), _xref_lo, _xref_hi, ls,
+                        cv, float(y_ref), _xref_lo, _xref_hi, ls,
                     )
         except Exception:
             pass
 
     def _refresh_all_shaft_styles(self):
-        u"""Colorea cada tramo del fuste seg\u00fan las bandas de troceo (cortes «Define Empalme»)."""
+        u"""Colorea el fuste por subtramos entre cortes de empalme (l\u00edneas rojas)."""
         lay = getattr(self, "_bar_ladder_layout", None)
+        cv = getattr(self, "_scheme_canvas", None)
         if not lay:
             return
-        slot_bot = lay.get(u"slot_to_y_bottom") or {}
         span_map = lay.get(u"slot_to_y_span") or {}
-        top_pad = float(lay.get(u"top_pad", 0.0))
-        stack_h = float(lay.get(u"stack_h", 0.0))
         sel = getattr(self, "_sel_slots", None) or set()
-        bands = _bar_tramo_y_bands_from_cuts(sel, slot_bot, top_pad, stack_h)
+        bands = self._bar_tramo_bands_for_layout(sel, lay)
         n_seg = len(self._seg_models or [])
         ls = float(getattr(self, "_troceo_layout_scale", 1.0))
+        cut_ys = sorted(set(self._troceo_cut_y_by_slot(sel, lay).values()))
+        try:
+            shaft_x = float(lay[u"shaft_x"])
+            shaft_w = float(lay[u"shaft_w"])
+        except Exception:
+            shaft_x = shaft_w = None
+        if cv is not None and shaft_x is not None:
+            _paint_troceo_shaft_tramo_fills(
+                cv, shaft_x, shaft_w, span_map, bands, cut_ys
+            )
+        try:
+            from System.Windows.Media import Brushes
+
+            _bg_clear = Brushes.Transparent
+        except Exception:
+            _bg_clear = _BR_ENTRY_BG
         for slot, brd in (self._borders_by_slot or {}).items():
             if brd is None:
                 continue
             tno = _slot_to_tramo_number_from_bands(int(slot), bands, span_map)
-            bg, bd = _shaft_brushes_for_tramo(tno)
+            _, bd = _shaft_brushes_for_tramo(tno)
             th, cr = _shaft_segment_border_and_radius(int(slot), n_seg, ls, False)
             try:
-                brd.Background = bg
+                brd.Background = _bg_clear
                 brd.BorderBrush = bd
                 brd.BorderThickness = th
                 brd.CornerRadius = cr
@@ -3583,7 +4680,7 @@ class TroceoSchemeController(object):
             shaft_w = float(lay[u"shaft_w"])
             ls = float(lay.get(u"layout_scale", 1.0))
             sel = getattr(self, "_sel_slots", None) or set()
-            bands = _bar_tramo_y_bands_from_cuts(sel, slot_bot, top_pad, stack_h)
+            bands = self._bar_tramo_bands_for_layout(sel, lay)
         except Exception:
             return
         _remove_troceo_shaft_tramo_labels(cv)
@@ -3659,10 +4756,26 @@ class TroceoSchemeController(object):
         else:
             self._sel_slots.discard(slot)
         try:
+            self._sync_troceo_empalme_policy_combo_state(int(slot))
+        except Exception:
+            pass
+        if is_on:
+            try:
+                if self._sync_stirrup_policy_with_troceo_empalme(int(slot)):
+                    self._sync_diameter_panel()
+                    return
+            except Exception:
+                pass
+        try:
             self._refresh_all_shaft_styles()
         except Exception:
             pass
         self._update_troceo_datum_reference_lines()
+        try:
+            self._sync_shaft_tramo_band_labels()
+            self._refresh_bar_tramos_ladder()
+        except Exception:
+            pass
         self._sync_diameter_panel()
 
     def _on_alternate_sel(self, sender, args):
@@ -3686,10 +4799,29 @@ class TroceoSchemeController(object):
                 self._sel_slots.add(s)
         self._sync_define_empalme_checkboxes_from_sel_slots()
         try:
+            self._sync_all_troceo_empalme_policy_combos()
+        except Exception:
+            pass
+        repainted = False
+        for s in sorted(self._sel_slots):
+            try:
+                if self._sync_stirrup_policy_with_troceo_empalme(int(s)):
+                    repainted = True
+            except Exception:
+                pass
+        if repainted:
+            self._sync_diameter_panel()
+            return
+        try:
             self._refresh_all_shaft_styles()
         except Exception:
             pass
         self._update_troceo_datum_reference_lines()
+        try:
+            self._sync_shaft_tramo_band_labels()
+            self._refresh_bar_tramos_ladder()
+        except Exception:
+            pass
         self._sync_diameter_panel()
 
     def _wire_buttons(self):
@@ -3745,6 +4877,9 @@ class TroceoSchemeController(object):
             segment_rebar_bar_type_ids=list(self._pending_bar_type_ids)
             if self._pending_bar_type_ids
             else None,
+            troceo_empalme_policy_by_column_id=(
+                self._collect_troceo_empalme_policy_by_column_id()
+            ),
         )
 
     def _on_cancel(self, sender, args):
@@ -3953,6 +5088,7 @@ class TroceoSchemeController(object):
         except Exception:
             pass
         self._attach_revit_owner_and_position()
+        apply_troceo_scheme_window_maximized(self.window)
         try:
             self.window.Activate()
         except Exception:
@@ -3967,6 +5103,9 @@ class TroceoSchemeController(object):
             segment_rebar_bar_type_ids=list(self._pending_bar_type_ids)
             if self._pending_bar_type_ids
             else None,
+            troceo_empalme_policy_by_column_id=(
+                self._collect_troceo_empalme_policy_by_column_id()
+            ),
         )
 
 

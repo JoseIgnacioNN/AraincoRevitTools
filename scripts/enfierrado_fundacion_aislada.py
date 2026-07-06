@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Enfierrado fundaciones aisladas — formulario (misma línea visual que Crear Area Reinf RPS).
+Enfierrado fundaciones aisladas — formulario (misma línea visual que Armado Muros).
 
-- Estilos WPF, combos y botones alineados con ``area_reinforcement_losa.py`` (Malla en Losa).
+- Estilos WPF, combos y botones alineados con ``armado_muros_preview_ui.py`` (tema ``bimtools_wpf_dark_theme``).
 - Selección de una sola fundación (categoría Structural Foundation, no zapatas de muro).
 - Tres grupos: armadura inferior / superior / lateral; inferior/superior: separación con spinner (100–300 mm, paso 10); lateral: cantidad 1–10 (misma lógica ▲▼ que vigas), default según ``ceil(h/200)−1`` (altura fundación).
 
@@ -49,7 +49,6 @@ from revit_wpf_window_position import (
 )
 
 from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
-from bimtools_paths import get_logo_paths
 
 from geometria_fundacion_cara_inferior import (
     RECUBRIMIENTO_EXTREMOS_MM,
@@ -86,6 +85,19 @@ from rebar_fundacion_cara_inferior import (
     crear_rebar_polilinea_u_malla_inf_sup_curve_loop,
     crear_rebar_u_shape_desde_eje_rebar_shape_nombrado,
 )
+
+try:
+    from conjunto_guid import (
+        ARMADURA_CONJUNTO_GUID_PARAM,
+        finalizar_armadura_conjunto_guid_ejecucion,
+        iniciar_armadura_conjunto_guid_ejecucion,
+        stamp_armadura_conjunto_guid,
+    )
+except Exception:
+    ARMADURA_CONJUNTO_GUID_PARAM = u"Armadura_Conjunto_GUID"
+    finalizar_armadura_conjunto_guid_ejecucion = None
+    iniciar_armadura_conjunto_guid_ejecucion = None
+    stamp_armadura_conjunto_guid = None
 
 _APPDOMAIN_WINDOW_KEY = "BIMTools.EnfierradoFundacionAislada.ActiveWindow"
 
@@ -491,6 +503,16 @@ def _aplicar_armadura_ubicacion(rebar_element, valor_texto):
         pass
 
 
+def _aplicar_armadura_conjunto_guid(rebar_element, conjunto_guid=None):
+    """Rellena ``Armadura_Conjunto_GUID`` en el ``Rebar`` (corrida de la herramienta)."""
+    if rebar_element is None or stamp_armadura_conjunto_guid is None:
+        return
+    try:
+        stamp_armadura_conjunto_guid(rebar_element, conjunto_guid=conjunto_guid)
+    except Exception:
+        pass
+
+
 def _altura_nominal_fundacion_ft(elem):
     """
     Obtiene la altura nominal (pies internos) de la fundación aislada.
@@ -618,23 +640,21 @@ def _leg_ft_pata_u_malla_inferior(z0p, z1p, d_mm_bar, sup_on, elem=None):
     return leg_max
 
 
-# Duración del efecto de cierre (ms). La apertura usa el mismo valor (Storyboard + XAML).
-_WINDOW_CLOSE_MS = 180
 # ScrollViewer principal: al mostrar el pie de propagación, reduce un poco la zona central
 # para que quepa el bloque extra sin chocar con MaxHeight de la ventana.
 _SV_CONTENIDO_MAX_H_NORMAL = 600.0
 _SV_CONTENIDO_MAX_H_PROPAGACION = 500.0
 
-# Ancho del diálogo (misma lógica que ``area_reinforcement_losa``: 2×110 + @ + pads).
-# Con el contenedor ``Informacion Armadura`` hay un borde/padding extra horizontal.
+# Ancho del diálogo: filas de parámetros (2×110 + @) y mínimos de título / pie de acciones.
 _FUND_INPUT_COLS_PER_ROW = 2
 _FUND_COMBO_WIDTH_PX = 110
 _FUND_DIAM_ESP_AT_COL_PX = 28
 _FUND_BLOCK_PAD_H_PX = 16
 _FUND_GROUPBOX_PAD_H_PX = 16
-_FUND_OUTER_PAD_H_PX = 28
+_FUND_OUTER_PAD_H_PX = 36
 _FUND_ARM_INFO_GROUPBOX_EXTRA_H_PX = 12
-_FUND_WIDTH_TITLE_MIN_PX = 288
+_FUND_WIDTH_TITLE_MIN_PX = 420
+_FUND_WIDTH_FOOTER_MIN_PX = 300
 
 
 def _fundacion_aislada_form_width_px(
@@ -645,18 +665,20 @@ def _fundacion_aislada_form_width_px(
     cols = max(1, cols)
     c = int(combo_width_px or _FUND_COMBO_WIDTH_PX)
     row_inner = cols * c + _FUND_DIAM_ESP_AT_COL_PX + _FUND_BLOCK_PAD_H_PX
-    w = (
+    w_content = (
         row_inner
         + _FUND_GROUPBOX_PAD_H_PX
-        + _FUND_OUTER_PAD_H_PX
         + _FUND_ARM_INFO_GROUPBOX_EXTRA_H_PX
     )
-    w = max(w, _FUND_WIDTH_TITLE_MIN_PX)
+    w = max(
+        w_content + _FUND_OUTER_PAD_H_PX,
+        _FUND_WIDTH_TITLE_MIN_PX,
+        _FUND_WIDTH_FOOTER_MIN_PX + _FUND_OUTER_PAD_H_PX,
+    )
     return int((int(w) + 3) // 4 * 4)
 
 
-# Recursos y chrome alineados con ``area_reinforcement_losa.XAML`` (Crear Area Reinf RPS).
-_WPF_STORYBOARD_DUR_STR = "0:0:{0:.2f}".format(_WINDOW_CLOSE_MS / 1000.0)
+# Recursos y chrome alineados con ``armado_muros_preview_ui.XAML_PREVIEW`` (Armado Muros).
 _ENFIERRADO_FUND_XAML = (
     u"""
 <Window
@@ -667,49 +689,18 @@ _ENFIERRADO_FUND_XAML = (
     SizeToContent="Height"
     MaxHeight="920"
     WindowStartupLocation="Manual"
-    Background="Transparent"
-    AllowsTransparency="True"
+    Background="#071018"
     FontFamily="Segoe UI"
-    WindowStyle="None"
+    FontSize="12"
+    ShowInTaskbar="False"
     ResizeMode="NoResize"
     Topmost="True"
     UseLayoutRounding="True"
     >
-  <!-- Apertura/cierre: ScaleTransform en FundRootScale (0,0). Igual que Wall Foundation Reinforcement. -->
   <Window.Resources>
-    <Storyboard x:Key="FundOpenGrowStoryboard">
-      <DoubleAnimation Storyboard.TargetName="FundRootScale" Storyboard.TargetProperty="ScaleX"
-                       From="0" To="1" Duration="__WPF_STORYBOARD_DUR__" FillBehavior="HoldEnd">
-        <DoubleAnimation.EasingFunction>
-          <QuadraticEase EasingMode="EaseOut"/>
-        </DoubleAnimation.EasingFunction>
-      </DoubleAnimation>
-      <DoubleAnimation Storyboard.TargetName="FundRootScale" Storyboard.TargetProperty="ScaleY"
-                       From="0" To="1" Duration="__WPF_STORYBOARD_DUR__" FillBehavior="HoldEnd">
-        <DoubleAnimation.EasingFunction>
-          <QuadraticEase EasingMode="EaseOut"/>
-        </DoubleAnimation.EasingFunction>
-      </DoubleAnimation>
-      <DoubleAnimation Storyboard.TargetName="FundacionWin" Storyboard.TargetProperty="Opacity"
-                       From="0" To="1" Duration="__WPF_STORYBOARD_DUR__" FillBehavior="HoldEnd">
-        <DoubleAnimation.EasingFunction>
-          <QuadraticEase EasingMode="EaseOut"/>
-        </DoubleAnimation.EasingFunction>
-      </DoubleAnimation>
-    </Storyboard>
 """ + BIMTOOLS_DARK_STYLES_XML + u"""
-    <Style x:Key="FundGb" TargetType="GroupBox" BasedOn="{StaticResource GbParams}">
-      <Setter Property="BorderBrush" Value="#5BC0DE"/>
-    </Style>
   </Window.Resources>
-  <Border x:Name="FundacionRootChrome" CornerRadius="8" Background="#0A1627" Padding="14"
-          BorderBrush="#5BC0DE" BorderThickness="1" ClipToBounds="True" RenderTransformOrigin="0,0">
-    <Border.Effect>
-      <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="0" Opacity="0.35"/>
-    </Border.Effect>
-    <Border.RenderTransform>
-      <ScaleTransform x:Name="FundRootScale" ScaleX="0" ScaleY="0"/>
-    </Border.RenderTransform>
+  <Border Background="#071018" BorderBrush="#21465C" BorderThickness="1" Padding="18">
     <Grid HorizontalAlignment="Stretch">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/>
@@ -717,25 +708,12 @@ _ENFIERRADO_FUND_XAML = (
         <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
 
-      <Border x:Name="TitleBar" Grid.Row="0" Background="#0D1E2E" CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
-              BorderBrush="#5BC0DE" BorderThickness="1" HorizontalAlignment="Stretch">
-        <Grid HorizontalAlignment="Stretch">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto"/>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="Auto"/>
-          </Grid.ColumnDefinitions>
-          <Image x:Name="ImgLogo" Width="40" Height="40" Grid.Column="0"
-                 Stretch="Uniform" Margin="0,0,10,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
-          <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="4,0">
-            <TextBlock Text="Armadura Fundacion Aislada" FontSize="14" FontWeight="Bold"
-                       Foreground="#FFFFFF" TextWrapping="NoWrap" TextAlignment="Center" HorizontalAlignment="Center"/>
-          </StackPanel>
-          <Button x:Name="BtnClose" Grid.Column="2"
-                  Style="{StaticResource BtnCloseX_MinimalNoBg}"
-                  VerticalAlignment="Center" HorizontalAlignment="Right" ToolTip="Cerrar"/>
-        </Grid>
-      </Border>
+      <StackPanel Grid.Row="0" Margin="0,0,0,10">
+        <TextBlock Text="Arainco: Armadura Fundacion Aislada" Foreground="#E8F4F8" FontSize="18" FontWeight="Bold"
+                   TextWrapping="Wrap"/>
+        <TextBlock x:Name="TxtSubtitle" Margin="0,6,0,0" Foreground="#95B8CC" TextWrapping="Wrap"
+                   Text="Selecciona una fundación aislada y configura armadura inferior, superior y lateral."/>
+      </StackPanel>
 
       <ScrollViewer x:Name="SvContenido" Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="600" Margin="0,0,0,2">
         <StackPanel HorizontalAlignment="Stretch">
@@ -745,15 +723,15 @@ _ENFIERRADO_FUND_XAML = (
                     HorizontalAlignment="Stretch" Padding="12,8"/>
           </StackPanel>
 
-          <GroupBox Style="{StaticResource FundGb}" Margin="0,0,0,10" HorizontalAlignment="Stretch">
+          <GroupBox Style="{StaticResource GbParams}" Margin="0,0,0,10" HorizontalAlignment="Stretch">
             <GroupBox.Header>
-              <TextBlock Text="Informacion Armadura" FontWeight="Bold" Foreground="#FFFFFF" FontSize="12"/>
+              <TextBlock Text="Informacion Armadura" FontWeight="Bold" Foreground="#E8F4F8" FontSize="12"/>
             </GroupBox.Header>
             <StackPanel>
-          <GroupBox Style="{StaticResource FundGb}" Margin="0,0,0,10" HorizontalAlignment="Stretch">
+          <GroupBox Style="{StaticResource GbParams}" Margin="0,0,0,10" HorizontalAlignment="Stretch">
             <GroupBox.Header>
               <CheckBox x:Name="ChkInferior" IsChecked="True" Content="Armadura Inferior"
-                        Foreground="#FFFFFF" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
+                        Foreground="#E8F4F8" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
             </GroupBox.Header>
             <StackPanel x:Name="PanelInferior">
               <Grid HorizontalAlignment="Center">
@@ -766,9 +744,9 @@ _ENFIERRADO_FUND_XAML = (
                   <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
                 </ComboBox>
                 <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
-                           Foreground="#5BC0DE" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,0,8,0"/>
+                           Foreground="#95B8CC" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,0,8,0"/>
                 <Border Grid.Column="2" Width="110" Height="24" CornerRadius="5" Background="#050E18"
-                        BorderBrush="#5BC0DE" BorderThickness="1" SnapsToDevicePixels="True">
+                        BorderBrush="#1A3A4D" BorderThickness="1" SnapsToDevicePixels="True">
                   <Grid>
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="*"/>
@@ -777,7 +755,7 @@ _ENFIERRADO_FUND_XAML = (
                     <TextBox x:Name="TxtInfSepMm" Grid.Column="0" Style="{StaticResource CantSpinnerText}"
                              Text="150" Padding="6,0,6,0" HorizontalAlignment="Stretch" VerticalContentAlignment="Center"
                              ToolTip="Separación entre barras (mm): 100 a 300, paso 10"/>
-                    <Border Grid.Column="1" Background="#11253D" BorderBrush="#4A8FA8"
+                    <Border Grid.Column="1" Background="#11253D" BorderBrush="#1A3A4D"
                             BorderThickness="1,0,0,0" CornerRadius="0,5,5,0" ClipToBounds="True">
                       <Grid>
                         <Grid.RowDefinitions>
@@ -796,10 +774,10 @@ _ENFIERRADO_FUND_XAML = (
             </StackPanel>
           </GroupBox>
 
-          <GroupBox Style="{StaticResource FundGb}" Margin="0,0,0,10" HorizontalAlignment="Stretch">
+          <GroupBox Style="{StaticResource GbParams}" Margin="0,0,0,10" HorizontalAlignment="Stretch">
             <GroupBox.Header>
               <CheckBox x:Name="ChkSuperior" IsChecked="True" Content="Armadura Superior"
-                        Foreground="#FFFFFF" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
+                        Foreground="#E8F4F8" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
             </GroupBox.Header>
             <StackPanel x:Name="PanelSuperior">
               <Grid HorizontalAlignment="Center">
@@ -812,9 +790,9 @@ _ENFIERRADO_FUND_XAML = (
                   <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
                 </ComboBox>
                 <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
-                           Foreground="#5BC0DE" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,0,8,0"/>
+                           Foreground="#95B8CC" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,0,8,0"/>
                 <Border Grid.Column="2" Width="110" Height="24" CornerRadius="5" Background="#050E18"
-                        BorderBrush="#5BC0DE" BorderThickness="1" SnapsToDevicePixels="True">
+                        BorderBrush="#1A3A4D" BorderThickness="1" SnapsToDevicePixels="True">
                   <Grid>
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="*"/>
@@ -823,7 +801,7 @@ _ENFIERRADO_FUND_XAML = (
                     <TextBox x:Name="TxtSupSepMm" Grid.Column="0" Style="{StaticResource CantSpinnerText}"
                              Text="150" Padding="6,0,6,0" HorizontalAlignment="Stretch" VerticalContentAlignment="Center"
                              ToolTip="Separación entre barras (mm): 100 a 300, paso 10"/>
-                    <Border Grid.Column="1" Background="#11253D" BorderBrush="#4A8FA8"
+                    <Border Grid.Column="1" Background="#11253D" BorderBrush="#1A3A4D"
                             BorderThickness="1,0,0,0" CornerRadius="0,5,5,0" ClipToBounds="True">
                       <Grid>
                         <Grid.RowDefinitions>
@@ -842,10 +820,10 @@ _ENFIERRADO_FUND_XAML = (
             </StackPanel>
           </GroupBox>
 
-          <GroupBox Style="{StaticResource FundGb}" Margin="0,0,0,0" HorizontalAlignment="Stretch">
+          <GroupBox Style="{StaticResource GbParams}" Margin="0,0,0,0" HorizontalAlignment="Stretch">
             <GroupBox.Header>
               <CheckBox x:Name="ChkLateral" IsChecked="True" Content="Armadura Lateral"
-                        Foreground="#FFFFFF" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
+                        Foreground="#E8F4F8" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
             </GroupBox.Header>
             <StackPanel x:Name="PanelLateral">
               <Grid HorizontalAlignment="Center">
@@ -855,7 +833,7 @@ _ENFIERRADO_FUND_XAML = (
                   <ColumnDefinition Width="110"/>
                 </Grid.ColumnDefinitions>
                 <Border Grid.Column="0" Width="110" Height="24" CornerRadius="5" Background="#050E18"
-                        BorderBrush="#5BC0DE" BorderThickness="1" SnapsToDevicePixels="True">
+                        BorderBrush="#1A3A4D" BorderThickness="1" SnapsToDevicePixels="True">
                   <Grid>
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="*"/>
@@ -864,7 +842,7 @@ _ENFIERRADO_FUND_XAML = (
                     <TextBox x:Name="TxtLatCant" Grid.Column="0" Style="{StaticResource CantSpinnerText}"
                              Text="2" Padding="6,0,6,0" HorizontalAlignment="Stretch" VerticalContentAlignment="Center"
                              ToolTip="Cantidad de barras laterales (1 a 10). Tras seleccionar la fundación, valor sugerido según altura."/>
-                    <Border Grid.Column="1" Background="#11253D" BorderBrush="#4A8FA8"
+                    <Border Grid.Column="1" Background="#11253D" BorderBrush="#1A3A4D"
                             BorderThickness="1,0,0,0" CornerRadius="0,5,5,0" ClipToBounds="True">
                       <Grid>
                         <Grid.RowDefinitions>
@@ -891,19 +869,40 @@ _ENFIERRADO_FUND_XAML = (
         </StackPanel>
       </ScrollViewer>
 
-      <StackPanel Grid.Row="2" Margin="0" HorizontalAlignment="Stretch">
-        <Border x:Name="BorderPropagacion" Visibility="Collapsed" Background="#0D1E2E"
-                BorderBrush="#5BC0DE" BorderThickness="1" CornerRadius="5" Padding="8,6" Margin="0,0,0,8">
-          <TextBlock x:Name="TxtPropagacionTitulo" TextWrapping="Wrap" Foreground="#FFFFFF" FontSize="11"/>
+      <Grid Grid.Row="2" Margin="0,14,0,0">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Border x:Name="BorderPropagacion" Grid.Row="0" Visibility="Collapsed" Background="#0a1620"
+                BorderBrush="#21465C" BorderThickness="1" CornerRadius="4" Padding="8,6" Margin="0,0,0,8">
+          <TextBlock x:Name="TxtPropagacionTitulo" TextWrapping="Wrap" Foreground="#E8F4F8" FontSize="11"/>
         </Border>
-        <Button x:Name="BtnColocar" Content="Colocar armaduras"
-                Style="{StaticResource BtnPrimary}"
-                HorizontalAlignment="Stretch" Padding="20,11" FontSize="13"/>
-      </StackPanel>
+        <Grid Grid.Row="1">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+          <TextBlock x:Name="TxtEstado" Grid.Row="0"
+                     Foreground="#64748b" FontSize="10" TextWrapping="Wrap" Margin="0,0,0,8"/>
+          <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="8"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Button x:Name="BtnCancelar" Grid.Column="0" Content="Cancelar"
+                    Style="{StaticResource BtnSelectOutline}" HorizontalAlignment="Stretch"/>
+            <Button x:Name="BtnColocar" Grid.Column="2" Content="Colocar armaduras"
+                    Style="{StaticResource BtnPrimary}" HorizontalAlignment="Stretch"/>
+          </Grid>
+        </Grid>
+      </Grid>
     </Grid>
   </Border>
 </Window>
-""").replace(u"__WPF_STORYBOARD_DUR__", _WPF_STORYBOARD_DUR_STR)
+"""
+)
 
 
 class FundacionAisladaSelectionFilter(ISelectionFilter):
@@ -1724,6 +1723,19 @@ class ColocarArmaduraFundacionStubHandler(IExternalEventHandler):
             except Exception:
                 pass
             return
+        conjunto_guid = None
+        _es_propagacion_guid = bool(getattr(win, "_saltar_propagacion_post", False))
+        _conjunto_guid_reuso = None
+        if _es_propagacion_guid:
+            _conjunto_guid_reuso = getattr(win, "_propagacion_conjunto_guid", None)
+        if iniciar_armadura_conjunto_guid_ejecucion is not None:
+            try:
+                conjunto_guid = iniciar_armadura_conjunto_guid_ejecucion(
+                    conjunto_guid=_conjunto_guid_reuso
+                )
+            except Exception:
+                conjunto_guid = _conjunto_guid_reuso
+        _guid_commit_ok = False
         try:
             _stx_rebar = SubTransaction(doc)
             _stx_rebar.Start()
@@ -1866,6 +1878,7 @@ class ColocarArmaduraFundacionStubHandler(IExternalEventHandler):
                                 )
                         if r is not None:
                             _aplicar_armadura_ubicacion(r, _ARMA_UBICACION_INFERIOR)
+                            _aplicar_armadura_conjunto_guid(r, conjunto_guid=conjunto_guid)
                             n_rebar += 1
                             if perp_len_mm is not None:
                                 try:
@@ -2091,6 +2104,7 @@ class ColocarArmaduraFundacionStubHandler(IExternalEventHandler):
                             linea_marcador_sup = curva_rebar
                         if r is not None:
                             _aplicar_armadura_ubicacion(r, _ARMA_UBICACION_SUPERIOR)
+                            _aplicar_armadura_conjunto_guid(r, conjunto_guid=conjunto_guid)
                             n_rebar_sup += 1
                             if perp_len_mm is not None:
                                 try:
@@ -2378,6 +2392,7 @@ class ColocarArmaduraFundacionStubHandler(IExternalEventHandler):
                                 )
                             if r is not None:
                                 _aplicar_armadura_ubicacion(r, _ARMA_UBICACION_LATERAL)
+                                _aplicar_armadura_conjunto_guid(r, conjunto_guid=conjunto_guid)
                                 n_rebar_lat += 1
                                 _ok_lay_lat, err_lay_lat = (
                                     aplicar_layout_fixed_number_rebar(
@@ -2474,6 +2489,16 @@ class ColocarArmaduraFundacionStubHandler(IExternalEventHandler):
                     rebar_avisos.append(u"Vistas no creadas: {0}".format(_ex_vistas))
 
             t.Commit()
+            _guid_commit_ok = True
+            if (
+                conjunto_guid
+                and _a_prop_pre
+                and not getattr(win, "_saltar_propagacion_post", False)
+            ):
+                try:
+                    win._propagacion_conjunto_guid = conjunto_guid
+                except Exception:
+                    pass
         except Exception as ex:
             try:
                 _stx_rebar.RollBack()
@@ -2493,6 +2518,23 @@ class ColocarArmaduraFundacionStubHandler(IExternalEventHandler):
             except Exception:
                 pass
             return
+        finally:
+            if finalizar_armadura_conjunto_guid_ejecucion is not None:
+                _defer_finalizar_guid = (
+                    _guid_commit_ok
+                    and bool(_a_prop_pre)
+                    and not getattr(win, "_saltar_propagacion_post", False)
+                )
+                if not _defer_finalizar_guid:
+                    try:
+                        finalizar_armadura_conjunto_guid_ejecucion()
+                    except Exception:
+                        pass
+            if _guid_commit_ok and getattr(win, "_saltar_propagacion_post", False):
+                try:
+                    win._propagacion_conjunto_guid = None
+                except Exception:
+                    pass
 
         # --- Post-commit: activar última vista + gestionar propagación ---
         _ultima_vista_post = _ultima_vista
@@ -2657,10 +2699,10 @@ class EnfierradoFundacionAisladaWindow(object):
         self._document = None
         self._foundation_ids = []
         self._entries = []
-        self._is_closing_with_fade = False
         self._propagacion_pendiente_ui = False
         self._propagacion_ids_a_confirmar = None
         self._propagacion_num_val = None
+        self._propagacion_conjunto_guid = None
         self._ids_run_override = None
         self._saltar_propagacion_post = False
 
@@ -2673,7 +2715,6 @@ class EnfierradoFundacionAisladaWindow(object):
         self._win.Width = self._form_width_px
         self._win.MinWidth = self._form_width_px
         self._win.MaxWidth = self._form_width_px
-        self._open_grow_storyboard_started = False
 
         self._seleccion_handler = SeleccionarFundacionesHandler(weakref.ref(self))
         self._seleccion_event = ExternalEvent.Create(self._seleccion_handler)
@@ -2683,22 +2724,10 @@ class EnfierradoFundacionAisladaWindow(object):
         self._setup_ui(RoutedEventHandler)
         self._wire_commands(RoutedEventHandler, ApplicationCommands, CommandBinding, KeyBinding, Key, ModifierKeys)
         self._wire_lifecycle_handlers()
-        self._wire_open_grow_storyboard_completed()
 
-    def _wire_open_grow_storyboard_completed(self):
+    def _close_window(self):
         try:
-            from System import EventHandler
-
-            sb = self._win.TryFindResource("FundOpenGrowStoryboard")
-            if sb is not None:
-                sb.Completed += EventHandler(self._on_open_grow_storyboard_completed)
-        except Exception:
-            pass
-
-    def _on_open_grow_storyboard_completed(self, sender, args):
-        try:
-            self._win.MinWidth = self._form_width_px
-            self._win.MaxWidth = self._form_width_px
+            self._win.Close()
         except Exception:
             pass
 
@@ -2715,107 +2744,36 @@ class EnfierradoFundacionAisladaWindow(object):
         except Exception:
             pass
 
-    def _begin_open_grow_storyboard(self):
-        """Misma lógica que Wall Foundation Reinforcement: Scale 0→1 + opacidad vía Storyboard."""
-        if self._open_grow_storyboard_started:
-            return
-        self._open_grow_storyboard_started = True
-        try:
-            from System import TimeSpan
-            from System.Windows import Duration, SizeToContent
-            from System.Windows.Media import ScaleTransform
-
-            sc = self._win.FindName("FundRootScale")
-            if sc is not None:
-                sc.ScaleX = 0.0
-                sc.ScaleY = 0.0
-            self._win.Width = float(self._form_width_px)
-            try:
-                self._win.SizeToContent = SizeToContent.Height
-            except Exception:
-                pass
-            self._position_win_top_left_active_view()
-            sb = self._win.TryFindResource("FundOpenGrowStoryboard")
-            if sb is None:
-                if sc is not None:
-                    sc.ScaleX = sc.ScaleY = 1.0
-                self._win.Opacity = 1.0
-                return
-            dur = Duration(TimeSpan.FromMilliseconds(float(_WINDOW_CLOSE_MS)))
-            try:
-                for i in range(int(sb.Children.Count)):
-                    sb.Children[i].Duration = dur
-            except Exception:
-                pass
-            sb.Begin(self._win, True)
-        except Exception:
-            try:
-                self._win.Opacity = 1.0
-            except Exception:
-                pass
-
     def _wire_lifecycle_handlers(self):
         try:
             from System.Windows import RoutedEventHandler
 
             def _on_closed(sender, args):
                 _clear_appdomain_window_key()
+                if finalizar_armadura_conjunto_guid_ejecucion is not None:
+                    try:
+                        finalizar_armadura_conjunto_guid_ejecucion()
+                    except Exception:
+                        pass
+                try:
+                    self._propagacion_conjunto_guid = None
+                except Exception:
+                    pass
 
             self._win.Closed += RoutedEventHandler(_on_closed)
         except Exception:
             pass
 
     def _setup_ui(self, RoutedEventHandler):
-        from System.IO import FileAccess, FileMode, FileStream
-        from System.Windows.Media.Imaging import BitmapCacheOption, BitmapImage
-
-        try:
-            img = self._win.FindName("ImgLogo")
-            if img is not None:
-                for logo_path in get_logo_paths():
-                    if os.path.isfile(logo_path):
-                        stream = None
-                        try:
-                            stream = FileStream(logo_path, FileMode.Open, FileAccess.Read)
-                            bmp = BitmapImage()
-                            bmp.BeginInit()
-                            bmp.StreamSource = stream
-                            bmp.CacheOption = BitmapCacheOption.OnLoad
-                            bmp.EndInit()
-                            bmp.Freeze()
-                            img.Source = bmp
-                        finally:
-                            if stream is not None:
-                                try:
-                                    stream.Dispose()
-                                except Exception:
-                                    pass
-                        break
-        except Exception:
-            pass
-
         btn_sel = self._win.FindName("BtnSeleccionar")
         if btn_sel is not None:
             btn_sel.Click += RoutedEventHandler(self._on_seleccionar)
-        btn_close = self._win.FindName("BtnClose")
-        if btn_close is not None:
-            btn_close.Click += RoutedEventHandler(lambda s, e: self._close_with_fade())
+        btn_cancel = self._win.FindName("BtnCancelar")
+        if btn_cancel is not None:
+            btn_cancel.Click += RoutedEventHandler(lambda s, e: self._close_window())
         btn_col = self._win.FindName("BtnColocar")
         if btn_col is not None:
             btn_col.Click += RoutedEventHandler(self._on_colocar)
-
-        try:
-            from System.Windows.Input import MouseButtonEventHandler
-
-            title_bar = self._win.FindName("TitleBar")
-            if title_bar is not None:
-                title_bar.MouseLeftButtonDown += MouseButtonEventHandler(
-                    lambda s, e: self._win.DragMove()
-                )
-            if btn_close is not None:
-                btn_close.MouseLeftButtonDown += MouseButtonEventHandler(lambda s, e: setattr(e, "Handled", True))
-        except Exception:
-            pass
 
         for chk_name, panel_name in (
             ("ChkInferior", "PanelInferior"),
@@ -2910,23 +2868,6 @@ class EnfierradoFundacionAisladaWindow(object):
 
             tb_lat.LostFocus += RoutedEventHandler(on_lat_lost_focus)
 
-        self._win.Loaded += RoutedEventHandler(self._on_window_loaded)
-
-    def _on_window_loaded(self, sender, args):
-        try:
-            from System import Action
-            from System.Windows.Threading import DispatcherPriority
-
-            self._win.Dispatcher.BeginInvoke(
-                Action(self._begin_open_grow_storyboard),
-                DispatcherPriority.Loaded,
-            )
-        except Exception:
-            try:
-                self._begin_open_grow_storyboard()
-            except Exception:
-                pass
-
     def _wire_commands(self, RoutedEventHandler, ApplicationCommands, CommandBinding, KeyBinding, Key, ModifierKeys):
         try:
             from System.Windows.Input import ExecutedRoutedEventHandler
@@ -2934,7 +2875,7 @@ class EnfierradoFundacionAisladaWindow(object):
             self._win.CommandBindings.Add(
                 CommandBinding(
                     ApplicationCommands.Close,
-                    ExecutedRoutedEventHandler(lambda s, e: self._close_with_fade()),
+                    ExecutedRoutedEventHandler(lambda s, e: self._close_window()),
                 )
             )
             self._win.InputBindings.Add(
@@ -2942,72 +2883,6 @@ class EnfierradoFundacionAisladaWindow(object):
             )
         except Exception:
             pass
-
-    def _close_with_fade(self):
-        if getattr(self, "_is_closing_with_fade", False):
-            return
-        self._is_closing_with_fade = True
-        try:
-            from System import TimeSpan, EventHandler
-            from System.Windows import Duration
-            from System.Windows.Media import ScaleTransform
-            from System.Windows.Media.Animation import DoubleAnimation, QuadraticEase, EasingMode
-
-            sc = self._win.FindName("FundRootScale")
-            dur = Duration(TimeSpan.FromMilliseconds(float(_WINDOW_CLOSE_MS)))
-            ease_in = QuadraticEase()
-            ease_in.EasingMode = EasingMode.EaseIn
-
-            def _da(f0, f1):
-                a = DoubleAnimation()
-                a.From = float(f0)
-                a.To = float(f1)
-                a.Duration = dur
-                a.EasingFunction = ease_in
-                return a
-
-            try:
-                sx0 = float(sc.ScaleX) if sc is not None else 1.0
-                sy0 = float(sc.ScaleY) if sc is not None else 1.0
-            except Exception:
-                sx0 = sy0 = 1.0
-            try:
-                op0 = float(self._win.Opacity)
-            except Exception:
-                op0 = 1.0
-
-            op_anim = _da(op0, 0.0)
-            ax = _da(sx0, 0.0)
-            ay = _da(sy0, 0.0)
-
-            def _done(sender, args):
-                try:
-                    self._win.Close()
-                except Exception:
-                    pass
-
-            op_anim.Completed += EventHandler(_done)
-            if sc is not None:
-                sc.BeginAnimation(ScaleTransform.ScaleXProperty, ax)
-                sc.BeginAnimation(ScaleTransform.ScaleYProperty, ay)
-            self._win.BeginAnimation(self._win.OpacityProperty, op_anim)
-        except Exception:
-            try:
-                self._win.Close()
-            except Exception:
-                pass
-            self._is_closing_with_fade = False
-
-    def _show_with_fade(self):
-        """Igual que Wall Foundation Reinforcement: opacidad 0, Show, Activate; Storyboard en Loaded."""
-        try:
-            self._win.Opacity = 0.0
-            if not self._win.IsVisible:
-                self._win.Show()
-            self._win.Activate()
-        except Exception:
-            pass
-        self._is_closing_with_fade = False
 
     def _show_after_pick(self):
         """Tras PickObject la ventana ya está cargada: mostrar sin repetir Storyboard (como Malla en Losa)."""
@@ -3316,7 +3191,12 @@ class EnfierradoFundacionAisladaWindow(object):
                 pass
         self._cargar_combos_diametro()
         self._set_estado(u"")
-        self._show_with_fade()
+        try:
+            if not self._win.IsVisible:
+                self._win.Show()
+            self._win.Activate()
+        except Exception:
+            pass
         try:
             System.AppDomain.CurrentDomain.SetData(_APPDOMAIN_WINDOW_KEY, self._win)
         except Exception:

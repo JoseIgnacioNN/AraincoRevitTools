@@ -2,6 +2,8 @@
 """Adapter de transacciones Revit.
 
 Los nombres deben conservar el prefijo obligatorio `Arainco: `.
+
+Stubs / preparación: sin referencias runtime actuales. Ver ``DEPENDENCIES.md``.
 """
 
 

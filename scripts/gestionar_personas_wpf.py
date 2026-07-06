@@ -1,23 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Ventana modal para gestionar personas.json (misma UX que botón Personas / Crear incidencia).
-Usado desde Revisiones y reutilizable por otras herramientas bajo scripts/.
+Ventana modal para gestionar personas.json (desde Revisiones).
 """
 
 from __future__ import print_function
 
 import json
 import os
-import sys
 
 try:
     unicode
 except NameError:
     unicode = str
-
-_script_dir = os.path.dirname(os.path.abspath(__file__))
-if _script_dir not in sys.path:
-    sys.path.insert(0, _script_dir)
 
 import clr
 
@@ -48,65 +42,30 @@ except ImportError:
 PERSONA_ROL_MODELADOR = u"Modelador"
 PERSONA_ROL_INGENIERO = u"Ingeniero"
 
-# Mismo aspecto que 03_Personas.pushbutton (compatible con bimtools_wpf_dark_theme).
+# Estilos locales (DataGrid / formulario) sobre bimtools_wpf_dark_theme — referencia Armado Muros.
 PERSONAS_REVISIONES_LIKE_STYLES = u"""
-    <Style x:Key="PanelInset" TargetType="Border">
-      <Setter Property="Background" Value="#071018"/>
-      <Setter Property="BorderBrush" Value="#1E3F55"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="8"/>
-      <Setter Property="Padding" Value="12,10"/>
-      <Setter Property="Margin" Value="0,0,0,10"/>
-    </Style>
-    <Style x:Key="BtnGhost" TargetType="Button">
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="Foreground" Value="#9BC4D6"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
-      <Setter Property="FontSize" Value="11"/>
-      <Setter Property="Padding" Value="12,7"/>
-      <Setter Property="BorderBrush" Value="#2A4A5E"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="Cursor" Value="Hand"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="Button">
-            <Border x:Name="R" Background="{TemplateBinding Background}" CornerRadius="5"
-                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
-                    Padding="{TemplateBinding Padding}">
-              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="R" Property="Background" Value="#0D1E2E"/>
-                <Setter TargetName="R" Property="BorderBrush" Value="#5BC0DE"/>
-                <Setter Property="Foreground" Value="#E8F4F8"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
+    <Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/>
     <Style TargetType="DataGrid" BasedOn="{StaticResource {x:Type DataGrid}}">
-      <Setter Property="Background" Value="#040A12"/>
+      <Setter Property="Background" Value="#0a1620"/>
       <Setter Property="Foreground" Value="#E8F4F8"/>
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="RowBackground" Value="#0B1726"/>
-      <Setter Property="AlternatingRowBackground" Value="#071420"/>
-      <Setter Property="HorizontalGridLinesBrush" Value="#152A3D"/>
-      <Setter Property="VerticalGridLinesBrush" Value="#152A3D"/>
+      <Setter Property="AlternatingRowBackground" Value="#071018"/>
+      <Setter Property="HorizontalGridLinesBrush" Value="#21465C"/>
+      <Setter Property="VerticalGridLinesBrush" Value="#21465C"/>
       <Setter Property="HeadersVisibility" Value="Column"/>
       <Setter Property="RowHeight" Value="34"/>
       <Setter Property="GridLinesVisibility" Value="Horizontal"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
     <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
-      <Setter Property="Background" Value="#0F2840"/>
-      <Setter Property="Foreground" Value="#C8E4EF"/>
+      <Setter Property="Background" Value="#11253D"/>
+      <Setter Property="Foreground" Value="#95B8CC"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="FontSize" Value="11"/>
       <Setter Property="Padding" Value="12,10"/>
       <Setter Property="HorizontalContentAlignment" Value="Center"/>
-      <Setter Property="BorderBrush" Value="#1A3A50"/>
+      <Setter Property="BorderBrush" Value="#21465C"/>
       <Setter Property="BorderThickness" Value="0,0,1,1"/>
     </Style>
     <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
@@ -116,7 +75,7 @@ PERSONAS_REVISIONES_LIKE_STYLES = u"""
           <Setter Property="Background" Value="#0B1726"/>
         </Trigger>
         <Trigger Property="AlternationIndex" Value="1">
-          <Setter Property="Background" Value="#071420"/>
+          <Setter Property="Background" Value="#071018"/>
         </Trigger>
         <MultiTrigger>
           <MultiTrigger.Conditions>
@@ -143,26 +102,11 @@ PERSONAS_REVISIONES_LIKE_STYLES = u"""
         </Trigger>
       </Style.Triggers>
     </Style>
-    <Style TargetType="TextBox">
-      <Setter Property="Background" Value="#050E18"/>
-      <Setter Property="Foreground" Value="#FFFFFF"/>
-      <Setter Property="BorderBrush" Value="#284760"/>
-      <Setter Property="Padding" Value="8,6"/>
-      <Setter Property="FontSize" Value="12"/>
-      <Setter Property="MinHeight" Value="32"/>
-      <Setter Property="CaretBrush" Value="#7AA3B8"/>
-    </Style>
-    <Style x:Key="PersonaFormCombo" TargetType="ComboBox" BasedOn="{StaticResource Combo}">
-      <Setter Property="Width" Value="{x:Static sys:Double.NaN}"/>
-      <Setter Property="Height" Value="{x:Static sys:Double.NaN}"/>
-      <Setter Property="HorizontalAlignment" Value="Stretch"/>
-      <Setter Property="MinWidth" Value="0"/>
-      <Setter Property="MaxWidth" Value="99999"/>
+    <Style x:Key="PersonaFormCombo" TargetType="ComboBox" BasedOn="{StaticResource ComboStretch}">
       <Setter Property="MinHeight" Value="32"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="FontSize" Value="12"/>
       <Setter Property="Foreground" Value="#FFFFFF"/>
-      <Setter Property="ItemContainerStyle" Value="{StaticResource ComboItem}"/>
     </Style>
     <Style x:Key="PersonaGridRolCombo" TargetType="ComboBox" BasedOn="{StaticResource PersonaFormCombo}">
       <Setter Property="HorizontalAlignment" Value="Center"/>
@@ -171,12 +115,15 @@ PERSONAS_REVISIONES_LIKE_STYLES = u"""
       <Setter Property="MaxWidth" Value="128"/>
     </Style>
     <Style x:Key="PersonaGridCellTextBlock" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="#E8F4F8"/>
       <Setter Property="TextAlignment" Value="Center"/>
       <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
-    <Style x:Key="PersonaGridEditTextBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+    <Style x:Key="PersonaGridEditTextBox" TargetType="TextBox" BasedOn="{StaticResource BimToolsTextBoxDark}">
       <Setter Property="TextAlignment" Value="Center"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="MinHeight" Value="32"/>
+      <Setter Property="FontSize" Value="12"/>
     </Style>
     <Style x:Key="ExpLamScrollBarDark" TargetType="ScrollBar" BasedOn="{StaticResource BimToolsScrollBarDark}"/>
 """
@@ -187,14 +134,16 @@ GESTIONAR_PERSONAS_XAML = (
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:sys="clr-namespace:System;assembly=mscorlib"
     x:Name="PersonasWin"
-    Title="Personas"
-    Height="620" Width="680" MinHeight="500" MinWidth="560"
-    Background="Transparent"
-    AllowsTransparency="True"
-    WindowStyle="None"
+    Title="Arainco: Personas"
+    Height="720" Width="760" MinHeight="560" MinWidth="640" MaxWidth="1200"
+    Background="#071018"
     ResizeMode="CanResize"
     WindowStartupLocation="Manual"
-    FontFamily="Segoe UI" FontSize="12" UseLayoutRounding="True">
+    FontFamily="Segoe UI"
+    FontSize="12"
+    ShowInTaskbar="False"
+    UseLayoutRounding="True"
+    SnapsToDevicePixels="True">
   <Window.Resources>
 """
     + BIMTOOLS_DARK_STYLES_XML
@@ -205,8 +154,7 @@ GESTIONAR_PERSONAS_XAML = (
       <sys:String>Ingeniero</sys:String>
     </x:Array>
   </Window.Resources>
-  <Border x:Name="PersonasRootChrome" CornerRadius="8" Background="#0E1B32" Padding="14"
-          BorderBrush="#5BC0DE" BorderThickness="1" ClipToBounds="True">
+  <Border Background="#071018" BorderBrush="#21465C" BorderThickness="1" Padding="18">
     <Grid>
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/>
@@ -214,29 +162,20 @@ GESTIONAR_PERSONAS_XAML = (
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="*"/>
         <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
-      <Border x:Name="TitleBar" Grid.Row="0" Background="#0D1E2E" CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
-              BorderBrush="#5BC0DE" BorderThickness="1" HorizontalAlignment="Stretch">
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto"/>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="Auto"/>
-          </Grid.ColumnDefinitions>
-          <Image x:Name="ImgLogo" Width="40" Height="40" Grid.Column="0"
-                 Stretch="Uniform" Margin="0,0,10,0" VerticalAlignment="Center"/>
-          <StackPanel Grid.Column="1" VerticalAlignment="Center">
-            <TextBlock Text="Personas" FontSize="14" FontWeight="Bold" Foreground="#FFFFFF"/>
-            <TextBlock Text="Directorio compartido · personas.json" FontSize="11" Foreground="#95B8CC" Margin="0,4,0,0"/>
-          </StackPanel>
-          <Button x:Name="BtnClose" Grid.Column="2"
-                  Style="{StaticResource BtnCloseX_MinimalNoBg}"
-                  VerticalAlignment="Center" HorizontalAlignment="Right" ToolTip="Cerrar"/>
-        </Grid>
-      </Border>
+
+      <StackPanel Grid.Row="0" Margin="0,0,0,10">
+        <TextBlock Text="Arainco: Personas" Foreground="#E8F4F8" FontSize="18" FontWeight="Bold"/>
+        <TextBlock Margin="0,6,0,0" Foreground="#95B8CC" TextWrapping="Wrap"
+                   Text="Directorio compartido · personas.json"/>
+      </StackPanel>
+
       <TextBlock Grid.Row="1" Text="Doble clic en una celda para editar; los cambios se guardan al salir de la celda."
-                 Foreground="#6B94AA" FontSize="10" Margin="0,0,0,10" TextWrapping="Wrap"/>
-      <Border Grid.Row="2" Style="{StaticResource PanelInset}" Padding="14,12">
+                 Foreground="#95B8CC" FontSize="11" Margin="0,0,0,12" TextWrapping="Wrap"/>
+
+      <Border Grid.Row="2" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1"
+              CornerRadius="4" Padding="14,14" Margin="0,0,0,10">
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*"/>
@@ -249,33 +188,35 @@ GESTIONAR_PERSONAS_XAML = (
             <RowDefinition Height="Auto"/>
           </Grid.RowDefinitions>
           <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,10">
-            <TextBlock Text="Nombre *" Style="{StaticResource LabelSmall}" Margin="0,0,0,4"/>
-            <TextBox x:Name="TxtNombreNew"/>
+            <TextBlock Text="Nombre *" Style="{StaticResource Label}" Margin="0,0,0,6"/>
+            <TextBox x:Name="TxtNombreNew" Style="{StaticResource BimToolsTextBoxDark}" MinHeight="32" FontSize="12"/>
           </StackPanel>
           <StackPanel Grid.Row="0" Grid.Column="2" Margin="0,0,0,10">
-            <TextBlock Text="Email" Style="{StaticResource LabelSmall}" Margin="0,0,0,4"/>
-            <TextBox x:Name="TxtEmailNew"/>
+            <TextBlock Text="Email" Style="{StaticResource Label}" Margin="0,0,0,6"/>
+            <TextBox x:Name="TxtEmailNew" Style="{StaticResource BimToolsTextBoxDark}" MinHeight="32" FontSize="12"/>
           </StackPanel>
-          <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,0,12">
-            <TextBlock Text="Abreviación (ej. J.N.N.)" Style="{StaticResource LabelSmall}" Margin="0,0,0,4"/>
-            <TextBox x:Name="TxtAbreviacionNew" MaxLength="32"/>
+          <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,0,10">
+            <TextBlock Text="Abreviación (ej. J.N.N.)" Style="{StaticResource Label}" Margin="0,0,0,6"/>
+            <TextBox x:Name="TxtAbreviacionNew" Style="{StaticResource BimToolsTextBoxDark}" MinHeight="32" FontSize="12" MaxLength="32"/>
           </StackPanel>
-          <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,0,0,12">
-            <TextBlock Text="Rol *" Style="{StaticResource LabelSmall}" Margin="0,0,0,4"/>
+          <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,0,0,10">
+            <TextBlock Text="Rol *" Style="{StaticResource Label}" Margin="0,0,0,6"/>
             <ComboBox x:Name="CmbRolNew" Style="{StaticResource PersonaFormCombo}" IsEditable="False"/>
           </StackPanel>
-          <StackPanel Grid.Row="2" Grid.Column="2" Margin="0,4,0,0">
+          <StackPanel Grid.Row="2" Grid.Column="2" HorizontalAlignment="Right">
             <Button x:Name="BtnAgregar" Content="+ Agregar al directorio"
-                    Style="{StaticResource BtnPrimary}" MinWidth="168" Padding="16,8" HorizontalAlignment="Right"/>
+                    Style="{StaticResource BtnPrimary}" MinWidth="168"/>
           </StackPanel>
         </Grid>
       </Border>
-      <Border Grid.Row="3" Background="#040A12" BorderBrush="#1E3F55" BorderThickness="1" CornerRadius="8" Padding="0" Margin="0,0,0,10">
+
+      <Border Grid.Row="3" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1" CornerRadius="4" Padding="0">
         <DataGrid x:Name="GridPersonas"
                   AutoGenerateColumns="False" IsReadOnly="False"
                   CanUserSortColumns="True"
                   SelectionMode="Single" CanUserAddRows="False"
-                  AlternationCount="2" RowHeaderWidth="0">
+                  AlternationCount="2" RowHeaderWidth="0"
+                  VerticalScrollBarVisibility="Auto">
           <DataGrid.CellStyle>
             <Style TargetType="DataGridCell" BasedOn="{StaticResource GridCellPadding}"/>
           </DataGrid.CellStyle>
@@ -318,12 +259,22 @@ GESTIONAR_PERSONAS_XAML = (
           </DataGrid.Columns>
         </DataGrid>
       </Border>
-      <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
-        <Button x:Name="BtnEliminar" Content="Eliminar seleccionado"
-                Style="{StaticResource BtnGhost}" Margin="0,0,10,0"/>
-        <Button x:Name="BtnCerrar" Content="Cerrar"
-                Style="{StaticResource BtnPrimary}" Padding="18,9"/>
-      </StackPanel>
+
+      <TextBlock Grid.Row="4" Foreground="#64748b" FontSize="10" TextWrapping="Wrap" Margin="0,8,0,0"
+                 Text="Los cambios en la grilla se guardan automáticamente al confirmar la edición de cada celda."/>
+
+      <Grid Grid.Row="5" Margin="0,14,0,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+          <Button x:Name="BtnEliminar" Content="Eliminar seleccionado"
+                  Style="{StaticResource BtnSelectOutline}" MinWidth="160" Margin="0,0,10,0"/>
+          <Button x:Name="BtnCerrar" Content="Cerrar"
+                  Style="{StaticResource BtnPrimary}" MinWidth="110"/>
+        </StackPanel>
+      </Grid>
     </Grid>
   </Border>
 </Window>
@@ -466,31 +417,8 @@ def save_personas_list(personas_list, issues_dir, personas_file):
 
 
 def _personas_apply_title_chrome(win):
-    try:
-        from System.Windows.Input import MouseButtonEventHandler
-
-        btn_close = win.FindName("BtnClose")
-        title_bar = win.FindName("TitleBar")
-        if title_bar is not None:
-            title_bar.MouseLeftButtonDown += MouseButtonEventHandler(
-                lambda _s, e: win.DragMove()
-            )
-        if btn_close is not None:
-            btn_close.MouseLeftButtonDown += MouseButtonEventHandler(
-                lambda _s, e: setattr(e, "Handled", True)
-            )
-    except Exception:
-        pass
-    try:
-        import bimtools_paths
-
-        img = win.FindName("ImgLogo")
-        if img is not None:
-            bmp = bimtools_paths.load_logo_bitmap_image()
-            if bmp is not None:
-                img.Source = bmp
-    except Exception:
-        pass
+    """Reservado: ventana estándar WPF (mismo chrome que Armado Muros)."""
+    pass
 
 
 class GestionarPersonasDialog(object):
@@ -524,7 +452,6 @@ class GestionarPersonasDialog(object):
         self._grid = win.FindName("GridPersonas")
         self._btn_del = win.FindName("BtnEliminar")
         self._btn_close = win.FindName("BtnCerrar")
-        self._btn_title_close = win.FindName("BtnClose")
 
         self._grid.ItemsSource = self._personas
         self._grid_edit_backup = None
@@ -535,10 +462,6 @@ class GestionarPersonasDialog(object):
         self._btn_add.Click += RoutedEventHandler(self._on_agregar)
         self._btn_del.Click += RoutedEventHandler(self._on_eliminar)
         self._btn_close.Click += RoutedEventHandler(self._on_cerrar)
-        if self._btn_title_close is not None:
-            self._btn_title_close.Click += RoutedEventHandler(self._on_cerrar)
-
-        _personas_apply_title_chrome(win)
 
         from System.Windows import WindowStartupLocation
 
