@@ -37,6 +37,10 @@ _PICK_PROMPT = (
     u"Selecciona una barra (Rebar), empalme o croquis de despiece con "
     u"«Armadura_Conjunto_GUID» (p. ej. creados por Armado Muros o Armado Columnas)."
 )
+_PICK_PROMPT_MULTI = (
+    u"Selecciona una o más barras (Rebar), empalmes o croquis de despiece con "
+    u"«Armadura_Conjunto_GUID» (Finish para confirmar)."
+)
 
 
 def _as_unicode(text):
@@ -149,6 +153,107 @@ def pick_conjunto_referencia(uidoc):
         return None
 
     return doc, guid, corrida
+
+
+def _merge_corridas(corridas):
+    """Une varias corridas deduplicando por ``ElementId``."""
+    rebar_ids = []
+    empalme_ids = []
+    lienzo_ids = []
+    all_ids = []
+    rebar_seen = set()
+    emp_seen = set()
+    lienzo_seen = set()
+    all_seen = set()
+
+    def _append_unique(eid, target, seen):
+        try:
+            key = int(eid.IntegerValue)
+        except Exception:
+            key = None
+        if key is not None and key in seen:
+            return
+        target.append(eid)
+        if key is not None:
+            seen.add(key)
+
+    for corrida in corridas or []:
+        for eid in (corrida or {}).get(u"rebar_ids") or []:
+            _append_unique(eid, rebar_ids, rebar_seen)
+        for eid in (corrida or {}).get(u"empalme_ids") or []:
+            _append_unique(eid, empalme_ids, emp_seen)
+        for eid in (corrida or {}).get(u"lienzo_ids") or []:
+            _append_unique(eid, lienzo_ids, lienzo_seen)
+        for eid in (corrida or {}).get(u"all_ids") or []:
+            _append_unique(eid, all_ids, all_seen)
+
+    return {
+        u"rebar_ids": rebar_ids,
+        u"empalme_ids": empalme_ids,
+        u"lienzo_ids": lienzo_ids,
+        u"all_ids": all_ids,
+    }
+
+
+def pick_conjuntos_referencias(uidoc):
+    """
+    Pide una o más referencias con GUID de conjunto.
+
+    Retorna ``(doc, guids, corrida)`` o ``None`` si cancela o falla.
+    ``guids`` lista GUID únicos; ``corrida`` unión de todos los conjuntos.
+    """
+    if uidoc is None:
+        TaskDialog.Show(_DIALOG_BASE, u"No hay documento activo.")
+        return None
+    doc = uidoc.Document
+    try:
+        refs = list(
+            uidoc.Selection.PickObjects(
+                ObjectType.Element,
+                _FiltroCorridaReferencia(),
+                _PICK_PROMPT_MULTI,
+            ),
+        )
+    except OperationCanceledException:
+        return None
+    except Exception as ex:
+        TaskDialog.Show(_DIALOG_BASE, u"Error al seleccionar:\n{0}".format(ex))
+        return None
+
+    if not refs:
+        return None
+
+    guid_set = set()
+    guids_ordered = []
+    corridas = []
+    sin_guid = 0
+
+    for ref in refs:
+        elem = doc.GetElement(ref.ElementId)
+        guid = get_armadura_conjunto_guid(elem)
+        if not guid:
+            sin_guid += 1
+            continue
+        if guid in guid_set:
+            continue
+        corrida = collect_corrida_por_conjunto_guid(doc, guid)
+        all_ids = corrida.get(u"all_ids") or []
+        if not all_ids:
+            continue
+        guid_set.add(guid)
+        guids_ordered.append(guid)
+        corridas.append(corrida)
+
+    if not corridas:
+        msg = u"No se encontraron conjuntos válidos en la selección."
+        if sin_guid:
+            msg += u"\n\n{0} elemento(s) sin «{1}».".format(
+                sin_guid, ARMADURA_CONJUNTO_GUID_PARAM,
+            )
+        TaskDialog.Show(_DIALOG_BASE, msg)
+        return None
+
+    return doc, guids_ordered, _merge_corridas(corridas)
 
 
 def select_conjunto_en_modelo(uidoc, corrida):
@@ -283,25 +388,37 @@ def run_seleccionar(uiapp):
 
 def run_ocultar(uiapp):
     uidoc = uiapp.ActiveUIDocument if uiapp is not None else None
-    picked = pick_conjunto_referencia(uidoc)
+    picked = pick_conjuntos_referencias(uidoc)
     if not picked:
         return
-    doc, guid, corrida = picked
+    doc, guids, corrida = picked
     view = uidoc.ActiveView if uidoc is not None else None
     n = hide_conjunto_en_vista(doc, view, corrida)
     if n < 1:
         return
     n_rebar, n_emp, n_lienzo, n_total = _summarize_counts(corrida)
-    TaskDialog.Show(
-        _DIALOG_BASE,
-        u"Conjunto oculto en la vista activa ({0} elemento(s)).\n\n"
-        u"GUID: {1}\n"
-        u"  · Barras: {2}\n"
-        u"  · Empalmes: {3}\n"
-        u"  · Croquis: {4}".format(
-            n_total, _guid_snippet(guid), n_rebar, n_emp, n_lienzo,
-        ),
-    )
+    n_conjuntos = len(guids or [])
+    if n_conjuntos <= 1:
+        guid = guids[0] if guids else u""
+        resumen = (
+            u"Conjunto oculto en la vista activa ({0} elemento(s)).\n\n"
+            u"GUID: {1}\n"
+            u"  · Barras: {2}\n"
+            u"  · Empalmes: {3}\n"
+            u"  · Croquis: {4}"
+        ).format(n_total, _guid_snippet(guid), n_rebar, n_emp, n_lienzo)
+    else:
+        guid_list = u", ".join(_guid_snippet(g, 36) for g in guids[:5])
+        if n_conjuntos > 5:
+            guid_list += u"…"
+        resumen = (
+            u"{0} conjuntos ocultos en la vista activa ({1} elemento(s)).\n\n"
+            u"GUIDs: {2}\n"
+            u"  · Barras: {3}\n"
+            u"  · Empalmes: {4}\n"
+            u"  · Croquis: {5}"
+        ).format(n_conjuntos, n_total, guid_list, n_rebar, n_emp, n_lienzo)
+    TaskDialog.Show(_DIALOG_BASE, resumen)
 
 
 def run_eliminar(uiapp):

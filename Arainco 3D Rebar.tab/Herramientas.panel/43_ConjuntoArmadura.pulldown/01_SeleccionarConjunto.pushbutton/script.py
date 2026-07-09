@@ -72,20 +72,12 @@ if not _scripts_dir:
 _pin_scripts_first(_scripts_dir)
 _purge_modules()
 
-import os as _os_ac
-import sys as _sys_ac
+if _pushbutton_dir not in sys.path:
+    sys.path.insert(0, _pushbutton_dir)
 
-_tab_ac = _os_ac.path.dirname(_os_ac.path.abspath(__file__))
-for _iac in range(16):
-    if _os_ac.path.basename(_tab_ac) == u"BIMTools.tab":
-        break
-    _parent_ac = _os_ac.path.dirname(_tab_ac)
-    if _parent_ac == _tab_ac:
-        _tab_ac = None
-        break
-    _tab_ac = _parent_ac
-if _tab_ac and _tab_ac not in _sys_ac.path:
-    _sys_ac.path.insert(0, _tab_ac)
+sys.modules.pop(u"bimtools_access_bootstrap", None)
+
+# Acceso corporativo: ``bimtools_access_bootstrap.py`` en esta carpeta (portable).
 import bimtools_access_bootstrap as _bimtools_access
 
 if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
@@ -95,8 +87,6 @@ if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
         _module_path = os.path.join(_scripts_dir, _MAIN_MODULE)
         _mod = imp.load_source(_MAIN_MODULE_ID, _module_path)
         _mod.run(__revit__)
-    except NameError:
-        pass
     except Exception as ex:
         try:
             msg = unicode(ex)
