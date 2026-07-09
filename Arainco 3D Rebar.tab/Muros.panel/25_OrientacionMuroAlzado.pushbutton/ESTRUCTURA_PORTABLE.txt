@@ -1,0 +1,71 @@
+25_OrientacionMuroAlzado.pushbutton
+├── bundle.yaml
+├── script.py                              Arranque pyRevit (solo scripts/ local)
+├── bimtools_access_bootstrap.py           Guardia corporativa (solo scripts/ local)
+├── sync_portable_scripts.ps1              Dev: sincroniza desde BIMTools.extension/scripts
+├── ESTRUCTURA_PORTABLE.txt
+├── icon.png                               Opcional (icono cinta)
+└── scripts/                               Paquete autocontenido (copiar completo)
+    ├── orientacion_muro_alzado.py         Lógica: dibujar / actualizar / limpiar helpers
+    ├── orientacion_muro_alzado_ui.py      UI WPF (shell estándar + tema oscuro)
+    ├── bimtools_wpf_dark_theme.py         Estilos WPF compartidos (controles)
+    ├── bimtools_ui_tokens.py              Tokens visuales por defecto
+    ├── bimtools_wpf_shell.py              Shell ventana con cinta blanca nativa
+    ├── revit_wpf_window_position.py       Posición centrada en monitor Revit
+    ├── corporate_access.py                Validación acceso corporativo (vendor)
+    ├── bimtools_script_guard.py           Bootstrap guardia (vendor)
+    └── bimtools_instruction_dialog.py     Diálogo denegación acceso (vendor)
+
+Copie solo esta carpeta .pushbutton a otra extensión pyRevit.
+
+  - No requiere bimtools_paths ni módulos de la raíz de BIMTools.extension
+  - No busca scripts/ en carpetas padre (sin fallback de desarrollo)
+  - La guardia corporativa viaja dentro de scripts/ (portabilidad total)
+  - script.py valida que existan todos los módulos requeridos antes de ejecutar
+
+-----------------------------------------------------------------------------
+Arquitectura (orden de scripts)
+-----------------------------------------------------------------------------
+
+  script.py
+       ↓  validación del paquete, recarga IronPython, acceso corporativo local
+  orientacion_muro_alzado.py → run(revit)
+       ↓
+  orientacion_muro_alzado_ui.py → show_orientacion_window
+       ↓  ExternalEvent
+  ejecutar_dibujar / ejecutar_actualizar_helpers / ejecutar_eliminar_helpers
+
+Transacciones:
+  - ``Arainco: Helpers orientación muro en alzado`` (dibujar)
+  - ``Arainco: Actualizar helpers orientación muro en alzado`` (actualizar)
+  - ``Arainco: Limpiar helpers orientación muro`` (al cerrar / reemplazar)
+
+UI:
+  - Shell estándar: cinta blanca nativa Windows + cuerpo oscuro BIMTools
+  - Tokens: bimtools_ui_tokens.py · Shell: bimtools_wpf_shell.py
+  - Instancia única vía AppDomain.SetData
+  - Botones: Dibujar helpers · Actualizar helpers · Cerrar
+
+Acceso corporativo:
+  - Lee ``Y:\00_SERVIDOR DE INCIDENCIAS\RECURSOS COMPARTIDOS\bimtools_access.json``
+  - Módulos empaquetados en scripts/; bootstrap NO sube a extensiones padre
+
+-----------------------------------------------------------------------------
+Fuente canónica (BIMTools.extension, solo desarrollo)
+-----------------------------------------------------------------------------
+
+Respaldo en ``BIMTools.extension/scripts/orientacion_muro_alzado.py``.
+Tras editar lógica o módulos compartidos, ejecute ``sync_portable_scripts.ps1``
+en esta carpeta o copie manualmente a ``<pushbutton>/scripts/``.
+La UI (``orientacion_muro_alzado_ui.py``) solo existe en el pushbutton.
+
+-----------------------------------------------------------------------------
+Requisitos
+-----------------------------------------------------------------------------
+
+  - Revit 2024–2026
+  - Vista Building Section (sección de edificio) activa
+  - Muros con LocationCurve
+  - Acceso a unidad Y: (validación corporativa empaquetada)
+
+pyRevit (IronPython 2.7 / 3.4).
