@@ -1,6 +1,7 @@
 08_CrearAreaReinforcementRPS.pushbutton
 ├── bundle.yaml
 ├── script.py                              Arranque pyRevit (solo scripts/ local)
+├── bimtools_access_bootstrap.py           Acceso corporativo (portable, sin BIMTools.tab)
 ├── ESTRUCTURA_PORTABLE.txt
 ├── icon.png                               Opcional (icono cinta + respaldo cabecera WPF)
 ├── logo.png / empresa_logo.png            Opcional (logo cabecera WPF)
@@ -8,6 +9,8 @@
     ├── area_reinforcement_losa.py         UI WPF + ExternalEvents + AreaReinforcement losa
     ├── area_reinforcement_losa_instruction_dialog.py  Wrapper instrucciones iniciales (shell BIMTools)
     ├── conjunto_guid.py                   GUID corrida + Armadura_Malla / Armadura_Arainco (Yes/No) en barras
+    ├── corporate_access.py                Validación JSON acceso corporativo
+    ├── bimtools_script_guard.py           guard_tool / require_tool_access
     ├── bimtools_paths.py                  Logos / rutas pushbutton
     ├── bimtools_ui_tokens.py              Tokens visuales (colores, tipografía)
     ├── bimtools_wpf_shell.py                Shell ventana reutilizable
@@ -18,8 +21,8 @@
 Copie solo esta carpilla .pushbutton a otra extensión pyRevit.
 
   - No requiere módulos de la raíz de BIMTools.extension
-  - No busca scripts/ en carpetas padre (sin fallback de desarrollo)
-  - script.py valida que los módulos .py requeridos existan en scripts/ antes de ejecutar
+  - No busca scripts/ ni BIMTools.tab en carpetas padre
+  - script.py valida módulos requeridos y llama require_tool_access antes de ejecutar
 
 -----------------------------------------------------------------------------
 Arquitectura

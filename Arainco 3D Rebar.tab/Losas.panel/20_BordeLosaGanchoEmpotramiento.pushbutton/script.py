@@ -118,7 +118,9 @@ for _mod_name in (
 ):
     sys.modules.pop(_mod_name, None)
 
-# --- Validación acceso corporativo (RECURSOS COMPARTIDOS) ---
+# Acceso corporativo portable (bootstrap local).
+if _pushbutton_dir not in sys.path:
+    sys.path.insert(0, _pushbutton_dir)
 import bimtools_access_bootstrap as _bimtools_access
 
 if _bimtools_access.require_tool_access(__file__, __revit__, __title__):

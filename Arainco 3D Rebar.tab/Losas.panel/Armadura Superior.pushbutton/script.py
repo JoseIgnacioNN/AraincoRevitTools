@@ -1,4 +1,18 @@
 # -*- coding: utf-8 -*-
+__title__ = u"Armadura\nSuperior"
+
+import os
+import sys
+
+_pushbutton_dir = os.path.dirname(os.path.abspath(__file__))
+if _pushbutton_dir not in sys.path:
+    sys.path.insert(0, _pushbutton_dir)
+
+import bimtools_access_bootstrap as _bimtools_access
+
+if not _bimtools_access.require_tool_access(__file__, __revit__, __title__):
+    raise SystemExit
+
 import os, codecs
 from pyrevit import forms
 
