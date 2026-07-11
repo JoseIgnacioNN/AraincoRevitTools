@@ -26,15 +26,23 @@ _REQUIRED_MODULES = (
     _MAIN_MODULE,
     "area_reinforcement_losa_instruction_dialog.py",
     "bimtools_paths.py",
+    "bimtools_ui_tokens.py",
+    "bimtools_wpf_shell.py",
     "bimtools_wpf_dark_theme.py",
+    "bimtools_instruction_dialog.py",
     "revit_wpf_window_position.py",
+    "conjunto_guid.py",
 )
 _MODULES_TO_PURGE = (
     "area_reinforcement_losa",
     "area_reinforcement_losa_instruction_dialog",
     "bimtools_paths",
+    "bimtools_ui_tokens",
+    "bimtools_wpf_shell",
     "bimtools_wpf_dark_theme",
+    "bimtools_instruction_dialog",
     "revit_wpf_window_position",
+    "conjunto_guid",
 )
 
 
@@ -93,7 +101,7 @@ import os as _os_ac
 import sys as _sys_ac
 _tab_ac = _os_ac.path.dirname(_os_ac.path.abspath(__file__))
 for _iac in range(16):
-    if _os_ac.path.basename(_tab_ac).endswith(u".tab"):
+    if _os_ac.path.basename(_tab_ac) == u"BIMTools.tab":
         break
     _parent_ac = _os_ac.path.dirname(_tab_ac)
     if _parent_ac == _tab_ac:

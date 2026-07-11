@@ -6,16 +6,20 @@
 ├── logo.png / empresa_logo.png            Opcional (logo cabecera WPF)
 └── scripts/                               Paquete autocontenido (copiar completo)
     ├── area_reinforcement_losa.py         UI WPF + ExternalEvents + AreaReinforcement losa
-    ├── area_reinforcement_losa_instruction_dialog.py  Diálogo WPF inicio (Aceptar/Cancelar)
+    ├── area_reinforcement_losa_instruction_dialog.py  Wrapper instrucciones iniciales (shell BIMTools)
+    ├── conjunto_guid.py                   GUID corrida + Armadura_Malla / Armadura_Arainco (Yes/No) en barras
     ├── bimtools_paths.py                  Logos / rutas pushbutton
-    ├── bimtools_wpf_dark_theme.py         Tema oscuro WPF
+    ├── bimtools_ui_tokens.py              Tokens visuales (colores, tipografía)
+    ├── bimtools_wpf_shell.py                Shell ventana reutilizable
+    ├── bimtools_wpf_dark_theme.py         Estilos de controles WPF
+    ├── bimtools_instruction_dialog.py     Diálogos modales (cinta blanca + cuerpo oscuro)
     └── revit_wpf_window_position.py       Posición ventana respecto a Revit
 
 Copie solo esta carpilla .pushbutton a otra extensión pyRevit.
 
   - No requiere módulos de la raíz de BIMTools.extension
   - No busca scripts/ en carpetas padre (sin fallback de desarrollo)
-  - script.py valida que los cinco .py de scripts/ existan antes de ejecutar
+  - script.py valida que los módulos .py requeridos existan en scripts/ antes de ejecutar
 
 -----------------------------------------------------------------------------
 Arquitectura
@@ -30,6 +34,13 @@ Arquitectura
 Transacciones: prefijo ``Arainco: Malla en Losa``.
 
 Formulario: instancia única vía AppDomain (``BIMTools.AreaReinforcementLosa.ActiveWindow``).
+UI: shell estándar BIMTools (``Window.Title`` = Arainco; título herramienta en TxtTitle;
+``bimtools_ui_tokens`` + ``bimtools_wpf_dark_theme``; avisos vía ``bimtools_instruction_dialog``).
+
+Instrumentación GUID conjunto (``_INSTRUMENTAR_CONJUNTO_GUID = True`` en area_reinforcement_losa.py):
+  - Log: %TEMP%\\Arainco_BIMTools\\conjunto_guid_area_rein_losa.log
+  - Si no se estampa ningún GUID tras crear áreas, TaskDialog con diagnóstico
+  - Desactivar poniendo ``_INSTRUMENTAR_CONJUNTO_GUID = False`` cuando ya no haga falta
 
 -----------------------------------------------------------------------------
 Fuente canónica (BIMTools.extension, solo desarrollo)
@@ -40,7 +51,8 @@ Tras editar la lógica principal, sincronice ese .py con
 ``<pushbutton>/scripts/area_reinforcement_losa.py`` antes de entregar
 el paquete portable.
 
-Utilidades WPF (``bimtools_paths``, ``bimtools_wpf_dark_theme``,
+Utilidades WPF (``bimtools_paths``, ``bimtools_ui_tokens``, ``bimtools_wpf_shell``,
+``bimtools_wpf_dark_theme``, ``bimtools_instruction_dialog``,
 ``revit_wpf_window_position``): sincronice desde ``BIMTools.extension/scripts/``
 si cambian en la extensión.
 
