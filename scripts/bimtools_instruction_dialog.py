@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Diálogo modal WPF (tema oscuro BIMTools) — avisos informativos compartidos."""
+"""Diálogo modal WPF — shell estándar BIMTools (cinta blanca + cuerpo oscuro)."""
 
 import clr
 
@@ -12,42 +12,9 @@ from System.Windows import RoutedEventHandler
 from System.Windows.Input import Key, KeyEventHandler
 from System.Windows.Markup import XamlReader
 
-try:
-    from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
-except Exception:
-    BIMTOOLS_DARK_STYLES_XML = u""
-
-_MESSAGE_DIALOG_XAML = u"""<Window
-  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-  Title="__TITLE__"
-  Width="500"
-  WindowStartupLocation="Manual"
-  Background="Transparent"
-  AllowsTransparency="True"
-  FontFamily="Segoe UI"
-  WindowStyle="None"
-  ResizeMode="NoResize"
-  SizeToContent="Height"
-  ShowInTaskbar="False">
-  <Window.Resources>
-__BIMTOOLS_DARK_STYLES__
-  </Window.Resources>
-  <Border CornerRadius="8" Background="#071018" BorderBrush="#21465C"
-          BorderThickness="1" Padding="22,20">
-    <StackPanel>
-      <TextBlock Text="__TITLE__" Foreground="#E8F4F8" FontSize="16" FontWeight="Bold"/>
-      <TextBlock x:Name="TxtInstruction" Margin="0,14,0,0" Text="__INSTRUCTION__"
-                 TextWrapping="Wrap" Foreground="#E8F4F8" FontSize="12" LineHeight="18"/>
-      <TextBlock x:Name="TxtContent" Margin="0,10,0,0" Text="__CONTENT__"
-                 TextWrapping="Wrap" Foreground="#95B8CC" FontSize="11" LineHeight="16"/>
-      <StackPanel Margin="0,22,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
-        <Button x:Name="BtnOk" Content="__OK__" IsDefault="True"
-                Style="{StaticResource BtnPrimary}" MinWidth="108"/>
-      </StackPanel>
-    </StackPanel>
-  </Border>
-</Window>"""
+from bimtools_ui_tokens import FG_BODY, FONT_SIZE_BODY
+from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
+from bimtools_wpf_shell import build_simple_tool_xaml
 
 
 def _as_unicode(text):
@@ -66,18 +33,172 @@ def _escape_xaml(text):
         .replace(u"<", u"&lt;")
         .replace(u">", u"&gt;")
         .replace(u'"', u"&quot;")
+        .replace(u"\r\n", u"&#10;")
+        .replace(u"\n", u"&#10;")
+        .replace(u"\r", u"&#10;")
     )
 
 
 def _build_message_xaml(title, instruction, content, ok_text):
-    xaml = _MESSAGE_DIALOG_XAML.replace(
-        u"__BIMTOOLS_DARK_STYLES__", BIMTOOLS_DARK_STYLES_XML
+    instruction = _as_unicode(instruction).strip()
+    content = _as_unicode(content).strip()
+    subtitle = u""
+    if content:
+        subtitle = instruction
+        body_text = content
+    else:
+        body_text = instruction
+
+    body_xaml = u"""
+<StackPanel>
+  <TextBlock TextWrapping="Wrap" Foreground="{fg}" FontSize="{fs}" LineHeight="17"
+             Text="{text}"/>
+</StackPanel>
+""".format(
+        fg=FG_BODY,
+        fs=FONT_SIZE_BODY,
+        text=_escape_xaml(body_text),
     )
-    xaml = xaml.replace(u"__TITLE__", _escape_xaml(title))
-    xaml = xaml.replace(u"__INSTRUCTION__", _escape_xaml(instruction))
-    xaml = xaml.replace(u"__CONTENT__", _escape_xaml(content))
-    xaml = xaml.replace(u"__OK__", _escape_xaml(ok_text))
-    return xaml
+
+    footer_xaml = u"""
+<Button x:Name="BtnOk" Content="{ok}" IsDefault="True"
+        Style="{{StaticResource BtnPrimary}}" MinWidth="108"/>
+""".format(ok=_escape_xaml(ok_text))
+
+    xaml = build_simple_tool_xaml(
+        title=title,
+        styles_xml=BIMTOOLS_DARK_STYLES_XML,
+        body_xaml=body_xaml,
+        footer_actions_xaml=footer_xaml,
+        width=520,
+        resize_mode=u"NoResize",
+        size_to_content_height=True,
+    )
+    return xaml, subtitle
+
+
+def _build_ok_cancel_xaml(title, instruction, content, ok_text, cancel_text):
+    instruction = _as_unicode(instruction).strip()
+    content = _as_unicode(content).strip()
+    subtitle = u""
+    if content:
+        subtitle = instruction
+        body_text = content
+    else:
+        body_text = instruction
+
+    body_xaml = u"""
+<StackPanel>
+  <TextBlock TextWrapping="Wrap" Foreground="{fg}" FontSize="{fs}" LineHeight="17"
+             Text="{text}"/>
+</StackPanel>
+""".format(
+        fg=FG_BODY,
+        fs=FONT_SIZE_BODY,
+        text=_escape_xaml(body_text),
+    )
+
+    footer_xaml = u"""
+<Button x:Name="BtnCancel" Content="{cancel}"
+        Style="{{StaticResource BtnSelectOutline}}" MinWidth="108" Margin="0,0,10,0"/>
+<Button x:Name="BtnOk" Content="{ok}" IsDefault="True"
+        Style="{{StaticResource BtnPrimary}}" MinWidth="108"/>
+""".format(
+        cancel=_escape_xaml(cancel_text),
+        ok=_escape_xaml(ok_text),
+    )
+
+    xaml = build_simple_tool_xaml(
+        title=title,
+        styles_xml=BIMTOOLS_DARK_STYLES_XML,
+        body_xaml=body_xaml,
+        footer_actions_xaml=footer_xaml,
+        width=520,
+        resize_mode=u"NoResize",
+        size_to_content_height=True,
+    )
+    return xaml, subtitle
+
+
+def _position_dialog_on_revit(win, hwnd_revit, uiapp):
+    try:
+        from revit_wpf_window_position import (
+            bind_center_wpf_on_revit_monitor,
+            position_wpf_window_center_on_monitor,
+            revit_main_hwnd,
+        )
+
+        if hwnd_revit is None and uiapp is not None:
+            hwnd_revit = revit_main_hwnd(uiapp)
+        bind_center_wpf_on_revit_monitor(win, hwnd_revit)
+        position_wpf_window_center_on_monitor(win, hwnd_revit)
+    except Exception:
+        pass
+    _attach_revit_owner(win, uiapp)
+
+
+def show_ok_cancel_dialog(
+    title,
+    instruction,
+    content=u"",
+    ok_text=u"Aceptar",
+    cancel_text=u"Cancelar",
+    hwnd_revit=None,
+    uiapp=None,
+):
+    """Diálogo modal con Aceptar/Cancelar, shell estándar BIMTools."""
+    try:
+        xaml, subtitle = _build_ok_cancel_xaml(
+            title, instruction, content, ok_text, cancel_text,
+        )
+        win = XamlReader.Parse(xaml)
+    except Exception:
+        return False
+
+    if subtitle:
+        try:
+            txt_sub = win.FindName(u"TxtSubtitle")
+            if txt_sub is not None:
+                txt_sub.Text = subtitle
+        except Exception:
+            pass
+
+    _position_dialog_on_revit(win, hwnd_revit, uiapp)
+
+    accepted = [False]
+
+    def _accept(sender, args):
+        accepted[0] = True
+        try:
+            win.Close()
+        except Exception:
+            pass
+
+    def _cancel(sender, args):
+        accepted[0] = False
+        try:
+            win.Close()
+        except Exception:
+            pass
+
+    def _on_key(sender, args):
+        if args.Key == Key.Escape:
+            _cancel(sender, args)
+            args.Handled = True
+
+    try:
+        btn_ok = win.FindName(u"BtnOk")
+        btn_cancel = win.FindName(u"BtnCancel")
+        if btn_ok is not None:
+            btn_ok.Click += RoutedEventHandler(_accept)
+        if btn_cancel is not None:
+            btn_cancel.Click += RoutedEventHandler(_cancel)
+        win.PreviewKeyDown += KeyEventHandler(_on_key)
+        win.ShowDialog()
+    except Exception:
+        return False
+
+    return bool(accepted[0])
 
 
 def _attach_revit_owner(win, uiapp):
@@ -102,35 +223,22 @@ def show_message_dialog(
     hwnd_revit=None,
     uiapp=None,
 ):
-    """Diálogo modal informativo (solo Aceptar), estilo WPF oscuro BIMTools."""
+    """Diálogo modal informativo (solo Aceptar), shell estándar BIMTools."""
     try:
-        win = XamlReader.Parse(
-            _build_message_xaml(title, instruction, content, ok_text)
-        )
+        xaml, subtitle = _build_message_xaml(title, instruction, content, ok_text)
+        win = XamlReader.Parse(xaml)
     except Exception:
         return False
 
-    try:
-        from revit_wpf_window_position import (
-            bind_center_wpf_on_revit_monitor,
-            position_wpf_window_center_on_monitor,
-        )
-
-        bind_center_wpf_on_revit_monitor(win, hwnd_revit)
-        position_wpf_window_center_on_monitor(win, hwnd_revit)
-    except Exception:
-        pass
-    _attach_revit_owner(win, uiapp)
-
-    if not _as_unicode(content).strip():
+    if subtitle:
         try:
-            from System.Windows import Visibility
-
-            txt_content = win.FindName(u"TxtContent")
-            if txt_content is not None:
-                txt_content.Visibility = Visibility.Collapsed
+            txt_sub = win.FindName(u"TxtSubtitle")
+            if txt_sub is not None:
+                txt_sub.Text = subtitle
         except Exception:
             pass
+
+    _position_dialog_on_revit(win, hwnd_revit, uiapp)
 
     def _accept(sender, args):
         try:

@@ -2,7 +2,9 @@
 """
 Recursos WPF compartidos (tema oscuro BIMTools) para ventanas embebidas en scripts IronPython.
 
-Referencia visual: ``34_ArmadoMuros.pushbutton`` (``armado_muros_preview_ui.py``).
+Usado por herramientas nuevas (junto con ``bimtools_ui_tokens.py`` y ``bimtools_wpf_shell.py``)
+y por herramientas existentes que ya lo importan.
+
 Fuente canónica: ``scripts/bimtools_wpf_dark_theme.py``; copiar a pushbuttons autocontenidos al empaquetar.
 
 Incluye: Label, LabelSmall, GbParams, Combo, ComboDiam, ComboStretch, ComboTroceoStretch, ComboItem,

@@ -3,11 +3,12 @@
 View Unobscured en la vista activa: aplicar, quitar o consultar estado de barras y armaduras.
 
 Revit 2024+ | pyRevit / IronPython.
+Respaldo plano de ``37_RebarUnobscuredVista.pushbutton/scripts/run.py``.
 """
 
 from __future__ import print_function
 
-from Autodesk.Revit.DB import Transaction, ViewSchedule, ViewSheet
+from Autodesk.Revit.DB import Transaction, View, ViewSchedule, ViewSheet
 
 from bimtools_rebar_3d_visibility import (
     apply_reinforcement_unobscured_in_view,
@@ -22,6 +23,50 @@ from rebar_unobscured_action_dialog import (
 __title__ = u"Arainco: View Unobscured barras"
 __title_apply__ = u"Arainco: Aplicar View Unobscured barras"
 __title_remove__ = u"Arainco: Quitar View Unobscured barras"
+
+
+def _resolve_active_model_view(uidoc):
+    u"""
+    Vista gráfica activa del documento, resuelta por ElementId.
+
+    Prioriza ``ActiveGraphicalView`` (pestaña visual) frente a ``ActiveView``
+    (puede desviarse con el navegador de proyecto o paneles UI). Solo se
+    trabaja con esa instancia: nunca plantillas ni otras vistas abiertas.
+    """
+    if uidoc is None:
+        return None
+    doc = uidoc.Document
+    if doc is None:
+        return None
+
+    view = None
+    try:
+        view = getattr(uidoc, "ActiveGraphicalView", None)
+    except Exception:
+        view = None
+    if view is None:
+        try:
+            view = uidoc.ActiveView
+        except Exception:
+            view = None
+    if view is None:
+        return None
+
+    try:
+        resolved = doc.GetElement(view.Id)
+    except Exception:
+        resolved = None
+    if isinstance(resolved, View):
+        view = resolved
+
+    if not isinstance(view, View):
+        return None
+    try:
+        if view.IsTemplate:
+            return None
+    except Exception:
+        pass
+    return view
 
 
 def _count_by_type(refuerzos):
@@ -88,7 +133,16 @@ def run(revit_app):
         show_info_dialog(__title__, u"No hay documento activo.", uiapp=revit_app)
         return
     doc = uidoc.Document
-    view = uidoc.ActiveView
+    view = _resolve_active_model_view(uidoc)
+
+    if view is None:
+        show_info_dialog(
+            __title__,
+            u"No hay una vista de modelo activa (o la activa es una plantilla de vista).\n"
+            u"Activa una planta, alzado, sección o 3D e inténtalo de nuevo.",
+            uiapp=revit_app,
+        )
+        return
 
     if isinstance(view, (ViewSheet, ViewSchedule)):
         show_info_dialog(
@@ -98,6 +152,8 @@ def run(revit_app):
         )
         return
 
+    # Congelar el Id: tras el diálogo modal no se relee ActiveView.
+    target_view_id = view.Id
     refuerzos = collect_reinforcement_in_view(doc, view)
     if not refuerzos:
         show_info_dialog(
@@ -130,6 +186,19 @@ def run(revit_app):
     unobscured = accion == "apply"
     tx_name = __title_apply__ if unobscured else __title_remove__
 
+    # Reafirmar la misma vista por Id (no ActiveView tras el diálogo modal).
+    try:
+        view = doc.GetElement(target_view_id)
+    except Exception:
+        view = None
+    if not isinstance(view, View) or isinstance(view, (ViewSheet, ViewSchedule)):
+        show_info_dialog(
+            tx_name,
+            u"La vista activa ya no está disponible. Vuelve a ejecutar la herramienta.",
+            uiapp=revit_app,
+        )
+        return
+
     t = Transaction(doc, tx_name)
     t.Start()
     try:
@@ -146,7 +215,7 @@ def run(revit_app):
     accion_txt = u"Aplicado" if unobscured else u"Quitado"
     msg = (
         u"Vista: {0}\n\n"
-        u"{1} View Unobscured en {2} elemento(s).\n\n"
+        u"{1} View Unobscured en {2} elemento(s) (solo esta vista).\n\n"
         u"{3}"
     ).format(
         view_name,

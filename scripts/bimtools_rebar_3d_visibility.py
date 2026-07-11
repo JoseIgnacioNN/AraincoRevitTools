@@ -22,16 +22,24 @@ def iter_document_view3d_non_template(doc):
 
 def collect_reinforcement_in_view(doc, view):
     u"""
-    Recoge ``Rebar``, ``RebarInSystem`` y ``AreaReinforcement`` asociados a ``view``.
+    Recoge ``Rebar``, ``RebarInSystem`` y ``AreaReinforcement`` visibles en ``view``.
+
+    Usa ``FilteredElementCollector(doc, view.Id)`` — solo esa vista, no el documento.
     """
     if doc is None or view is None or not isinstance(view, View):
         return []
+    try:
+        if view.IsTemplate:
+            return []
+    except Exception:
+        pass
     out = []
     seen = set()
+    view_id = view.Id
     for cls in (Rebar, RebarInSystem, AreaReinforcement):
         try:
             elems = (
-                FilteredElementCollector(doc, view.Id)
+                FilteredElementCollector(doc, view_id)
                 .OfClass(cls)
                 .WhereElementIsNotElementType()
                 .ToElements()
@@ -153,12 +161,23 @@ def _apply_visibility_to_element(ref, doc, view, unobscured, solid_in_view):
 def apply_reinforcement_unobscured_in_view(doc, refuerzos, view, unobscured=True, solid_in_view=None):
     u"""
     ``SetUnobscuredInView`` + ``SetSolidInView`` para ``AreaReinforcement``,
-    ``Rebar`` o ``RebarInSystem`` en la vista indicada.
+    ``Rebar`` o ``RebarInSystem`` **solo** en la vista indicada (nunca en otras).
 
     ``unobscured``: ``True`` para activar View Unobscured; ``False`` para quitarlo.
     ``solid_in_view``: si es ``None``, sigue el mismo valor que ``unobscured``.
     """
     if not refuerzos or doc is None or view is None:
+        return 0
+    if not isinstance(view, View):
+        return 0
+    try:
+        if view.IsTemplate:
+            return 0
+    except Exception:
+        pass
+    try:
+        view = doc.GetElement(view.Id)
+    except Exception:
         return 0
     if not isinstance(view, View):
         return 0
@@ -177,9 +196,20 @@ def apply_reinforcement_unobscured_in_view(doc, refuerzos, view, unobscured=True
 def apply_rebar_unobscured_in_view(doc, rebars, view):
     u"""
     Para cada ``Rebar`` en ``rebars``, activa «View Unobscured» y sólido en vista
-    en la vista indicada (p. ej. la vista activa al ejecutar la herramienta).
+    **solo** en la vista indicada.
     """
     if not rebars or doc is None or view is None:
+        return
+    if not isinstance(view, View):
+        return
+    try:
+        if view.IsTemplate:
+            return
+    except Exception:
+        pass
+    try:
+        view = doc.GetElement(view.Id)
+    except Exception:
         return
     if not isinstance(view, View):
         return
@@ -209,8 +239,19 @@ def apply_rebar_unobscured_in_view(doc, rebars, view):
 
 
 def ensure_rebar_obscured_in_view(doc, rebars, view):
-    u"""Desactiva «View Unobscured» en la vista (p. ej. laterales del alma)."""
+    u"""Desactiva «View Unobscured» **solo** en la vista indicada."""
     if not rebars or doc is None or view is None:
+        return
+    if not isinstance(view, View):
+        return
+    try:
+        if view.IsTemplate:
+            return
+    except Exception:
+        pass
+    try:
+        view = doc.GetElement(view.Id)
+    except Exception:
         return
     if not isinstance(view, View):
         return

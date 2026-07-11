@@ -36,6 +36,24 @@ from revit_wpf_window_position import (
 )
 
 from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
+from bimtools_ui_tokens import (
+    BG_APP,
+    BG_PANEL,
+    BORDER,
+    CORNER_PANEL,
+    FG_BODY,
+    FG_MUTED,
+    FG_TITLE,
+    FONT_FAMILY,
+    FONT_SIZE_BASE,
+    FONT_SIZE_HINT,
+    FONT_SIZE_STATUS,
+    FONT_SIZE_SUBTITLE,
+    FONT_SIZE_TITLE,
+    FONT_WEIGHT_TITLE,
+    PAD_WINDOW,
+    WINDOW_CHROME_TITLE,
+)
 
 from Autodesk.Revit.DB import (
     BuiltInCategory,
@@ -67,9 +85,48 @@ from Autodesk.Revit.DB.Structure import (
     AreaReinforcement,
     AreaReinforcementLayerType,
     AreaReinforcementType,
+    Rebar,
     RebarBarType,
     RebarHookType,
+    RebarInSystem,
 )
+
+try:
+    from conjunto_guid import (
+        ARMADURA_CONJUNTO_GUID_PARAM,
+        ARMADURA_MALLA_PARAM,
+        ARMADURA_ARAINCO_PARAM,
+        ARMADURA_UBICACION_INFERIOR,
+        ARMADURA_UBICACION_PARAM,
+        ARMADURA_UBICACION_SUPERIOR,
+        ARMADURA_NIVEL_PARAM,
+        finalizar_armadura_conjunto_guid_ejecucion,
+        iniciar_armadura_conjunto_guid_ejecucion,
+        inspect_conjunto_guid_param,
+        stamp_armadura_conjunto_guid,
+        stamp_armadura_conjunto_guid_with_reason,
+        stamp_armadura_arainco,
+        stamp_armadura_malla,
+        stamp_armadura_nivel,
+        stamp_armadura_ubicacion,
+    )
+except Exception:
+    ARMADURA_CONJUNTO_GUID_PARAM = u"Armadura_Conjunto_GUID"
+    ARMADURA_MALLA_PARAM = u"Armadura_Malla"
+    ARMADURA_ARAINCO_PARAM = u"Armadura_Arainco"
+    ARMADURA_UBICACION_PARAM = u"Armadura_Ubicacion"
+    ARMADURA_NIVEL_PARAM = u"Armadura_Nivel"
+    ARMADURA_UBICACION_INFERIOR = u"F"
+    ARMADURA_UBICACION_SUPERIOR = u"F'"
+    finalizar_armadura_conjunto_guid_ejecucion = None
+    iniciar_armadura_conjunto_guid_ejecucion = None
+    inspect_conjunto_guid_param = None
+    stamp_armadura_conjunto_guid = None
+    stamp_armadura_conjunto_guid_with_reason = None
+    stamp_armadura_arainco = None
+    stamp_armadura_malla = None
+    stamp_armadura_nivel = None
+    stamp_armadura_ubicacion = None
 from Autodesk.Revit.UI import TaskDialog, ExternalEvent, IExternalEventHandler
 from Autodesk.Revit.UI.Selection import ObjectType
 
@@ -77,17 +134,42 @@ from Autodesk.Revit.UI.Selection import ObjectType
 _APPDOMAIN_WINDOW_KEY = "BIMTools.AreaReinforcementLosa.ActiveWindow"
 _APPDOMAIN_SESSION_KEY = "BIMTools.AreaReinforcementLosa.ActiveSession"
 _TOOL_TASK_DIALOG_TITLE = u"Arainco: Malla en Losa"
+# Instrumentación GUID conjunto: log en %TEMP%\\Arainco_BIMTools y aviso si no se estampa.
+_INSTRUMENTAR_CONJUNTO_GUID = True
 
 
-def _task_dialog_show(title, message, wpf_window=None):
-    """TaskDialog detrás del WPF si Topmost=True; igual que Refuerzo Borde Losa."""
+def _mostrar_aviso(instruction, content=u"", uiapp=None, wpf_window=None, ok_text=u"Entendido"):
+    """Diálogo WPF estándar BIMTools; respaldo TaskDialog si falla la carga."""
     if wpf_window is not None:
         try:
             wpf_window.Topmost = False
         except Exception:
             pass
+    hwnd = None
     try:
-        TaskDialog.Show(title, message)
+        if uiapp is not None:
+            hwnd = revit_main_hwnd(uiapp)
+    except Exception:
+        pass
+    try:
+        from bimtools_instruction_dialog import show_message_dialog
+
+        show_message_dialog(
+            _TOOL_TASK_DIALOG_TITLE,
+            instruction,
+            content=content,
+            ok_text=ok_text,
+            hwnd_revit=hwnd,
+            uiapp=uiapp,
+        )
+        return
+    except Exception:
+        pass
+    try:
+        body = instruction
+        if content:
+            body = instruction + u"\n\n" + content
+        TaskDialog.Show(_TOOL_TASK_DIALOG_TITLE, body)
     finally:
         if wpf_window is not None:
             try:
@@ -203,12 +285,52 @@ def _cleanup_stale_tool_state():
             _clear_active_window()
 
 
-def _show_initial_instruction_dialog(revit):
-    """Diálogo inicial WPF (tema oscuro BIMTools), igual que Armado Muros."""
-    try:
-        from area_reinforcement_losa_instruction_dialog import show_selection_instructions
+def _initial_instruction_content():
+    return (
+        u"Esta herramienta crea mallas de Area Reinforcement en losas de hormigón.\n\n"
+        u"Flujo:\n"
+        u"1. Tras Aceptar, elija losas (Floor) en el modelo. Finalice con Finish "
+        u"en la barra de opciones (ESC cancela).\n"
+        u"2. Configure malla superior e inferior: diámetro y espaciado.\n"
+        u"3. Pulse «Colocar armaduras» para crear las mallas y etiquetarlas en planta.\n\n"
+        u"Requisitos: losas con sketch cerrado, AreaReinforcementType, RebarBarType "
+        u"y RebarHookType en el proyecto."
+    )
 
-        return bool(show_selection_instructions(uiapp=revit))
+
+def _show_initial_instruction_dialog(revit):
+    """Diálogo inicial WPF; respaldo TaskDialog si falla el shell."""
+    hwnd = None
+    try:
+        hwnd = revit_main_hwnd(revit)
+    except Exception:
+        pass
+    instruction = u"Seleccione una o más losas a armar."
+    content = _initial_instruction_content()
+    try:
+        from bimtools_instruction_dialog import show_ok_cancel_dialog
+
+        return bool(
+            show_ok_cancel_dialog(
+                _TOOL_TASK_DIALOG_TITLE,
+                instruction,
+                content=content,
+                ok_text=u"Aceptar",
+                cancel_text=u"Cancelar",
+                hwnd_revit=hwnd,
+                uiapp=revit,
+            )
+        )
+    except Exception:
+        pass
+    try:
+        from Autodesk.Revit.UI import TaskDialogCommon, TaskDialogResult
+
+        td = TaskDialog(_TOOL_TASK_DIALOG_TITLE)
+        td.MainInstruction = instruction
+        td.MainContent = content
+        td.CommonButtons = TaskDialogCommonButtons.Ok | TaskDialogCommonButtons.Cancel
+        return td.Show() == TaskDialogResult.Ok
     except Exception:
         return False
 
@@ -267,14 +389,17 @@ def _mesh_row_xaml(diam_name, esp_name):
                           Width="{dw}" MinWidth="{dw}" MaxWidth="{dw}" IsEditable="False">
                   <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{{StaticResource ComboItem}}"/></ComboBox.ItemContainerStyle>
                 </ComboBox>
-                <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
-                           Foreground="#95B8CC" VerticalAlignment="Center"
+                <TextBlock Grid.Column="1" Text="@" FontSize="{font_base}" FontWeight="Bold"
+                           Foreground="{fg_body}" VerticalAlignment="Center"
                            HorizontalAlignment="Center" Margin="8,0,8,0"/>
                 <ComboBox Grid.Column="2" x:Name="{esp}" Style="{{StaticResource Combo}}"
                           Width="{ew}" MinWidth="{ew}" MaxWidth="{ew}" IsEditable="True">
                   <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{{StaticResource ComboItem}}"/></ComboBox.ItemContainerStyle>
                 </ComboBox>
-              </Grid>""".format(dw=dw, ew=ew, diam=diam_name, esp=esp_name)
+              </Grid>""".format(
+        dw=dw, ew=ew, diam=diam_name, esp=esp_name,
+        font_base=FONT_SIZE_BASE, fg_body=FG_BODY,
+    )
 
 
 def _mesh_groupbox_xaml(row_index, panel_name, chk_name, chk_label, major_diam, major_esp, minor_diam, minor_esp):
@@ -283,7 +408,7 @@ def _mesh_groupbox_xaml(row_index, panel_name, chk_name, chk_label, major_diam, 
                 HorizontalAlignment="Stretch">
         <GroupBox.Header>
           <CheckBox x:Name="{chk}" IsChecked="True" Content="{label}"
-                    Foreground="#E8F4F8" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
+                    Foreground="{fg_title}" FontWeight="SemiBold" FontSize="{font_subtitle}" VerticalAlignment="Center"/>
         </GroupBox.Header>
         <StackPanel x:Name="{panel}" IsEnabled="True">
           <Grid Margin="0,0,0,4">
@@ -296,17 +421,17 @@ def _mesh_groupbox_xaml(row_index, panel_name, chk_name, chk_label, major_diam, 
             <TextBlock Grid.Column="2" Text="Esp. (mm)" Style="{{StaticResource LabelSmall}}"
                        HorizontalAlignment="Left"/>
           </Grid>
-          <Border Background="#0a1620" CornerRadius="4" Padding="10,8" BorderBrush="#21465C"
+          <Border Background="{bg_panel}" CornerRadius="{corner_panel}" Padding="10,8" BorderBrush="{border}"
                   BorderThickness="1" Margin="0,0,0,6" HorizontalAlignment="Stretch">
             <StackPanel>
-              <TextBlock Text="Luz Mayor" Foreground="#E8F4F8" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,6"/>
+              <TextBlock Text="Luz Mayor" Foreground="{fg_title}" FontSize="{font_subtitle}" FontWeight="SemiBold" Margin="0,0,0,6"/>
               {major_row}
             </StackPanel>
           </Border>
-          <Border Background="#0a1620" CornerRadius="4" Padding="10,8" BorderBrush="#21465C"
+          <Border Background="{bg_panel}" CornerRadius="{corner_panel}" Padding="10,8" BorderBrush="{border}"
                   BorderThickness="1" HorizontalAlignment="Stretch">
             <StackPanel>
-              <TextBlock Text="Luz Menor" Foreground="#E8F4F8" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,6"/>
+              <TextBlock Text="Luz Menor" Foreground="{fg_title}" FontSize="{font_subtitle}" FontWeight="SemiBold" Margin="0,0,0,6"/>
               {minor_row}
             </StackPanel>
           </Border>
@@ -320,6 +445,11 @@ def _mesh_groupbox_xaml(row_index, panel_name, chk_name, chk_label, major_diam, 
         ew=_AR_LOSA_COMBO_ESP_WIDTH_PX,
         major_row=_mesh_row_xaml(major_diam, major_esp),
         minor_row=_mesh_row_xaml(minor_diam, minor_esp),
+        fg_title=FG_TITLE,
+        font_subtitle=FONT_SIZE_SUBTITLE,
+        bg_panel=BG_PANEL,
+        corner_panel=CORNER_PANEL,
+        border=BORDER,
     )
 
 
@@ -1656,6 +1786,1124 @@ def _crear_etiqueta_area_reinforcement(document, view, area_rein, tag_symbol_id=
     )
 
 
+def _collect_structural_rebars_de_area_reinforcement(document, area_rein):
+    """
+    ``Rebar`` (OST_Rebar) generados por un ``AreaReinforcement`` tras ``Regenerate``.
+
+    Aplica cuando ``ReinforcementSettings.HostStructuralRebar`` es true.
+    """
+    rebars = []
+    if area_rein is None or document is None:
+        return rebars
+    try:
+        from Autodesk.Revit.DB import ElementCategoryFilter
+
+        flt = ElementCategoryFilter(BuiltInCategory.OST_Rebar)
+        dep = area_rein.GetDependentElements(flt)
+        if dep is None:
+            return rebars
+        try:
+            nd = int(dep.Count)
+        except Exception:
+            nd = 0
+        for i in range(nd):
+            try:
+                el = document.GetElement(dep[i])
+                if isinstance(el, Rebar):
+                    rebars.append(el)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return rebars
+
+
+def _collect_rebar_in_system_de_area_reinforcement(document, area_rein):
+    """``RebarInSystem`` hijos de un ``AreaReinforcement`` tras ``Regenerate``."""
+    barras = []
+    if area_rein is None or document is None:
+        return barras
+    seen = set()
+    try:
+        sys_ids = area_rein.GetRebarInSystemIds()
+    except Exception:
+        sys_ids = None
+    if sys_ids is not None:
+        try:
+            nd = int(sys_ids.Count)
+        except Exception:
+            nd = 0
+        for i in range(nd):
+            try:
+                eid = sys_ids[i]
+                eid_int = _element_id_int(eid)
+                if eid_int is None or eid_int in seen:
+                    continue
+                el = document.GetElement(eid)
+                if isinstance(el, RebarInSystem):
+                    barras.append(el)
+                    seen.add(eid_int)
+            except Exception:
+                continue
+    if barras:
+        return barras
+    try:
+        from Autodesk.Revit.DB import ElementCategoryFilter
+
+        flt = ElementCategoryFilter(BuiltInCategory.OST_RebarInSystem)
+        dep = area_rein.GetDependentElements(flt)
+        if dep is None:
+            return barras
+        try:
+            nd = int(dep.Count)
+        except Exception:
+            nd = 0
+        for i in range(nd):
+            try:
+                eid_int = _element_id_int(dep[i])
+                if eid_int is None or eid_int in seen:
+                    continue
+                el = document.GetElement(dep[i])
+                if isinstance(el, RebarInSystem):
+                    barras.append(el)
+                    seen.add(eid_int)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return barras
+
+
+def _collect_barras_conjunto_guid_de_area_reinforcement(document, area_rein):
+    """
+    Barras del área a estampar con ``Armadura_Conjunto_GUID``:
+    ``Rebar`` (OST_Rebar) y ``RebarInSystem`` (modo area system).
+    """
+    barras = []
+    seen = set()
+    for rb in _collect_structural_rebars_de_area_reinforcement(document, area_rein):
+        eid_int = _element_id_int(rb.Id)
+        if eid_int is None or eid_int in seen:
+            continue
+        barras.append((rb, u"Rebar"))
+        seen.add(eid_int)
+    for rb in _collect_rebar_in_system_de_area_reinforcement(document, area_rein):
+        eid_int = _element_id_int(rb.Id)
+        if eid_int is None or eid_int in seen:
+            continue
+        barras.append((rb, u"RebarInSystem"))
+        seen.add(eid_int)
+    return barras
+
+
+def _estampar_barra_conjunto_guid(barra, conjunto_guid):
+    """Estampa GUID en una barra; devuelve ``(ok, motivo)``."""
+    try:
+        if stamp_armadura_conjunto_guid_with_reason is not None:
+            return stamp_armadura_conjunto_guid_with_reason(
+                barra, conjunto_guid=conjunto_guid,
+            )
+        ok = bool(stamp_armadura_conjunto_guid(barra, conjunto_guid=conjunto_guid))
+        return ok, (u"ok" if ok else u"stamp_armadura_conjunto_guid devolvió False")
+    except Exception as ex_stamp:
+        return False, u"{0}: {1}".format(type(ex_stamp).__name__, ex_stamp)
+
+
+def _estampar_armadura_malla_en_barra(barra):
+    """Activa ``Armadura_Malla`` = Yes en la barra."""
+    if stamp_armadura_malla is None:
+        return False
+    try:
+        return bool(stamp_armadura_malla(barra, yes=True))
+    except Exception:
+        return False
+
+
+def _estampar_armadura_arainco_en_barra(barra):
+    """Activa ``Armadura_Arainco`` = Yes en la barra."""
+    if stamp_armadura_arainco is None:
+        return False
+    try:
+        return bool(stamp_armadura_arainco(barra, yes=True))
+    except Exception:
+        return False
+
+
+def _estampar_armadura_ubicacion_en_barra(barra, ubicacion_valor):
+    """Escribe ``Armadura_Ubicacion`` (``F`` / ``F'``) en la barra."""
+    if stamp_armadura_ubicacion is None or not ubicacion_valor:
+        return False
+    try:
+        return bool(stamp_armadura_ubicacion(barra, ubicacion_valor))
+    except Exception:
+        return False
+
+
+def _estampar_armadura_nivel_en_barra(barra, nivel_valor):
+    """Escribe ``Armadura_Nivel`` (nombre del nivel de la losa host) en la barra."""
+    if stamp_armadura_nivel is None or not nivel_valor:
+        return False
+    try:
+        return bool(stamp_armadura_nivel(barra, nivel_valor))
+    except Exception:
+        return False
+
+
+def _element_type_id_int(element):
+    if element is None:
+        return None
+    try:
+        return _element_id_int(element.GetTypeId())
+    except Exception:
+        return None
+
+
+def _z_promedio_barra(barra):
+    """Promedio Z de la centerline; respaldo bbox si la API no devuelve curvas."""
+    if barra is None:
+        return None
+    zs = []
+    try:
+        from Autodesk.Revit.DB.Structure import MultiplanarOption
+
+        curves = barra.GetCenterlineCurves(
+            False, False, False,
+            MultiplanarOption.IncludeAllMultiplanarCurves, 0,
+        )
+        if curves is not None:
+            try:
+                n = int(curves.Count)
+            except Exception:
+                n = 0
+            for i in range(n):
+                try:
+                    c = curves[i]
+                    zs.append(float(c.GetEndPoint(0).Z))
+                    zs.append(float(c.GetEndPoint(1).Z))
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    if not zs:
+        try:
+            curves = barra.GetCenterlineCurves(
+                False, False, False,
+                MultiplanarOption.IncludeOnlyPlanarCurves, 0,
+            )
+            if curves is not None:
+                try:
+                    n = int(curves.Count)
+                except Exception:
+                    n = 0
+                for i in range(n):
+                    try:
+                        c = curves[i]
+                        zs.append(float(c.GetEndPoint(0).Z))
+                        zs.append(float(c.GetEndPoint(1).Z))
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+    if not zs:
+        try:
+            bb = barra.get_BoundingBox(None)
+            if bb is not None:
+                return (float(bb.Min.Z) + float(bb.Max.Z)) * 0.5
+        except Exception:
+            pass
+        return None
+    return sum(zs) / float(len(zs))
+
+
+def _iter_solids_geometria_elemento(element):
+    if element is None:
+        return
+    opts = Options()
+    opts.ComputeReferences = False
+    try:
+        geom_elem = element.get_Geometry(opts)
+    except Exception:
+        return
+    if geom_elem is None:
+        return
+    for obj in geom_elem:
+        if obj is None:
+            continue
+        if isinstance(obj, Solid) and obj.Faces.Size > 0:
+            yield obj
+            continue
+        if isinstance(obj, GeometryInstance):
+            try:
+                inst = obj.GetInstanceGeometry()
+                if inst:
+                    for g in inst:
+                        if isinstance(g, Solid) and g.Faces.Size > 0:
+                            yield g
+            except Exception:
+                pass
+
+
+def _obtener_z_caras_losa(floor):
+    """Z (unidades internas Revit) de cara superior e inferior de la losa."""
+    if floor is None or not isinstance(floor, Floor):
+        return None, None
+    z_top = None
+    z_bottom = None
+    try:
+        from Autodesk.Revit.DB import PlanarFace
+    except Exception:
+        PlanarFace = type(None)
+    for solid in _iter_solids_geometria_elemento(floor):
+        try:
+            n_faces = int(solid.Faces.Size)
+        except Exception:
+            continue
+        for fi in range(n_faces):
+            try:
+                face = solid.Faces.get_Item(fi)
+            except Exception:
+                try:
+                    face = solid.Faces[fi]
+                except Exception:
+                    continue
+            if not isinstance(face, PlanarFace):
+                continue
+            try:
+                nz = float(face.FaceNormal.Z)
+            except Exception:
+                continue
+            try:
+                z_face = float(face.Origin.Z)
+            except Exception:
+                try:
+                    fbb = face.GetBoundingBox()
+                    z_face = (float(fbb.Min.Z) + float(fbb.Max.Z)) * 0.5
+                except Exception:
+                    continue
+            if nz >= 0.9:
+                if z_top is None or z_face > z_top:
+                    z_top = z_face
+            elif nz <= -0.9:
+                if z_bottom is None or z_face < z_bottom:
+                    z_bottom = z_face
+    if z_top is not None and z_bottom is not None:
+        return z_top, z_bottom
+    esp_mm = _obtener_espesor_losa_mm(floor)
+    if z_top is not None and esp_mm is not None:
+        esp_ft = UnitUtils.ConvertToInternalUnits(float(esp_mm), UnitTypeId.Millimeters)
+        return z_top, z_top - esp_ft
+    try:
+        bb = floor.get_BoundingBox(None)
+        if bb is not None:
+            return float(bb.Max.Z), float(bb.Min.Z)
+    except Exception:
+        pass
+    return None, None
+
+
+def _host_losa_de_area_reinforcement(document, area_rein):
+    if document is None or area_rein is None:
+        return None
+    try:
+        hid = area_rein.GetHostId()
+    except Exception:
+        return None
+    if hid is None or hid == ElementId.InvalidElementId:
+        return None
+    try:
+        host = document.GetElement(hid)
+    except Exception:
+        return None
+    return host if isinstance(host, Floor) else None
+
+
+def _nivel_losa_como_string(document, floor):
+    """Nombre del nivel de la losa host, como texto."""
+    if document is None or floor is None:
+        return None
+    lid = None
+    try:
+        lid = floor.LevelId
+        if lid is None or lid == ElementId.InvalidElementId:
+            lid = None
+    except Exception:
+        lid = None
+    if lid is None:
+        for bip_name in (
+            u"INSTANCE_REFERENCE_LEVEL_PARAM",
+            u"LEVEL_PARAM",
+            u"SCHEDULE_LEVEL_PARAM",
+        ):
+            try:
+                bip = getattr(BuiltInParameter, bip_name, None)
+                if bip is None:
+                    continue
+                p = floor.get_Parameter(bip)
+                if p is None or not p.HasValue or p.StorageType != StorageType.ElementId:
+                    continue
+                eid = p.AsElementId()
+                if eid is not None and eid != ElementId.InvalidElementId:
+                    lid = eid
+                    break
+            except Exception:
+                pass
+    if lid is None:
+        return None
+    try:
+        level = document.GetElement(lid)
+        if level is None:
+            return None
+        name = level.Name
+        if name is None:
+            return None
+        try:
+            return unicode(name)
+        except NameError:
+            return str(name)
+    except Exception:
+        return None
+
+
+def _nivel_losa_area_reinforcement(document, area_rein):
+    """Nivel de la losa que hospeda el Area Reinforcement, como string."""
+    floor = _host_losa_de_area_reinforcement(document, area_rein)
+    return _nivel_losa_como_string(document, floor)
+
+
+def _ubicacion_por_z_cara_losa(z_barra, z_top, z_bottom):
+    """Clasifica por posición Z respecto al espesor de la losa host."""
+    if z_barra is None:
+        return None
+    if z_top is not None and z_bottom is not None:
+        z_mid = (float(z_top) + float(z_bottom)) * 0.5
+        if float(z_barra) >= z_mid:
+            return ARMADURA_UBICACION_SUPERIOR
+        return ARMADURA_UBICACION_INFERIOR
+    if z_top is not None:
+        if float(z_barra) >= float(z_top) - 1e-9:
+            return ARMADURA_UBICACION_SUPERIOR
+        return ARMADURA_UBICACION_INFERIOR
+    if z_bottom is not None:
+        if float(z_barra) <= float(z_bottom) + 1e-9:
+            return ARMADURA_UBICACION_INFERIOR
+        return ARMADURA_UBICACION_SUPERIOR
+    return None
+
+
+def _ubicacion_por_geometria_cara_losa(barra, z_top, z_bottom):
+    """
+    Clasifica usando envolvente Z de la barra respecto al espesor de la losa.
+
+    Prioriza ``BoundingBox`` (más fiable en ``RebarInSystem``) y cae a centerline.
+    """
+    if z_top is None or z_bottom is None:
+        return None
+    z_mid = (float(z_top) + float(z_bottom)) * 0.5
+    try:
+        bb = barra.get_BoundingBox(None)
+        if bb is not None:
+            z_max = float(bb.Max.Z)
+            z_min = float(bb.Min.Z)
+            if z_min >= z_mid:
+                return ARMADURA_UBICACION_SUPERIOR
+            if z_max <= z_mid:
+                return ARMADURA_UBICACION_INFERIOR
+            z_centro = (z_max + z_min) * 0.5
+            return _ubicacion_por_z_cara_losa(z_centro, z_top, z_bottom)
+    except Exception:
+        pass
+    return _ubicacion_por_z_cara_losa(_z_promedio_barra(barra), z_top, z_bottom)
+
+
+def _direccion_distribucion_barra_xy(barra):
+    """Vector XY de la dirección de distribución de la barra / set."""
+    if barra is None:
+        return None
+    try:
+        path = barra.GetDistributionPath()
+        if path is not None and path.IsBound:
+            p0 = path.GetEndPoint(0)
+            p1 = path.GetEndPoint(1)
+            return XYZ(float(p1.X - p0.X), float(p1.Y - p0.Y), 0.0)
+    except Exception:
+        pass
+    try:
+        from Autodesk.Revit.DB.Structure import MultiplanarOption
+
+        curves = barra.GetCenterlineCurves(
+            False, False, False,
+            MultiplanarOption.IncludeOnlyPlanarCurves, 0,
+        )
+        if curves is not None and int(curves.Count) > 0:
+            c = curves[0]
+            p0 = c.GetEndPoint(0)
+            p1 = c.GetEndPoint(1)
+            return XYZ(float(p1.X - p0.X), float(p1.Y - p0.Y), 0.0)
+    except Exception:
+        pass
+    return None
+
+
+def _vectores_paralelos_xy(vec_a, vec_b, tol=0.95):
+    if vec_a is None or vec_b is None:
+        return None
+    try:
+        ax, ay = float(vec_a.X), float(vec_a.Y)
+        bx, by = float(vec_b.X), float(vec_b.Y)
+        la = math.hypot(ax, ay)
+        lb = math.hypot(bx, by)
+        if la < 1e-9 or lb < 1e-9:
+            return None
+        dot = abs((ax / la) * (bx / lb) + (ay / la) * (by / lb))
+        return dot >= float(tol)
+    except Exception:
+        return None
+
+
+def _barra_es_direccion_major(area_rein, barra):
+    """True si la barra sigue la dirección Major del área (Top/Bottom Major)."""
+    major_dir = None
+    try:
+        major_dir = area_rein.GetLayerDirection(AreaReinforcementLayerType.TopOrFrontMajor)
+    except Exception:
+        pass
+    if major_dir is None:
+        try:
+            major_dir = area_rein.Direction
+        except Exception:
+            pass
+    bar_dir = _direccion_distribucion_barra_xy(barra)
+    paralelo = _vectores_paralelos_xy(bar_dir, major_dir)
+    if paralelo is None:
+        return True
+    return paralelo
+
+
+def _barra_en_mitad_superior_losa(barra, z_top, z_bottom):
+    """True = cara superior losa; False = inferior; None = indeterminado."""
+    val = _ubicacion_por_geometria_cara_losa(barra, z_top, z_bottom)
+    if val == ARMADURA_UBICACION_SUPERIOR:
+        return True
+    if val == ARMADURA_UBICACION_INFERIOR:
+        return False
+    return None
+
+
+def _capa_activa_en_area(area_rein, layer_type, layer_key, layer_active_dict):
+    if not (layer_active_dict or {}).get(layer_key, True):
+        return False
+    try:
+        return bool(area_rein.IsLayerActive(layer_type))
+    except Exception:
+        return True
+
+
+def _ubicacion_por_capa_area_reinforcement(layer_type):
+    """
+    Top Major / Top Minor → ``F'``; Bottom Major / Bottom Minor → ``F``.
+    """
+    if layer_type in (
+        AreaReinforcementLayerType.TopOrFrontMajor,
+        AreaReinforcementLayerType.TopOrFrontMinor,
+    ):
+        return ARMADURA_UBICACION_SUPERIOR
+    return ARMADURA_UBICACION_INFERIOR
+
+
+def _capas_area_reinforcement_losa():
+    """Capas del área en losa: clave UI, tipo Revit, ubicación."""
+    return (
+        (u"exterior_major", AreaReinforcementLayerType.TopOrFrontMajor),
+        (u"exterior_minor", AreaReinforcementLayerType.TopOrFrontMinor),
+        (u"interior_major", AreaReinforcementLayerType.BottomOrBackMajor),
+        (u"interior_minor", AreaReinforcementLayerType.BottomOrBackMinor),
+    )
+
+
+def _capas_candidatas_por_tipo_barra(area_rein, barra, params_dict, layer_active_dict):
+    tid = _element_type_id_int(barra)
+    if tid is None:
+        return []
+    found = []
+    for layer_key, layer_type in _capas_area_reinforcement_losa():
+        if not _capa_activa_en_area(area_rein, layer_type, layer_key, layer_active_dict):
+            continue
+        bar_id, _ = (params_dict or {}).get(layer_key, (None, None))
+        if _element_id_int(bar_id) == tid:
+            found.append(layer_type)
+    return found
+
+
+def _capas_activas_con_tipo_barra(area_rein, params_dict, layer_active_dict):
+    """Capas activas del área con el ``RebarBarType`` Id configurado en la UI."""
+    out = []
+    for layer_key, layer_type in _capas_area_reinforcement_losa():
+        if not _capa_activa_en_area(area_rein, layer_type, layer_key, layer_active_dict):
+            continue
+        bar_id, _ = (params_dict or {}).get(layer_key, (None, None))
+        out.append((layer_type, _element_id_int(bar_id)))
+    return out
+
+
+def _orden_capa_area_reinforcement(layer_type):
+    """Orden: superior antes que inferior; Major antes que Minor."""
+    es_top = layer_type in (
+        AreaReinforcementLayerType.TopOrFrontMajor,
+        AreaReinforcementLayerType.TopOrFrontMinor,
+    )
+    es_major = layer_type in (
+        AreaReinforcementLayerType.TopOrFrontMajor,
+        AreaReinforcementLayerType.BottomOrBackMajor,
+    )
+    return (0 if es_top else 1, 0 if es_major else 1, int(layer_type))
+
+
+def _z_referencia_barra(barra):
+    """Z de referencia para clasificar cara superior/inferior."""
+    if barra is None:
+        return None
+    try:
+        path = barra.GetDistributionPath()
+        if path is not None and path.IsBound:
+            p0 = path.GetEndPoint(0)
+            p1 = path.GetEndPoint(1)
+            return (float(p0.Z) + float(p1.Z)) * 0.5
+    except Exception:
+        pass
+    try:
+        bb = barra.get_BoundingBox(None)
+        if bb is not None:
+            return (float(bb.Max.Z) + float(bb.Min.Z)) * 0.5
+    except Exception:
+        pass
+    return _z_promedio_barra(barra)
+
+
+def _filtrar_candidatas_capa(candidatas, es_top, es_major):
+    if not candidatas:
+        return candidatas
+    if es_top is not None:
+        if es_top:
+            candidatas = [
+                lt for lt in candidatas
+                if lt in (
+                    AreaReinforcementLayerType.TopOrFrontMajor,
+                    AreaReinforcementLayerType.TopOrFrontMinor,
+                )
+            ]
+        else:
+            candidatas = [
+                lt for lt in candidatas
+                if lt in (
+                    AreaReinforcementLayerType.BottomOrBackMajor,
+                    AreaReinforcementLayerType.BottomOrBackMinor,
+                )
+            ]
+    if len(candidatas) > 1:
+        if es_major:
+            filtradas = [
+                lt for lt in candidatas
+                if lt in (
+                    AreaReinforcementLayerType.TopOrFrontMajor,
+                    AreaReinforcementLayerType.BottomOrBackMajor,
+                )
+            ]
+        else:
+            filtradas = [
+                lt for lt in candidatas
+                if lt in (
+                    AreaReinforcementLayerType.TopOrFrontMinor,
+                    AreaReinforcementLayerType.BottomOrBackMinor,
+                )
+            ]
+        if filtradas:
+            candidatas = filtradas
+    return candidatas
+
+
+def _capa_fallback_por_geometria(area_rein, barra, z_top, z_bottom):
+    es_top = _barra_en_mitad_superior_losa(barra, z_top, z_bottom)
+    es_major = _barra_es_direccion_major(area_rein, barra)
+    if es_top is True and es_major:
+        return AreaReinforcementLayerType.TopOrFrontMajor
+    if es_top is True and not es_major:
+        return AreaReinforcementLayerType.TopOrFrontMinor
+    if es_top is False and es_major:
+        return AreaReinforcementLayerType.BottomOrBackMajor
+    if es_top is False and not es_major:
+        return AreaReinforcementLayerType.BottomOrBackMinor
+    if es_major:
+        return AreaReinforcementLayerType.TopOrFrontMajor
+    return AreaReinforcementLayerType.TopOrFrontMinor
+
+
+def _mapa_capa_barras_area_reinforcement(
+    area_rein, barras, params_dict, layer_active_dict, z_top, z_bottom,
+):
+    """
+    Asigna cada barra a su capa Revit (Top/Bottom × Major/Minor).
+
+    1. Tipo de barra único en una sola capa activa.
+    2. Emparejamiento por Z y orden de capas cuando quedan ambiguas.
+    3. Geometría + dirección Major como respaldo.
+    """
+    capas = _capas_activas_con_tipo_barra(area_rein, params_dict, layer_active_dict)
+    result = {}
+    if not barras:
+        return result
+
+    capas_restantes = list(capas)
+    barras_restantes = list(barras)
+
+    while barras_restantes and capas_restantes:
+        asigno = False
+        for barra in list(barras_restantes):
+            eid = _element_id_int(barra.Id)
+            if eid is None:
+                barras_restantes.remove(barra)
+                continue
+            tid = _element_type_id_int(barra)
+            matching = [lt for lt, bt in capas_restantes if bt is not None and bt == tid]
+            if len(matching) == 1:
+                result[eid] = matching[0]
+                capas_restantes = [
+                    pair for pair in capas_restantes if pair[0] != matching[0]
+                ]
+                barras_restantes.remove(barra)
+                asigno = True
+        if not asigno:
+            break
+
+    if barras_restantes and capas_restantes and len(barras_restantes) == len(capas_restantes):
+        capas_ord = sorted(capas_restantes, key=lambda pair: _orden_capa_area_reinforcement(pair[0]))
+        solo_superior = all(
+            lt in (
+                AreaReinforcementLayerType.TopOrFrontMajor,
+                AreaReinforcementLayerType.TopOrFrontMinor,
+            )
+            for lt, _ in capas_ord
+        )
+        solo_inferior = all(
+            lt in (
+                AreaReinforcementLayerType.BottomOrBackMajor,
+                AreaReinforcementLayerType.BottomOrBackMinor,
+            )
+            for lt, _ in capas_ord
+        )
+        if solo_superior or solo_inferior:
+            barras_ord = sorted(
+                barras_restantes,
+                key=lambda b: (0 if _barra_es_direccion_major(area_rein, b) else 1),
+            )
+        else:
+            barras_ord = sorted(
+                barras_restantes,
+                key=lambda b: _z_referencia_barra(b) or 0.0,
+                reverse=True,
+            )
+        for barra, (layer_type, _bt) in zip(barras_ord, capas_ord):
+            eid = _element_id_int(barra.Id)
+            if eid is not None:
+                result[eid] = layer_type
+        barras_restantes = []
+        capas_restantes = []
+
+    for barra in barras_restantes:
+        eid = _element_id_int(barra.Id)
+        if eid is None or eid in result:
+            continue
+        layer_type = _detectar_capa_area_reinforcement_de_barra(
+            area_rein, barra, params_dict, layer_active_dict, z_top, z_bottom,
+        )
+        result[eid] = layer_type
+    return result
+
+
+def _detectar_capa_area_reinforcement_de_barra(
+    area_rein, barra, params_dict, layer_active_dict, z_top, z_bottom,
+):
+    """
+    Identifica la capa Revit (Top/Bottom × Major/Minor) de una barra del área.
+    """
+    es_top = _barra_en_mitad_superior_losa(barra, z_top, z_bottom)
+    es_major = _barra_es_direccion_major(area_rein, barra)
+    candidatas = _capas_candidatas_por_tipo_barra(
+        area_rein, barra, params_dict, layer_active_dict,
+    )
+    candidatas = _filtrar_candidatas_capa(candidatas, es_top, es_major)
+    if len(candidatas) == 1:
+        return candidatas[0]
+    if not candidatas:
+        candidatas = [
+            lt for lt, _bt in _capas_activas_con_tipo_barra(
+                area_rein, params_dict, layer_active_dict,
+            )
+        ]
+        candidatas = _filtrar_candidatas_capa(candidatas, es_top, es_major)
+        if len(candidatas) == 1:
+            return candidatas[0]
+    return _capa_fallback_por_geometria(area_rein, barra, z_top, z_bottom)
+
+
+def _nombre_capa_area_reinforcement(layer_type):
+    nombres = {
+        AreaReinforcementLayerType.TopOrFrontMajor: u"Top Major",
+        AreaReinforcementLayerType.TopOrFrontMinor: u"Top Minor",
+        AreaReinforcementLayerType.BottomOrBackMajor: u"Bottom Major",
+        AreaReinforcementLayerType.BottomOrBackMinor: u"Bottom Minor",
+    }
+    try:
+        return nombres.get(layer_type, unicode(layer_type))
+    except Exception:
+        return u"?"
+
+
+def _resolver_armadura_ubicacion_malla_barras(
+    document, area_rein, barras, params_dict, layer_active_dict,
+):
+    """
+    ``Armadura_Ubicacion`` según capa del Area Reinforcement:
+
+    - Top Major / Top Minor → ``F'``
+    - Bottom Major / Bottom Minor → ``F``
+    """
+    out = {}
+    if not barras or area_rein is None:
+        return out
+    floor = _host_losa_de_area_reinforcement(document, area_rein)
+    z_top, z_bottom = _obtener_z_caras_losa(floor)
+    capa_por_id = _mapa_capa_barras_area_reinforcement(
+        area_rein, barras, params_dict, layer_active_dict, z_top, z_bottom,
+    )
+    for eid, layer_type in capa_por_id.items():
+        out[eid] = _ubicacion_por_capa_area_reinforcement(layer_type)
+    return out
+
+
+def _resolver_capa_armadura_malla_barras(
+    document, area_rein, barras, params_dict, layer_active_dict,
+):
+    """Devuelve ``{bar_id: AreaReinforcementLayerType}`` (diagnóstico)."""
+    if not barras or area_rein is None:
+        return {}
+    floor = _host_losa_de_area_reinforcement(document, area_rein)
+    z_top, z_bottom = _obtener_z_caras_losa(floor)
+    return _mapa_capa_barras_area_reinforcement(
+        area_rein, barras, params_dict, layer_active_dict, z_top, z_bottom,
+    )
+
+
+def _estampar_parametros_barras_area_reinforcement(
+    barra, conjunto_guid, ubicacion_valor=None, nivel_valor=None,
+):
+    """GUID + ``Armadura_Malla`` + ``Armadura_Arainco`` + ``Armadura_Ubicacion`` + ``Armadura_Nivel``."""
+    guid_ok, guid_motivo = _estampar_barra_conjunto_guid(barra, conjunto_guid)
+    malla_ok = _estampar_armadura_malla_en_barra(barra)
+    arainco_ok = _estampar_armadura_arainco_en_barra(barra)
+    ubic_ok = _estampar_armadura_ubicacion_en_barra(barra, ubicacion_valor)
+    nivel_ok = _estampar_armadura_nivel_en_barra(barra, nivel_valor)
+    return guid_ok, guid_motivo, malla_ok, arainco_ok, ubic_ok, nivel_ok
+
+
+def _reinforcement_settings_host_structural_rebar(document):
+    """Lee ``ReinforcementSettings.HostStructuralRebar`` (None si no disponible)."""
+    if document is None:
+        return None
+    try:
+        from Autodesk.Revit.DB.Structure import ReinforcementSettings
+
+        rs = ReinforcementSettings.GetReinforcementSettings(document)
+        if rs is None:
+            return None
+        return bool(rs.HostStructuralRebar)
+    except Exception:
+        return None
+
+
+def _conjunto_guid_log_path():
+    base = os.environ.get(u"TEMP", u".")
+    return os.path.join(base, u"Arainco_BIMTools", u"conjunto_guid_area_rein_losa.log")
+
+
+def _conjunto_guid_debug_write(lines):
+    if not lines:
+        return
+    try:
+        path = _conjunto_guid_log_path()
+        parent = os.path.dirname(path)
+        if parent and not os.path.isdir(parent):
+            os.makedirs(parent)
+        stamp = u""
+        try:
+            stamp = unicode(System.DateTime.Now.ToString(u"yyyy-MM-dd HH:mm:ss"))
+        except Exception:
+            pass
+        with open(path, u"a") as fh:
+            if stamp:
+                fh.write(u"[{0}]\n".format(stamp))
+            for line in lines:
+                try:
+                    fh.write(unicode(line) + u"\n")
+                except Exception:
+                    try:
+                        fh.write(str(line) + u"\n")
+                    except Exception:
+                        pass
+            fh.write(u"\n")
+    except Exception:
+        pass
+    try:
+        for line in lines:
+            print(line)
+    except Exception:
+        pass
+
+
+def _diagnosticar_estampa_conjunto_guid(
+    document, area_reinforcements, conjunto_guid,
+    params_dict=None, layer_active_dict=None,
+):
+    """
+    Recopila métricas del intento de estampa ``Armadura_Conjunto_GUID``.
+
+    Devuelve dict serializable a texto para log / TaskDialog.
+    """
+    report = {
+        u"modulo_conjunto_guid": stamp_armadura_conjunto_guid is not None,
+        u"conjunto_guid": conjunto_guid,
+        u"n_area_reinforcement": len(area_reinforcements or []),
+        u"host_structural_rebar": _reinforcement_settings_host_structural_rebar(document),
+        u"n_rebar_encontrados": 0,
+        u"n_rebar_in_system": 0,
+        u"n_estampados_ok": 0,
+        u"n_estampados_fallo": 0,
+        u"n_armadura_malla_ok": 0,
+        u"n_armadura_arainco_ok": 0,
+        u"n_armadura_ubicacion_ok": 0,
+        u"n_armadura_nivel_ok": 0,
+        u"areas": [],
+        u"primer_fallo": None,
+        u"log_path": _conjunto_guid_log_path(),
+    }
+    if not area_reinforcements:
+        report[u"resumen"] = u"Sin AreaReinforcement creados; no hay rebars que estampar."
+        return report
+    if stamp_armadura_conjunto_guid is None:
+        report[u"resumen"] = (
+            u"Módulo conjunto_guid no cargado (import falló). "
+            u"Revise que scripts/conjunto_guid.py exista en el pushbutton."
+        )
+        return report
+    if not conjunto_guid:
+        report[u"resumen"] = u"No se generó GUID de corrida (iniciar_armadura_conjunto_guid_ejecucion)."
+        return report
+
+    for ar in area_reinforcements:
+        if ar is None:
+            continue
+        ar_id = _element_id_int(ar.Id)
+        nivel_valor = _nivel_losa_area_reinforcement(document, ar)
+        barras = _collect_barras_conjunto_guid_de_area_reinforcement(document, ar)
+        barras_solo = [b for b, _t in barras]
+        capa_por_id = _resolver_capa_armadura_malla_barras(
+            document, ar, barras_solo, params_dict, layer_active_dict,
+        )
+        ubicacion_por_id = {
+            eid: _ubicacion_por_capa_area_reinforcement(lt)
+            for eid, lt in capa_por_id.items()
+        }
+        n_rebar = sum(1 for _, tipo in barras if tipo == u"Rebar")
+        n_ris = sum(1 for _, tipo in barras if tipo == u"RebarInSystem")
+        report[u"n_rebar_encontrados"] += n_rebar
+        report[u"n_rebar_in_system"] += n_ris
+        area_info = {
+            u"area_id": ar_id,
+            u"n_rebar": n_rebar,
+            u"n_rebar_in_system": n_ris,
+            u"armadura_nivel": nivel_valor,
+            u"rebar_ids": [],
+            u"estampas": [],
+        }
+        for barra, tipo in barras:
+            try:
+                area_info[u"rebar_ids"].append(_element_id_int(barra.Id))
+            except Exception:
+                pass
+            ubicacion_valor = ubicacion_por_id.get(_element_id_int(barra.Id))
+            capa_lt = capa_por_id.get(_element_id_int(barra.Id))
+            ok, motivo, malla_ok, arainco_ok, ubic_ok, nivel_ok = _estampar_parametros_barras_area_reinforcement(
+                barra, conjunto_guid, ubicacion_valor, nivel_valor,
+            )
+            area_info[u"estampas"].append({
+                u"rebar_id": _element_id_int(barra.Id),
+                u"tipo": tipo,
+                u"ok": ok,
+                u"motivo": motivo,
+                u"armadura_malla": malla_ok,
+                u"armadura_arainco": arainco_ok,
+                u"capa": _nombre_capa_area_reinforcement(capa_lt) if capa_lt is not None else None,
+                u"armadura_ubicacion": ubicacion_valor,
+                u"armadura_ubicacion_ok": ubic_ok,
+                u"armadura_nivel": nivel_valor,
+                u"armadura_nivel_ok": nivel_ok,
+            })
+            if ok:
+                report[u"n_estampados_ok"] += 1
+            else:
+                report[u"n_estampados_fallo"] += 1
+                if report[u"primer_fallo"] is None:
+                    param_info = {}
+                    if inspect_conjunto_guid_param is not None:
+                        try:
+                            param_info = inspect_conjunto_guid_param(barra)
+                        except Exception:
+                            pass
+                    report[u"primer_fallo"] = {
+                        u"rebar_id": _element_id_int(barra.Id),
+                        u"tipo": tipo,
+                        u"motivo": motivo,
+                        u"param": param_info,
+                    }
+            if malla_ok:
+                report[u"n_armadura_malla_ok"] += 1
+            if arainco_ok:
+                report[u"n_armadura_arainco_ok"] += 1
+            if ubic_ok:
+                report[u"n_armadura_ubicacion_ok"] += 1
+            if nivel_ok:
+                report[u"n_armadura_nivel_ok"] += 1
+        report[u"areas"].append(area_info)
+
+    n_total_barras = int(report[u"n_rebar_encontrados"] or 0) + int(
+        report[u"n_rebar_in_system"] or 0,
+    )
+    if report[u"n_estampados_ok"] > 0:
+        report[u"resumen"] = (
+            u"GUID en {0} barra(s); Armadura_Malla=Yes en {1}; "
+            u"Armadura_Arainco=Yes en {2}; Armadura_Ubicacion en {3}; "
+            u"Armadura_Nivel en {4} "
+            u"({5} AreaReinforcement).".format(
+                report[u"n_estampados_ok"],
+                report[u"n_armadura_malla_ok"],
+                report[u"n_armadura_arainco_ok"],
+                report[u"n_armadura_ubicacion_ok"],
+                report[u"n_armadura_nivel_ok"],
+                report[u"n_area_reinforcement"],
+            )
+        )
+    elif n_total_barras == 0:
+        report[u"resumen"] = (
+            u"Tras Regenerate no se encontraron Rebar ni RebarInSystem en el área. "
+            u"HostStructuralRebar={0}.".format(report[u"host_structural_rebar"])
+        )
+    else:
+        report[u"resumen"] = (
+            u"Se encontraron {0} barra(s) pero ningún estampa tuvo éxito.".format(
+                n_total_barras,
+            )
+        )
+    return report
+
+
+def _format_conjunto_guid_diagnostico(report):
+    if not report:
+        return u"(sin diagnóstico)"
+    lines = [
+        u"── Diagnóstico GUID conjunto (Area Reinforcement Losa) ──",
+        u"Resumen: {0}".format(report.get(u"resumen") or u""),
+        u"GUID corrida: {0}".format(report.get(u"conjunto_guid") or u"(ninguno)"),
+        u"Módulo conjunto_guid: {0}".format(report.get(u"modulo_conjunto_guid")),
+        u"HostStructuralRebar: {0}".format(report.get(u"host_structural_rebar")),
+        u"AreaReinforcement: {0}".format(report.get(u"n_area_reinforcement")),
+        u"Rebar encontrados: {0}".format(report.get(u"n_rebar_encontrados")),
+        u"RebarInSystem: {0}".format(report.get(u"n_rebar_in_system")),
+        u"Estampados OK / fallo: {0} / {1}".format(
+            report.get(u"n_estampados_ok"), report.get(u"n_estampados_fallo"),
+        ),
+        u"Armadura_Malla=Yes: {0}".format(report.get(u"n_armadura_malla_ok")),
+        u"Armadura_Arainco=Yes: {0}".format(report.get(u"n_armadura_arainco_ok")),
+        u"Armadura_Ubicacion: {0}".format(report.get(u"n_armadura_ubicacion_ok")),
+        u"Armadura_Nivel: {0}".format(report.get(u"n_armadura_nivel_ok")),
+    ]
+    for area in report.get(u"areas") or []:
+        lines.append(
+            u"  · Area {0}: Rebar={1}, RebarInSystem={2}, Nivel={3}".format(
+                area.get(u"area_id"),
+                area.get(u"n_rebar"),
+                area.get(u"n_rebar_in_system"),
+                area.get(u"armadura_nivel") or u"?",
+            )
+        )
+        for est in (area.get(u"estampas") or [])[:5]:
+            lines.append(
+                u"    {0} {1}: GUID {2} — {3}; Malla={4}; Arainco={5}; Capa={6}; Ubic={7} ({8}); Nivel={9} ({10})".format(
+                    est.get(u"tipo") or u"Barra",
+                    est.get(u"rebar_id"),
+                    u"OK" if est.get(u"ok") else u"FALLO",
+                    est.get(u"motivo") or u"",
+                    u"Yes" if est.get(u"armadura_malla") else u"No",
+                    u"Yes" if est.get(u"armadura_arainco") else u"No",
+                    est.get(u"capa") or u"?",
+                    est.get(u"armadura_ubicacion") or u"?",
+                    u"OK" if est.get(u"armadura_ubicacion_ok") else u"FALLO",
+                    est.get(u"armadura_nivel") or u"?",
+                    u"OK" if est.get(u"armadura_nivel_ok") else u"FALLO",
+                )
+            )
+    pf = report.get(u"primer_fallo")
+    if pf:
+        lines.append(u"Primer fallo: {0} {1} — {2}".format(
+            pf.get(u"tipo") or u"Barra",
+            pf.get(u"rebar_id"), pf.get(u"motivo"),
+        ))
+        p = pf.get(u"param") or {}
+        if p:
+            lines.append(
+                u"  Parámetro «{0}»: found={1}, read_only={2}, storage={3}, valor={4}".format(
+                    ARMADURA_CONJUNTO_GUID_PARAM,
+                    p.get(u"found"),
+                    p.get(u"read_only"),
+                    p.get(u"storage_type"),
+                    p.get(u"current_value"),
+                )
+            )
+    lines.append(u"Log: {0}".format(report.get(u"log_path") or u""))
+    return u"\n".join(lines)
+
+
+def _stamp_conjunto_guid_en_rebars_area_reinforcement(
+    document, area_reinforcements, conjunto_guid=None,
+    params_dict=None, layer_active_dict=None,
+):
+    """Estampa GUID, ``Armadura_Malla``, ``Armadura_Ubicacion`` y ``Armadura_Nivel`` en barras del área."""
+    if _INSTRUMENTAR_CONJUNTO_GUID:
+        report = _diagnosticar_estampa_conjunto_guid(
+            document, area_reinforcements, conjunto_guid,
+            params_dict=params_dict,
+            layer_active_dict=layer_active_dict,
+        )
+        _conjunto_guid_debug_write(_format_conjunto_guid_diagnostico(report).splitlines())
+        return int(report.get(u"n_estampados_ok") or 0), report
+    if not area_reinforcements or stamp_armadura_conjunto_guid is None:
+        return 0, None
+    n = 0
+    for ar in area_reinforcements:
+        nivel_valor = _nivel_losa_area_reinforcement(document, ar)
+        barras = _collect_barras_conjunto_guid_de_area_reinforcement(document, ar)
+        barras_solo = [b for b, _t in barras]
+        ubicacion_por_id = _resolver_armadura_ubicacion_malla_barras(
+            document, ar, barras_solo, params_dict, layer_active_dict,
+        )
+        for barra, _tipo in barras:
+            ubicacion_valor = ubicacion_por_id.get(_element_id_int(barra.Id))
+            guid_ok, _motivo, _malla_ok, _arainco_ok, _ubic_ok, _nivel_ok = _estampar_parametros_barras_area_reinforcement(
+                barra, conjunto_guid, ubicacion_valor, nivel_valor,
+            )
+            if guid_ok:
+                n += 1
+    return n, None
+
+
 def _ocultar_rebar_in_system_de_area_reinforcement_en_vista(document, view, area_reinforcements):
     """
     Oculta en ``view`` los RebarInSystem generados por cada AreaReinforcement
@@ -1753,20 +3001,20 @@ class ColocarAreaReinforcementHandler(IExternalEventHandler):
             # Vista al inicio del handler (ExternalEvent); evita depender del estado tras el bucle.
             vista_etiqueta = uidoc.ActiveView
             if not self.floor_ids:
-                _task_dialog_show("Malla en Losa - Error", u"No hay losas seleccionadas.", _wpf)
+                _mostrar_aviso(u"No hay losas seleccionadas.", uiapp=uiapp, wpf_window=_wpf)
                 return
             if not self.params_dict or not any(
                 pid and pid != ElementId.InvalidElementId
                 for pid, _ in self.params_dict.values()
             ):
-                _task_dialog_show("Malla en Losa - Error", u"Selecciona al menos un tipo de barra válido.", _wpf)
+                _mostrar_aviso(u"Selecciona al menos un tipo de barra válido.", uiapp=uiapp, wpf_window=_wpf)
                 return
             area_type_id = self.area_reinforcement_type_id or (self._get_area_type(doc) if self._get_area_type else None)
             if not area_type_id or area_type_id == ElementId.InvalidElementId:
-                _task_dialog_show(
-                    "Malla en Losa - Error",
+                _mostrar_aviso(
                     u"No hay AreaReinforcementType en el proyecto. Crea uno manualmente.",
-                    _wpf,
+                    uiapp=uiapp,
+                    wpf_window=_wpf,
                 )
                 return
             first_bar_id = None
@@ -1780,6 +3028,12 @@ class ColocarAreaReinforcementHandler(IExternalEventHandler):
             errores = []
             area_rein_creados = []
             etiquetas_ok = 0
+            conjunto_guid = None
+            if iniciar_armadura_conjunto_guid_ejecucion is not None:
+                try:
+                    conjunto_guid = iniciar_armadura_conjunto_guid_ejecucion()
+                except Exception:
+                    conjunto_guid = None
             trans = Transaction(doc, "Arainco: Area Reinforcement en losas")
             try:
                 trans.Start()
@@ -1863,6 +3117,23 @@ class ColocarAreaReinforcementHandler(IExternalEventHandler):
                         doc.Regenerate()
                     except Exception:
                         pass
+                    n_guid_ok, guid_report = _stamp_conjunto_guid_en_rebars_area_reinforcement(
+                        doc, area_rein_creados, conjunto_guid,
+                        params_dict=self.params_dict,
+                        layer_active_dict=self.layer_active_dict,
+                    )
+                    if (
+                        _INSTRUMENTAR_CONJUNTO_GUID
+                        and guid_report is not None
+                        and int(n_guid_ok or 0) < 1
+                        and len(area_rein_creados) > 0
+                    ):
+                        _mostrar_aviso(
+                            u"No se pudo estampar el GUID de corrida en todas las barras.",
+                            content=_format_conjunto_guid_diagnostico(guid_report),
+                            uiapp=uiapp,
+                            wpf_window=_wpf,
+                        )
                     _ocultar_rebar_in_system_de_area_reinforcement_en_vista(
                         doc, vista_etiqueta, area_rein_creados
                     )
@@ -1942,10 +3213,15 @@ class ColocarAreaReinforcementHandler(IExternalEventHandler):
                         trans.RollBack()
                     except Exception:
                         pass
-                _task_dialog_show("Malla en Losa - Error", u"Error:\n\n{}".format(str(ex)), _wpf)
+                _mostrar_aviso(u"Error:\n\n{}".format(str(ex)), uiapp=uiapp, wpf_window=_wpf)
         except Exception as ex:
-            _task_dialog_show("Malla en Losa - Error", u"Error:\n\n{}".format(str(ex)), _wpf)
+            _mostrar_aviso(u"Error:\n\n{}".format(str(ex)), uiapp=uiapp, wpf_window=_wpf)
         finally:
+            if finalizar_armadura_conjunto_guid_ejecucion is not None:
+                try:
+                    finalizar_armadura_conjunto_guid_ejecucion()
+                except Exception:
+                    pass
             try:
                 win = self._window_ref() if self._window_ref else None
                 if win and hasattr(win, "_win"):
@@ -1994,20 +3270,19 @@ class SeleccionarLosaHandler(IExternalEventHandler):
                             if isinstance(elem, Floor):
                                 floor_ids.append(ref.ElementId)
                     if not floor_ids:
-                        TaskDialog.Show(
-                            _TOOL_TASK_DIALOG_TITLE,
-                            u"No se encontraron losas válidas en la selección.\n\n"
-                            u"Seleccione elementos de categoría Floor (losa).",
+                        _mostrar_aviso(
+                            u"No se encontraron losas válidas en la selección.",
+                            content=u"Seleccione elementos de categoría Floor (losa).",
+                            uiapp=uiapp,
                         )
             except Exception as ex:
                 err = str(ex).lower()
                 if "cancel" in err or "operation" in err:
                     pick_cancelled = True
                 else:
-                    _task_dialog_show(
-                        _TOOL_TASK_DIALOG_TITLE,
+                    _mostrar_aviso(
                         u"Error en la selección:\n\n{}".format(str(ex)),
-                        None,
+                        uiapp=uiapp,
                     )
             if floor_ids:
                 win._floor_ids = floor_ids
@@ -2029,25 +3304,32 @@ class SeleccionarLosaHandler(IExternalEventHandler):
         return "SeleccionarLosa"
 
 
-# ── XAML — Misma línea de diseño que Armado Muros (34_ArmadoMuros) ───────────
-XAML = u"""
+# ── XAML — Shell estándar BIMTools (cinta blanca + cuerpo oscuro) ────────────
+_XAML_WINDOW_HEAD = u"""
 <Window
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Arainco: Malla en Losa"
+    Title="{window_title}"
     SizeToContent="Height"
     WindowStartupLocation="Manual"
-    Background="#071018"
-    FontFamily="Segoe UI"
-    FontSize="12"
+    Background="{bg_app}"
+    FontFamily="{font_family}"
+    FontSize="{font_size_base}"
     ShowInTaskbar="False"
     ResizeMode="NoResize"
     UseLayoutRounding="True">
   <Window.Resources>
-""" + BIMTOOLS_DARK_STYLES_XML + u"""
+""".format(
+    window_title=WINDOW_CHROME_TITLE,
+    bg_app=BG_APP,
+    font_family=FONT_FAMILY,
+    font_size_base=FONT_SIZE_BASE,
+)
+
+_XAML_WINDOW_BODY = u"""
   </Window.Resources>
 
-  <Border Background="#071018" BorderBrush="#21465C" BorderThickness="1" Padding="18">
+  <Border Background="{bg_app}" BorderBrush="{border}" BorderThickness="1" Padding="{pad_window}">
     <Grid>
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/>
@@ -2059,31 +3341,25 @@ XAML = u"""
 
       <StackPanel Grid.Row="0" Margin="0,0,0,10">
         <TextBlock x:Name="TxtTitle" Text="Arainco: Malla en Losa"
-                   Foreground="#E8F4F8" FontSize="18" FontWeight="Bold"/>
-        <TextBlock x:Name="TxtSubtitle" Margin="0,6,0,0" Foreground="#95B8CC"
+                   Foreground="{fg_title}" FontSize="{font_size_title}" FontWeight="{font_weight_title}"/>
+        <TextBlock x:Name="TxtSubtitle" Margin="0,6,0,0" Foreground="{fg_body}"
+                   FontSize="{font_size_subtitle}"
                    TextWrapping="Wrap"
                    Text="Configure malla superior e inferior (diámetro y espaciado) para las losas seleccionadas."/>
       </StackPanel>
-""" + _mesh_groupbox_xaml(
-    1,
-    "PanelSuperiorContent",
-    "ChkMallaSuperior",
-    u"Malla superior",
-    "CmbExteriorMajorDiametro",
-    "CmbExteriorMajorEspaciamiento",
-    "CmbExteriorMinorDiametro",
-    "CmbExteriorMinorEspaciamiento",
-) + _mesh_groupbox_xaml(
-    2,
-    "PanelInferiorContent",
-    "ChkMallaInferior",
-    u"Malla inferior",
-    "CmbInteriorMajorDiametro",
-    "CmbInteriorMajorEspaciamiento",
-    "CmbInteriorMinorDiametro",
-    "CmbInteriorMinorEspaciamiento",
-) + u"""
-      <TextBlock Grid.Row="3" x:Name="TxtFooterHint" Foreground="#64748b" FontSize="10"
+""".format(
+    bg_app=BG_APP,
+    border=BORDER,
+    pad_window=PAD_WINDOW,
+    fg_title=FG_TITLE,
+    font_size_title=FONT_SIZE_TITLE,
+    font_weight_title=FONT_WEIGHT_TITLE,
+    fg_body=FG_BODY,
+    font_size_subtitle=FONT_SIZE_SUBTITLE,
+)
+
+_XAML_WINDOW_FOOTER = u"""
+      <TextBlock Grid.Row="3" x:Name="TxtFooterHint" Foreground="{fg_muted}" FontSize="{font_hint}"
                  TextWrapping="Wrap" Margin="0,4,0,0"
                  Text="Ganchos según espesor de losa. Etiquetado automático en vista de planta activa."/>
 
@@ -2093,18 +3369,49 @@ XAML = u"""
           <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
         <TextBlock x:Name="TxtEstado" Grid.Column="0" VerticalAlignment="Center"
-                   Foreground="#64748b" FontSize="10" TextWrapping="Wrap" Margin="0,0,12,0"/>
+                   Foreground="{fg_muted}" FontSize="{font_status}" TextWrapping="Wrap" Margin="0,0,12,0"/>
         <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
           <Button x:Name="BtnCancelar" Content="Cancelar"
-                  Style="{StaticResource BtnSelectOutline}" MinWidth="110" Margin="0,0,10,0"/>
+                  Style="{{StaticResource BtnSelectOutline}}" MinWidth="110" Margin="0,0,10,0"/>
           <Button x:Name="BtnColocar" Content="Colocar armaduras"
-                  Style="{StaticResource BtnPrimary}" MinWidth="180"/>
+                  Style="{{StaticResource BtnPrimary}}" MinWidth="180"/>
         </StackPanel>
       </Grid>
     </Grid>
   </Border>
 </Window>
-"""
+""".format(
+    fg_muted=FG_MUTED,
+    font_hint=FONT_SIZE_HINT,
+    font_status=FONT_SIZE_STATUS,
+)
+
+XAML = (
+    _XAML_WINDOW_HEAD
+    + BIMTOOLS_DARK_STYLES_XML
+    + _XAML_WINDOW_BODY
+    + _mesh_groupbox_xaml(
+        1,
+        "PanelSuperiorContent",
+        "ChkMallaSuperior",
+        u"Malla superior",
+        "CmbExteriorMajorDiametro",
+        "CmbExteriorMajorEspaciamiento",
+        "CmbExteriorMinorDiametro",
+        "CmbExteriorMinorEspaciamiento",
+    )
+    + _mesh_groupbox_xaml(
+        2,
+        "PanelInferiorContent",
+        "ChkMallaInferior",
+        u"Malla inferior",
+        "CmbInteriorMajorDiametro",
+        "CmbInteriorMajorEspaciamiento",
+        "CmbInteriorMinorDiametro",
+        "CmbInteriorMinorEspaciamiento",
+    )
+    + _XAML_WINDOW_FOOTER
+)
 
 
 # ── Ventana principal ───────────────────────────────────────────────────────
@@ -2284,13 +3591,13 @@ class AreaReinforcementLosaWindow(object):
             pass
 
     def begin_with_selection(self):
-        """Tras el TaskDialog inicial: lanza PickObjects sin mostrar el formulario WPF."""
+        """Tras el diálogo inicial WPF: lanza PickObjects sin mostrar el formulario."""
         try:
             uidoc = self._revit.ActiveUIDocument
         except Exception:
             uidoc = None
         if uidoc is None:
-            TaskDialog.Show(_TOOL_TASK_DIALOG_TITLE, u"No hay documento activo.")
+            _mostrar_aviso(u"No hay documento activo.", uiapp=self._revit)
             self._abort_session()
             return
         self._document = uidoc.Document
@@ -2317,7 +3624,7 @@ class AreaReinforcementLosaWindow(object):
         """Muestra el formulario de parámetros tras una selección válida de losas."""
         uidoc = self._revit.ActiveUIDocument
         if uidoc is None:
-            TaskDialog.Show(_TOOL_TASK_DIALOG_TITLE, u"No hay documento activo.")
+            _mostrar_aviso(u"No hay documento activo.", uiapp=self._revit)
             self._abort_session()
             return
         hwnd = None
@@ -2389,19 +3696,19 @@ class AreaReinforcementLosaWindow(object):
         from Autodesk.Revit.DB import ElementId
         try:
             if not self._floor_ids:
-                _task_dialog_show(
-                    "Malla en Losa",
+                _mostrar_aviso(
                     u"Primero selecciona una o más losas.",
-                    self._win,
+                    uiapp=self._revit,
+                    wpf_window=self._win,
                 )
                 return
             chk_sup = self._win.FindName("ChkMallaSuperior")
             chk_inf = self._win.FindName("ChkMallaInferior")
             if chk_sup and chk_inf and chk_sup.IsChecked != True and chk_inf.IsChecked != True:
-                _task_dialog_show(
-                    "Malla en Losa",
+                _mostrar_aviso(
                     u"Por lo menos una malla debe estar activada.",
-                    self._win,
+                    uiapp=self._revit,
+                    wpf_window=self._win,
                 )
                 return
             area_type_id = self._area_reinforcement_type_id
@@ -2412,10 +3719,10 @@ class AreaReinforcementLosaWindow(object):
                 except Exception:
                     pass
             if not area_type_id:
-                _task_dialog_show(
-                    "Malla en Losa",
+                _mostrar_aviso(
                     u"No hay tipo de Area Reinforcement en el proyecto.",
-                    self._win,
+                    uiapp=self._revit,
+                    wpf_window=self._win,
                 )
                 return
             rebar_ids = getattr(self, "_rebar_type_ids", {})
@@ -2439,10 +3746,10 @@ class AreaReinforcementLosaWindow(object):
                 params_dict[layer_key] = (bar_id, str(esp))
                 layer_active_dict[layer_key] = bool(is_active)
             if not any(pid and pid != ElementId.InvalidElementId for pid, _ in params_dict.values()):
-                _task_dialog_show(
-                    "Malla en Losa",
+                _mostrar_aviso(
                     u"Selecciona al menos un diámetro válido.",
-                    self._win,
+                    uiapp=self._revit,
+                    wpf_window=self._win,
                 )
                 return
             self._colocar_handler.floor_ids = list(self._floor_ids)
@@ -2452,10 +3759,10 @@ class AreaReinforcementLosaWindow(object):
             self._colocar_handler.asignar_ganchos = True
             self._colocar_event.Raise()
         except Exception as ex:
-            _task_dialog_show(
-                "Malla en Losa - Error",
+            _mostrar_aviso(
                 u"Error:\n\n{}".format(str(ex)),
-                self._win,
+                uiapp=self._revit,
+                wpf_window=self._win,
             )
 
 def run(revit, close_on_finish=False):
@@ -2483,7 +3790,7 @@ def run(revit, close_on_finish=False):
             except Exception:
                 pass
         try:
-            from area_reinforcement_losa_instruction_dialog import show_message_dialog
+            from bimtools_instruction_dialog import show_message_dialog
 
             show_message_dialog(
                 _TOOL_TASK_DIALOG_TITLE,
