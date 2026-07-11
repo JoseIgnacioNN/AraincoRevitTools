@@ -1,23 +1,36 @@
 # -*- coding: utf-8 -*-
-"""Parámetros compartidos en Rebar creados por Armado muros Cabezal."""
+"""Parámetros compartidos en Rebar creados por Armado Muros."""
 
 import clr
 
 clr.AddReference("System")
+clr.AddReference("RevitAPI")
 from System import AppDomain
 
-from Autodesk.Revit.DB import StorageType
-from Autodesk.Revit.DB.Structure import Rebar
+from Autodesk.Revit.DB import (
+    BuiltInCategory,
+    BuiltInParameter,
+    ElementId,
+    FilteredElementCollector,
+    Level,
+    StorageType,
+    Wall,
+)
+from Autodesk.Revit.DB.Structure import MultiplanarOption, Rebar
 
 ARMADURA_ARAINCO_PARAM = u"Armadura_Arainco"
-ARMADURA_UBICACION_PARAM = u"Armadura_Ubicacion"
+ARMADURA_CAPA_PARAM = u"Armadura_Capa"
+ARMADURA_MALLA_PARAM = u"Armadura_Malla"
 ARMADURA_MALLA_TIPO_PARAM = u"Armadura_Malla_Tipo"
 ARMADURA_MALLA_ORIENTACION_PARAM = u"Armadura_Malla_Orientacion"
 ARMADURA_CONJUNTO_GUID_PARAM = u"Armadura_Conjunto_GUID"
+ARMADURA_NIVEL_PARAM = u"Armadura_Nivel"
+ARMADURA_EJE_PARAM = u"Armadura_Eje"
 ARMADURA_MALLA_TIPO_DM = u"D.M."
 ARMADURA_MALLA_ORIENT_V = u"V."
 ARMADURA_MALLA_ORIENT_H = u"H."
 _APPDOMAIN_CONJUNTO_GUID_KEY = u"Arainco_ArmadoMuros_Conjunto_GUID"
+_APPDOMAIN_ARMADURA_EJE_KEY = u"Arainco_ArmadoMuros_Armadura_Eje"
 
 
 def _norm_param_def_name(name):
@@ -132,6 +145,113 @@ def finalizar_armadura_conjunto_guid_ejecucion():
         AppDomain.CurrentDomain.SetData(_APPDOMAIN_CONJUNTO_GUID_KEY, None)
     except Exception:
         pass
+
+
+def _param_value_as_text(param):
+    """Lee texto de un ``Parameter`` (AsString / AsValueString)."""
+    if param is None:
+        return None
+    val = None
+    try:
+        val = param.AsString()
+    except Exception:
+        pass
+    if not val:
+        try:
+            val = param.AsValueString()
+        except Exception:
+            pass
+    if not val:
+        return None
+    try:
+        t = unicode(val).strip()
+    except Exception:
+        try:
+            t = str(val or u"").strip()
+        except Exception:
+            return None
+    return t or None
+
+
+def leer_armadura_eje_desde_vista(view):
+    """
+    Lee ``Armadura_Eje`` de la vista activa (o la vista indicada).
+
+    Returns:
+        texto normalizado o ``None`` si no hay valor / parámetro.
+    """
+    if view is None:
+        return None
+    p = _find_element_parameter(view, ARMADURA_EJE_PARAM)
+    return _param_value_as_text(p)
+
+
+def iniciar_armadura_eje_ejecucion(uidoc=None, view=None, eje_valor=None):
+    """
+    Cachea ``Armadura_Eje`` de la vista activa para estampar rebars de la corrida.
+
+    Prioridad: ``eje_valor`` explícito → ``view`` → ``uidoc.ActiveView``.
+    """
+    valor = None
+    if eje_valor is not None:
+        try:
+            valor = unicode(eje_valor).strip()
+        except Exception:
+            try:
+                valor = str(eje_valor or u"").strip()
+            except Exception:
+                valor = None
+        if not valor:
+            valor = None
+    if valor is None:
+        vista = view
+        if vista is None and uidoc is not None:
+            try:
+                vista = uidoc.ActiveView
+            except Exception:
+                vista = None
+        valor = leer_armadura_eje_desde_vista(vista)
+    try:
+        AppDomain.CurrentDomain.SetData(_APPDOMAIN_ARMADURA_EJE_KEY, valor)
+    except Exception:
+        pass
+    return valor
+
+
+def obtener_armadura_eje_actual():
+    """Valor ``Armadura_Eje`` cacheado de la corrida o ``None``."""
+    try:
+        val = AppDomain.CurrentDomain.GetData(_APPDOMAIN_ARMADURA_EJE_KEY)
+    except Exception:
+        val = None
+    if not val:
+        return None
+    try:
+        t = unicode(val).strip()
+    except Exception:
+        try:
+            t = str(val or u"").strip()
+        except Exception:
+            return None
+    return t or None
+
+
+def finalizar_armadura_eje_ejecucion():
+    """Limpia el valor ``Armadura_Eje`` de corrida al terminar la ejecución."""
+    try:
+        AppDomain.CurrentDomain.SetData(_APPDOMAIN_ARMADURA_EJE_KEY, None)
+    except Exception:
+        pass
+
+
+def stamp_armadura_eje(rebar, eje_valor=None):
+    """Escribe ``Armadura_Eje`` en un ``Rebar`` (valor explícito o cache de corrida)."""
+    if rebar is None or not isinstance(rebar, Rebar):
+        return False
+    valor = eje_valor if eje_valor is not None else obtener_armadura_eje_actual()
+    if not valor:
+        return False
+    return _set_rebar_string_param(rebar, ARMADURA_EJE_PARAM, valor)
 
 
 def _set_element_string_param(element, param_name, value):
@@ -346,99 +466,424 @@ def collect_corrida_por_conjunto_guid(doc, conjunto_guid):
     }
 
 
-def armadura_ubicacion_valor_desde_capa(layer_index):
-    """Capa índice 0 → ``1``, índice 1 → ``2``, etc."""
+def armadura_capa_valor_desde_layer(layer_index):
+    """Capa índice 0 → ``(1ºC.)``, índice 1 → ``(2ºC.)``, etc."""
     try:
         li = int(layer_index)
     except Exception:
         li = 0
-    return unicode(max(0, li) + 1)
+    n = max(0, li) + 1
+    return u"({0}ºC.)".format(n)
 
 
-def set_armadura_ubicacion_desde_capa(rebar, layer_index):
-    """Escribe ``Armadura_Ubicacion`` según índice de capa (1-based)."""
+def set_armadura_capa_desde_layer(rebar, layer_index):
+    """Escribe ``Armadura_Capa`` según índice de capa (0-based → 1ºC., 2ºC., …)."""
     if rebar is None or not isinstance(rebar, Rebar):
         return False
-    valor_txt = armadura_ubicacion_valor_desde_capa(layer_index)
+    valor_txt = armadura_capa_valor_desde_layer(layer_index)
+    return _set_rebar_string_param(rebar, ARMADURA_CAPA_PARAM, valor_txt)
+
+
+def stamp_armadura_nivel(rebar, level_name):
+    """Escribe ``Armadura_Nivel`` (nombre de nivel) en un ``Rebar``."""
+    if rebar is None or not level_name:
+        return False
+    return _set_rebar_string_param(rebar, ARMADURA_NIVEL_PARAM, level_name)
+
+
+def _rebar_document(rebar):
+    if rebar is None:
+        return None
     try:
-        valor_int = int(valor_txt)
+        return rebar.Document
     except Exception:
-        valor_int = 1
+        return None
+
+
+def _rebar_host_element(rebar, doc=None):
+    """
+    Elemento host del rebar (``GetHostId``).
+
+    Si el host inmediato es ``AreaReinforcement``, resuelve el host estructural
+    (muro/losa) para poder leer Base Constraint.
+    """
+    if rebar is None or not isinstance(rebar, Rebar):
+        return None
+    document = doc or _rebar_document(rebar)
+    if document is None:
+        return None
     try:
-        p = _find_rebar_parameter(rebar, ARMADURA_UBICACION_PARAM)
-        if p is None or p.IsReadOnly:
-            return False
+        hid = rebar.GetHostId()
+    except Exception:
+        return None
+    if hid is None or hid == ElementId.InvalidElementId:
+        return None
+    try:
+        host = document.GetElement(hid)
+    except Exception:
+        return None
+    if host is None:
+        return None
+    try:
+        from Autodesk.Revit.DB.Structure import AreaReinforcement
+        if isinstance(host, AreaReinforcement):
+            try:
+                ar_hid = host.GetHostId()
+            except Exception:
+                ar_hid = None
+            if ar_hid is not None and ar_hid != ElementId.InvalidElementId:
+                try:
+                    structural = document.GetElement(ar_hid)
+                except Exception:
+                    structural = None
+                if structural is not None:
+                    return structural
+    except Exception:
+        pass
+    return host
+
+
+def _nivel_nombre_desde_element_id(doc, level_id):
+    if doc is None or level_id is None or level_id == ElementId.InvalidElementId:
+        return None
+    try:
+        if int(level_id.IntegerValue) < 0:
+            return None
+    except Exception:
+        pass
+    try:
+        level = doc.GetElement(level_id)
+    except Exception:
+        return None
+    if level is None or not isinstance(level, Level):
+        return None
+    try:
+        name = level.Name
+    except Exception:
+        return None
+    if name is None:
+        return None
+    try:
+        text = unicode(name).strip()
+    except Exception:
+        try:
+            text = str(name).strip()
+        except Exception:
+            return None
+    return text or None
+
+
+def nivel_nombre_base_constraint_muro(doc, wall):
+    """
+    Nombre del nivel de ``WALL_BASE_CONSTRAINT`` del muro anfitrión.
+
+    Respaldo: ``Wall.LevelId`` y parámetros de nivel de instancia.
+    """
+    if doc is None or wall is None:
+        return None
+    try:
+        p = wall.get_Parameter(BuiltInParameter.WALL_BASE_CONSTRAINT)
+        if p is not None and p.HasValue and p.StorageType == StorageType.ElementId:
+            name = _nivel_nombre_desde_element_id(doc, p.AsElementId())
+            if name:
+                return name
+    except Exception:
+        pass
+    try:
+        lid = wall.LevelId
+        name = _nivel_nombre_desde_element_id(doc, lid)
+        if name:
+            return name
+    except Exception:
+        pass
+    for bip_name in (
+        u"INSTANCE_REFERENCE_LEVEL_PARAM",
+        u"LEVEL_PARAM",
+        u"SCHEDULE_LEVEL_PARAM",
+    ):
+        try:
+            bip = getattr(BuiltInParameter, bip_name, None)
+            if bip is None:
+                continue
+            p = wall.get_Parameter(bip)
+            if p is None or not p.HasValue or p.StorageType != StorageType.ElementId:
+                continue
+            name = _nivel_nombre_desde_element_id(doc, p.AsElementId())
+            if name:
+                return name
+        except Exception:
+            continue
+    return None
+
+
+def stamp_armadura_nivel_desde_host_muro(rebar, wall=None, doc=None):
+    """
+    ``Armadura_Nivel`` desde Base Constraint del muro host.
+
+    Usado en malla y confinamiento.
+    """
+    if rebar is None or not isinstance(rebar, Rebar):
+        return False
+    document = doc or _rebar_document(rebar)
+    host = wall
+    if host is None:
+        host = _rebar_host_element(rebar, document)
+    if host is None or not isinstance(host, Wall):
+        return False
+    name = nivel_nombre_base_constraint_muro(document, host)
+    if not name:
+        return False
+    return stamp_armadura_nivel(rebar, name)
+
+
+def _curve_length_safe(curve):
+    if curve is None:
+        return 0.0
+    try:
+        return float(curve.Length)
+    except Exception:
+        pass
+    try:
+        p0 = curve.GetEndPoint(0)
+        p1 = curve.GetEndPoint(1)
+        return float(p0.DistanceTo(p1))
+    except Exception:
+        return 0.0
+
+
+def _rebar_centerline_curves(rebar, pos_idx=0):
+    """Curvas de eje del rebar (posición ``pos_idx``); varios overload de API."""
+    if rebar is None or not isinstance(rebar, Rebar):
+        return None
+    attempts = (
+        (False, False, False, MultiplanarOption.IncludeAllMultiplanarCurves, int(pos_idx)),
+        (False, False, False, MultiplanarOption.IncludeOnlyPlanarCurves, int(pos_idx)),
+        (False, False, False),
+    )
+    for args in attempts:
+        try:
+            crvs = rebar.GetCenterlineCurves(*args)
+        except Exception:
+            continue
+        if crvs is None:
+            continue
+        try:
+            if int(crvs.Count) < 1:
+                continue
+        except Exception:
+            continue
+        return crvs
+    return None
+
+
+def rebar_main_segment_startpoint(rebar, pos_idx=0):
+    """
+    StartPoint del segmento principal (curva más larga) de la centerline.
+
+    Returns:
+        XYZ o None.
+    """
+    crvs = _rebar_centerline_curves(rebar, pos_idx=pos_idx)
+    if crvs is None:
+        return None
+    best = None
+    best_len = -1.0
+    try:
+        n = int(crvs.Count)
+    except Exception:
+        n = 0
+    for i in range(n):
+        try:
+            c = crvs[i]
+        except Exception:
+            continue
+        L = _curve_length_safe(c)
+        if L > best_len:
+            best_len = L
+            best = c
+    if best is None:
+        return None
+    try:
+        return best.GetEndPoint(0)
+    except Exception:
+        return None
+
+
+def listar_niveles_proyecto(doc):
+    """Niveles del proyecto (no plantilla)."""
+    if doc is None:
+        return []
+    try:
+        levels = list(
+            FilteredElementCollector(doc)
+            .OfClass(Level)
+            .WhereElementIsNotElementType()
+        )
+    except Exception:
+        try:
+            levels = list(
+                FilteredElementCollector(doc)
+                .OfCategory(BuiltInCategory.OST_Levels)
+                .WhereElementIsNotElementType()
+            )
+        except Exception:
+            return []
+    out = []
+    for lv in levels:
+        if lv is None or not isinstance(lv, Level):
+            continue
+        out.append(lv)
+    return out
+
+
+def nivel_mas_cercano_a_z(doc, z_elevation):
+    """``Level`` cuya elevación está más cerca de ``z_elevation`` (pies internos)."""
+    levels = listar_niveles_proyecto(doc)
+    if not levels:
+        return None
+    try:
+        z = float(z_elevation)
+    except Exception:
+        return None
+    best = None
+    best_dist = None
+    for lv in levels:
+        try:
+            elev = float(lv.Elevation)
+        except Exception:
+            continue
+        dist = abs(elev - z)
+        if best is None or dist < best_dist:
+            best = lv
+            best_dist = dist
+    return best
+
+
+def nivel_nombre_mas_cercano_a_z(doc, z_elevation):
+    lv = nivel_mas_cercano_a_z(doc, z_elevation)
+    if lv is None:
+        return None
+    try:
+        name = lv.Name
+    except Exception:
+        return None
+    if name is None:
+        return None
+    try:
+        text = unicode(name).strip()
+    except Exception:
+        try:
+            text = str(name).strip()
+        except Exception:
+            return None
+    return text or None
+
+
+def stamp_armadura_nivel_desde_centerline(rebar, doc=None, pos_idx=0):
+    """
+    ``Armadura_Nivel`` = nivel más cercano al StartPoint del segmento principal.
+
+    Usado en longitudinales de cabezal y coronamiento.
+    """
+    if rebar is None or not isinstance(rebar, Rebar):
+        return False
+    document = doc or _rebar_document(rebar)
+    if document is None:
+        return False
+    pt = rebar_main_segment_startpoint(rebar, pos_idx=pos_idx)
+    if pt is None:
+        return False
+    try:
+        z = float(pt.Z)
+    except Exception:
+        return False
+    name = nivel_nombre_mas_cercano_a_z(document, z)
+    if not name:
+        return False
+    return stamp_armadura_nivel(rebar, name)
+
+
+def stamp_cabezal_longitudinal_rebar(rebar, layer_index=0):
+    """``Armadura_Arainco`` + ``Armadura_Malla`` = No + ``Armadura_Capa`` + nivel centerline."""
+    if rebar is None:
+        return rebar
+    activar_armadura_arainco(rebar)
+    set_armadura_capa_desde_layer(rebar, layer_index)
+    stamp_armadura_nivel_desde_centerline(rebar)
+    return rebar
+
+
+def stamp_confinamiento_rebar(rebar):
+    """Confinamiento: ``Armadura_Arainco`` + ``Armadura_Nivel`` desde base del muro host."""
+    if rebar is None:
+        return rebar
+    activar_armadura_arainco(rebar)
+    stamp_armadura_nivel_desde_host_muro(rebar)
+    return rebar
+
+
+def stamp_coronamiento_rebar(rebar):
+    """Coronamiento: ``Armadura_Arainco`` + ``Armadura_Nivel`` desde centerline."""
+    if rebar is None:
+        return rebar
+    activar_armadura_arainco(rebar)
+    stamp_armadura_nivel_desde_centerline(rebar)
+    return rebar
+
+
+def _set_rebar_yes_no_param(rebar, param_name, yes=True):
+    """Escribe un parámetro Yes/No (Integer 0/1, bool o texto Yes/No)."""
+    if rebar is None or not isinstance(rebar, Rebar) or not param_name:
+        return False
+    p = _find_rebar_parameter(rebar, param_name)
+    if p is None or p.IsReadOnly:
+        return False
+    if yes:
+        candidates = (1, True, u"1", u"Yes", u"yes", u"Sí", u"SI")
+    else:
+        candidates = (0, False, u"0", u"No", u"no")
+    try:
         st = p.StorageType
         if st == StorageType.Integer:
-            p.Set(valor_int)
-        elif st == StorageType.String:
-            p.Set(valor_txt)
-        else:
-            p.Set(valor_txt)
+            p.Set(1 if yes else 0)
+            return True
+    except Exception:
+        pass
+    for val in candidates:
+        try:
+            p.Set(val)
+            return True
+        except Exception:
+            continue
+    try:
+        p.SetValueString(u"Yes" if yes else u"No")
         return True
     except Exception:
         return False
 
 
-def stamp_cabezal_longitudinal_rebar(rebar, layer_index=0):
-    """``Armadura_Arainco`` + ``Armadura_Ubicacion`` en barras longitudinales de cabezal."""
-    if rebar is None:
-        return rebar
-    activar_armadura_arainco(rebar)
-    set_armadura_ubicacion_desde_capa(rebar, layer_index)
-    return rebar
+def activar_armadura_malla(rebar, yes=True):
+    """Escribe ``Armadura_Malla`` Yes/No (cuantificación tablas)."""
+    return _set_rebar_yes_no_param(rebar, ARMADURA_MALLA_PARAM, yes=yes)
 
 
 def activar_armadura_arainco(rebar):
-    """Activa el parámetro booleano ``Armadura_Arainco`` en un ``Rebar``."""
+    """
+    Activa ``Armadura_Arainco`` y marca ``Armadura_Malla`` = No.
+
+    Las barras de malla pisan después con ``stamp_malla_*`` → ``Armadura_Malla`` = Yes.
+    """
     if rebar is None or not isinstance(rebar, Rebar):
         return False
-    ok = False
-    try:
-        p = _find_rebar_parameter(rebar, ARMADURA_ARAINCO_PARAM)
-        if p is None or p.IsReadOnly:
-            stamp_armadura_conjunto_guid(rebar)
-            return False
-        st = p.StorageType
-        if st == StorageType.Integer:
-            p.Set(1)
-            ok = True
-        elif st == StorageType.String:
-            p.Set(u"1")
-            ok = True
-        else:
-            try:
-                p.Set(1)
-                ok = True
-            except Exception:
-                pass
-            if not ok:
-                try:
-                    p.Set(True)
-                    ok = True
-                except Exception:
-                    pass
-            if not ok:
-                try:
-                    p.SetValueString(u"1")
-                    ok = True
-                except Exception:
-                    pass
-            if not ok:
-                try:
-                    p.SetValueString(u"Yes")
-                    ok = True
-                except Exception:
-                    pass
-    except Exception:
-        stamp_armadura_conjunto_guid(rebar)
-        return False
+    ok = _set_rebar_yes_no_param(rebar, ARMADURA_ARAINCO_PARAM, yes=True)
+    activar_armadura_malla(rebar, yes=False)
     stamp_armadura_conjunto_guid(rebar)
+    stamp_armadura_eje(rebar)
     return ok
 
 
 def activar_armadura_arainco_por_ids(doc, rebar_ids):
-    """Activa ``Armadura_Arainco`` en una lista de ``ElementId``."""
+    """Activa ``Armadura_Arainco`` (+ ``Armadura_Malla`` = No) en una lista de ``ElementId``."""
     if doc is None or not rebar_ids:
         return 0
     n = 0
@@ -453,25 +898,31 @@ def activar_armadura_arainco_por_ids(doc, rebar_ids):
 
 
 def stamp_malla_vertical_rebar(rebar):
-    """Barras verticales de malla: ``Armadura_Malla_Tipo`` = D.M., orientación V."""
+    """Barras verticales de malla: ``Armadura_Malla`` = Yes, Tipo D.M., orientación V + nivel host."""
     if rebar is None:
         return rebar
+    activar_armadura_malla(rebar, yes=True)
     _set_rebar_string_param(rebar, ARMADURA_MALLA_TIPO_PARAM, ARMADURA_MALLA_TIPO_DM)
     _set_rebar_string_param(
         rebar, ARMADURA_MALLA_ORIENTACION_PARAM, ARMADURA_MALLA_ORIENT_V,
     )
     stamp_armadura_conjunto_guid(rebar)
+    stamp_armadura_eje(rebar)
+    stamp_armadura_nivel_desde_host_muro(rebar)
     return rebar
 
 
 def stamp_malla_horizontal_rebar(rebar):
-    """Barras horizontales de malla: ``Armadura_Malla_Orientacion`` = H."""
+    """Barras horizontales de malla: ``Armadura_Malla`` = Yes, orientación H + nivel host."""
     if rebar is None:
         return rebar
+    activar_armadura_malla(rebar, yes=True)
     _set_rebar_string_param(
         rebar, ARMADURA_MALLA_ORIENTACION_PARAM, ARMADURA_MALLA_ORIENT_H,
     )
     stamp_armadura_conjunto_guid(rebar)
+    stamp_armadura_eje(rebar)
+    stamp_armadura_nivel_desde_host_muro(rebar)
     return rebar
 
 

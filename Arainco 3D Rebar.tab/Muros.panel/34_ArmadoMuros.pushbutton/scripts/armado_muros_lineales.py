@@ -3638,7 +3638,7 @@ def _stamp_malla_params_rebars_por_muro(
     rebars_horizontal_por_muro_id=None,
 ):
     """
-    Rellena ``Armadura_Malla_Tipo`` / ``Armadura_Malla_Orientacion`` en rebars de malla.
+    Rellena ``Armadura_Malla`` = Yes, ``Armadura_Malla_Tipo`` / ``Armadura_Malla_Orientacion``.
 
     Verticales: Tipo = D.M., Orientación = V.
     Horizontales: Orientación = H.
@@ -4715,13 +4715,15 @@ def crear_armado_muros_unificado(
 
     try:
         try:
-            from armado_muros_rebar_params import (
-                finalizar_armadura_conjunto_guid_ejecucion,
-                iniciar_armadura_conjunto_guid_ejecucion,
-            )
+            from armado_muros_rebar_params import iniciar_armadura_conjunto_guid_ejecucion
             conjunto_guid = iniciar_armadura_conjunto_guid_ejecucion()
         except Exception:
             conjunto_guid = None
+        try:
+            from armado_muros_rebar_params import iniciar_armadura_eje_ejecucion
+            iniciar_armadura_eje_ejecucion(uidoc=uidoc)
+        except Exception:
+            pass
         if use_outer_tg:
             tg = TransactionGroup(doc, TXN_GROUP_ARMADO_MUROS_UNIFICADO)
             tg.Start()
@@ -4745,6 +4747,11 @@ def crear_armado_muros_unificado(
         try:
             from armado_muros_rebar_params import finalizar_armadura_conjunto_guid_ejecucion
             finalizar_armadura_conjunto_guid_ejecucion()
+        except Exception:
+            pass
+        try:
+            from armado_muros_rebar_params import finalizar_armadura_eje_ejecucion
+            finalizar_armadura_eje_ejecucion()
         except Exception:
             pass
         if tg_started:

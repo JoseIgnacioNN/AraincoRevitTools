@@ -8,6 +8,9 @@ import sys
 
 _MODULES_TO_PURGE = (
     "armado_muros_instruction_dialog",
+    "bimtools_instruction_dialog",
+    "bimtools_ui_tokens",
+    "bimtools_wpf_shell",
     "armado_muros_portable_path",
     "bimtools_element_id",
     "bimtools_runtime",

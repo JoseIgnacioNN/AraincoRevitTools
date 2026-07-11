@@ -8,7 +8,7 @@ repartidas en el espesor con ``SetLayoutAsFixedNumber`` (misma lógica que multi
 Cantidad (``n_bars``) por capa en cada muro; diámetro (``bar_type_id``) por capa
 en la config de cada muro/extremo. Defaults UI: ``cabezal_longitudinal_sic_*``
 (S.I.C. borde de muro por espesor; 1 capa, editable). Tras crear, etiqueta cada barra longitudinal
-con Structural Rebar Tag (familia ``EST_A_STRUCTURAL REBAR TAG_HORIZONTAL``) en la vista activa.
+con Structural Rebar Tag (familia ``EST_A_STRUCTURAL REBAR TAG_WALL_HORIZONTAL``) en la vista activa.
 Los empalmes activos definen segmentos verticales (lista de muros abajo→arriba).
 Cada barra: altura del muro (``WALL_USER_HEIGHT_PARAM`` − cover).
 """
@@ -213,11 +213,13 @@ try:
         activar_armadura_arainco,
         activar_armadura_arainco_por_ids,
         stamp_cabezal_longitudinal_rebar,
+        stamp_confinamiento_rebar,
     )
 except Exception:
     activar_armadura_arainco = None
     activar_armadura_arainco_por_ids = None
     stamp_cabezal_longitudinal_rebar = None
+    stamp_confinamiento_rebar = None
 
 CABEZAL_MAX_CAPAS = 6
 CABEZAL_MIN_CAPAS = 1
@@ -592,12 +594,16 @@ def _stamp_armadura_arainco(rebar, layer_index=None):
     """
     Marca Rebar con ``Armadura_Arainco``.
 
-    Si ``layer_index`` no es None, también rellena ``Armadura_Ubicacion`` (capa+1).
+    Si ``layer_index`` no es None, también rellena ``Armadura_Capa`` y
+    ``Armadura_Nivel`` (nivel más cercano al StartPoint del segmento principal).
+    Sin capa (confinamiento/trabas): ``Armadura_Nivel`` desde Base Constraint del muro.
     """
     if rebar is None:
         return rebar
     if layer_index is not None and stamp_cabezal_longitudinal_rebar is not None:
         return stamp_cabezal_longitudinal_rebar(rebar, layer_index)
+    if stamp_confinamiento_rebar is not None:
+        return stamp_confinamiento_rebar(rebar)
     if activar_armadura_arainco is not None:
         activar_armadura_arainco(rebar)
     return rebar

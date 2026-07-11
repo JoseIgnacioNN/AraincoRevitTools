@@ -15,7 +15,7 @@ Largo del tramo horizontal (U):
   modelado; estiramiento ``e_host/2`` hacia la cara del extremo y después recub. + Ø/2 hacia
   el interior (como punta, pero partiendo del eje en encuentro). El otro extremo sigue punta.
 
-Tras crear, se etiquetan con ``EST_A_STRUCTURAL REBAR TAG_HORIZONTAL``.
+Tras crear, se etiquetan con ``EST_A_STRUCTURAL REBAR TAG_WALL_HORIZONTAL``.
 """
 
 from __future__ import print_function
@@ -73,9 +73,13 @@ except Exception:
     _cab_tags = None
 
 try:
-    from armado_muros_rebar_params import activar_armadura_arainco
+    from armado_muros_rebar_params import (
+        activar_armadura_arainco,
+        stamp_coronamiento_rebar,
+    )
 except Exception:
     activar_armadura_arainco = None
+    stamp_coronamiento_rebar = None
 
 CORONAMIENTO_COVER_SUPERIOR_MM = 25.0
 CORONAMIENTO_COVER_INFERIOR_MM = 50.0
@@ -998,7 +1002,12 @@ def _create_coronamiento_rebar(
             except Exception:
                 return None, 0, u"SetLayoutAsFixedNumber: {0}".format(str(ex_lay))
 
-    if activar_armadura_arainco is not None:
+    if stamp_coronamiento_rebar is not None:
+        try:
+            stamp_coronamiento_rebar(rebar)
+        except Exception:
+            pass
+    elif activar_armadura_arainco is not None:
         try:
             activar_armadura_arainco(rebar)
         except Exception:
@@ -1343,7 +1352,12 @@ def _create_coronamiento_voladizo_rebar(
             except Exception:
                 return None, 0, u"SetLayoutAsFixedNumber voladizo: {0}".format(str(ex_lay))
 
-    if activar_armadura_arainco is not None:
+    if stamp_coronamiento_rebar is not None:
+        try:
+            stamp_coronamiento_rebar(rebar)
+        except Exception:
+            pass
+    elif activar_armadura_arainco is not None:
         try:
             activar_armadura_arainco(rebar)
         except Exception:
@@ -1514,7 +1528,7 @@ def _resolve_rebar_element_ids(doc, id_list):
 
 def aplicar_etiquetado_coronamiento(doc, cor_res, uidoc=None):
     """
-    Etiqueta barras de coronamiento sup./inf. con ``EST_A_STRUCTURAL REBAR TAG_HORIZONTAL``.
+    Etiqueta barras de coronamiento sup./inf. con ``EST_A_STRUCTURAL REBAR TAG_WALL_HORIZONTAL``.
     """
     if not cor_res:
         return cor_res
@@ -1723,7 +1737,12 @@ def _create_coronamiento_inferior_fundacion_rebar(
             except Exception:
                 n_layout = int(n_bars)
 
-    if activar_armadura_arainco is not None:
+    if stamp_coronamiento_rebar is not None:
+        try:
+            stamp_coronamiento_rebar(rb)
+        except Exception:
+            pass
+    elif activar_armadura_arainco is not None:
         try:
             activar_armadura_arainco(rb)
         except Exception:

@@ -4,6 +4,7 @@
 ├── ESTRUCTURA_PORTABLE.txt
 ├── armado_muros_run.py                    Bootstrap: sys.path + purge de módulos
 ├── armado_muros_portable_path.py          Resolución pushbutton + scripts/
+├── bimtools_access_bootstrap.py           Guardia corporativa (opcional; ver abajo)
 ├── icon.png                               Opcional (icono cinta; pyRevit usa default si falta)
 │
 └── scripts/                               Paquete autocontenido (copiar completo)
@@ -11,7 +12,7 @@
     ├── Flujo unificado
     │   ├── armado_muros_lineales.py           Orquestación cabezal + mallas + etiquetas
     │   ├── armado_muros_preview_ui.py         UI WPF (instancia única AppDomain)
-    │   ├── armado_muros_instruction_dialog.py Diálogo inicial
+    │   ├── armado_muros_instruction_dialog.py Diálogo inicial (shell BIMTools)
     │   └── armado_muros_rebar_params.py       Parámetros / defaults de armado
     │
     ├── Cabezal
@@ -46,6 +47,9 @@
         ├── bimtools_element_id.py
         ├── bimtools_clr_collections.py
         ├── bimtools_joined_geometry.py
+        ├── bimtools_ui_tokens.py              Tokens visuales shell
+        ├── bimtools_wpf_shell.py              Shell cinta blanca + cuerpo oscuro
+        ├── bimtools_instruction_dialog.py     Avisos modales estándar
         ├── bimtools_wpf_dark_theme.py
         ├── bimtools_rebar_hook_lengths.py     Tabla traslapes / ganchos por Ø
         ├── bimtools_rebar_3d_visibility.py    Visibilidad 3D barras
@@ -54,7 +58,11 @@
         └── lap_detail_link_schema.py          Extensible Storage empalmes
 
 Copie solo esta carpilla .pushbutton a la pestaña de otra extensión pyRevit.
-No requiere ``_armado_muros_lib`` del panel ni rutas absolutas de máquina.
+No requiere ``_armado_muros_lib`` del panel ni ``BIMTools.tab/bimtools_access_bootstrap.py``.
+
+Acceso corporativo (opcional): si la extensión destino incluye ``scripts/corporate_access.py``
+(p. ej. copiado desde BIMTools.extension), el botón valida ``bimtools_access.json`` en el
+servidor de incidencias. Sin ese archivo, el botón se ejecuta sin validación de licencia.
 
 -----------------------------------------------------------------------------
 Arquitectura (capas)

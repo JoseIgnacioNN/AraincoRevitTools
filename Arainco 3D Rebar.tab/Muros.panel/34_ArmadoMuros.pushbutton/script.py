@@ -44,7 +44,11 @@ purge_armado_muros_modules()
 
 from armado_muros_lineales import run_unificado
 
+# Acceso corporativo: ``bimtools_access_bootstrap.py`` en esta carpilla (portable).
+# Si la extensión destino tiene ``scripts/corporate_access.py``, se valida acceso;
+# si no, se ejecuta sin guardia (p. ej. AraincoRevitTools sin infra BIMTools).
 import bimtools_access_bootstrap as _bimtools_access
+
 if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
     setup_armado_muros_paths()
     purge_armado_muros_modules()
