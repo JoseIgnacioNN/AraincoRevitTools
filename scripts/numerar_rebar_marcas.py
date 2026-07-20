@@ -4,14 +4,21 @@ Numerar marcas de Rebar en el documento completo.
 
 Agrupa barras estructurales (``Rebar`` y ``RebarInSystem`` de Area Reinforcement)
 por fingerprint:
-  Shape + Bar Type + segmentos A/B/C/... redondeados + longitud de barra +
-  hooks + end treatments.
+
+  - diámetro nominal (mm)
+  - shape (nombre de ``RebarShape``)
+  - longitudes de segmentos A/B/C/… redondeadas a 10 mm
+
+No entran ganchos, end treatments, capa/cara ni longitud total aparte de los
+segmentos de forma. La secuencia de tramos se normaliza si la barra se lee
+invertida.
+
 Asigna marca ``{ø}{nº}`` por diámetro (serie desde 01) y escribe en
 ``Armadura_Marca``.
 
-Numeración **incremental**: conserva marcas ya definidas; barras nuevas con el
-mismo fingerprint reutilizan esa marca; solo los grupos sin marca previa
-reciben un índice nuevo.
+En **cada corrida** reevalúa todas las barras del documento y reasigna índices
+desde cero por diámetro (orden estable por ``ElementId`` mínimo del grupo).
+No conserva marcas previas: el plan completo se recalcula siempre.
 
 Muestra ``pyrevit.forms.ProgressBar`` (acento BIMTools) durante el análisis
 de fingerprints y durante la escritura de marcas.
@@ -209,41 +216,6 @@ def format_mark(diameter_mm, index):
     return u"{}{}".format(int(diameter_mm), _format_index(index))
 
 
-def parse_mark_index(mark, diameter_mm):
-    """
-    Extrae el índice entero de una marca ``{ø}{nº}`` para el diámetro dado.
-
-    Ej.: diam 8 + ``815`` → 15; diam 16 + ``1601`` → 1.
-    Returns None si el texto no corresponde a ese diámetro.
-    """
-    if mark is None or diameter_mm is None:
-        return None
-    try:
-        s = _as_unicode(mark).strip()
-    except Exception:
-        return None
-    if not s:
-        return None
-    try:
-        prefix = u"{}".format(int(diameter_mm))
-    except Exception:
-        return None
-    if not s.startswith(prefix):
-        return None
-    rest = s[len(prefix) :]
-    if not rest:
-        return None
-    try:
-        if not rest.isdigit():
-            return None
-        idx = int(rest)
-    except Exception:
-        return None
-    if idx < 1:
-        return None
-    return idx
-
-
 def _get_armadura_marca(bar):
     """Valor actual de ``Armadura_Marca`` (texto) o cadena vacía."""
     if bar is None:
@@ -266,76 +238,19 @@ def _get_armadura_marca(bar):
         return u""
 
 
-def _preferred_index_for_group(members, diameter_mm):
+def _assign_indices_full(group_items, diameter_mm):
     """
-    Índice más frecuente entre marcas válidas del grupo (empate → menor índice).
-    None si nadie del grupo tiene marca válida para ese ø.
-    """
-    counts = {}
-    for bar in members or []:
-        idx = parse_mark_index(_get_armadura_marca(bar), diameter_mm)
-        if idx is None:
-            continue
-        counts[idx] = counts.get(idx, 0) + 1
-    if not counts:
-        return None
-    # (-count, index) → más votos, luego índice más bajo
-    best = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0]
-    return int(best[0])
-
-
-def _assign_indices_incremental(group_items, diameter_mm):
-    """
-    Asigna índice por grupo conservando marcas existentes.
+    Asigna índice secuencial 1..n por grupo, ignorando marcas existentes.
 
     ``group_items``: lista ``(min_id, fp, members)`` ya ordenada por min_id.
 
     Returns:
-        list of (fp, members, mark, index, preserved)
-        donde ``preserved`` indica si el índice venía de marcas previas.
+        list of (fp, members, mark, index)
     """
-    # Candidatos: fp -> (preferred_index, votes, min_id)
-    candidates = {}
-    for min_id, fp, members in group_items:
-        pref = _preferred_index_for_group(members, diameter_mm)
-        if pref is None:
-            continue
-        votes = 0
-        for bar in members:
-            if parse_mark_index(_get_armadura_marca(bar), diameter_mm) == pref:
-                votes += 1
-        candidates[fp] = (pref, votes, min_id)
-
-    # Resolver conflictos: un mismo índice no puede quedar en dos fingerprints
-    index_owner = {}  # index -> (fp, votes, min_id)
-    for fp, (pref, votes, min_id) in candidates.items():
-        if pref not in index_owner:
-            index_owner[pref] = (fp, votes, min_id)
-            continue
-        old_fp, old_votes, old_min = index_owner[pref]
-        if votes > old_votes or (votes == old_votes and min_id < old_min):
-            index_owner[pref] = (fp, votes, min_id)
-
-    fp_preserved = {}
-    for idx, (fp, _votes, _min_id) in index_owner.items():
-        fp_preserved[fp] = int(idx)
-
-    used = set(fp_preserved.values())
-    next_i = 1
     result = []
-    for _min_id, fp, members in group_items:
-        if fp in fp_preserved:
-            index = fp_preserved[fp]
-            preserved = True
-        else:
-            while next_i in used:
-                next_i += 1
-            index = next_i
-            used.add(index)
-            next_i += 1
-            preserved = False
+    for index, (_min_id, fp, members) in enumerate(group_items, start=1):
         mark = format_mark(diameter_mm, index)
-        result.append((fp, members, mark, index, preserved))
+        result.append((fp, members, mark, index))
     return result
 
 
@@ -591,7 +506,8 @@ def _owned_by_area_reinforcement(doc, ris):
     return isinstance(owner, AreaReinforcement)
 
 
-def _get_shape_id(rebar):
+def _get_shape_name(doc, rebar):
+    """Nombre de ``RebarShape``; cadena vacía si no hay."""
     sid = None
     try:
         sid = rebar.GetShapeId()
@@ -603,60 +519,44 @@ def _get_shape_id(rebar):
                 sid = rebar.RebarShapeId
             except Exception:
                 sid = None
-    return _element_id_int(sid)
-
-
-def _hook_type_id(rebar, end):
+    if sid is None or _element_id_int(sid) < 0:
+        return u""
     try:
-        return _element_id_int(rebar.GetHookTypeId(int(end)))
+        shape = doc.GetElement(sid) if doc is not None else None
     except Exception:
-        return -1
-
-
-def _hook_orientation(rebar, end):
+        shape = None
+    if shape is None:
+        return u""
     try:
-        return int(rebar.GetHookOrientation(int(end)))
+        return _as_unicode(shape.Name).strip()
     except Exception:
-        return -1
+        return u""
 
 
-def _hook_rotation_deg(rebar, end):
-    """Rotación de terminación/gancho en grados (entero); -1 si no aplica."""
-    end = int(end)
-    try:
-        rfn = getattr(rebar, "GetTerminationRotationAngle", None)
-        if rfn is not None:
-            rv = float(rfn(end))
-            try:
-                deg = UnitUtils.ConvertFromInternalUnits(rv, UnitTypeId.Degrees)
-            except Exception:
-                deg = rv * 180.0 / math.pi
-            return int(round(deg))
-    except Exception:
-        pass
-    try:
-        gr = getattr(rebar, "GetHookRotationAngle", None)
-        if gr is not None:
-            rads = float(gr(end))
-            return int(round(rads * 180.0 / math.pi))
-    except Exception:
-        pass
-    return -1
+def _segment_lengths_tuple(segment_fp):
+    """
+    Solo longitudes de segmentos de forma (A/B/C/…), sin ``__L__``.
 
-
-def _end_treatment_id(rebar, end):
-    try:
-        fn = getattr(rebar, "GetEndTreatmentTypeId", None)
-        if fn is None:
-            return -1
-        return _element_id_int(fn(int(end)))
-    except Exception:
-        return -1
+    Normaliza barra invertida: min(secuencia, secuencia invertida).
+    """
+    named_vals = []
+    for item in segment_fp or ():
+        try:
+            name, val = item
+        except Exception:
+            continue
+        if name == u"__L__":
+            continue
+        named_vals.append(int(val))
+    vals = tuple(named_vals)
+    if not vals:
+        return vals
+    return min(vals, tuple(reversed(vals)))
 
 
 def build_fingerprint(doc, rebar):
     """
-    Fingerprint comparable + diámetro mm.
+    Fingerprint = diámetro + nombre de shape + longitudes de segmentos.
 
     Returns:
         (fingerprint_tuple, diameter_mm) o (None, None) si no se puede clasificar.
@@ -670,20 +570,31 @@ def build_fingerprint(doc, rebar):
     if diam is None or diam <= 0:
         return None, None
 
+    shape_name = _get_shape_name(doc, rebar)
+    segment_fp = _segment_fingerprint(rebar, doc)
+    segs = _segment_lengths_tuple(segment_fp)
+
     fp = (
-        _get_shape_id(rebar),
-        _element_id_int(type_id),
-        _segment_fingerprint(rebar, doc),
-        _hook_type_id(rebar, 0),
-        _hook_type_id(rebar, 1),
-        _hook_orientation(rebar, 0),
-        _hook_orientation(rebar, 1),
-        _hook_rotation_deg(rebar, 0),
-        _hook_rotation_deg(rebar, 1),
-        _end_treatment_id(rebar, 0),
-        _end_treatment_id(rebar, 1),
+        int(diam),
+        shape_name,
+        segs,
     )
     return fp, diam
+
+
+def format_fingerprint_debug(fp):
+    """Texto corto del fingerprint para diagnósticos / resumen."""
+    if not fp:
+        return u"(vacío)"
+    try:
+        diam, shape_name, segs = fp
+    except Exception:
+        return _as_unicode(fp)
+    seg_txt = u"+".join(_as_unicode(v) for v in (segs or ()))
+    if not seg_txt:
+        seg_txt = u"—"
+    shape_txt = shape_name if shape_name else u"—"
+    return u"ø{} shape={} segs=({})".format(diam, shape_txt, seg_txt)
 
 
 def collect_rebars(doc):
@@ -721,10 +632,10 @@ def collect_rebars(doc):
 
 def build_numbering_plan(doc, progress=None, rebars=None):
     """
-    Calcula grupos y marcas sin escribir (numeración incremental).
+    Calcula grupos y marcas sin escribir (reevaluación completa).
 
-    Conserva ``Armadura_Marca`` ya válida por fingerprint; solo asigna índices
-    nuevos a grupos sin marca previa (o en conflicto irresoluble).
+    Toma todas las barras, agrupa por fingerprint y asigna índices desde 01
+    por diámetro, sin conservar marcas previas.
 
     Args:
         doc: Document
@@ -738,7 +649,6 @@ def build_numbering_plan(doc, progress=None, rebars=None):
           skipped: list of (rebar, reason)
           total_rebars, total_rebar, total_rebar_in_system,
           total_groups, total_assigned,
-          groups_preserved, groups_new,
           bars_already_ok, bars_to_update
     """
     if rebars is None:
@@ -764,8 +674,6 @@ def build_numbering_plan(doc, progress=None, rebars=None):
 
     assignments = []
     groups_by_diam = {}
-    groups_preserved = 0
-    groups_new = 0
     bars_already_ok = 0
     bars_to_update = 0
 
@@ -777,13 +685,9 @@ def build_numbering_plan(doc, progress=None, rebars=None):
             group_items.append((min_id, fp, members))
         group_items.sort(key=lambda t: t[0])
 
-        assigned = _assign_indices_incremental(group_items, diam)
+        assigned = _assign_indices_full(group_items, diam)
         groups_by_diam[diam] = []
-        for fp, members, mark, index, preserved in assigned:
-            if preserved:
-                groups_preserved += 1
-            else:
-                groups_new += 1
+        for fp, members, mark, index in assigned:
             groups_by_diam[diam].append((fp, members, mark, index))
             for rb in members:
                 assignments.append((rb, mark, diam, index))
@@ -802,8 +706,6 @@ def build_numbering_plan(doc, progress=None, rebars=None):
         u"total_rebar_in_system": n_ris,
         u"total_groups": sum(len(v) for v in groups_by_diam.values()),
         u"total_assigned": len(assignments),
-        u"groups_preserved": groups_preserved,
-        u"groups_new": groups_new,
         u"bars_already_ok": bars_already_ok,
         u"bars_to_update": bars_to_update,
     }
@@ -843,8 +745,9 @@ def apply_numbering(doc, plan, progress=None):
     """
     Escribe ``Armadura_Marca`` en transacción.
 
-    Omite barras que ya tienen la marca correcta.
+    Sobrescribe siempre el valor previo (haya o no marca anterior).
     Returns (ok_count, fail_count, skipped_unchanged).
+    ``skipped_unchanged`` queda en 0 (se mantiene por compatibilidad de firma).
     """
     assignments = plan.get(u"assignments") or []
     if not assignments:
@@ -852,7 +755,6 @@ def apply_numbering(doc, plan, progress=None):
 
     ok = 0
     fail = 0
-    skipped_unchanged = 0
     t = Transaction(doc, TRANSACTION_NAME)
     t.Start()
     try:
@@ -865,9 +767,6 @@ def apply_numbering(doc, plan, progress=None):
                 except Exception:
                     pass
             try:
-                if _get_armadura_marca(rb) == mark:
-                    skipped_unchanged += 1
-                    continue
                 if _set_armadura_marca(rb, mark):
                     ok += 1
                 else:
@@ -881,7 +780,7 @@ def apply_numbering(doc, plan, progress=None):
         except Exception:
             pass
         raise
-    return ok, fail, skipped_unchanged
+    return ok, fail, 0
 
 
 def _summary_text(plan):
@@ -901,10 +800,7 @@ def _summary_text(plan):
         )
     )
     lines.append(
-        u"Incremental: grupos conservados {}  |  grupos nuevos {}  |  "
-        u"barras ya OK {}  |  a actualizar {}".format(
-            plan.get(u"groups_preserved", 0),
-            plan.get(u"groups_new", 0),
+        u"Reevaluación completa: barras ya OK {}  |  a actualizar {}".format(
             plan.get(u"bars_already_ok", 0),
             plan.get(u"bars_to_update", 0),
         )
@@ -923,10 +819,27 @@ def _summary_text(plan):
         lines.append(u"  ø{} mm: {}".format(diam, preview))
     lines.append(u"")
     lines.append(
-        u"Se conservan las marcas existentes en {}. "
-        u"Solo se escriben barras nuevas o inconsistentes dentro del grupo.".format(
-            ARMADURA_MARCA_PARAM
-        )
+        u"Matching = ø + nombre RebarShape + segmentos (10 mm). "
+        u"Sin ganchos, sin capa, sin L total."
+    )
+    lines.append(u"Ejemplos de fingerprint (hasta 8 grupos):")
+    shown = 0
+    for diam in sorted(groups_by_diam.keys()):
+        for fp, members, mark, _idx in groups_by_diam[diam]:
+            if shown >= 8:
+                break
+            lines.append(
+                u"  {} ({} sets): {}".format(
+                    mark, len(members), format_fingerprint_debug(fp)
+                )
+            )
+            shown += 1
+        if shown >= 8:
+            break
+    lines.append(u"")
+    lines.append(
+        u"Cada corrida reevalúa todas las barras, sobrescribe {} "
+        u"y reasigna desde cero por diámetro.".format(ARMADURA_MARCA_PARAM)
     )
     return u"\n".join(lines)
 
@@ -1021,8 +934,8 @@ def run(revit_app):
 
     accepted = _show_ok_cancel(
         revit_app,
-        u"¿Actualizar marcas? (se conservan las ya definidas; solo se "
-        u"acoplan barras nuevas o se crean índices nuevos)",
+        u"¿Reasignar marcas a todas las barras? "
+        u"(sobrescribe Armadura_Marca existente; reevaluación completa)",
         _summary_text(plan),
     )
     if not accepted:
@@ -1035,9 +948,9 @@ def run(revit_app):
                 len(assignments),
                 title_prefix=u"Arainco: Escribiendo Armadura_Marca",
             ) as pb:
-                ok, fail, unchanged = apply_numbering(doc, plan, progress=pb)
+                ok, fail, _unchanged = apply_numbering(doc, plan, progress=pb)
         else:
-            ok, fail, unchanged = apply_numbering(doc, plan)
+            ok, fail, _unchanged = apply_numbering(doc, plan)
     except Exception as ex:
         _show_message(
             revit_app,
@@ -1047,17 +960,13 @@ def run(revit_app):
         return
 
     result_lines = [
-        u"Marcas escritas / actualizadas: {}".format(ok),
-        u"Sin cambio (ya correctas): {}".format(unchanged),
+        u"Marcas escritas (sobrescritura): {}".format(ok),
         u"Fallos: {}".format(fail),
-        u"Grupos conservados: {}  |  Grupos nuevos: {}".format(
-            plan.get(u"groups_preserved", 0),
-            plan.get(u"groups_new", 0),
-        ),
+        u"Grupos reevaluados: {}".format(plan.get(u"total_groups", 0)),
         u"Omitidas (sin clasificar): {}".format(len(plan[u"skipped"])),
     ]
     _show_message(
         revit_app,
-        u"Numeración incremental de marcas Rebar completada.",
+        u"Reevaluación completa de marcas Rebar finalizada.",
         content=u"\n".join(result_lines),
     )

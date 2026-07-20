@@ -263,9 +263,13 @@ def _crear_tag_malla_multihost_rebar(
     tag_symbol_id,
     head_pos,
     extra_rebars=None,
+    mh_regen_once=None,
 ):
     """
     Etiqueta multihost: host principal = barra interior; hosts extra vía ``AddReferences``.
+
+    ``mh_regen_once``: dict mutable ``{u"pending": True}`` para un solo
+    ``Regenerate`` por transacción de lote (antes del primer AddReferences).
     """
     tag, err = _crear_tag_malla_rebar(
         document, view, primary_rebar, tag_symbol_id, head_pos,
@@ -310,10 +314,16 @@ def _crear_tag_malla_multihost_rebar(
     for ref in extra_refs:
         refs_add.Add(ref)
 
-    try:
-        document.Regenerate()
-    except Exception:
-        pass
+    do_regen = True
+    if mh_regen_once is not None:
+        do_regen = bool(mh_regen_once.get(u"pending", True))
+    if do_regen:
+        try:
+            document.Regenerate()
+        except Exception:
+            pass
+        if mh_regen_once is not None:
+            mh_regen_once[u"pending"] = False
 
     st = SubTransaction(document)
     try:
@@ -557,6 +567,7 @@ def etiquetar_rebars_malla_muro(
     params_dict=None,
     muro_contencion=False,
     result=None,
+    mh_regen_once=None,
 ):
     """
     Etiqueta malla de un muro (sin transacción): una etiqueta multihost por orientación,
@@ -654,6 +665,7 @@ def etiquetar_rebars_malla_muro(
         extras = [rb_ext] if rb_ext is not None else []
         tag, err = _crear_tag_malla_multihost_rebar(
             document, view, rb_int, sym.Id, head, extras,
+            mh_regen_once=mh_regen_once,
         )
         if tag is not None:
             res[u"n_ok"] += 1
@@ -700,7 +712,7 @@ def etiquetar_rebars_malla_en_vista(
     walls_by_id=None,
 ):
     """
-    Etiqueta malla en ``rebars_por_muro_id`` (una transacción por muro).
+    Etiqueta malla en ``rebars_por_muro_id`` (una transacción para todos los muros).
 
     Multihost interior + exterior por ``Armadura_Malla_Orientacion`` (``V.`` / ``H.``).
     """
@@ -720,59 +732,60 @@ def etiquetar_rebars_malla_en_vista(
         _append_msg(res, u"Etiquetas rebar malla: {0}.".format(err_sym))
         return res
 
-    try:
-        document.Regenerate()
-    except Exception:
-        pass
-
     wall_map = walls_by_id or {}
-    for wid, eid_list in rebars_por_muro_id.items():
-        if not eid_list:
-            continue
-        wall = wall_map.get(wid)
-        if wall is None:
-            try:
-                wall = wall_map.get(int(wid))
-            except Exception:
-                pass
-        if wall is None:
-            try:
-                wall = document.GetElement(ElementId(int(wid)))
-            except Exception:
-                wall = None
-        if wall is None:
-            res[u"n_fail"] += len(eid_list)
-            _append_msg(res, u"Muro {0}: no encontrado para etiquetar.".format(wid))
-            continue
+    t = Transaction(
+        document,
+        u"Arainco: Etiquetas rebar malla",
+    )
+    try:
+        t.Start()
+        mh_regen_once = {u"pending": True}
+        for wid, eid_list in rebars_por_muro_id.items():
+            if not eid_list:
+                continue
+            wall = wall_map.get(wid)
+            if wall is None:
+                try:
+                    wall = wall_map.get(int(wid))
+                except Exception:
+                    pass
+            if wall is None:
+                try:
+                    wall = document.GetElement(ElementId(int(wid)))
+                except Exception:
+                    wall = None
+            if wall is None:
+                res[u"n_fail"] += len(eid_list)
+                _append_msg(res, u"Muro {0}: no encontrado para etiquetar.".format(wid))
+                continue
 
-        params_dict = _params_dict_for_wall(params_por_muro_id, wid)
-        t = Transaction(
-            document,
-            u"Arainco: Etiquetas rebar malla muro {0}".format(wid),
-        )
-        try:
-            t.Start()
-            etiquetar_rebars_malla_muro(
-                document,
-                view,
-                wall,
-                eid_list,
-                sym_v,
-                sym_h,
-                params_dict=params_dict,
-                muro_contencion=muro_contencion,
-                result=res,
-            )
-            t.Commit()
-        except Exception as ex:
+            params_dict = _params_dict_for_wall(params_por_muro_id, wid)
             try:
-                if t.HasStarted():
-                    t.RollBack()
-            except Exception:
-                pass
-            res[u"n_fail"] += len(eid_list)
-            _append_msg(
-                res,
-                u"Muro {0}: etiquetas rebar malla — {1}.".format(wid, unicode(ex)),
-            )
+                etiquetar_rebars_malla_muro(
+                    document,
+                    view,
+                    wall,
+                    eid_list,
+                    sym_v,
+                    sym_h,
+                    params_dict=params_dict,
+                    muro_contencion=muro_contencion,
+                    result=res,
+                    mh_regen_once=mh_regen_once,
+                )
+            except Exception as ex:
+                res[u"n_fail"] += len(eid_list)
+                _append_msg(
+                    res,
+                    u"Muro {0}: etiquetas rebar malla — {1}.".format(wid, unicode(ex)),
+                )
+        t.Commit()
+    except Exception as ex:
+        try:
+            if t.HasStarted():
+                t.RollBack()
+        except Exception:
+            pass
+        res[u"n_fail"] += 1
+        _append_msg(res, u"Etiquetas rebar malla (lote): {0}.".format(unicode(ex)))
     return res

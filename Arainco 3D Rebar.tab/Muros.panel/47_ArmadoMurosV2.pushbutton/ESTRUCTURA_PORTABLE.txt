@@ -1,8 +1,8 @@
-34_ArmadoMuros.pushbutton
+47_ArmadoMurosV2.pushbutton
 ├── bundle.yaml
-├── script.py                              Arranque pyRevit (valida scripts/ + purge + run_unificado)
+├── script.py                              Arranque pyRevit (valida scripts/ + purge selectivo + run_unificado)
 ├── ESTRUCTURA_PORTABLE.txt
-├── armado_muros_run.py                    Bootstrap: sys.path + purge de módulos
+├── armado_muros_run.py                    Bootstrap: sys.path + purge selectivo (fingerprint)
 ├── armado_muros_portable_path.py          Resolución pushbutton + scripts/
 ├── bimtools_access_bootstrap.py           Guardia corporativa (opcional; ver abajo)
 ├── icon.png                               Opcional (icono cinta; pyRevit usa default si falta)
@@ -82,7 +82,7 @@ Transacciones: prefijo ``Arainco:`` en historial de deshacer.
 Despliegue
 -----------------------------------------------------------------------------
 
-1. Copie la carpeta completa ``34_ArmadoMuros.pushbutton`` (raíz + ``scripts/`` + bundle.yaml).
+1. Copie la carpeta completa ``47_ArmadoMurosV2.pushbutton`` (raíz + ``scripts/`` + bundle.yaml).
 2. No incluya artefactos de desarrollo (``debug-*.log``, ``mockups/``, etc.).
 3. Recargue pyRevit en las estaciones destino.
 4. Revit 2024–2026 (``min_revit_ver`` / ``max_revit_ver`` en bundle.yaml).
@@ -105,7 +105,7 @@ Al publicar cambios, sincronice todos los .py listados arriba desde el repositor
 BIMTools; no mezcle versiones sueltas de módulos entre carpetas.
 
 Botón en cinta Armadura:
-  - 34 ArmadoMuros: flujo unificado cabezal + mallas (este botón).
+  - 47 ArmadoMurosV2: copia experimental de 34 con UI optimizada (cachés, init único, purge selectivo). El botón 34 permanece intacto.
 
 -----------------------------------------------------------------------------
 Dependencias de proyecto Revit (no incluidas en el paquete)

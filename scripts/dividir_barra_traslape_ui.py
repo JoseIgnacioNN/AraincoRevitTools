@@ -21,7 +21,9 @@ from System.Windows import (
 from System.Windows.Controls import (
     Button,
     Canvas,
+    ComboBoxItem,
     ListBox,
+    SelectionChangedEventHandler,
     StackPanel,
     TextBlock,
 )
@@ -35,14 +37,19 @@ from Autodesk.Revit.UI import ExternalEvent, IExternalEventHandler, TaskDialog
 
 from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
 from dividir_barra_traslape_punto import (
+    SPLICE_MODE_LABELS,
+    SPLICE_MODES,
+    SPLICE_SYMMETRIC,
     _DIALOG_TITLE,
     _DiagSession,
     _element_id_int,
     _exception_text,
     _validate_cuts_on_main,
     dividir_rebar_en_cortes,
+    normalize_splice_mode,
     prepare_dividir_session,
     revit_pick_main_span_cut_mm,
+    splice_overlap_zone_mm,
 )
 
 _SINGLETON_KEY = u"BIMTools.DividirBarraTraslape.ActiveWindow"
@@ -86,14 +93,14 @@ XAML = u"""
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="__TITLE__"
-    Width="780" Height="540"
+    Width="780" Height="580"
     WindowStartupLocation="CenterScreen"
     Background="Transparent"
     AllowsTransparency="True"
     FontFamily="Segoe UI"
     WindowStyle="None"
     ResizeMode="CanResizeWithGrip"
-    MinWidth="640" MinHeight="440">
+    MinWidth="640" MinHeight="480">
   <Window.Resources>
 """ + BIMTOOLS_DARK_STYLES_XML + u"""
   </Window.Resources>
@@ -108,13 +115,14 @@ XAML = u"""
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
       <TextBlock Grid.Row="0" Text="__TITLE__" Foreground="#E8F4F8"
                  FontSize="15" FontWeight="Bold"/>
       <TextBlock x:Name="TxtSubtitle" Grid.Row="1" Margin="0,6,0,0"
                  Foreground="#95B8CC" FontSize="11" TextWrapping="Wrap"/>
       <TextBlock Grid.Row="2" Margin="0,10,0,6"
-                 Text="Use «Seleccionar punto en Revit» sobre el vano (verde). También puede marcar en el esquema."
+                 Text="Use «Seleccionar punto en Revit» sobre el vano (verde). También puede marcar en el esquema. Elija el tipo de solape antes de aplicar."
                  Foreground="#64748b" FontSize="10" TextWrapping="Wrap"/>
       <Border Grid.Row="3" Background="#0a1620" BorderBrush="#21465C"
               BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,0,0,10">
@@ -122,18 +130,24 @@ XAML = u"""
                 Background="#050E18" Cursor="Cross"/>
       </Border>
       <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,0,0,8">
+        <TextBlock Text="Tipo de solape:" Foreground="#95B8CC"
+                   FontSize="11" VerticalAlignment="Center" Margin="0,0,10,0"/>
+        <ComboBox x:Name="CmbSplice" Style="{StaticResource Combo}"
+                  Width="300" VerticalAlignment="Center"/>
+      </StackPanel>
+      <StackPanel Grid.Row="5" Orientation="Horizontal" Margin="0,0,0,8">
         <Button x:Name="BtnPick" Content="Seleccionar punto en Revit"
                 Style="{StaticResource BtnPrimary}" MinWidth="200"/>
         <Button x:Name="BtnClear" Content="Limpiar" Margin="10,0,0,0"
                 Style="{StaticResource BtnSelectOutline}" MinWidth="80"/>
       </StackPanel>
-      <StackPanel Grid.Row="5" Orientation="Horizontal" Margin="0,0,0,8">
+      <StackPanel Grid.Row="6" Orientation="Horizontal" Margin="0,0,0,8">
         <TextBlock Text="Divisiones (mm en segmento mayor):" Foreground="#95B8CC"
                    FontSize="11" VerticalAlignment="Center" Margin="0,0,10,0"/>
         <ListBox x:Name="LstCuts" MinWidth="280" MaxHeight="72"
                  Background="#050E18" Foreground="#E8F4F8" BorderBrush="#21465C"/>
       </StackPanel>
-      <Grid Grid.Row="6">
+      <Grid Grid.Row="7">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*"/>
           <ColumnDefinition Width="Auto"/>
@@ -264,6 +278,9 @@ class DividirBarraWindow(object):
         self._rebar_id = session.get(u"rebar_id")
         self._lap_mm = float(session.get(u"lap_mm") or 0.0)
         self._cuts_mm = list(session.get(u"suggested_cuts_mm") or [])
+        self._splice_mode = normalize_splice_mode(
+            session.get(u"splice_mode") or SPLICE_SYMMETRIC
+        )
         self._scale = 1.0
         self._main_x0 = 0.0
         self._main_x1 = 0.0
@@ -278,6 +295,7 @@ class DividirBarraWindow(object):
         self._win = XamlReader.Parse(xaml)
         self._cnv = self._win.FindName(u"CnvBar")
         self._lst = self._win.FindName(u"LstCuts")
+        self._cmb = self._win.FindName(u"CmbSplice")
         self._txt_sub = self._win.FindName(u"TxtSubtitle")
         self._txt_status = self._win.FindName(u"TxtStatus")
 
@@ -286,9 +304,35 @@ class DividirBarraWindow(object):
         self._ext_apply = ExternalEvent.Create(self._handler_apply)
         self._ext_pick = ExternalEvent.Create(self._handler_pick)
 
+        self._populate_splice_combo()
         self._wire_events()
         self._update_subtitle()
         self._refresh_ui()
+
+    def _populate_splice_combo(self):
+        if self._cmb is None:
+            return
+        self._cmb.Items.Clear()
+        selected_idx = 0
+        for i, mode in enumerate(SPLICE_MODES):
+            item = ComboBoxItem()
+            item.Content = SPLICE_MODE_LABELS.get(mode, mode)
+            item.Tag = mode
+            self._cmb.Items.Add(item)
+            if mode == self._splice_mode:
+                selected_idx = i
+        self._cmb.SelectedIndex = selected_idx
+
+    def _current_splice_mode(self):
+        if self._cmb is None:
+            return self._splice_mode
+        try:
+            item = self._cmb.SelectedItem
+            if item is not None and getattr(item, u"Tag", None):
+                return normalize_splice_mode(item.Tag)
+        except Exception:
+            pass
+        return normalize_splice_mode(self._splice_mode)
 
     def _wire_events(self):
         self._win.FindName(u"BtnClose").Click += RoutedEventHandler(self._on_close)
@@ -298,6 +342,10 @@ class DividirBarraWindow(object):
         self._cnv.MouseLeftButtonDown += MouseButtonEventHandler(self._on_canvas_left)
         self._cnv.MouseRightButtonDown += MouseButtonEventHandler(self._on_canvas_right)
         self._win.Closed += EventHandler(self._on_closed)
+        if self._cmb is not None:
+            self._cmb.SelectionChanged += SelectionChangedEventHandler(
+                self._on_splice_changed
+            )
 
     def _invoke_ui(self, action):
         try:
@@ -398,17 +446,23 @@ class DividirBarraWindow(object):
             Canvas.SetTop(rect, y0)
             self._cnv.Children.Add(rect)
 
-        half_lap_mm = 0.5 * self._lap_mm
+        mode = self._current_splice_mode()
+        main_len = float(self._preview.get(u"main_length_mm") or 0.0)
         for c in sorted(self._cuts_mm):
             cx = self._main_mm_to_canvas_x(c)
-            lap_w = half_lap_mm * 2.0 * scale
+            a_mm, b_mm = splice_overlap_zone_mm(c, self._lap_mm, mode)
+            a_mm = max(0.0, a_mm)
+            b_mm = min(main_len, b_mm) if main_len > 0 else b_mm
+            x_a = self._main_mm_to_canvas_x(a_mm)
+            x_b = self._main_mm_to_canvas_x(b_mm)
+            lap_w = max(2.0, x_b - x_a)
             lap_rect = Rectangle()
-            lap_rect.Width = max(2.0, lap_w)
+            lap_rect.Width = lap_w
             lap_rect.Height = _BAR_H + 8.0
             lap_rect.Fill = _brush(_COLOR_LAP, 48)
             lap_rect.Stroke = _brush(_COLOR_LAP, 100)
             lap_rect.StrokeThickness = 1.0
-            Canvas.SetLeft(lap_rect, cx - lap_w * 0.5)
+            Canvas.SetLeft(lap_rect, x_a)
             Canvas.SetTop(lap_rect, y0 - 4.0)
             self._cnv.Children.Add(lap_rect)
 
@@ -441,16 +495,38 @@ class DividirBarraWindow(object):
         self._redraw_canvas()
         self._refresh_list()
         n = len(self._cuts_mm)
+        mode = self._current_splice_mode()
+        mode_lbl = SPLICE_MODE_LABELS.get(mode, mode)
         self.set_status(
-            u"{0} división(es) → {1} tramo(s) con layout del origen.".format(
-                n, n + 1 if n else 0
+            u"{0} división(es) → {1} tramo(s) · solape: {2}.".format(
+                n, n + 1 if n else 0, mode_lbl
             )
         )
+
+    def _on_splice_changed(self, sender, args):
+        self._splice_mode = self._current_splice_mode()
+        if self._cuts_mm:
+            main_len = float(self._preview.get(u"main_length_mm") or 0.0)
+            ok, err = _validate_cuts_on_main(
+                self._cuts_mm, main_len, self._lap_mm, splice_mode=self._splice_mode
+            )
+            if not ok:
+                self._cuts_mm = []
+                self._refresh_ui()
+                self.set_status(
+                    u"Cortes no válidos para este solape y se limpiaron. {0}".format(
+                        err or u""
+                    )
+                )
+                return
+        self._refresh_ui()
 
     def _try_add_cut(self, main_mm):
         main_len = float(self._preview.get(u"main_length_mm") or 0.0)
         trial = sorted(self._cuts_mm + [float(main_mm)])
-        ok, err = _validate_cuts_on_main(trial, main_len, self._lap_mm)
+        ok, err = _validate_cuts_on_main(
+            trial, main_len, self._lap_mm, splice_mode=self._current_splice_mode()
+        )
         if not ok:
             self.set_status(err)
             return
@@ -500,6 +576,7 @@ class DividirBarraWindow(object):
         if rebar is None:
             self._ui_set_status(u"La barra ya no existe en el modelo.")
             return
+        mode = self._current_splice_mode()
         diag = _DiagSession()
         ok, msg, ids = dividir_rebar_en_cortes(
             doc,
@@ -507,6 +584,7 @@ class DividirBarraWindow(object):
             self._cuts_mm,
             lap_mm=self._lap_mm,
             diag=diag,
+            splice_mode=mode,
         )
         if ok:
             ids_txt = u", ".join(

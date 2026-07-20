@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Bootstrap de acceso corporativo — copia portable del botón 34_ArmadoMuros.
+Bootstrap de acceso corporativo — copia portable del botón 47_ArmadoMurosV2.
 
 Sube directorios desde ``script.py`` buscando ``<extensión>/scripts/corporate_access.py``.
 Si no existe (despliegue en otra extensión sin guardia), permite la ejecución.

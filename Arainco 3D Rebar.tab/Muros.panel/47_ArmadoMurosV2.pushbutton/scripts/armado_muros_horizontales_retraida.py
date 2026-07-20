@@ -175,20 +175,34 @@ def _shape_key_matches_06(label):
 def _resolver_rebar_shape_06(doc):
     if doc is None:
         return None
+    cache = getattr(_resolver_rebar_shape_06, u"_cache", None)
+    if cache is None:
+        _resolver_rebar_shape_06._cache = {}
+        cache = _resolver_rebar_shape_06._cache
+    try:
+        dkey = int(doc.GetHashCode())
+    except Exception:
+        dkey = id(doc)
+    if dkey in cache:
+        return cache[dkey]
+    found = None
     if buscar_rebar_shape_por_nombre is not None:
         try:
             sh = buscar_rebar_shape_por_nombre(doc, HORIZONTAL_REBAR_SHAPE_NOMBRE)
             if sh is not None:
-                return sh
+                found = sh
         except Exception:
             pass
-    try:
-        for sh in FilteredElementCollector(doc).OfClass(RebarShape):
-            if _shape_key_matches_06(_shape_label(sh)):
-                return sh
-    except Exception:
-        pass
-    return None
+    if found is None:
+        try:
+            for sh in FilteredElementCollector(doc).OfClass(RebarShape):
+                if _shape_key_matches_06(_shape_label(sh)):
+                    found = sh
+                    break
+        except Exception:
+            pass
+    cache[dkey] = found
+    return found
 
 
 def _hook_name_variants(nombre):
@@ -212,46 +226,60 @@ def _hook_name_variants(nombre):
 def _resolver_hook_stirrup_tie_135(doc):
     if doc is None:
         return None
+    cache = getattr(_resolver_hook_stirrup_tie_135, u"_cache", None)
+    if cache is None:
+        _resolver_hook_stirrup_tie_135._cache = {}
+        cache = _resolver_hook_stirrup_tie_135._cache
+    try:
+        dkey = int(doc.GetHashCode())
+    except Exception:
+        dkey = id(doc)
+    if dkey in cache:
+        return cache[dkey]
+    found = None
     if buscar_rebar_hook_type_por_nombre is not None:
         for nombre in _hook_name_variants(HORIZONTAL_HOOK_TYPE_NOMBRE):
             try:
                 ht = buscar_rebar_hook_type_por_nombre(doc, nombre)
                 if ht is not None:
-                    return ht
+                    found = ht
+                    break
             except Exception:
                 pass
-    target_deg = 135.0
-    tol_deg = 2.0
-    stirrup_cands = []
-    try:
-        for ht in FilteredElementCollector(doc).OfClass(RebarHookType):
-            name = u""
-            try:
-                name = (ht.Name or u"").lower()
-            except Exception:
-                pass
-            try:
-                ang = math.degrees(float(ht.HookAngle))
-            except Exception:
-                ang = None
-            if ang is None or abs(ang - target_deg) > tol_deg:
-                continue
-            if u"stirrup" in name or u"tie" in name:
-                stirrup_cands.append(ht)
-    except Exception:
-        pass
-    if stirrup_cands:
-        return stirrup_cands[0]
-    if l135 is not None:
+    if found is None:
+        target_deg = 135.0
+        tol_deg = 2.0
+        stirrup_cands = []
+        try:
+            for ht in FilteredElementCollector(doc).OfClass(RebarHookType):
+                name = u""
+                try:
+                    name = (ht.Name or u"").lower()
+                except Exception:
+                    pass
+                try:
+                    ang = math.degrees(float(ht.HookAngle))
+                except Exception:
+                    ang = None
+                if ang is None or abs(ang - target_deg) > tol_deg:
+                    continue
+                if u"stirrup" in name or u"tie" in name:
+                    stirrup_cands.append(ht)
+        except Exception:
+            pass
+        if stirrup_cands:
+            found = stirrup_cands[0]
+    if found is None and l135 is not None:
         try:
             hid, _err = l135._resolve_rebar_hook_135_id(doc, 100.0)
             if hid is not None and hid != ElementId.InvalidElementId:
                 ht = doc.GetElement(hid)
                 if isinstance(ht, RebarHookType):
-                    return ht
+                    found = ht
         except Exception:
             pass
-    return None
+    cache[dkey] = found
+    return found
 
 
 def _curves_to_list(curves_list):
@@ -523,32 +551,35 @@ def _acortar_rebar_eje_inicio_fin_mm(doc, rebar, mm_inicio, mm_fin, pos_idx=0):
     o0 = _hook_orient_for_create(rebar, 0)
     o1 = _hook_orient_for_create(rebar, 1)
 
-    t = Transaction(doc, u"Arainco: Armado muros lineales — retraer horizontal ext/int")
-    t.Start()
+    from armado_muros_txn import TxnScope
+
+    scope = TxnScope(
+        doc, u"Arainco: Armado muros lineales — retraer horizontal ext/int",
+    )
     try:
         new_rb = _create_from_curves_no_hooks(
             doc, new_chain, host, norm, bar_type, style, o0, o1,
         )
         if new_rb is None:
-            t.RollBack()
+            scope.rollback()
             return False, u"CreateFromCurves devolvió None.", None
         ok_lay, err_lay, new_rb = _copy_layout_y_excluir_ultima_barra(doc, rebar, new_rb)
         if not ok_lay:
-            t.RollBack()
+            scope.rollback()
             return False, u"Layout: {0}".format(err_lay or u"?"), None
         try:
             doc.Delete(rebar.Id)
         except Exception as ex2:
-            t.RollBack()
+            scope.rollback()
             return False, u"Delete rebar: {0!s}".format(ex2), None
         try:
             from armado_muros_rebar_params import stamp_malla_horizontal_rebar
             stamp_malla_horizontal_rebar(new_rb)
         except Exception:
             pass
-        t.Commit()
+        scope.commit()
     except Exception as ex:
-        t.RollBack()
+        scope.rollback()
         return False, u"{0!s}".format(ex), None
     return (
         True,
@@ -640,32 +671,33 @@ def _agregar_pata_l_extremo_sketch(
     o1 = _hook_orient_for_create(rebar, 1)
     orig_id = rebar.Id
 
-    t = Transaction(doc, txn_name)
-    t.Start()
+    from armado_muros_txn import TxnScope
+
+    scope = TxnScope(doc, txn_name)
     try:
         new_rb, err_shape = _crear_rebar_shape_06_desde_cadena(
             doc, new_chain, host, norm, bar_type, style, o0, o1,
         )
         if new_rb is None:
-            t.RollBack()
+            scope.rollback()
             return False, err_shape or u"Forma 06 no creada.", None
         ok_lay, err_lay, new_rb = _copy_layout_y_excluir_ultima_barra(doc, rebar, new_rb)
         if not ok_lay:
-            t.RollBack()
+            scope.rollback()
             return False, u"Layout: {0}".format(err_lay or u"?"), None
         try:
             doc.Delete(orig_id)
         except Exception as ex2:
-            t.RollBack()
+            scope.rollback()
             return False, u"Delete rebar: {0!s}".format(ex2), None
         try:
             from armado_muros_rebar_params import stamp_malla_horizontal_rebar
             stamp_malla_horizontal_rebar(new_rb)
         except Exception:
             pass
-        t.Commit()
+        scope.commit()
     except Exception as ex:
-        t.RollBack()
+        scope.rollback()
         return False, u"{0!s}".format(ex), None
 
     return (
@@ -838,6 +870,7 @@ def aplicar_retraida_horizontales_ext_int(doc, walls, rebars_por_muro_id):
         except Exception:
             pass
 
+    # Sin Transaction envolvente: cada retraída/pata L abre Transaction propia (como V1).
     for wid, eid_list in rebars_por_muro_id.items():
         host = wall_by_id.get(int(wid))
         if host is None:

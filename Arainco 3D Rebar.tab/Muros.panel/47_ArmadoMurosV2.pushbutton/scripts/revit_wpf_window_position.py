@@ -743,6 +743,64 @@ def _maximize_wpf_window_wpf_fallback(win, left_px, top_px, width_px, height_px,
     )
 
 
+def _revit_monitor_work_area(hwnd_revit=None):
+    u"""Área de trabajo (px) del monitor que contiene la ventana de Revit."""
+    area = _monitor_work_area_px(hwnd_revit)
+    if area is None:
+        area = _primary_work_area_px()
+    return area
+
+
+def bind_maximize_wpf_on_revit_monitor(win, hwnd_revit=None):
+    u"""Despliega ``win`` maximizado en el área de trabajo del monitor de Revit.
+
+    Retorna True si se enlazó el posicionamiento; False si no hay área válida.
+    """
+    if win is None:
+        return False
+    area = _revit_monitor_work_area(hwnd_revit)
+    if area is None:
+        return False
+    left_px, top_px, width_px, height_px = area
+
+    # Crítico: posicionar ANTES de Show() para que WPF no ancle al monitor primario.
+    preposition_wpf_window_on_work_area(
+        win, left_px, top_px, width_px, height_px, hwnd_revit,
+    )
+
+    applied = [False]
+
+    def _apply(sender, evt):
+        if applied[0]:
+            return
+        if fill_wpf_window_on_work_area_px(
+            win, left_px, top_px, width_px, height_px, hwnd_revit,
+        ):
+            applied[0] = True
+            return
+        if _wpf_window_hwnd(win):
+            if _maximize_wpf_window_wpf_fallback(
+                win, left_px, top_px, width_px, height_px, hwnd_revit,
+            ):
+                applied[0] = True
+
+    try:
+        from System.Windows import RoutedEventHandler
+
+        h = RoutedEventHandler(_apply)
+        win.SourceInitialized += h
+        win.Loaded += h
+        try:
+            win.ContentRendered += h
+        except Exception:
+            pass
+    except Exception:
+        return _maximize_wpf_window_wpf_fallback(
+            win, left_px, top_px, width_px, height_px, hwnd_revit,
+        )
+    return True
+
+
 def bind_maximize_wpf_on_secondary_monitor(win, hwnd_revit=None):
     u"""Si hay monitor secundario (≠ Revit), despliega ``win`` maximizado ahí.
 

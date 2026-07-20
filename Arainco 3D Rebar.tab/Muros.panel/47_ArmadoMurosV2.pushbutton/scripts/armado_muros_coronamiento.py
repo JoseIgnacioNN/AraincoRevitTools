@@ -212,6 +212,65 @@ def coronamiento_tipico_por_espesor_mm(e_mm):
     return 4, 22
 
 
+def default_coronamiento_config(espesor_mm=None, wall=None):
+    """Config UI/creación: tipico S.I.C. del espesor (tope) + flags de tipos."""
+    e = espesor_mm
+    if e is None and wall is not None:
+        e = _espesor_muro_mm(wall)
+    n_bars, diam_mm = coronamiento_tipico_por_espesor_mm(e if e is not None else 300)
+    if n_bars is None:
+        n_bars, diam_mm = 2, 16
+    return {
+        u"activo": True,
+        u"n_bars": int(n_bars),
+        u"diam_mm": int(diam_mm),
+        u"crear_superior": True,
+        u"crear_inferior": True,
+        u"crear_voladizo": True,
+    }
+
+
+def normalize_coronamiento_config(cfg, espesor_mm=None, wall=None):
+    """Fusiona overrides del usuario sobre tipico; no altera geometría ni pipeline."""
+    out = default_coronamiento_config(espesor_mm=espesor_mm, wall=wall)
+    if not cfg or not isinstance(cfg, dict):
+        return out
+    for key in (u"activo", u"crear_superior", u"crear_inferior", u"crear_voladizo"):
+        if key in cfg:
+            out[key] = bool(cfg.get(key))
+    if cfg.get(u"n_bars") is not None:
+        try:
+            out[u"n_bars"] = max(2, min(4, int(cfg.get(u"n_bars"))))
+        except Exception:
+            pass
+    if cfg.get(u"diam_mm") is not None:
+        try:
+            out[u"diam_mm"] = int(cfg.get(u"diam_mm"))
+        except Exception:
+            pass
+    return out
+
+
+def _n_bars_cfg_or_tipico(e_mm, res=None):
+    if res is not None and res.get(u"cfg_n_bars") is not None:
+        try:
+            return max(2, min(4, int(res.get(u"cfg_n_bars"))))
+        except Exception:
+            pass
+    n_bars, _ = coronamiento_tipico_por_espesor_mm(e_mm)
+    return n_bars
+
+
+def _diam_cfg_or_tipico(e_mm, res=None):
+    if res is not None and res.get(u"cfg_diam_mm") is not None:
+        try:
+            return int(res.get(u"cfg_diam_mm"))
+        except Exception:
+            pass
+    _, diam_mm = coronamiento_tipico_por_espesor_mm(e_mm)
+    return diam_mm
+
+
 def muro_tope_stack_global(walls_ordered):
     """Muro sin otro más arriba en la selección (tope global del stack)."""
     walls = [w for w in (walls_ordered or []) if w is not None]
@@ -1387,7 +1446,7 @@ def _crear_coronamiento_voladizo_muro(doc, spec, bar_type, diam_mm, res):
         return
 
     e_mm = _espesor_muro_mm(wall)
-    n_bars, _ = coronamiento_tipico_por_espesor_mm(e_mm)
+    n_bars = _n_bars_cfg_or_tipico(e_mm, res)
     if n_bars is None:
         res[u"n_voladizo_fail"] = int(res.get(u"n_voladizo_fail", 0)) + 1
         return
@@ -1447,7 +1506,8 @@ def _crear_coronamiento_voladizos_stack(doc, walls_ord, bar_type_fallback, res):
         if wall is None:
             continue
         e_mm = _espesor_muro_mm(wall)
-        n_b, d_mm = coronamiento_tipico_por_espesor_mm(e_mm)
+        n_b = _n_bars_cfg_or_tipico(e_mm, res)
+        d_mm = _diam_cfg_or_tipico(e_mm, res)
         if n_b is None or d_mm is None:
             res[u"n_voladizo_fail"] = int(res.get(u"n_voladizo_fail", 0)) + 1
             continue
@@ -1787,7 +1847,7 @@ def _crear_coronamiento_inferior_pie_muro(doc, wall, bar_type, diam_mm, res):
     """Coronamiento U en el pie del muro cuando no hay apilamiento ni fundación debajo."""
     z_bar = _z_bar_inferior_pie_ft(wall, bar_type, fallback_diam_mm=diam_mm)
     e_mm = _espesor_muro_mm(wall)
-    n_bars, _ = coronamiento_tipico_por_espesor_mm(e_mm)
+    n_bars = _n_bars_cfg_or_tipico(e_mm, res)
     if n_bars is None:
         res[u"n_inferior_pie_fail"] = int(res.get(u"n_inferior_pie_fail", 0)) + 1
         return
@@ -1843,7 +1903,7 @@ def _crear_coronamiento_inferior_muro(doc, wall, bar_type, diam_mm, res):
         )
         return
     e_mm = _espesor_muro_mm(wall)
-    n_bars, _ = coronamiento_tipico_por_espesor_mm(e_mm)
+    n_bars = _n_bars_cfg_or_tipico(e_mm, res)
     if n_bars is None:
         res[u"n_inferior_fail"] += 1
         return
@@ -1890,9 +1950,13 @@ def _crear_coronamiento_inferior_muro(doc, wall, bar_type, diam_mm, res):
     )
 
 
-def aplicar_coronamiento_muros(doc, walls, bar_type_fallback=None):
+def aplicar_coronamiento_muros(doc, walls, bar_type_fallback=None, config=None):
     """
     Coronamiento superior, inferior (fundación / pie), voladizo (reentrada).
+
+    ``config`` (opcional): dict de ``normalize_coronamiento_config`` —
+    activo, n_bars, diam_mm, crear_superior/inferior/voladizo.
+    Sin config → tipico S.I.C. por espesor (comportamiento histórico).
     """
     res = {
         u"n_created": 0,
@@ -1917,6 +1981,9 @@ def aplicar_coronamiento_muros(doc, walls, bar_type_fallback=None):
         u"n_bars_spec": 0,
         u"diam_mm": None,
         u"espesor_mm": None,
+        u"cfg_n_bars": None,
+        u"cfg_diam_mm": None,
+        u"skipped": False,
     }
     if doc is None:
         res[u"messages"].append(u"Sin documento Revit.")
@@ -1940,7 +2007,21 @@ def aplicar_coronamiento_muros(doc, walls, bar_type_fallback=None):
 
     e_mm_top = _espesor_muro_mm(wall_top)
     res[u"espesor_mm"] = int(round(e_mm_top))
-    n_bars_top, diam_mm_top = coronamiento_tipico_por_espesor_mm(e_mm_top)
+    cfg = normalize_coronamiento_config(config, espesor_mm=e_mm_top, wall=wall_top)
+
+    if not bool(cfg.get(u"activo", True)):
+        res[u"skipped"] = True
+        res[u"messages"].append(u"Coronamiento omitido (desactivado en configuración).")
+        return res
+
+    n_bars_top = int(cfg.get(u"n_bars") or 0) or None
+    diam_mm_top = int(cfg.get(u"diam_mm") or 0) or None
+    if n_bars_top is None or diam_mm_top is None:
+        tip_n, tip_d = coronamiento_tipico_por_espesor_mm(e_mm_top)
+        if n_bars_top is None:
+            n_bars_top = tip_n
+        if diam_mm_top is None:
+            diam_mm_top = tip_d
     if n_bars_top is None or diam_mm_top is None:
         res[u"n_fail"] = 1
         res[u"messages"].append(
@@ -1950,8 +2031,12 @@ def aplicar_coronamiento_muros(doc, walls, bar_type_fallback=None):
         )
         return res
 
+    n_bars_top = max(2, min(4, int(n_bars_top)))
+    diam_mm_top = int(diam_mm_top)
     res[u"n_bars_spec"] = int(n_bars_top)
     res[u"diam_mm"] = int(diam_mm_top)
+    res[u"cfg_n_bars"] = int(n_bars_top)
+    res[u"cfg_diam_mm"] = int(diam_mm_top)
 
     bar_type_top = _bar_type_for_diameter_mm(doc, diam_mm_top, bar_type_fallback)
     if bar_type_top is None:
@@ -1961,31 +2046,38 @@ def aplicar_coronamiento_muros(doc, walls, bar_type_fallback=None):
         )
         return res
 
+    crear_sup = bool(cfg.get(u"crear_superior", True))
+    crear_inf = bool(cfg.get(u"crear_inferior", True))
+    crear_vol = bool(cfg.get(u"crear_voladizo", True))
+
     txn = Transaction(doc, u"Arainco: Coronamiento muros")
     t_started = False
     try:
         txn.Start()
         t_started = True
-        _crear_coronamiento_superior(doc, wall_top, bar_type_top, diam_mm_top, res)
+        if crear_sup:
+            _crear_coronamiento_superior(doc, wall_top, bar_type_top, diam_mm_top, res)
 
-        for wall in walls_ord:
-            if wall is None:
-                continue
-            e_mm = _espesor_muro_mm(wall)
-            n_b, d_mm = coronamiento_tipico_por_espesor_mm(e_mm)
-            if n_b is None or d_mm is None:
-                continue
-            bt = _bar_type_for_diameter_mm(doc, d_mm, bar_type_fallback)
-            if bt is None:
-                res[u"n_inferior_fail"] += 1
-                continue
-            fund = _fundacion_principal_muro(doc, wall)
-            if fund is not None:
-                _crear_coronamiento_inferior_muro(doc, wall, bt, d_mm, res)
-            elif not _muro_tiene_apilamiento_inferior(wall, walls_ord):
-                _crear_coronamiento_inferior_pie_muro(doc, wall, bt, d_mm, res)
+        if crear_inf:
+            for wall in walls_ord:
+                if wall is None:
+                    continue
+                e_mm = _espesor_muro_mm(wall)
+                d_mm = _diam_cfg_or_tipico(e_mm, res)
+                if d_mm is None:
+                    continue
+                bt = _bar_type_for_diameter_mm(doc, d_mm, bar_type_fallback)
+                if bt is None:
+                    res[u"n_inferior_fail"] += 1
+                    continue
+                fund = _fundacion_principal_muro(doc, wall)
+                if fund is not None:
+                    _crear_coronamiento_inferior_muro(doc, wall, bt, d_mm, res)
+                elif not _muro_tiene_apilamiento_inferior(wall, walls_ord):
+                    _crear_coronamiento_inferior_pie_muro(doc, wall, bt, d_mm, res)
 
-        _crear_coronamiento_voladizos_stack(doc, walls_ord, bar_type_fallback, res)
+        if crear_vol:
+            _crear_coronamiento_voladizos_stack(doc, walls_ord, bar_type_fallback, res)
 
         if (
             res[u"n_created"] < 1
@@ -2001,8 +2093,14 @@ def aplicar_coronamiento_muros(doc, walls, bar_type_fallback=None):
                 and res[u"n_inferior_pie_fail"] < 1
                 and res[u"n_voladizo_fail"] < 1
             ):
-                res[u"n_fail"] = 1
-                res[u"messages"].append(u"No se creó ningún coronamiento.")
+                if not (crear_sup or crear_inf or crear_vol):
+                    res[u"skipped"] = True
+                    res[u"messages"].append(
+                        u"Coronamiento: ningún tipo seleccionado.",
+                    )
+                else:
+                    res[u"n_fail"] = 1
+                    res[u"messages"].append(u"No se creó ningún coronamiento.")
             return res
 
         txn.Commit()

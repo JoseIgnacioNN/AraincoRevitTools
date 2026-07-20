@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-DMU: al cambiar Rebar, las IndependentTag asociadas pasan al tipo de familia
-configurada cuyo nombre coincide con el RebarShape.
+DMU: al cambiar Rebar, las IndependentTag asociadas pasan al tipo de su
+misma familia cuyo nombre coincide con el RebarShape.
 
 La lógica de mapa / transacciones vive en rebar_tag_shape_sync_core.py.
-Familia(s): REBAR_TAG_SYNC_DEFAULT_FAMILY_NAMES en ese módulo (o tupla importada abajo).
 
 El trabajo se difiere con ExternalEvent (no dentro de IUpdater.Execute).
 """
@@ -20,6 +19,7 @@ clr.AddReference("RevitAPIUI")
 
 from Autodesk.Revit.DB import (
     ChangePriority,
+    ChangeType,
     Element,
     ElementClassFilter,
     ElementId,
@@ -35,11 +35,10 @@ from System import Guid
 
 from rebar_tag_shape_sync_core import (
     REBAR_TAG_SYNC_DEFAULT_FAMILY_NAMES,
-    apply_tag_sync_for_rebar_ints,
+    apply_tag_sync_for_rebar_ints_same_family,
     comparison_keys,
     family_names_match,
     normalize_label,
-    symbol_map_from_family_names,
     to_python_str,
 )
 
@@ -108,10 +107,7 @@ class _TagRefreshExternalHandler(IExternalEventHandler):
                 continue
             if not rebar_ints:
                 continue
-            sm = symbol_map_from_family_names(doc, REBAR_TAG_SYNC_DEFAULT_FAMILY_NAMES)
-            if not sm:
-                continue
-            apply_tag_sync_for_rebar_ints(doc, rebar_ints, sm, _TXN_REFRESH)
+            apply_tag_sync_for_rebar_ints_same_family(doc, rebar_ints, _TXN_REFRESH)
 
 
 def _is_rebar_category(el, bic):
@@ -123,6 +119,20 @@ def _is_rebar_category(el, bic):
         return int(el.Category.Id.IntegerValue) == int(bic.OST_Rebar)
     except Exception:
         return False
+
+
+def _rebar_shape_tag_change_type():
+    """Geometry+Any: cambios de shape a menudo llegan como geometría."""
+    try:
+        return ChangeType.Concatenate(
+            Element.GetChangeTypeGeometry(),
+            Element.GetChangeTypeAny(),
+        )
+    except Exception:
+        try:
+            return Element.GetChangeTypeGeometry()
+        except Exception:
+            return Element.GetChangeTypeAny()
 
 
 class RebarShapeTagRefresherUpdater(IUpdater):
@@ -140,14 +150,14 @@ class RebarShapeTagRefresherUpdater(IUpdater):
     def GetAdditionalInformation(self):
         return (
             u"Encola cambio de tipo de IndependentTag al nombre del RebarShape "
-            u"(familias: %s)." % u", ".join(REBAR_TAG_SYNC_DEFAULT_FAMILY_NAMES)
+            u"dentro de la misma familia de la etiqueta."
         )
 
     def GetChangePriority(self):
         return ChangePriority.Rebar
 
     def _shape_change_type(self):
-        return self._Element.GetChangeTypeAny()
+        return _rebar_shape_tag_change_type()
 
     def Execute(self, data):
         doc = data.GetDocument()
@@ -218,12 +228,8 @@ def is_rebar_shape_tag_dmu_registered(addin_id=None):
 def print_rebar_shape_tag_dmu_status(addin_id=None):
     print(u"--- Estado DMU etiquetas / RebarShape ---")
     print(u"GUID updater: {}".format(UPDATER_GUID))
-    print(u"Nombre: BIMTools — Refrescar etiquetas al cambiar RebarShape")
-    print(
-        u"Familias (core): {}".format(
-            u", ".join(REBAR_TAG_SYNC_DEFAULT_FAMILY_NAMES)
-        )
-    )
+    print(u"Nombre: Arainco — Refrescar etiquetas al cambiar RebarShape")
+    print(u"Modo: tipo homónimo en la misma familia de cada IndependentTag")
     if addin_id is None:
         addin_id = _addin_id_pyrevit_or_none()
     if addin_id is None:
@@ -365,14 +371,15 @@ def list_rebar_tag_families_and_types(doc):
 
 def print_rebar_tag_families_inventory(doc):
     print(u"--- Inventario OST_RebarTags (todas las familias del proyecto) ---")
+    print(u"DMU: sync por familia de cada etiqueta (no filtra por lista fija).")
     inv = list_rebar_tag_families_and_types(doc)
     if not inv:
         print(u"  (ningún FamilySymbol en OST_RebarTags)")
         return
     for raw_fam in sorted(inv.keys(), key=lambda x: normalize_label(x).lower()):
         types = inv[raw_fam]
-        is_dmu = _sym_family_in_default_list(raw_fam)
-        tag = u"  <<< DMU / core (REBAR_TAG_SYNC_DEFAULT_FAMILY_NAMES)" if is_dmu else u""
+        is_legacy = _sym_family_in_default_list(raw_fam)
+        tag = u"  <<< familia de referencia (diagnóstico)" if is_legacy else u""
         print(u"Familia {!r}  ({} tipos){}".format(raw_fam, len(types), tag))
         for raw_typ in types:
             print(u"  tipo {!r}".format(raw_typ))

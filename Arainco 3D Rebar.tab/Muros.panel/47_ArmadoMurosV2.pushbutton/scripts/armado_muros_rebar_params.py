@@ -29,8 +29,8 @@ ARMADURA_EJE_PARAM = u"Armadura_Eje"
 ARMADURA_MALLA_TIPO_DM = u"D.M."
 ARMADURA_MALLA_ORIENT_V = u"V."
 ARMADURA_MALLA_ORIENT_H = u"H."
-_APPDOMAIN_CONJUNTO_GUID_KEY = u"Arainco_ArmadoMuros_Conjunto_GUID"
-_APPDOMAIN_ARMADURA_EJE_KEY = u"Arainco_ArmadoMuros_Armadura_Eje"
+_APPDOMAIN_CONJUNTO_GUID_KEY = u"Arainco_ArmadoMurosV2_Conjunto_GUID"
+_APPDOMAIN_ARMADURA_EJE_KEY = u"Arainco_ArmadoMurosV2_Armadura_Eje"
 
 
 def _norm_param_def_name(name):

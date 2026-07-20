@@ -394,10 +394,13 @@ def cabezal_encuentro_l_capa_line_endpoints(
         e_det_mm, nc, cover_mm, conf_bar_type,
     )
     xs = lp.get(u"xs") or []
-    if li < 0 or li >= len(xs):
+    slot_i = li
+    if extremo == CABEZAL_EXTREMO_INICIO and nc > 1:
+        slot_i = max(0, nc - 1 - li)
+    if slot_i < 0 or slot_i >= len(xs):
         return None, None, None, u"Índice de capa fuera de rango (encuentro L)."
 
-    layer_mm = float(xs[li])
+    layer_mm = float(xs[slot_i])
     p_join = cabezal_encuentro_l_p_join(doc, wall, neighbor_wall, extremo)
     if p_join is None:
         p_join = geom_h[u"pt_extremo"]
@@ -444,18 +447,24 @@ def cabezal_seccion_preview_layout_encuentro_l(
     confinement_type=None,
     confinement_stirrup_diam_mm=None,
     preview_fill_zone=True,
+    extremo=None,
 ):
     """
     Preview 2D encuentro L: eje X = detectado (capas), eje Y = seleccionado (barras).
 
+    Capas fuera → dentro: ``layers[0]`` (1ªC.) en ``xs[0]`` (cara exterior del
+    detectado en el croquis). No invertir por ``extremo`` aquí: esa inversión
+    desfasaba el canvas respecto al modelo en Revit (creación intacta).
+
     Con ``preview_fill_zone=True`` (preview WPF en zona intersección), las posiciones en mm
     se proyectan al rect completo sin padding px adicional — solo el recubrimiento en mm.
     """
+    # ``extremo`` se acepta por compatibilidad de llamada; el layout no lo usa.
+    _ = extremo
     layers = list(layers or [])
     e_det = max(float(espesor_det_mm or 200.0), 50.0)
     e_sel = max(float(espesor_sel_mm or 200.0), 50.0)
     n_capas = max(1, len(layers))
-    conf_diam = float(confinement_stirrup_diam_mm or 16.0)
     lp = cabezal_encuentro_l_layer_positions_mm(
         e_det, n_capas, cover_mm, None,
     )
@@ -474,6 +483,7 @@ def cabezal_seccion_preview_layout_encuentro_l(
         inner_w = max(1.0, dw - 2.0 * pad_x)
         inner_h = max(1.0, dh - 2.0 * pad_y)
 
+    xs = lp.get(u"xs") or []
     for i, ly in enumerate(layers):
         try:
             nb = int(ly.get(u"n_bars", ENC_L_MIN_BARS))
@@ -483,7 +493,9 @@ def cabezal_seccion_preview_layout_encuentro_l(
         bp = cabezal_encuentro_l_bar_positions_mm(
             e_sel, nb, cover_mm, None,
         )
-        layer_mm = float(lp[u"xs"][i]) if i < len(lp[u"xs"]) else 0.0
+        # 1ªC. → xs[0] (exterior del croquis); sin flip por extremo.
+        slot_i = i
+        layer_mm = float(xs[slot_i]) if 0 <= slot_i < len(xs) else 0.0
         if preview_fill_zone:
             fx = (layer_mm / e_det) * dw
         else:

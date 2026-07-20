@@ -5,7 +5,9 @@ Núcleo compartido: sincronizar tipo de IndependentTag (Rebar Tags) con RebarSha
 Usado por:
 - rebar_shape_tag_updater_dmu.py (DMU + ExternalEvent)
 
-Configuración DMU: ajusta REBAR_TAG_SYNC_DEFAULT_FAMILY_NAMES (tupla de nombres de familia).
+El DMU resuelve el tipo dentro de la misma familia de cada etiqueta
+(nombre de tipo ≈ nombre del RebarShape). REBAR_TAG_SYNC_DEFAULT_FAMILY_NAMES
+queda solo para diagnósticos legacy.
 """
 
 from __future__ import print_function
@@ -35,8 +37,8 @@ from Autodesk.Revit.DB import (
     XYZ,
 )
 
-# Editar según proyecto: nombres exactos de familia(s) Structural Rebar Tags (navegador).
-# El DMU usa esta lista; el botón puede inferir familia desde la vista si no defines fallback.
+# Lista legacy para diagnósticos / inventario. El DMU ya no filtra por esta tupla:
+# busca el tipo homónimo en la familia de cada IndependentTag.
 REBAR_TAG_SYNC_DEFAULT_FAMILY_NAMES = (u"EST_A_STRUCTURAL REBAR TAG",)
 
 
@@ -361,6 +363,57 @@ def symbol_map_from_family_names(doc, family_names):
     return combined
 
 
+def family_of_independent_tag(doc, tag):
+    """Family del tipo actual de la IndependentTag, o None."""
+    if tag is None:
+        return None
+    try:
+        type_id = tag.GetTypeId()
+    except Exception:
+        return None
+    if type_id is None or type_id == ElementId.InvalidElementId:
+        return None
+    try:
+        sym = doc.GetElement(type_id)
+    except Exception:
+        return None
+    if sym is None:
+        return None
+    try:
+        fam = sym.Family
+    except Exception:
+        fam = None
+    if fam is None:
+        return None
+    try:
+        return doc.GetElement(fam.Id) or fam
+    except Exception:
+        return fam
+
+
+def symbol_map_for_tag(doc, tag, family_map_cache=None):
+    """
+    Mapa comparación -> ElementId de tipos en la familia de ``tag``.
+    ``family_map_cache`` (opcional): dict int(Family.Id) -> symbol_map reutilizable
+    en una misma pasada de sync.
+    """
+    fam = family_of_independent_tag(doc, tag)
+    if fam is None:
+        return {}
+    try:
+        fam_key = int(fam.Id.IntegerValue)
+    except Exception:
+        fam_key = None
+    if family_map_cache is not None and fam_key is not None:
+        cached = family_map_cache.get(fam_key)
+        if cached is not None:
+            return cached
+    sm = symbol_map_from_family(doc, fam)
+    if family_map_cache is not None and fam_key is not None:
+        family_map_cache[fam_key] = sm
+    return sm
+
+
 def lookup_tag_type_id(symbol_map, shape_label):
     if not symbol_map or not normalize_label(shape_label):
         return None
@@ -582,17 +635,24 @@ def try_set_tag_type(doc, tag, rebar, type_id, no_activate=False):
     return False, u"ChangeTypeId y recreación fallaron"
 
 
-def plan_sync_operations_from_rebar_ints(doc, rebar_ints, symbol_map):
+def plan_sync_operations_from_rebar_ints(doc, rebar_ints, symbol_map=None):
     """
     Lista de (tag_id_int, rebar_id_int, type_id) y conjunto de ids de tipo a activar.
-    Solo operaciones donde hace falta cambiar tipo y hay match en symbol_map.
+
+    Si ``symbol_map`` es None, cada etiqueta busca el tipo homónimo al RebarShape
+    dentro de su propia familia (caché por Family.Id en la pasada).
+    Si se pasa un mapa, se usa ese mapa para todas las etiquetas (modo legacy).
     """
-    if not symbol_map or not rebar_ints:
+    if not rebar_ints:
+        return [], set()
+    use_same_family = symbol_map is None
+    if not use_same_family and not symbol_map:
         return [], set()
     bic = BuiltInCategory
     pairs = collect_tag_rebar_pairs(doc, rebar_ints)
     ops = []
     activate = set()
+    family_map_cache = {} if use_same_family else None
     for tag, rebar_i in pairs:
         if tag is None:
             continue
@@ -608,12 +668,21 @@ def plan_sync_operations_from_rebar_ints(doc, rebar_ints, symbol_map):
                 continue
         except Exception:
             pass
+        if not is_rebar_tag_category(tag, bic):
+            continue
         rebar = doc.GetElement(ElementId(rebar_i))
         if rebar is None or not is_rebar_category(rebar, bic):
             continue
+        sm = (
+            symbol_map_for_tag(doc, tag, family_map_cache)
+            if use_same_family
+            else symbol_map
+        )
+        if not sm:
+            continue
         type_id = None
         for shape_label in rebar_shape_name_candidates(doc, rebar):
-            type_id = lookup_tag_type_id(symbol_map, shape_label)
+            type_id = lookup_tag_type_id(sm, shape_label)
             if type_id is not None:
                 break
         if type_id is None:
@@ -728,7 +797,8 @@ def execute_sync_with_transaction(doc, txn_name, ops, activate_ids):
 
 def apply_tag_sync_for_rebar_ints(doc, rebar_ints, symbol_map, txn_name):
     """
-    API principal para DMU: rebar_ints = iterable de ids enteros de Rebar;
+    Sync con mapa explícito (legacy / pruebas).
+    rebar_ints = iterable de ids enteros de Rebar;
     symbol_map = dict de claves de comparación -> ElementId de tipo de etiqueta.
     """
     if not rebar_ints or not symbol_map:
@@ -744,6 +814,27 @@ def apply_tag_sync_for_rebar_ints(doc, rebar_ints, symbol_map, txn_name):
         except Exception:
             pass
     ops, activate = plan_sync_operations_from_rebar_ints(doc, ints, symbol_map)
+    return execute_sync_with_transaction(doc, txn_name, ops, activate)
+
+
+def apply_tag_sync_for_rebar_ints_same_family(doc, rebar_ints, txn_name):
+    """
+    API principal para DMU: por cada IndependentTag ligada a los Rebar,
+    busca en la misma familia un tipo cuyo nombre coincida con el RebarShape.
+    """
+    if not rebar_ints:
+        return 0, 0
+    try:
+        doc.Regenerate()
+    except Exception:
+        pass
+    ints = []
+    for x in rebar_ints:
+        try:
+            ints.append(int(x))
+        except Exception:
+            pass
+    ops, activate = plan_sync_operations_from_rebar_ints(doc, ints, symbol_map=None)
     return execute_sync_with_transaction(doc, txn_name, ops, activate)
 
 

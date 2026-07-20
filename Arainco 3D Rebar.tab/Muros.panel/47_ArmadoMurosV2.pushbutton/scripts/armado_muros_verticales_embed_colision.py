@@ -1,25 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-Empotramiento en cabeza de barras verticales (cara exterior e interior) con evaluación
-de colisión contra los muros de la selección.
+Empotramiento en cabeza de barras verticales (cara exterior e interior).
 
-Criterio (mismo patrón que columnas / arearein verticales):
-1. Estiramiento de evaluación en cabeza: L(Ø) = ``traslape_mm_from_nominal_diameter_mm`` (tabla base BIMTools por Ø).
-2. Prisma de ensayo sobre ese tramo estirado (+Z desde la cabeza original).
-3. Si colisiona con algún muro de la selección (excepto host) → se mantiene el estiramiento.
-4. Si no hay colisión → se revierte L(Ø) y se aplica retraída 25 mm + Ø/2.
-5. **Sin colisión en cabeza** (exterior e interior): retraída y pata L vía boceto.
-   Largo pata L = espesor muro − 50 mm − Ø horiz. ext. − Ø horiz. int.
+Criterio cabeza (V2 — apilamiento en Z, sin sonda de sólidos tras estirar):
+1. Muros de la selección ordenados / evaluados por contacto en Z + solape en planta.
+2. Si el host tiene **muro apilado encima** en la selección → estirar L(Ø) de tabla
+   (empotramiento).
+3. Si **no** hay muro apilado encima → retraída ``25 mm + Ø/2`` + pata L.
+4. Largo pata L = espesor muro − 50 mm − Ø horiz. ext. − Ø horiz. int.
    Orden de tramos: **segmento 0** = eje vertical (pie→cabeza); **segmento 1** = pata L.
-6. Si el muro host tiene **fundación estructural** unida (Join Geometry) → pie vs **fundación**
-   (prisma 100 mm; colisión → estira + pata L ext/int; sin colisión → ``25+Ø/2`` + pata L int.).
-7. Si **no** hay fundación unida → pie vs **otros muros** (mismo espíritu que cabeza):
-   estiramiento de evaluación **100 mm** hacia abajo; prisma −Z vs muros de la selección.
-   **Colisión con muro** → revertir solo 100 mm (sin ``25+Ø/2``). **Sin colisión** → revertir
-   100 mm + ``25+Ø/2`` + pata L en pie (ext. e int.; largo = espesor − 50 − Ø horiz.).
 
-Orden por barra: **cabeza** (colisión vs muros) → **pie** (fundación o muros sin fund.).
-La cabeza va antes de la pata L en pie para no invalidar el criterio «vertical» (1.er tramo).
+Pie:
+5. Si el muro host tiene **fundación estructural** unida → pie vs fundación
+   (prisma 100 mm; colisión → estira + pata L; sin colisión → ``25+Ø/2`` + pata L int.).
+6. Si **no** hay fundación → si hay **muro apilado debajo** no mutar; si no,
+   retraer ``25+Ø/2`` + pata L en pie.
+
+Orden por barra: **cabeza** → **pie**.
 """
 
 from __future__ import print_function
@@ -272,6 +269,256 @@ def _geometry_options():
     except Exception:
         pass
     return opts
+
+
+def _solids_list_element(elem, opts):
+    """Lista de sólidos de un elemento (para caché de colisión)."""
+    out = []
+    for sd in _iter_solids_element(elem, opts):
+        out.append(sd)
+    return out
+
+
+def _build_solids_cache(elements, geom_opts):
+    """``{ element_id_int: [Solid, ...] }`` — una sola lectura de geometría por elemento."""
+    cache = {}
+    for el in elements or []:
+        if el is None:
+            continue
+        eid = _element_id_int(getattr(el, "Id", None))
+        if eid is None:
+            continue
+        try:
+            cache[int(eid)] = _solids_list_element(el, geom_opts)
+        except Exception:
+            cache[int(eid)] = []
+    return cache
+
+
+def _bbox_z_range(elem):
+    """``(z_min, z_max)`` del bounding box o ``None``."""
+    if elem is None:
+        return None
+    try:
+        bb = elem.get_BoundingBox(None)
+    except Exception:
+        bb = None
+    if bb is None:
+        return None
+    try:
+        return float(bb.Min.Z), float(bb.Max.Z)
+    except Exception:
+        return None
+
+
+def _build_bbox_z_cache(elements):
+    cache = {}
+    for el in elements or []:
+        if el is None:
+            continue
+        eid = _element_id_int(getattr(el, "Id", None))
+        if eid is None:
+            continue
+        zr = _bbox_z_range(el)
+        if zr is not None:
+            cache[int(eid)] = zr
+    return cache
+
+
+def _bbox_xy_overlap(bb_a, bb_b, tol_xy):
+    if bb_a is None or bb_b is None:
+        return False
+    try:
+        return not (
+            float(bb_a.Max.X) < float(bb_b.Min.X) - tol_xy
+            or float(bb_b.Max.X) < float(bb_a.Min.X) - tol_xy
+            or float(bb_a.Max.Y) < float(bb_b.Min.Y) - tol_xy
+            or float(bb_b.Max.Y) < float(bb_a.Min.Y) - tol_xy
+        )
+    except Exception:
+        return False
+
+
+def _stack_z_tolerance_ft():
+    try:
+        return float(_mm_to_internal(40.0))
+    except Exception:
+        return 0.12
+
+
+def _muro_apilado_sobre_host(host, other, tol_z=None):
+    """
+    True si ``other`` apoya sobre la cara superior de ``host``
+    (contacto Z + solape en planta). Criterio alineado a wall_node / coronamiento.
+    """
+    if host is None or other is None:
+        return False
+    if not isinstance(host, Wall) or not isinstance(other, Wall):
+        return False
+    try:
+        if other.Id == host.Id:
+            return False
+    except Exception:
+        pass
+    try:
+        hbb = host.get_BoundingBox(None)
+        obb = other.get_BoundingBox(None)
+    except Exception:
+        return False
+    if hbb is None or obb is None:
+        return False
+    if tol_z is None:
+        tol_z = _stack_z_tolerance_ft()
+    try:
+        d_face = float(_mm_to_internal(4.0))
+        band = max(float(tol_z), 1e-4)
+        tol_xy = max(float(tol_z), float(_mm_to_internal(50.0)))
+    except Exception:
+        d_face = 0.01
+        band = 0.12
+        tol_xy = 0.15
+    if not _bbox_xy_overlap(hbb, obb, tol_xy):
+        return False
+    try:
+        if abs(float(obb.Min.Z) - float(hbb.Max.Z)) > d_face + band:
+            return False
+        if float(obb.Max.Z) <= float(hbb.Max.Z) + 1e-5:
+            return False
+    except Exception:
+        return False
+    return True
+
+
+def _muro_apilado_bajo_host(host, other, tol_z=None):
+    """True si ``other`` contacta la cara inferior de ``host`` (apilado debajo)."""
+    if host is None or other is None:
+        return False
+    if not isinstance(host, Wall) or not isinstance(other, Wall):
+        return False
+    try:
+        if other.Id == host.Id:
+            return False
+    except Exception:
+        pass
+    try:
+        hbb = host.get_BoundingBox(None)
+        obb = other.get_BoundingBox(None)
+    except Exception:
+        return False
+    if hbb is None or obb is None:
+        return False
+    if tol_z is None:
+        tol_z = _stack_z_tolerance_ft()
+    try:
+        d_face = float(_mm_to_internal(4.0))
+        band = max(float(tol_z), 1e-4)
+        tol_xy = max(float(tol_z), float(_mm_to_internal(50.0)))
+    except Exception:
+        d_face = 0.01
+        band = 0.12
+        tol_xy = 0.15
+    if not _bbox_xy_overlap(hbb, obb, tol_xy):
+        return False
+    try:
+        if abs(float(obb.Max.Z) - float(hbb.Min.Z)) > d_face + band:
+            return False
+        if float(obb.Min.Z) >= float(hbb.Min.Z) - 1e-5:
+            return False
+    except Exception:
+        return False
+    return True
+
+
+def _build_apilamiento_maps(walls):
+    """
+    Precalcula por host_id si hay muro apilado encima / debajo en la selección.
+
+    :returns: ``(ids_con_sobre, ids_con_bajo)`` — sets de ``int`` wall id.
+    """
+    sobre = set()
+    bajo = set()
+    walls_list = [w for w in (walls or []) if w is not None and isinstance(w, Wall)]
+    tol = _stack_z_tolerance_ft()
+    n = len(walls_list)
+    for i in range(n):
+        host = walls_list[i]
+        hid = _element_id_int(getattr(host, "Id", None))
+        if hid is None:
+            continue
+        for j in range(n):
+            if i == j:
+                continue
+            other = walls_list[j]
+            if hid not in sobre and _muro_apilado_sobre_host(host, other, tol):
+                sobre.add(int(hid))
+            if hid not in bajo and _muro_apilado_bajo_host(host, other, tol):
+                bajo.add(int(hid))
+            if hid in sobre and hid in bajo:
+                break
+    return sobre, bajo
+
+
+def _host_tiene_apilado_sobre(host, ids_con_sobre):
+    hid = _element_id_int(getattr(host, "Id", None))
+    if hid is None:
+        return False
+    try:
+        return int(hid) in (ids_con_sobre or set())
+    except Exception:
+        return False
+
+
+def _host_tiene_apilado_bajo(host, ids_con_bajo):
+    hid = _element_id_int(getattr(host, "Id", None))
+    if hid is None:
+        return False
+    try:
+        return int(hid) in (ids_con_bajo or set())
+    except Exception:
+        return False
+
+
+def _iter_obstacle_solids(
+    wall_obstacles,
+    host_wall_id,
+    geom_opts,
+    solids_cache=None,
+    bbox_z_cache=None,
+    z_lo=None,
+    z_hi=None,
+):
+    """
+    Itera sólidos de obstáculos omitiendo el host.
+    Con caché no llama ``get_Geometry``; con ``bbox_z_cache`` descarta muros
+    cuyo bbox no solapa ``[z_lo, z_hi]``.
+    """
+    host_id = _element_id_int(host_wall_id)
+    for wall in wall_obstacles or []:
+        if wall is None:
+            continue
+        wid = _element_id_int(getattr(wall, "Id", None))
+        if host_id is not None and wid is not None and wid == host_id:
+            continue
+        if (
+            bbox_z_cache is not None
+            and wid is not None
+            and z_lo is not None
+            and z_hi is not None
+        ):
+            zr = bbox_z_cache.get(int(wid))
+            if zr is not None:
+                zmin, zmax = zr
+                if zmax < float(z_lo) - 1e-9:
+                    continue
+                if zmin > float(z_hi) + 1e-9:
+                    continue
+        solids = None
+        if solids_cache is not None and wid is not None:
+            solids = solids_cache.get(int(wid))
+        if solids is None:
+            solids = _solids_list_element(wall, geom_opts)
+        for sd in solids or []:
+            yield sd
 
 
 def _iter_solids_element(elem, opts):
@@ -678,6 +925,7 @@ def _probe_colision_fundacion_desde_punto(
     bar_nominal_mm,
     foundations,
     geom_opts,
+    solids_cache=None,
 ):
     """
     Prisma de ensayo hacia abajo desde ``xyz_ref``.
@@ -702,7 +950,13 @@ def _probe_colision_fundacion_desde_punto(
             continue
         h_mm = _altura_bbox_elemento_mm(fund)
         hit_fund = False
-        for sd in _iter_solids_element(fund, geom_opts):
+        solids = None
+        fid = _element_id_int(getattr(fund, "Id", None))
+        if solids_cache is not None and fid is not None:
+            solids = solids_cache.get(int(fid))
+        if solids is None:
+            solids = _solids_list_element(fund, geom_opts)
+        for sd in solids or []:
             if _solidos_intersectan_volumen(probe, sd):
                 hit_fund = True
                 break
@@ -721,6 +975,7 @@ def _estiramiento_fundacion_pie_por_colision(
     host,
     foundations,
     geom_opts,
+    solids_cache=None,
 ):
     """
     Estiramiento en pie (solo barras verticales) por colisión en el pie.
@@ -750,6 +1005,7 @@ def _estiramiento_fundacion_pie_por_colision(
     base_mm = float(FOUNDATION_PROBE_BASE_MM)
     collides, h_fund_mm = _probe_colision_fundacion_desde_punto(
         xyz_ref, base_mm, d_mm, foundations, geom_opts,
+        solids_cache=solids_cache,
     )
     if collides and h_fund_mm is not None:
         extra = float(h_fund_mm) - base_mm - float(FOUNDATION_STRETCH_RESTA_MM) - float(d_mm) / 2.0
@@ -1025,10 +1281,13 @@ def _procesar_rebar_vertical_pie_colision_muro_sin_fundacion(
     params_dict=None,
     layer_active_dict=None,
     muro_contencion=False,
+    ids_con_apilado_bajo=None,
+    solids_cache=None,
+    bbox_z_cache=None,
 ):
     """
-    Pie vs otros muros (host sin fundación unida): evaluación 100 mm, distinto de cabeza.
-    Colisión → revertir 100 mm; sin colisión → 100+25+Ø/2 y pata L ext/int.
+    Pie sin fundación: si hay muro apilado debajo → no mutar; si no →
+    retraer ``25+Ø/2`` + pata L.
     """
     if not _rebar_es_vertical_cara_ext_o_int(rebar, host):
         res[u"n_skip"] += 1
@@ -1039,62 +1298,22 @@ def _procesar_rebar_vertical_pie_colision_muro_sin_fundacion(
         res[u"n_fail"] += 1
         return rebar
 
-    l_eval_mm = float(PIE_MURO_SIN_FUND_EVAL_STRETCH_MM)
-    p0, p1 = _rebar_eje_p_start_p_end(rebar, 0)
-    p_pie_orig = _punto_pie_vertical(p0, p1)
-    if p_pie_orig is None:
-        res[u"n_fail"] += 1
+    if _host_tiene_apilado_bajo(host, ids_con_apilado_bajo):
+        res[u"n_pie_muro_colision_revert"] += 1
         return rebar
 
-    ok_eval, msg_eval, rebar_eval = _extender_vertical_pie_mm(doc, rebar, l_eval_mm, 0)
-    if not ok_eval:
+    retract_mm = _retract_mm_sin_colision(d_mm)
+    ok, msg, rb_out = _acortar_vertical_pie_mm(doc, rebar, retract_mm, 0)
+    if not ok:
         res[u"n_fail"] += 1
         rid = _element_id_int(getattr(rebar, "Id", None))
         res[u"messages"].append(
-            u"Rebar {0} (eval. pie 100 mm): {1}".format(
-                rid, msg_eval or u"error al estirar",
-            ),
+            u"Rebar {0} (pie sin muro apilado): {1}".format(rid, msg or u"error"),
         )
         return rebar
 
-    rebar_work = rebar_eval if rebar_eval is not None else rebar
-    dz_ft = _mm_to_internal(l_eval_mm)
-    collides = embed_stretch_collides_wall_solids_downward(
-        doc,
-        p_pie_orig,
-        dz_ft,
-        d_mm,
-        walls,
-        host.Id,
-        geom_opts,
-    )
-
-    if collides:
-        ok, msg, rb_out = _acortar_vertical_pie_mm(doc, rebar_work, l_eval_mm, 0)
-        if not ok:
-            res[u"n_fail"] += 1
-            rid = _element_id_int(getattr(rebar_work, "Id", None))
-            res[u"messages"].append(
-                u"Rebar {0} (pie colisión muro, revertir 100): {1}".format(
-                    rid, msg or u"error",
-                ),
-            )
-            return rebar_work
-        res[u"n_pie_muro_colision_revert"] += 1
-        return rb_out if rb_out is not None else rebar_work
-
-    retract_total_mm = l_eval_mm + _retract_mm_sin_colision(d_mm)
-    ok, msg, rb_out = _acortar_vertical_pie_mm(doc, rebar_work, retract_total_mm, 0)
-    if not ok:
-        res[u"n_fail"] += 1
-        rid = _element_id_int(getattr(rebar_work, "Id", None))
-        res[u"messages"].append(
-            u"Rebar {0} (pie sin colisión muro): {1}".format(rid, msg or u"error"),
-        )
-        return rebar_work
-
     res[u"n_pie_muro_retract"] += 1
-    rb_work = rb_out if rb_out is not None else rebar_work
+    rb_work = rb_out if rb_out is not None else rebar
     return _aplicar_pata_l_pie_muro_sin_fundacion(
         doc,
         rb_work,
@@ -1106,7 +1325,9 @@ def _procesar_rebar_vertical_pie_colision_muro_sin_fundacion(
     )
 
 
-def _aplicar_estiramiento_fundacion_pie(doc, rebar, host, foundations, geom_opts, res):
+def _aplicar_estiramiento_fundacion_pie(
+    doc, rebar, host, foundations, geom_opts, res, solids_cache=None,
+):
     """
     Evalúa colisión en pie (100 mm) en verticales con fundación unida.
     Colisión → estira pie (+ pata L ext/int); sin colisión → retrae pie 25 mm + Ø/2
@@ -1124,6 +1345,7 @@ def _aplicar_estiramiento_fundacion_pie(doc, rebar, host, foundations, geom_opts
 
     eval_res = _estiramiento_fundacion_pie_por_colision(
         doc, rebar, host, foundations, geom_opts,
+        solids_cache=solids_cache,
     )
     if eval_res is None:
         return rebar
@@ -1248,32 +1470,35 @@ def _acortar_vertical_pie_mm(doc, rebar, mm_retiro, pos_idx=0):
     o0 = _hook_orient_for_create(rebar, 0)
     o1 = _hook_orient_for_create(rebar, 1)
 
-    t = Transaction(doc, u"Arainco: Armado muros lineales — retraer pie vertical fundación")
-    t.Start()
+    from armado_muros_txn import TxnScope
+
+    scope = TxnScope(
+        doc, u"Arainco: Armado muros lineales — retraer pie vertical fundación",
+    )
     try:
         new_rb = _create_from_curves_no_hooks(
             doc, new_chain, host, norm, bar_type, style, o0, o1,
         )
         if new_rb is None:
-            t.RollBack()
+            scope.rollback()
             return False, u"CreateFromCurves devolvió None.", None
         ok_lay, err_lay, new_rb = _copy_layout_rebar_y_excluir_extremos(doc, rebar, new_rb)
         if not ok_lay:
-            t.RollBack()
+            scope.rollback()
             return False, u"Layout: {0}".format(err_lay or u"?"), None
         try:
             doc.Delete(rebar.Id)
         except Exception as ex2:
-            t.RollBack()
+            scope.rollback()
             return False, u"Delete rebar: {0!s}".format(ex2), None
         try:
             from armado_muros_rebar_params import stamp_malla_vertical_rebar
             stamp_malla_vertical_rebar(new_rb)
         except Exception:
             pass
-        t.Commit()
+        scope.commit()
     except Exception as ex:
-        t.RollBack()
+        scope.rollback()
         return False, u"{0!s}".format(ex), None
     return (
         True,
@@ -1373,32 +1598,35 @@ def _acortar_vertical_cabeza_mm(doc, rebar, mm_retiro, pos_idx=0):
     o0 = _hook_orient_for_create(rebar, 0)
     o1 = _hook_orient_for_create(rebar, 1)
 
-    t = Transaction(doc, u"Arainco: Armado muros lineales — retraer cabeza vertical")
-    t.Start()
+    from armado_muros_txn import TxnScope
+
+    scope = TxnScope(
+        doc, u"Arainco: Armado muros lineales — retraer cabeza vertical",
+    )
     try:
         new_rb = _create_from_curves_no_hooks(
             doc, new_chain, host, norm, bar_type, style, o0, o1,
         )
         if new_rb is None:
-            t.RollBack()
+            scope.rollback()
             return False, u"CreateFromCurves devolvió None.", None
         ok_lay, err_lay, new_rb = _copy_layout_rebar_y_excluir_extremos(doc, rebar, new_rb)
         if not ok_lay:
-            t.RollBack()
+            scope.rollback()
             return False, u"Layout: {0}".format(err_lay or u"?"), None
         try:
             doc.Delete(rebar.Id)
         except Exception as ex2:
-            t.RollBack()
+            scope.rollback()
             return False, u"Delete rebar: {0!s}".format(ex2), None
         try:
             from armado_muros_rebar_params import stamp_malla_vertical_rebar
             stamp_malla_vertical_rebar(new_rb)
         except Exception:
             pass
-        t.Commit()
+        scope.commit()
     except Exception as ex:
-        t.RollBack()
+        scope.rollback()
         return False, u"{0!s}".format(ex), None
     return (
         True,
@@ -1417,10 +1645,15 @@ def embed_stretch_collides_any_wall_solids(
     wall_obstacles,
     host_wall_id,
     geom_opts,
+    solids_cache=None,
+    bbox_z_cache=None,
 ):
     """
     True si el prisma de ensayo (+Z desde ``xyz_top.Z``) intersecta algún sólido
     de los muros en ``wall_obstacles``, omitiendo el host.
+
+    ``solids_cache`` / ``bbox_z_cache``: opcionales; evitan ``get_Geometry`` repetido
+    y permiten filtrar por bbox Z (mismos resultados si la caché está fresca).
     """
     dz_e = abs(float(dz_embed_ft))
     if doc is None or xyz_top is None or dz_e <= 1e-12:
@@ -1434,16 +1667,17 @@ def embed_stretch_collides_any_wall_solids(
     )
     if probe is None:
         return False
-    host_id = _element_id_int(host_wall_id)
-    for wall in wall_obstacles or []:
-        if wall is None:
-            continue
-        wid = _element_id_int(getattr(wall, "Id", None))
-        if host_id is not None and wid is not None and wid == host_id:
-            continue
-        for sd in _iter_solids_element(wall, geom_opts):
-            if _solidos_intersectan_volumen(probe, sd):
-                return True
+    for sd in _iter_obstacle_solids(
+        wall_obstacles,
+        host_wall_id,
+        geom_opts,
+        solids_cache=solids_cache,
+        bbox_z_cache=bbox_z_cache,
+        z_lo=z0,
+        z_hi=z0 + dz_e,
+    ):
+        if _solidos_intersectan_volumen(probe, sd):
+            return True
     return False
 
 
@@ -1455,6 +1689,8 @@ def embed_stretch_collides_wall_solids_downward(
     wall_obstacles,
     host_wall_id,
     geom_opts,
+    solids_cache=None,
+    bbox_z_cache=None,
 ):
     """
     True si el prisma de ensayo (−Z desde ``xyz_pie.Z``) intersecta algún sólido
@@ -1466,21 +1702,23 @@ def embed_stretch_collides_wall_solids_downward(
     half_w_mm = float(bar_nominal_mm) / 2.0 + float(_EMBED_PROBE_XY_MARGIN_MM)
     half_w_mm = max(half_w_mm, float(_EMBED_PROBE_MIN_HALF_SIDE_MM))
     half_w_ft = _mm_to_internal(half_w_mm)
+    z0 = float(xyz_pie.Z)
     probe = _build_vertical_prism_downward(
-        float(xyz_pie.X), float(xyz_pie.Y), float(xyz_pie.Z), half_w_ft, dz_e,
+        float(xyz_pie.X), float(xyz_pie.Y), z0, half_w_ft, dz_e,
     )
     if probe is None:
         return False
-    host_id = _element_id_int(host_wall_id)
-    for wall in wall_obstacles or []:
-        if wall is None:
-            continue
-        wid = _element_id_int(getattr(wall, "Id", None))
-        if host_id is not None and wid is not None and wid == host_id:
-            continue
-        for sd in _iter_solids_element(wall, geom_opts):
-            if _solidos_intersectan_volumen(probe, sd):
-                return True
+    for sd in _iter_obstacle_solids(
+        wall_obstacles,
+        host_wall_id,
+        geom_opts,
+        solids_cache=solids_cache,
+        bbox_z_cache=bbox_z_cache,
+        z_lo=z0 - dz_e,
+        z_hi=z0,
+    ):
+        if _solidos_intersectan_volumen(probe, sd):
+            return True
     return False
 
 
@@ -1736,8 +1974,9 @@ def _agregar_pata_l_extremo_sketch(
     o1 = _hook_orient_for_create(rebar, 1)
     orig_id = rebar.Id
 
-    t = Transaction(doc, txn_name)
-    t.Start()
+    from armado_muros_txn import TxnScope
+
+    scope = TxnScope(doc, txn_name)
     try:
         new_rb = None
         fn_shape = getattr(l135, u"_try_create_l_from_rebar_shape_2seg", None)
@@ -1751,25 +1990,25 @@ def _agregar_pata_l_extremo_sketch(
                 doc, new_chain, host, norm, bar_type, style, o0, o1,
             )
         if new_rb is None:
-            t.RollBack()
+            scope.rollback()
             return False, u"CreateFromCurves devolvió None.", None
         ok_lay, err_lay, new_rb = _copy_layout_rebar_y_excluir_extremos(doc, rebar, new_rb)
         if not ok_lay:
-            t.RollBack()
+            scope.rollback()
             return False, u"Layout: {0}".format(err_lay or u"?"), None
         try:
             doc.Delete(orig_id)
         except Exception as ex2:
-            t.RollBack()
+            scope.rollback()
             return False, u"Delete rebar: {0!s}".format(ex2), None
         try:
             from armado_muros_rebar_params import stamp_malla_vertical_rebar
             stamp_malla_vertical_rebar(new_rb)
         except Exception:
             pass
-        t.Commit()
+        scope.commit()
     except Exception as ex:
-        t.RollBack()
+        scope.rollback()
         return False, u"{0!s}".format(ex), None
 
     return (
@@ -1861,8 +2100,14 @@ def _procesar_rebar_vertical_cabeza_colision(
     params_dict=None,
     layer_active_dict=None,
     muro_contencion=False,
+    ids_con_apilado_sobre=None,
+    solids_cache=None,
+    bbox_z_cache=None,
 ):
-    """Evalúa colisión en cabeza para una barra vertical exterior o interior."""
+    """
+    Cabeza: empotrar solo si hay muro apilado encima en la selección;
+    si no, retraer ``25+Ø/2`` + pata L.
+    """
     if not _rebar_es_vertical_cara_ext_o_int(rebar, host):
         res[u"n_skip"] += 1
         return rebar
@@ -1879,49 +2124,29 @@ def _procesar_rebar_vertical_cabeza_colision(
         res[u"n_skip"] += 1
         return rebar
 
-    p0, p1 = _rebar_eje_p_start_p_end(rebar, 0)
-    p_top_orig = _punto_cabeza_vertical(p0, p1)
-    if p_top_orig is None:
-        res[u"n_fail"] += 1
-        return rebar
-
-    ok_eval, msg_eval, rebar_eval = _extender_vertical_cabeza_tabla_empotramiento(
-        doc, rebar, 0, concrete_grade,
-    )
-    if not ok_eval:
-        res[u"n_fail"] += 1
-        rid = _element_id_int(getattr(rebar, "Id", None))
-        res[u"messages"].append(
-            u"Rebar {0} (eval. estiramiento): {1}".format(
-                rid, msg_eval or u"error al estirar",
-            ),
+    if _host_tiene_apilado_sobre(host, ids_con_apilado_sobre):
+        ok_eval, msg_eval, rebar_eval = _extender_vertical_cabeza_tabla_empotramiento(
+            doc, rebar, 0, concrete_grade,
         )
-        return rebar
-
-    rebar_work = rebar_eval if rebar_eval is not None else rebar
-
-    dz_ft = _mm_to_internal(L_eval_mm)
-    collides = embed_stretch_collides_any_wall_solids(
-        doc,
-        p_top_orig,
-        dz_ft,
-        d_mm,
-        walls,
-        host.Id,
-        geom_opts,
-    )
-
-    if collides:
+        if not ok_eval:
+            res[u"n_fail"] += 1
+            rid = _element_id_int(getattr(rebar, "Id", None))
+            res[u"messages"].append(
+                u"Rebar {0} (empotramiento por apilado): {1}".format(
+                    rid, msg_eval or u"error al estirar",
+                ),
+            )
+            return rebar
         res[u"n_extended"] += 1
-        return rebar_work
+        return rebar_eval if rebar_eval is not None else rebar
 
-    retract_total_mm = float(L_eval_mm) + _retract_mm_sin_colision(d_mm)
+    retract_mm = _retract_mm_sin_colision(d_mm)
     ok, msg, rebar_final = _acortar_vertical_cabeza_mm(
-        doc, rebar_work, retract_total_mm, 0,
+        doc, rebar, retract_mm, 0,
     )
     if ok:
         res[u"n_retracted"] += 1
-        rebar_out = rebar_final if rebar_final is not None else rebar_work
+        rebar_out = rebar_final if rebar_final is not None else rebar
         if rebar_out is not None:
             ok_l, msg_l, rb_l = _agregar_pata_l_cabeza_vertical_sketch(
                 doc,
@@ -1948,11 +2173,13 @@ def _procesar_rebar_vertical_cabeza_colision(
         return rebar_out
 
     res[u"n_fail"] += 1
-    rid = _element_id_int(getattr(rebar_work, "Id", None))
+    rid = _element_id_int(getattr(rebar, "Id", None))
     res[u"messages"].append(
-        u"Rebar {0} (sin colisión): {1}".format(rid, msg or u"error al retraer"),
+        u"Rebar {0} (sin apilado en cabeza): {1}".format(
+            rid, msg or u"error al retraer",
+        ),
     )
-    return rebar_work
+    return rebar
 
 
 def aplicar_empotramiento_verticales_cara_por_colision(
@@ -1966,11 +2193,12 @@ def aplicar_empotramiento_verticales_cara_por_colision(
     cabezal_por_muro_id=None,
 ):
     """
-    Post-proceso de verticales ext/int: fundación unida (pie) y, si aplica, colisión en cabeza.
+    Post-proceso de verticales ext/int: fundación unida (pie) y, si aplica, empotramiento
+    en cabeza según **muro apilado encima** en la selección (orden Z / contacto bbox).
 
     ``rebars_por_muro_id``: ``{ wall_id_int: [ElementId, ...], ... }``
     ``evaluar_colision_cabeza``: si ``False`` (herramienta Cabezal muros), no ejecuta
-    estiramiento/retraída por colisión con otros muros en la cabeza.
+    estiramiento/retraída por apilamiento en cabeza.
 
     Retorna dict con contadores y mensajes.
     """
@@ -2020,94 +2248,132 @@ def aplicar_empotramiento_verticales_cara_por_colision(
     geom_opts = _geometry_options()
     g = CONCRETE_GRADE if concrete_grade is None else concrete_grade
 
-    for wid, eid_list in rebars_por_muro_id.items():
-        host = wall_by_id.get(int(wid))
-        if host is None:
-            continue
-        params_dict = None
-        layer_active_dict = None
-        if params_por_muro_id:
+    def _run_vertical_lote():
+        # Apilamiento en Z (bbox) una vez por lote — sin sonda de sólidos por barra.
+        ids_sobre, ids_bajo = _build_apilamiento_maps(walls)
+        fund_solids = {}
+        # Fundación sigue usando sólidos; cachear tras un Regenerate si hace falta.
+        need_fund_geom = False
+        for wid0 in rebars_por_muro_id:
+            host0 = wall_by_id.get(int(wid0))
+            if host0 is not None and _fundaciones_estructurales_unidas_muro(doc, host0):
+                need_fund_geom = True
+                break
+        if need_fund_geom:
             try:
-                tup = params_por_muro_id.get(int(wid))
-                if tup is not None:
-                    params_dict, layer_active_dict = tup
+                doc.Regenerate()
             except Exception:
                 pass
-        foundations = _fundaciones_estructurales_unidas_muro(doc, host)
-        for idx, eid in enumerate(eid_list or []):
-            rebar = doc.GetElement(eid)
-            if rebar is None or not isinstance(rebar, Rebar):
-                res[u"n_skip"] += 1
-                continue
-            rebar_work = rebar
-            if evaluar_colision_cabeza:
-                rebar_work = _procesar_rebar_vertical_cabeza_colision(
-                    doc,
-                    rebar_work,
-                    host,
-                    walls,
-                    geom_opts,
-                    g,
-                    res,
-                    params_dict,
-                    layer_active_dict,
-                    muro_contencion,
-                )
-            if foundations:
-                rebar_work = _aplicar_estiramiento_fundacion_pie(
-                    doc, rebar_work, host, foundations, geom_opts, res,
-                )
-            else:
-                rebar_work = _procesar_rebar_vertical_pie_colision_muro_sin_fundacion(
-                    doc,
-                    rebar_work,
-                    host,
-                    walls,
-                    geom_opts,
-                    res,
-                    params_dict,
-                    layer_active_dict,
-                    muro_contencion,
-                )
-            try:
-                eid_list[idx] = rebar_work.Id
-            except Exception:
-                pass
-            if cabezal_por_muro_id and rebar_work is not None:
-                try:
-                    import armado_muros_cabezal as _cab_malla
-                    import armado_muros_lineales as _lin_malla
 
-                    ex_ini, ex_fin = _cab_malla.cabezal_extremos_config_for_muro(
-                        cabezal_por_muro_id, int(wid),
+        for wid, eid_list in rebars_por_muro_id.items():
+            host = wall_by_id.get(int(wid))
+            if host is None:
+                continue
+            params_dict = None
+            layer_active_dict = None
+            if params_por_muro_id:
+                try:
+                    tup = params_por_muro_id.get(int(wid))
+                    if tup is not None:
+                        params_dict, layer_active_dict = tup
+                except Exception:
+                    pass
+            foundations = _fundaciones_estructurales_unidas_muro(doc, host)
+            if foundations:
+                for fund in foundations:
+                    fid = _element_id_int(getattr(fund, "Id", None))
+                    if fid is None or int(fid) in fund_solids:
+                        continue
+                    fund_solids[int(fid)] = _solids_list_element(fund, geom_opts)
+            for idx, eid in enumerate(eid_list or []):
+                rebar = doc.GetElement(eid)
+                if rebar is None or not isinstance(rebar, Rebar):
+                    res[u"n_skip"] += 1
+                    continue
+                rebar_work = rebar
+                if evaluar_colision_cabeza:
+                    rebar_work = _procesar_rebar_vertical_cabeza_colision(
+                        doc,
+                        rebar_work,
+                        host,
+                        walls,
+                        geom_opts,
+                        g,
+                        res,
+                        params_dict,
+                        layer_active_dict,
+                        muro_contencion,
+                        ids_con_apilado_sobre=ids_sobre,
                     )
-                    if _lin_malla._rebar_es_malla_vertical_para_exclusion(
+                if foundations:
+                    rebar_work = _aplicar_estiramiento_fundacion_pie(
+                        doc, rebar_work, host, foundations, geom_opts, res,
+                        solids_cache=fund_solids,
+                    )
+                else:
+                    rebar_work = _procesar_rebar_vertical_pie_colision_muro_sin_fundacion(
+                        doc,
+                        rebar_work,
+                        host,
+                        walls,
+                        geom_opts,
+                        res,
+                        params_dict,
+                        layer_active_dict,
+                        muro_contencion,
+                        ids_con_apilado_bajo=ids_bajo,
+                    )
+                try:
+                    eid_list[idx] = rebar_work.Id
+                except Exception:
+                    pass
+                if cabezal_por_muro_id and rebar_work is not None:
+                    try:
+                        import armado_muros_cabezal as _cab_malla
+                        import armado_muros_lineales as _lin_malla
+
+                        ex_ini, ex_fin = _cab_malla.cabezal_extremos_config_for_muro(
+                            cabezal_por_muro_id, int(wid),
+                        )
+                        if _lin_malla._rebar_es_malla_vertical_para_exclusion(
+                            rebar_work,
+                            host,
+                            params_dict,
+                            muro_contencion,
+                        ):
+                            _cab_malla.aplicar_exclusion_verticales_malla_rebar(
+                                rebar_work,
+                                ex_ini,
+                                ex_fin,
+                                doc=doc,
+                                host=host,
+                                regenerate=False,
+                            )
+                    except Exception:
+                        pass
+                try:
+                    import armado_muros_lineales as _lin_malla
+                    if _lin_malla._rebar_es_malla_vertical_para_stamp(
                         rebar_work,
                         host,
                         params_dict,
                         muro_contencion,
                     ):
-                        _cab_malla.aplicar_exclusion_verticales_malla_rebar(
-                            rebar_work,
-                            ex_ini,
-                            ex_fin,
-                            doc=doc,
-                            host=host,
-                        )
+                        from armado_muros_rebar_params import stamp_malla_vertical_rebar
+                        stamp_malla_vertical_rebar(rebar_work)
                 except Exception:
                     pass
-            try:
-                import armado_muros_lineales as _lin_malla
-                if _lin_malla._rebar_es_malla_vertical_para_stamp(
-                    rebar_work,
-                    host,
-                    params_dict,
-                    muro_contencion,
-                ):
-                    from armado_muros_rebar_params import stamp_malla_vertical_rebar
-                    stamp_malla_vertical_rebar(rebar_work)
-            except Exception:
-                pass
+
+    try:
+        from armado_muros_txn import run_in_transaction
+
+        run_in_transaction(
+            doc,
+            u"Arainco: Armado muros lineales — post verticales lote",
+            _run_vertical_lote,
+        )
+    except Exception:
+        _run_vertical_lote()
 
     return res
 

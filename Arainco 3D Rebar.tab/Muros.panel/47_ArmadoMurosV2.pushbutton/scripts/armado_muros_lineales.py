@@ -153,22 +153,13 @@ else:
 
 
 def _reload_malla_rebar_tags_mod():
+    """Asegura el módulo de tags cargado (sin importlib.reload — coste alto)."""
     global _malla_rebar_tags_mod, _malla_rebar_tags_import_error
+    if _malla_rebar_tags_mod is not None:
+        return True
     try:
-        import importlib
-        import sys
-
-        mod_name = u"armado_muros_malla_rebar_tags"
-        if mod_name in sys.modules:
-            try:
-                del sys.modules[mod_name]
-            except Exception:
-                pass
         import armado_muros_malla_rebar_tags as _mt
-        try:
-            _malla_rebar_tags_mod = importlib.reload(_mt)
-        except Exception:
-            _malla_rebar_tags_mod = _mt
+        _malla_rebar_tags_mod = _mt
         _malla_rebar_tags_import_error = None
         return True
     except Exception as _ex_reload:
@@ -643,7 +634,7 @@ def _tamano_lote_ejecucion(n_items, lote_legacy):
     except Exception:
         return 1
 # Un solo paso Deshacer para cabezal + mallas + etiquetas.
-TXN_GROUP_ARMADO_MUROS_UNIFICADO = u"Arainco: Armado Muros"
+TXN_GROUP_ARMADO_MUROS_UNIFICADO = u"Arainco: Armado Muros v2"
 
 
 def _ml_pbar_phase_title(base_title, total):
@@ -937,82 +928,75 @@ def _post_procesar_rebars_lote(
     """
     Post-proceso de un lote de muros: verticales (empotramiento/patas L), horizontales
     (retraída/pata L) y exclusión final de extremos del set. Modifica ``rebars_lote`` in-place.
+
+    Una Transaction de documento: colisión de malla usa caché de sólidos (sonda antes
+    de mutar); mutaciones anidan SubTransaction. Exclusión + stamp al final.
     """
     res = _embed_resumen_vacio()
     if doc is None or not rebars_lote:
         return res
 
-    try:
-        import armado_muros_verticales_embed_colision as _embed_mod
+    def _run_post():
+        holder = {u"res": res}
 
-        res = _merge_embed_resumen(
-            res,
-            _embed_mod.aplicar_empotramiento_verticales_cara_por_colision(
-                doc,
-                walls_ord,
-                rebars_lote,
-                params_por_muro_id=params_por_muro_id,
-                muro_contencion=muro_contencion,
-                cabezal_por_muro_id=cabezal_por_muro_id,
-            ),
-        )
-    except Exception as ex_embed:
-        res.setdefault(u"messages", [])
-        res[u"messages"].append(
-            u"Empotramiento vertical ext/int: {0}".format(str(ex_embed)),
-        )
-
-    try:
-        import armado_muros_horizontales_retraida as _horiz_mod
-
-        res = _merge_embed_resumen(
-            res,
-            _horiz_mod.aplicar_retraida_horizontales_ext_int(
-                doc, walls_ord, rebars_lote,
-            ),
-        )
-    except Exception as ex_horiz:
-        res.setdefault(u"messages", [])
-        res[u"messages"].append(
-            u"Retraída horizontal ext/int: {0}".format(str(ex_horiz)),
-        )
-
-    ids_finales = []
-    for eids in rebars_lote.values():
-        ids_finales.extend(eids or [])
-    if ids_finales:
-        trans_ext = Transaction(
-            doc, u"Arainco: Armado muros lineales — excluir extremos set",
-        )
         try:
-            trans_ext.Start()
+            import armado_muros_verticales_embed_colision as _embed_mod
+
+            holder[u"res"] = _merge_embed_resumen(
+                holder[u"res"],
+                _embed_mod.aplicar_empotramiento_verticales_cara_por_colision(
+                    doc,
+                    walls_ord,
+                    rebars_lote,
+                    params_por_muro_id=params_por_muro_id,
+                    muro_contencion=muro_contencion,
+                    cabezal_por_muro_id=cabezal_por_muro_id,
+                ),
+            )
+        except Exception as ex_embed:
+            holder[u"res"].setdefault(u"messages", [])
+            holder[u"res"][u"messages"].append(
+                u"Empotramiento vertical ext/int: {0}".format(str(ex_embed)),
+            )
+
+        try:
+            import armado_muros_horizontales_retraida as _horiz_mod
+
+            holder[u"res"] = _merge_embed_resumen(
+                holder[u"res"],
+                _horiz_mod.aplicar_retraida_horizontales_ext_int(
+                    doc, walls_ord, rebars_lote,
+                ),
+            )
+        except Exception as ex_horiz:
+            holder[u"res"].setdefault(u"messages", [])
+            holder[u"res"][u"messages"].append(
+                u"Retraída horizontal ext/int: {0}".format(str(ex_horiz)),
+            )
+
+        ids_finales = []
+        for eids in rebars_lote.values():
+            ids_finales.extend(eids or [])
+        if ids_finales:
             try:
                 doc.Regenerate()
             except Exception:
                 pass
-            _desactivar_extremos_rebars_creados(
-                doc,
-                ids_finales,
-                cabezal_por_muro_id=cabezal_por_muro_id,
-                params_por_muro_id=params_por_muro_id,
-                muro_contencion=muro_contencion,
-            )
-            trans_ext.Commit()
-        except Exception:
-            if trans_ext.HasStarted():
-                try:
-                    trans_ext.RollBack()
-                except Exception:
-                    pass
+            try:
+                _desactivar_extremos_rebars_creados(
+                    doc,
+                    ids_finales,
+                    cabezal_por_muro_id=cabezal_por_muro_id,
+                    params_por_muro_id=params_por_muro_id,
+                    muro_contencion=muro_contencion,
+                    regenerate_each=False,
+                )
+            except Exception:
+                pass
 
-    try:
-        from armado_muros_rebar_params import activar_armadura_arainco_por_ids
-
-        t_stamp = Transaction(
-            doc, u"Arainco: Armado muros lineales — parámetros malla",
-        )
         try:
-            t_stamp.Start()
+            from armado_muros_rebar_params import activar_armadura_arainco_por_ids
+
             for eids in (rebars_lote or {}).values():
                 activar_armadura_arainco_por_ids(doc, eids)
             _stamp_malla_params_rebars_por_muro(
@@ -1020,7 +1004,7 @@ def _post_procesar_rebars_lote(
                 rebars_lote,
                 params_por_muro_id=params_por_muro_id,
                 muro_contencion=muro_contencion,
-                rebars_horizontal_por_muro_id=res.get(
+                rebars_horizontal_por_muro_id=holder[u"res"].get(
                     u"rebars_malla_horizontal_por_muro_id",
                 ),
             )
@@ -1029,21 +1013,25 @@ def _post_procesar_rebars_lote(
                 rebars_lote,
                 params_por_muro_id=params_por_muro_id,
                 muro_contencion=muro_contencion,
-                rebars_horizontal_por_muro_id=res.get(
+                rebars_horizontal_por_muro_id=holder[u"res"].get(
                     u"rebars_malla_horizontal_por_muro_id",
                 ),
             )
-            t_stamp.Commit()
         except Exception:
-            if t_stamp.HasStarted():
-                try:
-                    t_stamp.RollBack()
-                except Exception:
-                    pass
-    except Exception:
-        pass
+            pass
 
-    return res
+        return holder[u"res"]
+
+    try:
+        from armado_muros_txn import run_in_transaction
+
+        return run_in_transaction(
+            doc,
+            u"Arainco: Armado muros lineales — post lote",
+            _run_post,
+        )
+    except Exception:
+        return _run_post()
 
 
 # ── Tipos ───────────────────────────────────────────────────────────────────
@@ -3492,7 +3480,7 @@ def _rebar_layout_rule_nombre(rebar, acc):
     return u""
 
 
-def _aplicar_spacing_ui_rebar(rebar, spacing_mm, doc=None):
+def _aplicar_spacing_ui_rebar(rebar, spacing_mm, doc=None, regenerate=True):
     """Fija el paso del set con el espaciamiento exacto del panel (mm)."""
     if rebar is None or spacing_mm is None:
         return False
@@ -3541,7 +3529,7 @@ def _aplicar_spacing_ui_rebar(rebar, spacing_mm, doc=None):
     for b_try in (b_side, not b_side):
         try:
             _try_set(b_try)
-            if doc is not None:
+            if doc is not None and regenerate:
                 try:
                     doc.Regenerate()
                 except Exception:
@@ -3625,8 +3613,13 @@ def _aplicar_spacing_malla_rebars_por_muro(
             except Exception:
                 esp_txt = u"150"
             spacing_mm = _spacing_mm_desde_params_txt(esp_txt)
-            if _aplicar_spacing_ui_rebar(rb, spacing_mm, doc=doc):
+            if _aplicar_spacing_ui_rebar(rb, spacing_mm, doc=doc, regenerate=False):
                 n += 1
+    if n and doc is not None:
+        try:
+            doc.Regenerate()
+        except Exception:
+            pass
     return n
 
 
@@ -3739,6 +3732,7 @@ def _excluir_extremos_rebar_por_orientacion(
     ex_cfg_fin=None,
     params_dict=None,
     muro_contencion=False,
+    regenerate=True,
 ):
     """
     Malla vertical (minor): ``SetBarIncluded`` según ``n_capas`` cabezal por extremo.
@@ -3759,22 +3753,25 @@ def _excluir_extremos_rebar_por_orientacion(
 
             return _cab_malla.aplicar_exclusion_verticales_malla_rebar(
                 rebar, ex_cfg_inicio, ex_cfg_fin, doc=doc, host=host,
+                regenerate=regenerate,
             )
         except Exception:
             if ajustar_inclusion_extremos_rebar_set_con_fallback is None:
                 return False
             return ajustar_inclusion_extremos_rebar_set_con_fallback(
-                rebar, doc, False, False,
+                rebar, doc, False, False, regenerate=regenerate,
             )
     try:
         import armado_muros_cabezal as _cab_malla
 
-        return _cab_malla.aplicar_exclusion_horizontal_malla_ultima_barra(rebar, doc)
+        return _cab_malla.aplicar_exclusion_horizontal_malla_ultima_barra(
+            rebar, doc, regenerate=regenerate,
+        )
     except Exception:
         if ajustar_inclusion_extremos_rebar_set_con_fallback is None:
             return False
         return ajustar_inclusion_extremos_rebar_set_con_fallback(
-            rebar, doc, True, False,
+            rebar, doc, True, False, regenerate=regenerate,
         )
 
 
@@ -3784,6 +3781,7 @@ def _desactivar_extremos_rebars_creados(
     cabezal_por_muro_id=None,
     params_por_muro_id=None,
     muro_contencion=False,
+    regenerate_each=True,
 ):
     """
     Excluye barras de extremo según orientación (horizontal vs vertical).
@@ -3834,12 +3832,18 @@ def _desactivar_extremos_rebars_creados(
                 ex_cfg_fin,
                 params_dict,
                 muro_contencion,
+                regenerate=regenerate_each,
             ):
                 n_ok += 1
             else:
                 n_skip += 1
         except Exception:
             n_skip += 1
+    if (not regenerate_each) and n_ok and doc is not None:
+        try:
+            doc.Regenerate()
+        except Exception:
+            pass
     return n_ok, n_skip
 
 
@@ -3924,9 +3928,18 @@ def _crear_armadura_un_muro_lineal(
     rebars_por_muro_id,
     cabezal_por_muro_id=None,
     skip_cover_assign=False,
+    skip_exclusion=False,
+    defer_remove=False,
+    pending_area_reins=None,
 ):
     """
-    Crea AR + remove system + excluir extremos para un muro (dentro de una Transaction abierta).
+    Crea AR (+ opcional Remove System / exclusión) para un muro (Transaction abierta).
+
+    ``defer_remove=True``: solo Create AR + malla; agrega a ``pending_area_reins``
+    ``(wid, area_rein_id, params_dict, layer_active_dict)`` para Remove System
+    tras un Regenerate compartido del lote.
+
+    ``skip_exclusion=True``: no excluye extremos aquí (lo hace el post-lote).
     Retorna 1 si el muro se procesó correctamente, 0 si no.
     """
     wid = _wall_id_int(wall)
@@ -4020,10 +4033,50 @@ def _crear_armadura_un_muro_lineal(
         except Exception as ex_malla:
             errores.append(u"Muro {}: parámetros malla — {}.".format(wid, str(ex_malla)))
             return 0
-    try:
-        doc.Regenerate()
-    except Exception:
-        pass
+
+    if defer_remove:
+        if pending_area_reins is not None:
+            pending_area_reins.append(
+                (wid, area_rein_id, params_dict, layer_active_dict),
+            )
+        return 1
+
+    return _finalizar_remove_system_muro_lineal(
+        doc,
+        wid,
+        area_rein_id,
+        params_dict,
+        layer_active_dict,
+        muro_contencion,
+        errores,
+        resumen_ok,
+        rebars_por_muro_id,
+        cabezal_por_muro_id=cabezal_por_muro_id,
+        skip_exclusion=skip_exclusion,
+        regenerate_before_remove=True,
+    )
+
+
+def _finalizar_remove_system_muro_lineal(
+    doc,
+    wid,
+    area_rein_id,
+    params_dict,
+    layer_active_dict,
+    muro_contencion,
+    errores,
+    resumen_ok,
+    rebars_por_muro_id,
+    cabezal_por_muro_id=None,
+    skip_exclusion=False,
+    regenerate_before_remove=True,
+):
+    """Remove Area System (+ exclusión opcional) tras Create AR."""
+    if regenerate_before_remove:
+        try:
+            doc.Regenerate()
+        except Exception:
+            pass
     area_for_remove = doc.GetElement(area_rein_id)
     if area_for_remove is None:
         errores.append(
@@ -4042,36 +4095,19 @@ def _crear_armadura_un_muro_lineal(
             u"Muro {}: Remove Area System no generó rebars.".format(wid),
         )
         return 0
-    try:
-        doc.Regenerate()
-    except Exception:
-        pass
-    try:
-        _desactivar_extremos_rebars_creados(
-            doc,
-            new_rebar_ids,
-            cabezal_por_muro_id=cabezal_por_muro_id,
-            params_por_muro_id={wid: (params_dict, layer_active_dict)},
-            muro_contencion=muro_contencion,
-        )
-    except Exception as ex_ext:
-        errores.append(u"Muro {}: exclusión extremos — {}.".format(wid, str(ex_ext)))
-        return 0
-    try:
-        from armado_muros_rebar_params import activar_armadura_arainco_por_ids
-
-        activar_armadura_arainco_por_ids(doc, new_rebar_ids)
-    except Exception:
-        pass
-    try:
-        _stamp_malla_params_rebars_por_muro(
-            doc,
-            {wid: list(new_rebar_ids)},
-            params_por_muro_id={wid: (params_dict, layer_active_dict)},
-            muro_contencion=muro_contencion,
-        )
-    except Exception:
-        pass
+    if not skip_exclusion:
+        try:
+            _desactivar_extremos_rebars_creados(
+                doc,
+                new_rebar_ids,
+                cabezal_por_muro_id=cabezal_por_muro_id,
+                params_por_muro_id={wid: (params_dict, layer_active_dict)},
+                muro_contencion=muro_contencion,
+                regenerate_each=False,
+            )
+        except Exception as ex_ext:
+            errores.append(u"Muro {}: exclusión extremos — {}.".format(wid, str(ex_ext)))
+            return 0
     rebars_por_muro_id[wid] = list(new_rebar_ids)
     for eid in new_rebar_ids:
         try:
@@ -4207,9 +4243,15 @@ def crear_areas_malla_parametrizada(doc, walls, params_por_muro_id,
                 )
 
             t = Transaction(doc, txn_name)
+            try:
+                from armado_muros_txn import attach_rebar_outside_host_swallower
+                attach_rebar_outside_host_swallower(t)
+            except Exception:
+                pass
             t.Start()
             lote_ok = False
             lote_wids_con_rebars = []
+            pending_area_reins = []
             try:
                 for wall in lote:
                     wid = _wall_id_int(wall)
@@ -4245,28 +4287,57 @@ def crear_areas_malla_parametrizada(doc, walls, params_por_muro_id,
                             rebars_por_muro_id,
                             cabezal_por_muro_id=cabezal_por_muro_id,
                             skip_cover_assign=skip_cover_assign,
+                            skip_exclusion=True,
+                            defer_remove=True,
+                            pending_area_reins=pending_area_reins,
                         )
                     except Exception as ex_muro:
                         errores.append(
                             u"Muro {}: {}.".format(wid, str(ex_muro)),
                         )
                         continue
-                    if n_creado and not skip_cover_assign:
-                        cover_asignados += n_creado
-                    if rebars_por_muro_id.get(wid):
-                        lote_wids_con_rebars.append(wid)
-                        hids_crea = _ids_rebars_malla_horizontal_desde_param(
-                            doc, rebars_por_muro_id.get(wid),
+
+                if pending_area_reins:
+                    try:
+                        doc.Regenerate()
+                    except Exception:
+                        pass
+                    for (
+                        wid_ar,
+                        area_rein_id,
+                        params_dict_ar,
+                        layer_active_ar,
+                    ) in pending_area_reins:
+                        n_fin = _finalizar_remove_system_muro_lineal(
+                            doc,
+                            wid_ar,
+                            area_rein_id,
+                            params_dict_ar,
+                            layer_active_ar,
+                            muro_contencion,
+                            errores,
+                            resumen_ok,
+                            rebars_por_muro_id,
+                            cabezal_por_muro_id=cabezal_por_muro_id,
+                            skip_exclusion=True,
+                            regenerate_before_remove=False,
                         )
-                        if hids_crea:
-                            embed_resumen = _merge_embed_resumen(
-                                embed_resumen,
-                                {
-                                    u"rebars_malla_horizontal_por_muro_id": {
-                                        int(wid): hids_crea,
-                                    },
-                                },
+                        if n_fin and not skip_cover_assign:
+                            cover_asignados += n_fin
+                        if rebars_por_muro_id.get(wid_ar):
+                            lote_wids_con_rebars.append(wid_ar)
+                            hids_crea = _ids_rebars_malla_horizontal_desde_param(
+                                doc, rebars_por_muro_id.get(wid_ar),
                             )
+                            if hids_crea:
+                                embed_resumen = _merge_embed_resumen(
+                                    embed_resumen,
+                                    {
+                                        u"rebars_malla_horizontal_por_muro_id": {
+                                            int(wid_ar): hids_crea,
+                                        },
+                                    },
+                                )
 
                 t.Commit()
                 lote_ok = True
@@ -4416,8 +4487,8 @@ def _fallback_bar_type_from_params(params_por_muro_id):
     return None
 
 
-def _aplicar_coronamiento_en_creacion(doc, walls, params_por_muro_id=None):
-    """Coronamiento automático en tope global del stack (siempre en creación)."""
+def _aplicar_coronamiento_en_creacion(doc, walls, params_por_muro_id=None, coronamiento_cfg=None):
+    """Coronamiento en tope/inf/voladizo; ``coronamiento_cfg`` opcional (UI unificada)."""
     embed = None
     msgs = []
     try:
@@ -4430,7 +4501,9 @@ def _aplicar_coronamiento_en_creacion(doc, walls, params_por_muro_id=None):
                 fb = doc.GetElement(fb_el)
             except Exception:
                 fb = None
-        cor_res = _cor_mod.aplicar_coronamiento_muros(doc, walls, bar_type_fallback=fb)
+        cor_res = _cor_mod.aplicar_coronamiento_muros(
+            doc, walls, bar_type_fallback=fb, config=coronamiento_cfg,
+        )
         embed = _merge_embed_resumen(embed, {
             u"n_coronamiento": int(cor_res.get(u"n_created", 0)),
             u"n_coronamiento_fail": int(cor_res.get(u"n_fail", 0)),
@@ -4447,6 +4520,7 @@ def _aplicar_coronamiento_en_creacion(doc, walls, params_por_muro_id=None):
             u"coronamiento_host_wall_id": cor_res.get(u"host_wall_id"),
             u"coronamiento_diam_mm": cor_res.get(u"diam_mm"),
             u"coronamiento_espesor_mm": cor_res.get(u"espesor_mm"),
+            u"coronamiento_skipped": bool(cor_res.get(u"skipped")),
             u"rebars_coronamiento_ids": list(cor_res.get(u"rebars_coronamiento_ids") or []),
             u"rebars_coronamiento_id_ints": list(
                 cor_res.get(u"rebars_coronamiento_id_ints") or [],
@@ -4524,6 +4598,7 @@ def _crear_armado_muros_unificado_impl(
     uidoc=None,
     malla_activo_por_muro_id=None,
     within_parent_transaction_group=False,
+    coronamiento_cfg=None,
 ):
     """
     Cuerpo del flujo unificado (cabezal, mallas, etiquetas).
@@ -4552,7 +4627,7 @@ def _crear_armado_muros_unificado_impl(
     })
 
     cor_embed, cor_msgs = _aplicar_coronamiento_en_creacion(
-        doc, walls_ord, params_por_muro_id,
+        doc, walls_ord, params_por_muro_id, coronamiento_cfg=coronamiento_cfg,
     )
     embed_resumen = _merge_embed_resumen(embed_resumen, cor_embed)
     for m in cor_msgs:
@@ -4614,6 +4689,7 @@ def _crear_armado_muros_unificado_impl(
         try:
             import armado_muros_cabezal as _cab_mod
 
+            msgs_antes = len(cab_res.get(u"messages") or [])
             _cab_mod.cabezal_aplicar_etiquetado_longitudinal_pendiente(
                 doc, cab_res, uidoc=uidoc,
             )
@@ -4628,6 +4704,10 @@ def _crear_armado_muros_unificado_impl(
                 u"n_empalme_markers_ok": int(cab_res.get(u"n_empalme_markers_ok", 0)),
                 u"n_empalme_markers_fail": int(cab_res.get(u"n_empalme_markers_fail", 0)),
             })
+            # Mensajes de etiquetas se añaden tras el merge inicial de cab_res.
+            for m in (cab_res.get(u"messages") or [])[msgs_antes:]:
+                if m:
+                    errores.append(m)
         except Exception as ex_tag:
             errores.append(u"Cabezal (etiquetas): {0}".format(ex_tag))
 
@@ -4684,6 +4764,7 @@ def crear_armado_muros_unificado(
     cabezal_por_muro_id,
     uidoc=None,
     malla_activo_por_muro_id=None,
+    coronamiento_cfg=None,
 ):
     """
     Flujo unificado (solo muro tradicional), orden constructivo:
@@ -4738,6 +4819,7 @@ def crear_armado_muros_unificado(
             uidoc=uidoc,
             malla_activo_por_muro_id=malla_activo_por_muro_id,
             within_parent_transaction_group=within_parent,
+            coronamiento_cfg=coronamiento_cfg,
         )
         flujo_ok = True
     except Exception as ex:
@@ -4829,7 +4911,7 @@ def _guard_vista_armado_muros(uidoc, uiapp=None):
         try:
             from armado_muros_etiqueta_malla import mensaje_vista_requerida_armado_muros
 
-            TaskDialog.Show(u"Arainco: Armado Muros", mensaje_vista_requerida_armado_muros(view))
+            TaskDialog.Show(u"Arainco: Armado Muros v2", mensaje_vista_requerida_armado_muros(view))
         except Exception:
             TaskDialog.Show(
                 u"Arainco: Armado Muros",
@@ -4878,7 +4960,7 @@ def run_mallas(revit):
 def run_unificado(revit):
     uidoc = revit.ActiveUIDocument
     if uidoc is None:
-        TaskDialog.Show(u"Arainco: Armado Muros — Error", u"No hay ventana Revit activa.")
+        TaskDialog.Show(u"Arainco: Armado Muros v2 — Error", u"No hay ventana Revit activa.")
         return
     if not _guard_vista_armado_muros(uidoc, revit):
         return
@@ -4890,7 +4972,7 @@ def run_unificado(revit):
     if walls is None:
         return
     if not walls and not getattr(_pick_muros, "_rechazo_paralelo", False):
-        TaskDialog.Show(u"Arainco: Armado Muros", u"No seleccionaste muros válidos.")
+        TaskDialog.Show(u"Arainco: Armado Muros v2", u"No seleccionaste muros válidos.")
         return
     if not walls:
         return

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Bootstrap de rutas: pushbutton + ``scripts/`` (34_ArmadoMuros portable)."""
+"""Bootstrap de rutas: pushbutton + ``scripts/`` (47_ArmadoMurosV2 portable)."""
 
 from __future__ import print_function
 

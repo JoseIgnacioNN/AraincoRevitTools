@@ -2,19 +2,21 @@
 """
 Unir geometría entre elementos de **material estructural hormigón** (Concrete) en la **vista activa**.
 
+Paquete portable: vive en ``<pushbutton>/scripts/`` (sin depender de scripts/ de la extensión).
+
 - Alcance: ejemplares a unir = **hormigón** de ``FilteredElementCollector(document, view.Id)``.
 - Candidatos por **solape de cajas** (``BoundingBoxIntersectsFilter`` + contorno inflado); la API
   de intersección sólida a menudo no devuelve pares con contacto mínimo (columna/viga).
-- Criterio de hormigón: ``material_estructural_es_concrete`` (BIMTools; material en instancia o tipo).
+- Criterio de hormigón: ``join_geometry_material_concrete.material_estructural_es_concrete``.
 - Tras unir, en pares **forjado + muro/viga/pilar/cimentación**: ``SwitchJoinOrder`` si hace
   falta para que el **forjado sea el recortado** (no el cortante), vía
   ``IsCuttingElementInJoin`` (mismo criterio que el flujo RPS de referencia).
 - Barra de progreso: ``pyrevit.forms.ProgressBar`` con acento BIMTools (91,192,222),
   patrón ``armado_muros_lineales`` — fases lectura, candidatos y unión.
-- Pantalla de inicio: diálogo WPF oscuro BIMTools (``join_geometry_instruction_dialog``).
-- Fallos «Can't cut joined element»: ``IFailuresPreprocessor`` intenta la resolución API
+- Pantalla de inicio / avisos: diálogo WPF shell BIMTools (``join_geometry_instruction_dialog``).
+- Fallos «Can't cut joined element»: ``IFailuresPreprocessor`` aplica la resolución API
   equivalente a *Unjoin elements* (``FailureResolutionType.UnjoinElements`` / ``DetachElements``)
-  antes de borrar el error de la cola.
+  y devuelve ``ProceedWithCommit`` para no mostrar el diálogo modal de Revit.
 - API: ``JoinGeometryUtils`` (Revit 2024+; pyRevit / IronPython).
 - Durante lectura / candidatos / unión: se deshabilita la ventana principal de Revit
   (``user32.EnableWindow``) para que no se lancen otros comandos; la barra de pyRevit
@@ -55,19 +57,15 @@ from Autodesk.Revit.DB import (
     XYZ,
 )
 from System.Collections.Generic import List
-from Autodesk.Revit.UI import TaskDialog
-
 try:
     from pyrevit import forms as _pyrevit_forms
 except Exception:
     _pyrevit_forms = None
 
-from geometria_colision_vigas import (
+from join_geometry_material_concrete import (
     _CATS_ESCANEO_MATERIAL_ESTRUCTURAL,
     material_estructural_es_concrete,
 )
-
-_DIALOG_TITLE = u"Arainco: Unir geometría (hormigón, vista)"
 
 _PBAR_BASE_LECTURA = u"Arainco: Unir geom. hormigón — lectura"
 _PBAR_BASE_CANDIDATOS = u"Arainco: Unir geom. hormigón — candidatos"
@@ -147,28 +145,44 @@ def _resolution_types_unjoin_ui_order():
     return out
 
 
+def _failure_has_resolutions(fma):
+    if fma is None:
+        return False
+    try:
+        if hasattr(fma, u"HasResolutions") and bool(fma.HasResolutions()):
+            return True
+    except System.Exception:
+        pass
+    try:
+        if hasattr(fma, u"GetNumberOfResolutions"):
+            return int(fma.GetNumberOfResolutions()) > 0
+    except System.Exception:
+        pass
+    return False
+
+
 def _try_resolve_failure_with_unjoin(failures_accessor, fma):
     """
-    Aplica la primera resolución permitida (Unjoin / Detach) al fallo ``fma``.
+    Aplica la resolución equivalente al botón *Unjoin Elements* del diálogo.
     Devuelve True si se llamó a ``ResolveFailure``.
     """
     if failures_accessor is None or fma is None:
         return False
-    for rt in _resolution_types_unjoin_ui_order():
-        permitted = False
+
+    def _permitted(rt):
         try:
-            permitted = bool(
-                failures_accessor.IsFailureResolutionPermitted(fma, rt)
-            )
+            return bool(failures_accessor.IsFailureResolutionPermitted(fma, rt))
         except System.Exception:
-            try:
-                if hasattr(failures_accessor, u"HasResolutionOfType"):
-                    permitted = bool(
-                        failures_accessor.HasResolutionOfType(fma, rt)
-                    )
-            except System.Exception:
-                permitted = False
-        if not permitted:
+            pass
+        try:
+            if hasattr(fma, u"HasResolutionOfType"):
+                return bool(fma.HasResolutionOfType(rt))
+        except System.Exception:
+            pass
+        return False
+
+    for rt in _resolution_types_unjoin_ui_order():
+        if not _permitted(rt):
             continue
         try:
             failures_accessor.SetCurrentResolutionType(fma, rt)
@@ -176,6 +190,20 @@ def _try_resolve_failure_with_unjoin(failures_accessor, fma):
             return True
         except System.Exception:
             continue
+
+    # Resolución por defecto del fallo (suele ser Unjoin Elements en este error).
+    try:
+        if _failure_has_resolutions(fma):
+            try:
+                if hasattr(failures_accessor, u"IsFailureResolutionPermitted"):
+                    if not bool(failures_accessor.IsFailureResolutionPermitted(fma)):
+                        return False
+            except (System.Exception, TypeError):
+                pass
+            failures_accessor.ResolveFailure(fma)
+            return True
+    except System.Exception:
+        pass
     return False
 
 
@@ -183,11 +211,12 @@ class _JoinGeomFailuresPreprocessor(IFailuresPreprocessor):
     """
     Trata la cola de fallos al ``Commit`` de un lote de ``JoinGeometry`` / ``SwitchJoinOrder``.
 
-    - **Errores** tipo «Can't cut joined element»: intenta la resolución de API
-      equivalente a *Unjoin elements* (``UnjoinElements`` / ``DetachElements``)
-      cuando Revit la marca como permitida, para no mostrar el diálogo modal.
+    - **Errores** tipo «Can't cut joined element»: resolución API *Unjoin elements*
+      (``UnjoinElements`` / ``DetachElements``) cuando Revit la permite.
     - **Warnings**: se eliminan de la cola.
-    - Si no hay resolución aplicable: ``DeleteError`` como respaldo (comportamiento anterior).
+    - Si se resolvió algún error: ``ProceedWithCommit`` (obligatorio; con ``Continue``
+      Revit muestra el diálogo aunque el fallo se haya tratado).
+    - Si no hay resolución aplicable: ``DeleteError`` como respaldo.
     """
 
     def _iter_msgs(self, failures_accessor):
@@ -222,6 +251,7 @@ class _JoinGeomFailuresPreprocessor(IFailuresPreprocessor):
         _msgs = []
         for f in self._iter_msgs(failures_accessor):
             _msgs.append(f)
+        resolved_or_cleared = False
         for f in _msgs:
             try:
                 sev = f.GetSeverity()
@@ -230,6 +260,7 @@ class _JoinGeomFailuresPreprocessor(IFailuresPreprocessor):
             if sev == FailureSeverity.Warning:
                 try:
                     failures_accessor.DeleteWarning(f)
+                    resolved_or_cleared = True
                 except System.Exception:
                     pass
                 continue
@@ -245,11 +276,16 @@ class _JoinGeomFailuresPreprocessor(IFailuresPreprocessor):
             )
             if _is_cut_joined:
                 if _try_resolve_failure_with_unjoin(failures_accessor, f):
+                    resolved_or_cleared = True
                     continue
             try:
                 failures_accessor.DeleteError(f)
+                resolved_or_cleared = True
             except System.Exception:
                 pass
+        # Continue mostraría el diálogo aunque se haya resuelto el fallo.
+        if resolved_or_cleared:
+            return FailureProcessingResult.ProceedWithCommit
         return FailureProcessingResult.Continue
 
 
@@ -642,19 +678,22 @@ def _switch_forjado_recortado_por_otro(doc, a, b, err_switch):
 
 
 def run(revit):
+    from join_geometry_instruction_dialog import (
+        mostrar_aviso,
+        show_selection_instructions,
+    )
+
     uidoc = revit.ActiveUIDocument
     if uidoc is None:
-        TaskDialog.Show(_DIALOG_TITLE, u"No hay documento activo.")
+        mostrar_aviso(revit, u"No hay documento activo.")
         return
 
     doc = uidoc.Document
     view = uidoc.ActiveView
     ok, msg = _vista_permitida(view)
     if not ok:
-        TaskDialog.Show(_DIALOG_TITLE, msg)
+        mostrar_aviso(revit, msg)
         return
-
-    from join_geometry_instruction_dialog import show_selection_instructions
 
     if not show_selection_instructions(revit):
         return
@@ -671,11 +710,11 @@ def run(revit):
             _pbar_exit(_pb1, _pbar1_open)
 
         if not elements_concrete:
-            TaskDialog.Show(
-                _DIALOG_TITLE,
-                u"No se encontraron en la vista activa elementos de las categorías "
-                u"consideradas (muros, forjados, pilares, cimentación) con material "
-                u"estructural hormigón (Concrete).",
+            mostrar_aviso(
+                revit,
+                u"No se encontraron elementos de hormigón en la vista activa.",
+                u"Revise muros, forjados, pilares y cimentación con material "
+                u"estructural Concrete.",
             )
             return
 
@@ -692,17 +731,17 @@ def run(revit):
             _pbar_exit(_pb2, _pbar2_open)
 
         if not pairs:
-            TaskDialog.Show(
-                _DIALOG_TITLE,
-                u"Hay ejemplares de hormigón en la vista, pero no se detectaron "
-                u"pares (cajas) candidatos a unir.",
+            mostrar_aviso(
+                revit,
+                u"No se detectaron pares candidatos a unir.",
+                u"Hay ejemplares de hormigón en la vista, pero ninguna caja "
+                u"solapada entre sí.",
             )
             return
 
         ya_unidos = 0
         nuevos = 0
         fallos = 0
-        err_msgs = []
         inversiones = 0
         err_switch = []
 
@@ -715,6 +754,10 @@ def run(revit):
         try:
             _fho = tx.GetFailureHandlingOptions()
             _fho.SetFailuresPreprocessor(_JoinGeomFailuresPreprocessor())
+            try:
+                _fho.SetClearAfterRollback(True)
+            except System.Exception:
+                pass
             tx.SetFailureHandlingOptions(_fho)
         except System.Exception:
             pass
@@ -747,14 +790,6 @@ def run(revit):
                         nuevos += 1
                     else:
                         fallos += 1
-                        if len(err_msgs) < 10:
-                            err_msgs.append(
-                                u"Ids {0}–{1}: {2}".format(
-                                    _element_id_to_int(ida),
-                                    _element_id_to_int(idb),
-                                    swap_or_err or u"",
-                                )
-                            )
                         continue
                 if _switch_forjado_recortado_por_otro(doc, a, b, err_switch):
                     inversiones += 1
@@ -764,43 +799,38 @@ def run(revit):
                 tx.RollBack()
             except Exception:
                 pass
-            TaskDialog.Show(
-                _DIALOG_TITLE,
-                u"Error en la transacción:\n\n{0}".format(ex),
+            mostrar_aviso(
+                revit,
+                u"No se pudo completar la unión de geometría.",
+                _exc_text(ex),
             )
             return
         finally:
             _pbar_exit(_pb, _pbar_open)
 
-    resumen = (
-        u"Proceso completado.\n\n"
-        u"Vista: {0}\n"
-        u"Ejemplares de hormigón (en vista): {1}\n"
-        u"Pares candidatos (caja): {2}\n"
-        u"Nuevas uniones: {3}\n"
-        u"Ya estaban unidos: {4}\n"
-        u"Sin unir (no permitido o error): {5}\n"
-        u"Inversión de orden (forjado recortado): {6}"
-    ).format(
-        getattr(view, u"Name", u"?") or u"?",
-        len(elements_concrete),
-        len(pairs),
-        nuevos,
-        ya_unidos,
-        fallos,
-        inversiones,
-    )
-    if err_msgs:
-        resumen += u"\n\nDetalle unión (máx. 10):\n" + u"\n".join(err_msgs)
-    if err_switch:
-        resumen += u"\n\nAvisos SwitchJoin (forjado):\n" + u"\n".join(err_switch)
-    if nuevos <= 1 and ya_unidos > 100 and len(pairs) > 0:
-        resumen += (
-            u"\n\nNota: «Ya estaban unidos» no interrumpe el bucle: solo cuenta y "
-            u"sale al siguiente par. Tras unir en una ejecución previa, es normal "
-            u"ver muchos en esa línea. Un diálogo de Revit (p. ej. corte) durante la "
-            u"unión se gestiona al cerrar el Commit; el script sigue con el resto de "
-            u"pares. Forjado–viga: forjado estructural o material detectado como concrete."
+    view_name = getattr(view, u"Name", u"?") or u"?"
+    if nuevos > 0 or inversiones > 0:
+        detalle = u"Vista: {0}. Nuevas uniones: {1}.".format(view_name, nuevos)
+        if inversiones > 0:
+            detalle += u" Órdenes de corte ajustados: {0}.".format(inversiones)
+        mostrar_aviso(revit, u"Proceso completado correctamente.", detalle)
+    elif ya_unidos > 0 and fallos == 0:
+        mostrar_aviso(
+            revit,
+            u"Proceso completado correctamente.",
+            u"Vista: {0}. Los pares candidatos ya estaban unidos.".format(
+                view_name
+            ),
         )
-
-    TaskDialog.Show(_DIALOG_TITLE, resumen)
+    elif fallos > 0 and nuevos == 0:
+        mostrar_aviso(
+            revit,
+            u"No se pudieron crear uniones nuevas.",
+            u"Vista: {0}. Pares sin unir: {1}.".format(view_name, fallos),
+        )
+    else:
+        mostrar_aviso(
+            revit,
+            u"Proceso completado correctamente.",
+            u"Vista: {0}.".format(view_name),
+        )

@@ -19,6 +19,58 @@ from Autodesk.Revit.DB import Wall
 
 _WALL_NODE_MOD = None
 
+# Caché de sesión: (doc_hash, host_id) -> lista de ElementId vecinos Wall
+_MUROS_VECINOS_CACHE = {}
+# (doc_hash, host_id, extremo) -> lista de ElementId
+_VECINOS_EXTREMO_CACHE = {}
+# (doc_hash, host_id) -> lista de ElementId cara lateral / T
+_VECINOS_CARA_CACHE = {}
+
+
+def clear_vecinos_caches():
+    """Invalida cachés de vecinos (nueva sesión UI / cambio de selección)."""
+    _MUROS_VECINOS_CACHE.clear()
+    _VECINOS_EXTREMO_CACHE.clear()
+    _VECINOS_CARA_CACHE.clear()
+
+
+def _doc_cache_key(doc):
+    try:
+        return int(doc.GetHashCode())
+    except Exception:
+        try:
+            return id(doc)
+        except Exception:
+            return 0
+
+
+def _host_id_int(host):
+    try:
+        wns = _load_wall_node_section()
+        if wns is not None:
+            return int(wns._element_id_to_int(host.Id))
+    except Exception:
+        pass
+    try:
+        return int(host.Id.IntegerValue)
+    except Exception:
+        try:
+            return int(host.Id.Value)
+        except Exception:
+            return None
+
+
+def _walls_from_ids(doc, ids):
+    out = []
+    for eid in ids or []:
+        try:
+            el = doc.GetElement(eid)
+        except Exception:
+            el = None
+        if el is not None and isinstance(el, Wall):
+            out.append(el)
+    return out
+
 
 def _pushbutton_dir():
     here = os.path.dirname(os.path.abspath(__file__))
@@ -56,6 +108,11 @@ def muros_vecinos_en_extremos(doc, host):
     if doc is None or host is None or not isinstance(host, Wall):
         return []
 
+    hid = _host_id_int(host)
+    cache_key = (_doc_cache_key(doc), hid)
+    if hid is not None and cache_key in _MUROS_VECINOS_CACHE:
+        return _walls_from_ids(doc, _MUROS_VECINOS_CACHE[cache_key])
+
     wns = _load_wall_node_section()
     if wns is None:
         return []
@@ -82,6 +139,7 @@ def muros_vecinos_en_extremos(doc, host):
 
     out = []
     seen = set()
+    id_list = []
     for el in elementos or []:
         if el is None or not isinstance(el, Wall):
             continue
@@ -96,6 +154,13 @@ def muros_vecinos_en_extremos(doc, host):
                 continue
             seen.add(eid)
         out.append(el)
+        try:
+            id_list.append(el.Id)
+        except Exception:
+            pass
+
+    if hid is not None:
+        _MUROS_VECINOS_CACHE[cache_key] = id_list
     return out
 
 
@@ -177,10 +242,26 @@ def vecino_en_extremo_muro(doc, host, extremo, neighbor):
 
 def vecinos_en_extremo(doc, host, extremo):
     """Vecinos del host filtrados al extremo indicado."""
+    if doc is None or host is None or not isinstance(host, Wall):
+        return []
+    if extremo not in (u"inicio", u"fin"):
+        return []
+    hid = _host_id_int(host)
+    cache_key = (_doc_cache_key(doc), hid, extremo)
+    if hid is not None and cache_key in _VECINOS_EXTREMO_CACHE:
+        return _walls_from_ids(doc, _VECINOS_EXTREMO_CACHE[cache_key])
+
     out = []
+    id_list = []
     for w in muros_vecinos_en_extremos(doc, host):
         if vecino_en_extremo_muro(doc, host, extremo, w):
             out.append(w)
+            try:
+                id_list.append(w.Id)
+            except Exception:
+                pass
+    if hid is not None:
+        _VECINOS_EXTREMO_CACHE[cache_key] = id_list
     return out
 
 
@@ -192,6 +273,11 @@ def vecinos_cara_lateral_o_t(doc, host):
     """
     if doc is None or host is None or not isinstance(host, Wall):
         return []
+
+    hid = _host_id_int(host)
+    cache_key = (_doc_cache_key(doc), hid)
+    if hid is not None and cache_key in _VECINOS_CARA_CACHE:
+        return _walls_from_ids(doc, _VECINOS_CARA_CACHE[cache_key])
 
     wns = _load_wall_node_section()
     if wns is None:
@@ -223,6 +309,7 @@ def vecinos_cara_lateral_o_t(doc, host):
 
     out = []
     seen = set()
+    id_list = []
     from Autodesk.Revit.DB import LocationCurve
 
     for w in muros_vecinos_en_extremos(doc, host):
@@ -255,6 +342,13 @@ def vecinos_cara_lateral_o_t(doc, host):
         except Exception:
             pass
         out.append(w)
+        try:
+            id_list.append(w.Id)
+        except Exception:
+            pass
+
+    if hid is not None:
+        _VECINOS_CARA_CACHE[cache_key] = id_list
     return out
 
 

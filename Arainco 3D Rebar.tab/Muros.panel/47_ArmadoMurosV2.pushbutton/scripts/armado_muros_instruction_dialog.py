@@ -3,7 +3,7 @@
 
 from Autodesk.Revit.UI import TaskDialog
 
-_DIALOG = u"Arainco: Armado Muros"
+_DIALOG = u"Arainco: Armado Muros v2"
 
 try:
     from bimtools_instruction_dialog import (

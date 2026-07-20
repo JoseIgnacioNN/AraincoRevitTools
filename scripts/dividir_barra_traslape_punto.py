@@ -61,6 +61,18 @@ except Exception:
 
 _DIALOG_TITLE = u"Arainco: Dividir barra con traslape"
 _TRANSACTION_NAME = u"Arainco: Dividir barra con traslape"
+
+# Modos de solape respecto al punto de corte C (mm en el vano principal).
+SPLICE_SYMMETRIC = u"symmetric"  # solape [C−L/2, C+L/2]
+SPLICE_FORWARD = u"forward"  # solape [C, C+L] — T1 se alarga
+SPLICE_BACKWARD = u"backward"  # solape [C−L, C] — T2 se alarga
+SPLICE_MODES = (SPLICE_SYMMETRIC, SPLICE_FORWARD, SPLICE_BACKWARD)
+
+SPLICE_MODE_LABELS = {
+    SPLICE_SYMMETRIC: u"Simétrico (±½ traslape)",
+    SPLICE_FORWARD: u"Hacia adelante (C → C+L)",
+    SPLICE_BACKWARD: u"Hacia atrás (C−L → C)",
+}
 _MIN_MARGEN_MM = 50.0
 _DIAG_DIALOG_LINES = 14
 
@@ -544,6 +556,185 @@ def _normal_from_chain(curves, fallback):
     return fallback
 
 
+def _xyz_fmt(p):
+    if p is None:
+        return u"None"
+    try:
+        return u"({0:.1f},{1:.1f},{2:.1f})".format(
+            _internal_to_mm(float(p.X)),
+            _internal_to_mm(float(p.Y)),
+            _internal_to_mm(float(p.Z)),
+        )
+    except Exception:
+        return u"?"
+
+
+def _vec_fmt(v):
+    if v is None:
+        return u"None"
+    try:
+        return u"({0:.4f},{1:.4f},{2:.4f})".format(float(v.X), float(v.Y), float(v.Z))
+    except Exception:
+        return u"?"
+
+
+def _dot_safe(a, b):
+    try:
+        return float(a.DotProduct(b))
+    except Exception:
+        return None
+
+
+def _normals_same_hemisphere(n0, n1):
+    d = _dot_safe(n0, n1)
+    if d is None:
+        return True
+    return d >= 0.0
+
+
+def _chain_sample_points(curves, n_samples=5):
+    """Puntos a lo largo de la cadena (inicio…fin) para comparar pose."""
+    if not curves:
+        return []
+    total = _chain_total_length(curves)
+    if total <= 1e-12:
+        try:
+            return [curves[0].GetEndPoint(0)]
+        except Exception:
+            return []
+    out = []
+    n_samples = max(2, int(n_samples))
+    for i in range(n_samples):
+        target = total * (float(i) / float(n_samples - 1))
+        accum = 0.0
+        pt = None
+        for c in curves:
+            cl = float(c.Length)
+            if target <= accum + cl + 1e-9:
+                local = max(0.0, target - accum)
+                try:
+                    pt = c.Evaluate(_param_at_dist_from_start(c, local), False)
+                except Exception:
+                    try:
+                        pt = c.GetEndPoint(0 if local < 0.5 * cl else 1)
+                    except Exception:
+                        pt = None
+                break
+            accum += cl
+        if pt is None:
+            try:
+                pt = curves[-1].GetEndPoint(1)
+            except Exception:
+                continue
+        out.append(pt)
+    return out
+
+
+def _mean_delta_xyz(points_a, points_b):
+    """Delta medio A←B (b + delta ≈ a)."""
+    if not points_a or not points_b or len(points_a) != len(points_b):
+        return None, None
+    sx = sy = sz = 0.0
+    n = 0
+    for pa, pb in zip(points_a, points_b):
+        try:
+            sx += float(pa.X) - float(pb.X)
+            sy += float(pa.Y) - float(pb.Y)
+            sz += float(pa.Z) - float(pb.Z)
+            n += 1
+        except Exception:
+            continue
+    if n < 1:
+        return None, None
+    delta = XYZ(sx / n, sy / n, sz / n)
+    return delta, float(delta.GetLength())
+
+
+def _log_pose_compare(diag, label, orig_rebar, new_rebar, expected_curves):
+    """Instrumentación: normal, lado de layout y desfase espacial vs origen."""
+    if diag is None:
+        return
+    try:
+        a0 = _shape_driven_accessor(orig_rebar)
+        a1 = _shape_driven_accessor(new_rebar)
+        n0 = a0.Normal if a0 is not None else None
+        n1 = a1.Normal if a1 is not None else None
+        side0 = bool(a0.BarsOnNormalSide) if a0 is not None else None
+        side1 = bool(a1.BarsOnNormalSide) if a1 is not None else None
+        diag.log(
+            u"Pose[{0}] normal_orig={1} normal_new={2} dot={3}".format(
+                label, _vec_fmt(n0), _vec_fmt(n1), _dot_safe(n0, n1)
+            )
+        )
+        diag.log(
+            u"Pose[{0}] BarsOnNormalSide orig={1} new={2}".format(label, side0, side1)
+        )
+        n_pos = min(_cantidad_posiciones(orig_rebar), _cantidad_posiciones(new_rebar))
+        # Solo comparar transforms relativos si ya no es Single.
+        rule_new = _layout_rule_nombre(new_rebar) or u""
+        if rule_new != u"Single" and n_pos >= 1:
+            for i in range(max(1, n_pos)):
+                ti = _get_bar_transform(orig_rebar, i)
+                tn = _get_bar_transform(new_rebar, i)
+                o_i = ti.Origin if ti is not None else None
+                o_n = tn.Origin if tn is not None else None
+                d = None
+                if o_i is not None and o_n is not None:
+                    try:
+                        d = _internal_to_mm(float(o_i.DistanceTo(o_n)))
+                    except Exception:
+                        d = None
+                diag.log(
+                    u"Pose[{0}] bar{1} T_rel_orig={2} T_rel_new={3} d_rel={4} mm".format(
+                        label, i, _xyz_fmt(o_i), _xyz_fmt(o_n), d
+                    )
+                )
+                # Midpoints visuales (mundo)
+                try:
+                    m_o = _rebar_midpoint_xyz(orig_rebar, i)
+                    m_n = _rebar_midpoint_xyz(new_rebar, i)
+                    d_m = None
+                    if m_o is not None and m_n is not None:
+                        d_m = _internal_to_mm(float(m_o.DistanceTo(m_n)))
+                    diag.log(
+                        u"Pose[{0}] bar{1} mid_orig={2} mid_new={3} d_mid={4} mm".format(
+                            label, i, _xyz_fmt(m_o), _xyz_fmt(m_n), d_m
+                        )
+                    )
+                except Exception:
+                    pass
+        exp = list(expected_curves or [])
+        act = _centerline_chain(new_rebar, 0)
+        if exp and act:
+            pe = _chain_sample_points(exp, 5)
+            pa = _chain_sample_points(act, 5)
+            delta, dist = _mean_delta_xyz(pe, pa)
+            rms = 0.0
+            nrms = 0
+            if delta is not None and pe and pa:
+                for ept, apt in zip(pe, pa):
+                    try:
+                        moved = apt.Add(delta)
+                        rms += float(ept.DistanceTo(moved)) ** 2
+                        nrms += 1
+                    except Exception:
+                        pass
+                if nrms:
+                    rms = (rms / nrms) ** 0.5
+            diag.log(
+                u"Pose[{0}] cadena_visual: mean_delta={1} mm rms_post={2:.2f} mm "
+                u"exp0={3} act0={4}".format(
+                    label,
+                    _internal_to_mm(dist) if dist is not None else None,
+                    _internal_to_mm(rms) if nrms else -1.0,
+                    _xyz_fmt(pe[0]) if pe else u"?",
+                    _xyz_fmt(pa[0]) if pa else u"?",
+                )
+            )
+    except Exception as ex:
+        diag.ex(u"PoseCompare[{0}]".format(label), ex)
+
+
 def _rebind_curve_start(crv, new_start, min_len):
     if crv is None or new_start is None:
         return None
@@ -846,7 +1037,74 @@ def build_bar_preview_model(chain, lap_mm, diameter_mm):
     }
 
 
-def _validate_cuts_on_main(cuts_mm, main_len_mm, lap_mm):
+def normalize_splice_mode(mode):
+    """Normaliza el modo de solape; por defecto simétrico."""
+    try:
+        key = unicode(mode or u"").strip().lower()
+    except NameError:
+        key = str(mode or u"").strip().lower()
+    if key in SPLICE_MODES:
+        return key
+    return SPLICE_SYMMETRIC
+
+
+def splice_overlap_zone_mm(cut_mm, lap_mm, splice_mode=None):
+    """Zona de solape [a, b] en mm sobre el vano para un corte C."""
+    mode = normalize_splice_mode(splice_mode)
+    c = float(cut_mm)
+    lap = float(lap_mm)
+    if mode == SPLICE_FORWARD:
+        return c, c + lap
+    if mode == SPLICE_BACKWARD:
+        return c - lap, c
+    half = 0.5 * lap
+    return c - half, c + half
+
+
+def _piece_ranges_on_main(cuts_ft, main_len, lap_ft, splice_mode):
+    """
+    Rangos (d0, d1) de cada tramo sobre el vano principal (unidades internas).
+
+    - symmetric: extremos ± half_lap alrededor de cada C
+    - forward: tramos intermedios terminan en C+L; el siguiente empieza en C
+    - backward: tramos intermedios empiezan en C−L; el anterior termina en C
+    """
+    mode = normalize_splice_mode(splice_mode)
+    cuts = list(cuts_ft or [])
+    n_pieces = len(cuts) + 1
+    lap = float(lap_ft)
+    main = float(main_len)
+    out = []
+    for i in range(n_pieces):
+        if mode == SPLICE_FORWARD:
+            if i == 0:
+                d0, d1 = 0.0, cuts[0] + lap
+            elif i == n_pieces - 1:
+                d0, d1 = cuts[-1], main
+            else:
+                d0, d1 = cuts[i - 1], cuts[i] + lap
+        elif mode == SPLICE_BACKWARD:
+            if i == 0:
+                d0, d1 = 0.0, cuts[0]
+            elif i == n_pieces - 1:
+                d0, d1 = cuts[-1] - lap, main
+            else:
+                d0, d1 = cuts[i - 1] - lap, cuts[i]
+        else:
+            half = 0.5 * lap
+            if i == 0:
+                d0, d1 = 0.0, cuts[0] + half
+            elif i == n_pieces - 1:
+                d0, d1 = cuts[-1] - half, main
+            else:
+                d0, d1 = cuts[i - 1] - half, cuts[i] + half
+        d0 = max(0.0, min(main, float(d0)))
+        d1 = max(0.0, min(main, float(d1)))
+        out.append((d0, d1))
+    return out
+
+
+def _validate_cuts_on_main(cuts_mm, main_len_mm, lap_mm, splice_mode=None):
     """Valida lista de cortes (mm desde inicio del vano principal)."""
     if not cuts_mm:
         return False, u"Indique al menos un punto de división sobre el vano principal."
@@ -854,28 +1112,78 @@ def _validate_cuts_on_main(cuts_mm, main_len_mm, lap_mm):
         cuts = sorted(set(float(c) for c in cuts_mm))
     except Exception:
         return False, u"Cortes no válidos."
-    half = 0.5 * float(lap_mm)
+    mode = normalize_splice_mode(splice_mode)
+    lap = float(lap_mm)
     margen = float(_MIN_MARGEN_MM)
-    if main_len_mm <= 2.0 * half + 2.0 * margen:
-        return (
-            False,
-            u"El vano principal ({:.0f} mm) es demasiado corto para el traslape.".format(
-                main_len_mm
-            ),
-        )
-    for c in cuts:
-        if c < half + margen:
+    main_len = float(main_len_mm)
+
+    if mode == SPLICE_FORWARD:
+        if main_len <= lap + 2.0 * margen:
             return (
                 False,
-                u"Corte a {:.0f} mm demasiado cerca del inicio del vano (traslape).".format(c),
+                u"El vano principal ({:.0f} mm) es demasiado corto para el traslape.".format(
+                    main_len
+                ),
             )
-        if c > main_len_mm - half - margen:
+        for c in cuts:
+            if c < margen:
+                return (
+                    False,
+                    u"Corte a {:.0f} mm demasiado cerca del inicio del vano.".format(c),
+                )
+            if c > main_len - lap - margen:
+                return (
+                    False,
+                    u"Corte a {:.0f} mm demasiado cerca del final del vano "
+                    u"(hace falta espacio para el traslape hacia adelante).".format(c),
+                )
+    elif mode == SPLICE_BACKWARD:
+        if main_len <= lap + 2.0 * margen:
             return (
                 False,
-                u"Corte a {:.0f} mm demasiado cerca del final del vano (traslape).".format(c),
+                u"El vano principal ({:.0f} mm) es demasiado corto para el traslape.".format(
+                    main_len
+                ),
             )
+        for c in cuts:
+            if c < lap + margen:
+                return (
+                    False,
+                    u"Corte a {:.0f} mm demasiado cerca del inicio del vano "
+                    u"(hace falta espacio para el traslape hacia atrás).".format(c),
+                )
+            if c > main_len - margen:
+                return (
+                    False,
+                    u"Corte a {:.0f} mm demasiado cerca del final del vano.".format(c),
+                )
+    else:
+        half = 0.5 * lap
+        if main_len <= 2.0 * half + 2.0 * margen:
+            return (
+                False,
+                u"El vano principal ({:.0f} mm) es demasiado corto para el traslape.".format(
+                    main_len
+                ),
+            )
+        for c in cuts:
+            if c < half + margen:
+                return (
+                    False,
+                    u"Corte a {:.0f} mm demasiado cerca del inicio del vano (traslape).".format(
+                        c
+                    ),
+                )
+            if c > main_len - half - margen:
+                return (
+                    False,
+                    u"Corte a {:.0f} mm demasiado cerca del final del vano (traslape).".format(
+                        c
+                    ),
+                )
+
     for i in range(len(cuts) - 1):
-        if cuts[i + 1] - cuts[i] < float(lap_mm) + 2.0 * margen:
+        if cuts[i + 1] - cuts[i] < lap + 2.0 * margen:
             return (
                 False,
                 u"Los cortes {:.0f} mm y {:.0f} mm están demasiado próximos.".format(
@@ -1332,7 +1640,7 @@ def _array_length_internal(acc):
             return 0.0
 
 
-def _copy_layout_rebar_shape_driven(src, dst):
+def _copy_layout_rebar_shape_driven(src, dst, diag=None):
     """Replica regla de layout, cantidad y posiciones del conjunto origen."""
     a0 = src.GetShapeDrivenAccessor()
     a1 = dst.GetShapeDrivenAccessor()
@@ -1343,6 +1651,20 @@ def _copy_layout_rebar_shape_driven(src, dst):
     sp = _spacing_internal(src)
     alen = _array_length_internal(a0)
     b_side = bool(a0.BarsOnNormalSide)
+    # Si CreateFromCurves dejó la normal invertida, invertir el lado del array.
+    try:
+        n0 = a0.Normal
+        n1 = a1.Normal
+        if n0 is not None and n1 is not None and not _normals_same_hemisphere(n0, n1):
+            b_side = not b_side
+            if diag:
+                diag.log(
+                    u"Layout: normal invertida vs origen → BarsOnNormalSide={0}".format(
+                        b_side
+                    )
+                )
+    except Exception:
+        pass
     inc0 = bool(src.IncludeFirstBar)
     inc1 = bool(src.IncludeLastBar)
     nbars = _cantidad_posiciones(src)
@@ -1457,10 +1779,26 @@ def _alinear_rebar_a_transform_barra(document, new_rebar, orig_rebar, bar_index,
     ti = _get_bar_transform(orig_rebar, bi)
     tn = _get_bar_transform(new_rebar, bi)
     if ti is None or tn is None:
+        if diag:
+            diag.log(
+                u"Alineado transform: sin GetBarPositionTransform "
+                u"(orig={0} new={1} idx={2})".format(
+                    ti is not None, tn is not None, bi
+                )
+            )
         return
     try:
         delta = ti.Origin.Subtract(tn.Origin)
         dist = float(delta.GetLength())
+        if diag:
+            diag.log(
+                u"Alineado transform idx={0}: d={1:.2f} mm before={2} target={3}".format(
+                    bi,
+                    _internal_to_mm(dist),
+                    _xyz_fmt(tn.Origin),
+                    _xyz_fmt(ti.Origin),
+                )
+            )
         if dist < _mm_to_internal(0.5):
             return
         ElementTransformUtils.MoveElement(document, new_rebar.Id, delta)
@@ -1470,8 +1808,69 @@ def _alinear_rebar_a_transform_barra(document, new_rebar, orig_rebar, bar_index,
                     _internal_to_mm(dist), bi
                 )
             )
+    except Exception as ex:
+        if diag:
+            diag.ex(u"Alineado transform", ex)
+
+
+def _try_fix_array_side_if_misaligned(document, orig, new_rb, curves_tpl, diag=None):
+    """
+    Si barra 0 cuadra pero barra 1 queda lejos, invertir BarsOnNormalSide y realinear.
+    """
+    n = _cantidad_posiciones(orig)
+    if n < 2:
+        return False
+    ti0 = _get_bar_transform(orig, 0)
+    tn0 = _get_bar_transform(new_rb, 0)
+    ti1 = _get_bar_transform(orig, 1)
+    tn1 = _get_bar_transform(new_rb, 1)
+    if ti0 is None or tn0 is None or ti1 is None or tn1 is None:
+        return False
+    try:
+        d0 = float(ti0.Origin.DistanceTo(tn0.Origin))
+        d1 = float(ti1.Origin.DistanceTo(tn1.Origin))
     except Exception:
-        pass
+        return False
+    # Solo actuar si bar0 está cerca y bar1 desviada claramente.
+    if d0 > _mm_to_internal(15.0) or d1 < _mm_to_internal(25.0):
+        return False
+    if diag:
+        diag.log(
+            u"Pose: bar0 ok ({0:.1f} mm) pero bar1 desviada ({1:.1f} mm) "
+            u"→ reintento con lado de array invertido".format(
+                _internal_to_mm(d0), _internal_to_mm(d1)
+            )
+        )
+    a0 = _shape_driven_accessor(orig)
+    a1 = _shape_driven_accessor(new_rb)
+    if a0 is None or a1 is None:
+        return False
+    try:
+        rule_name = _layout_rule_name_accessor(orig, a0)
+        sp = _spacing_internal(orig)
+        alen = _array_length_internal(a0)
+        b_side = not bool(a1.BarsOnNormalSide)
+        inc0 = bool(orig.IncludeFirstBar)
+        inc1 = bool(orig.IncludeLastBar)
+        nbars = n
+        if rule_name == u"MaximumSpacing":
+            a1.SetLayoutAsMaximumSpacing(sp, alen, b_side, inc0, inc1)
+        elif rule_name in (u"Number", u"FixedNumber"):
+            a1.SetLayoutAsFixedNumber(nbars, alen, b_side, inc0, inc1)
+        elif rule_name == u"NumberWithSpacing":
+            a1.SetLayoutAsNumberWithSpacing(nbars, sp, alen, b_side, inc0, inc1)
+        elif rule_name == u"MinimumClearSpacing":
+            a1.SetLayoutAsMinimumClearSpacing(sp, alen, b_side, inc0, inc1)
+        else:
+            a1.SetLayoutAsFixedNumber(nbars, alen, b_side, inc0, inc1)
+        document.Regenerate()
+        _alinear_rebar_a_transform_barra(document, new_rb, orig, 0, diag=diag)
+        _alinear_rebar_a_cadena_esperada(document, new_rb, curves_tpl, diag=diag)
+        return True
+    except Exception as ex:
+        if diag:
+            diag.ex(u"Flip array side", ex)
+        return False
 
 
 def _finalize_new_rebar_set(document, orig, new_rb, curves_tpl, diag=None):
@@ -1481,8 +1880,11 @@ def _finalize_new_rebar_set(document, orig, new_rb, curves_tpl, diag=None):
     n = _cantidad_posiciones(orig)
     ok, err = True, u""
 
+    if diag:
+        _log_pose_compare(diag, u"pre-layout", orig, new_rb, curves_tpl)
+
     if n > 1:
-        ok, err = _copy_layout_rebar_shape_driven(orig, new_rb)
+        ok, err = _copy_layout_rebar_shape_driven(orig, new_rb, diag=diag)
         if diag:
             if ok:
                 diag.log(
@@ -1493,9 +1895,35 @@ def _finalize_new_rebar_set(document, orig, new_rb, curves_tpl, diag=None):
             else:
                 diag.log(u"Layout NO copiado: {0}".format(err))
         _sync_bars_included_from_original(orig, new_rb)
+        try:
+            document.Regenerate()
+        except Exception:
+            pass
+        # Primero alinear el conjunto por transform de barra 0…
         _alinear_rebar_a_transform_barra(document, new_rb, orig, 0, diag=diag)
 
+    # …y al final imponer la geometría del tramo (gana sobre el transform).
     _alinear_rebar_a_cadena_esperada(document, new_rb, curves_tpl, diag=diag)
+
+    if n > 1:
+        try:
+            document.Regenerate()
+        except Exception:
+            pass
+        _try_fix_array_side_if_misaligned(
+            document, orig, new_rb, curves_tpl, diag=diag
+        )
+        _copy_moved_bar_transforms(orig, new_rb, diag=diag)
+
+    try:
+        document.Regenerate()
+    except Exception:
+        pass
+    # Tras regen, constraints/shape pueden desplazar: reimponer pose visual.
+    _alinear_rebar_a_cadena_esperada(document, new_rb, curves_tpl, diag=diag)
+
+    if diag:
+        _log_pose_compare(diag, u"post-align", orig, new_rb, curves_tpl)
     return ok, err
 
 
@@ -1510,33 +1938,40 @@ def _asegurar_layout_single(rebar):
 
 def _alinear_rebar_a_cadena_esperada(document, new_rebar, expected_curves, diag=None):
     """
-    Corrige el desfase de CreateFromCurves moviendo la barra para que el inicio
-    de su centerline coincida con el de la cadena recortada (ya en coords. mundo).
+    Corrige el desfase de CreateFromCurves moviendo la barra para que su
+    centerline coincida (traslación rígida) con la cadena recortada.
     """
     if new_rebar is None or not expected_curves:
-        return
-    try:
-        exp_start = expected_curves[0].GetEndPoint(0)
-    except Exception:
         return
     actual = _centerline_chain(new_rebar, 0)
     if not actual:
         return
     try:
-        act_start = actual[0].GetEndPoint(0)
-        delta = exp_start.Subtract(act_start)
-        dist = float(delta.GetLength())
+        pe = _chain_sample_points(expected_curves, 5)
+        pa = _chain_sample_points(actual, 5)
+        delta, dist = _mean_delta_xyz(pe, pa)
+        if delta is None or dist is None:
+            # Fallback: solo extremo inicial
+            exp_start = expected_curves[0].GetEndPoint(0)
+            act_start = actual[0].GetEndPoint(0)
+            delta = exp_start.Subtract(act_start)
+            dist = float(delta.GetLength())
+        if diag:
+            diag.log(
+                u"Alineado cadena: mean_delta={0:.2f} mm".format(_internal_to_mm(dist))
+            )
         if dist < _mm_to_internal(0.5):
             return
         ElementTransformUtils.MoveElement(document, new_rebar.Id, delta)
         if diag:
             diag.log(
-                u"Alineado inicio {0:.2f} mm (cadena esperada vs creada)".format(
+                u"Alineado inicio/cadena {0:.2f} mm (cadena esperada vs creada)".format(
                     _internal_to_mm(dist)
                 )
             )
-    except Exception:
-        pass
+    except Exception as ex:
+        if diag:
+            diag.ex(u"Alineado cadena", ex)
 
 
 def _shape_driven_accessor(rebar):
@@ -1775,15 +2210,38 @@ def _create_rebar_chunk(
     _fail_logged = set()
 
     def _norm_variants(nvec, curves_try):
+        """Prioriza la normal del Rebar origen; evita que un normal-from-chain
+        (p.ej. desde la pata L) gane y deje el conjunto al lado opuesto."""
         out = []
-        for n in (_normal_from_chain(curves_try, nvec), nvec):
+        seen = []
+
+        def _add(n):
             if n is None:
-                continue
-            out.append(n)
+                return
             try:
-                out.append(n.Negate())
+                nn = n.Normalize()
             except Exception:
-                pass
+                nn = n
+            for s in seen:
+                d = _dot_safe(s, nn)
+                if d is not None and abs(d) > 0.999:
+                    return
+            seen.append(nn)
+            out.append(nn)
+
+        _add(nvec)
+        try:
+            if nvec is not None:
+                _add(nvec.Negate())
+        except Exception:
+            pass
+        nc = _normal_from_chain(curves_try, None)
+        _add(nc)
+        try:
+            if nc is not None:
+                _add(nc.Negate())
+        except Exception:
+            pass
         return out if out else [XYZ.BasisZ]
 
     def _log_fail(key, via, use_exist, create_new, ex):
@@ -1821,8 +2279,13 @@ def _create_rebar_chunk(
             )
             if rb is not None and diag:
                 diag.log(
-                    u"CreateFromCurves OK [{0}] via={1} n={2} flags={3}/{4}".format(
-                        chunk_label, via, len(curves_clean), use_exist, create_new
+                    u"CreateFromCurves OK [{0}] via={1} n={2} flags={3}/{4} normal={5}".format(
+                        chunk_label,
+                        via,
+                        len(curves_clean),
+                        use_exist,
+                        create_new,
+                        _vec_fmt(nvec),
                     )
                 )
             return rb
@@ -1894,12 +2357,128 @@ def _create_rebar_chunk(
 
 
 def _centerline_chain(rebar, bar_index=0):
+    """
+    Centerline en posición visual (BarPosition + MovedBar).
+
+    GetCenterlineCurves en shape-driven suele devolver la geometría en la
+    posición «de manejo» de la barra 0; la posición real en modelo usa
+    GetTransformedCenterlineCurves.
+    """
+    bi = int(bar_index)
+    try:
+        curves = rebar.GetTransformedCenterlineCurves(
+            False,
+            False,
+            False,
+            MultiplanarOption.IncludeAllMultiplanarCurves,
+            bi,
+        )
+        if curves is not None and curves.Count > 0:
+            return [curves[i] for i in range(curves.Count)]
+    except Exception:
+        pass
     curves = rebar.GetCenterlineCurves(
-        False, False, False, MultiplanarOption.IncludeAllMultiplanarCurves, int(bar_index)
+        False, False, False, MultiplanarOption.IncludeAllMultiplanarCurves, bi
+    )
+    if curves is None or curves.Count == 0:
+        return []
+    out = [curves[i] for i in range(curves.Count)]
+    # Fallback BuildingCoder: aplicar solo BarPositionTransform.
+    try:
+        if bi != 0 and _shape_driven_accessor(rebar) is not None:
+            tr = _get_bar_transform(rebar, bi)
+            if tr is not None and not tr.IsIdentity:
+                out = [c.CreateTransformed(tr) for c in out]
+    except Exception:
+        pass
+    return out
+
+
+def _centerline_chain_driving(rebar, bar_index=0):
+    """Curvas de manejo (sin MovedBar); solo para diagnóstico."""
+    bi = int(bar_index)
+    curves = rebar.GetCenterlineCurves(
+        False, False, False, MultiplanarOption.IncludeAllMultiplanarCurves, bi
     )
     if curves is None or curves.Count == 0:
         return []
     return [curves[i] for i in range(curves.Count)]
+
+
+def _moved_bar_transform(rebar, bar_index):
+    try:
+        return rebar.GetMovedBarTransform(int(bar_index))
+    except Exception:
+        return None
+
+
+def _log_moved_bar_transforms(diag, label, rebar):
+    if diag is None or rebar is None:
+        return
+    n = _cantidad_posiciones(rebar)
+    for i in range(max(1, n)):
+        mt = _moved_bar_transform(rebar, i)
+        if mt is None:
+            diag.log(u"MovedBar[{0}] idx={1}: None".format(label, i))
+            continue
+        try:
+            ident = bool(mt.IsIdentity)
+        except Exception:
+            ident = False
+        origin = None
+        try:
+            origin = mt.Origin
+        except Exception:
+            pass
+        diag.log(
+            u"MovedBar[{0}] idx={1}: identity={2} origin={3}".format(
+                label, i, ident, _xyz_fmt(origin)
+            )
+        )
+
+
+def _copy_moved_bar_transforms(src, dst, diag=None):
+    """Replica desplazamientos manuales por barra (MoveBarInSet)."""
+    if src is None or dst is None:
+        return
+    n = min(_cantidad_posiciones(src), _cantidad_posiciones(dst))
+    for i in range(n):
+        mt = _moved_bar_transform(src, i)
+        if mt is None:
+            continue
+        try:
+            if bool(mt.IsIdentity):
+                continue
+        except Exception:
+            pass
+        try:
+            dst.MoveBarInSet(int(i), mt)
+            if diag:
+                diag.log(u"MoveBarInSet idx={0} OK".format(i))
+        except Exception as ex:
+            if diag:
+                diag.ex(u"MoveBarInSet idx={0}".format(i), ex)
+
+
+def _log_driving_vs_transformed(diag, rebar):
+    """Cuantifica desfase entre curvas de manejo y posición visual (barra 0)."""
+    if diag is None or rebar is None:
+        return
+    try:
+        drive = _centerline_chain_driving(rebar, 0)
+        vis = _centerline_chain(rebar, 0)
+        if not drive or not vis:
+            return
+        p0 = drive[0].GetEndPoint(0)
+        p1 = vis[0].GetEndPoint(0)
+        d = float(p0.DistanceTo(p1))
+        diag.log(
+            u"DrivingVsVisual bar0: d={0:.2f} mm drive0={1} vis0={2}".format(
+                _internal_to_mm(d), _xyz_fmt(p0), _xyz_fmt(p1)
+            )
+        )
+    except Exception as ex:
+        diag.ex(u"DrivingVsVisual", ex)
 
 
 def _rebar_midpoint_xyz(rebar, bar_index=0):
@@ -2222,19 +2801,23 @@ def dividir_rebar_en_cortes(
     cuts_mm_on_main,
     lap_mm=None,
     diag=None,
+    splice_mode=None,
 ):
     """
     Divide la barra original en tramos según cortes (mm) sobre el segmento mayor.
 
     Pipeline:
     1. Centerline índice 0 → segmento mayor + patas L.
-    2. Recorta el vano según cortes y traslape.
+    2. Recorta el vano según cortes y traslape (modo de solape).
     3. Crea cada tramo y replica layout del origen.
+
+    ``splice_mode``: symmetric | forward | backward (ver SPLICE_*).
 
     Returns:
         (ok, mensaje, ids_nuevos)
     """
     diag = diag or _DiagSession()
+    mode = normalize_splice_mode(splice_mode)
     if not isinstance(rebar, Rebar):
         return False, u"No es un elemento Rebar.", []
     if _shape_driven_accessor(rebar) is None:
@@ -2269,22 +2852,25 @@ def dividir_rebar_en_cortes(
     else:
         d_mm = _rebar_nominal_diameter_mm(bar_type)
 
-    ok_val, err_val = _validate_cuts_on_main(cuts_mm_on_main, main_len_mm, lap_mm)
+    ok_val, err_val = _validate_cuts_on_main(
+        cuts_mm_on_main, main_len_mm, lap_mm, splice_mode=mode
+    )
     if not ok_val:
         return False, diag.failure_message(err_val), []
 
     cuts_mm = sorted(set(float(c) for c in cuts_mm_on_main))
     cuts_ft = [_mm_to_internal(c) for c in cuts_mm]
-    half_lap = 0.5 * _mm_to_internal(lap_mm)
+    lap_ft = _mm_to_internal(lap_mm)
     main_len = float(layout_geom[u"main_len"])
-    n_pieces = len(cuts_ft) + 1
+    ranges = _piece_ranges_on_main(cuts_ft, main_len, lap_ft, mode)
+    n_pieces = len(ranges)
 
     rid = _element_id_int(rebar.Id)
     n_pos = _cantidad_posiciones(rebar)
     diag.step(u"Entrada")
     diag.log(
-        u"Rebar Id={0} n_pos={1} cortes_vano={2}".format(
-            rid, n_pos, [int(round(c)) for c in cuts_mm]
+        u"Rebar Id={0} n_pos={1} cortes_vano={2} solape={3}".format(
+            rid, n_pos, [int(round(c)) for c in cuts_mm], mode
         )
     )
     _describe_curve_chain(diag, document, u"centerline/idx0", chain)
@@ -2298,20 +2884,16 @@ def dividir_rebar_en_cortes(
     )
 
     chunk_specs = []
-    for i in range(n_pieces):
-        if i == 0:
-            d0 = 0.0
-            d1 = cuts_ft[0] + half_lap
-            h0, h1 = True, False
-        elif i == n_pieces - 1:
-            d0 = cuts_ft[-1] - half_lap
-            d1 = main_len
-            h0, h1 = False, True
-        else:
-            d0 = cuts_ft[i - 1] - half_lap
-            d1 = cuts_ft[i] + half_lap
-            h0, h1 = False, False
+    for i, (d0, d1) in enumerate(ranges):
+        h0 = i == 0
+        h1 = i == n_pieces - 1
         label = u"T{0}".format(i + 1)
+        if d1 <= d0 + 1e-9:
+            return (
+                False,
+                diag.failure_message(u"Rango inválido en tramo {0}.".format(label)),
+                [],
+            )
         curves = _compose_chunk_curves(
             layout_geom, d0, d1, document, diag=diag, label=label
         )
@@ -2320,7 +2902,11 @@ def dividir_rebar_en_cortes(
         chunk_specs.append((label, curves, h0, h1))
 
     diag.step(u"Tramos recortados")
-    diag.log(u"traslape={0:.0f} mm Ø={1} mm".format(float(lap_mm), d_mm or u"?"))
+    diag.log(
+        u"traslape={0:.0f} mm Ø={1} mm modo={2}".format(
+            float(lap_mm), d_mm or u"?", mode
+        )
+    )
     for label, curves, _h0, _h1 in chunk_specs:
         _describe_curve_chain(diag, document, label, curves)
 
@@ -2329,6 +2915,10 @@ def dividir_rebar_en_cortes(
     except Exception:
         style = RebarStyle.Standard
     norm = _rebar_normal(rebar)
+    if diag:
+        diag.log(u"Normal origen Rebar={0}".format(_vec_fmt(norm)))
+        _log_driving_vs_transformed(diag, rebar)
+        _log_moved_bar_transforms(diag, u"orig", rebar)
     hook_start = _hook_type(document, rebar.GetHookTypeId(0))
     hook_end = _hook_type(document, rebar.GetHookTypeId(1))
     try:
@@ -2387,11 +2977,20 @@ def dividir_rebar_en_cortes(
                     err_lay or u"No se pudo replicar el layout del conjunto."
                 )
             _copy_instance_parameters(rebar, rb)
+            try:
+                document.Regenerate()
+            except Exception:
+                pass
+            # Parámetros/constraints pueden desplazar tras copiar: reimponer pose.
+            _alinear_rebar_a_cadena_esperada(document, rb, curves, diag=diag)
+            if n_pos > 1:
+                _copy_moved_bar_transforms(rebar, rb, diag=diag)
             nuevos.append(rb)
             if diag:
                 _describe_curve_chain(
                     diag, document, label + u"/creado", _centerline_chain(rb, 0)
                 )
+                _log_pose_compare(diag, label + u"/final", rebar, rb, curves)
             diag.log(u"Creado {0} Id={1}".format(label, _element_id_int(rb.Id)))
 
         diag.step(u"Eliminar barra original")
@@ -2419,15 +3018,17 @@ def dividir_rebar_en_cortes(
             )
         )
     cuts_txt = u", ".join(u"{:.0f}".format(c) for c in cuts_mm)
+    mode_lbl = SPLICE_MODE_LABELS.get(mode, mode)
     diag.step(u"OK")
     detalle = (
-        u"{0} tramo(s) en vano principal (cortes: {1} mm; traslape {2:.0f} mm, Ø {3} mm).{4} "
-        u"Etiquetas recreadas: {5}."
+        u"{0} tramo(s) en vano principal (cortes: {1} mm; traslape {2:.0f} mm, Ø {3} mm; "
+        u"solape: {4}).{5} Etiquetas recreadas: {6}."
     ).format(
         len(nuevos),
         cuts_txt,
         float(lap_mm),
         d_mm if d_mm is not None else u"?",
+        mode_lbl,
         conjunto_txt,
         n_tags,
     )
@@ -2437,7 +3038,7 @@ def dividir_rebar_en_cortes(
 
 
 def dividir_rebar_en_punto(
-    document, rebar, pick_point, bar_index=None, lap_mm=None, diag=None
+    document, rebar, pick_point, bar_index=None, lap_mm=None, diag=None, splice_mode=None
 ):
     """
     Divide ``rebar`` en el punto ``pick_point`` con traslape (un solo corte).
@@ -2479,6 +3080,7 @@ def dividir_rebar_en_punto(
         [cut_main_mm],
         lap_mm=lap_mm,
         diag=diag,
+        splice_mode=splice_mode,
     )
 
 

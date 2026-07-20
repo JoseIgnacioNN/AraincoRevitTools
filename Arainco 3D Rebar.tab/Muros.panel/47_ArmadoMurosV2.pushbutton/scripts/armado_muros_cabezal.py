@@ -5,10 +5,11 @@ Cabezal de muro — barras verticales en extremos (inicio / fin de LocationCurve
 Por extremo: 1–6 capas empurradas en profundidad (longitudinal); 2–4 barras por capa
 repartidas en el espesor con ``SetLayoutAsFixedNumber`` (misma lógica que multicapa).
 
-Cantidad (``n_bars``) por capa en cada muro; diámetro (``bar_type_id``) por capa
-en la config de cada muro/extremo. Defaults UI: ``cabezal_longitudinal_sic_*``
-(S.I.C. borde de muro por espesor; 1 capa, editable). Tras crear, etiqueta cada barra longitudinal
-con Structural Rebar Tag (familia ``EST_A_STRUCTURAL REBAR TAG_WALL_HORIZONTAL``) en la vista activa.
+Cantidad (``n_bars``) y diámetro (``bar_type_id``) por capa (cada capa es
+independiente). Defaults UI:
+``cabezal_longitudinal_sic_*`` (S.I.C. borde de muro por espesor; 1 capa, editable).
+Tras crear, etiqueta cada barra longitudinal con Structural Rebar Tag (familia
+``EST_A_STRUCTURAL REBAR TAG_WALL_HORIZONTAL``) en la vista activa.
 Los empalmes activos definen segmentos verticales (lista de muros abajo→arriba).
 Cada barra: altura del muro (``WALL_USER_HEIGHT_PARAM`` − cover).
 """
@@ -238,13 +239,15 @@ CABEZAL_EXTREMOS = (CABEZAL_EXTREMO_INICIO, CABEZAL_EXTREMO_FIN)
 CABEZAL_CONFINEMENT_NONE = u"none"
 CABEZAL_CONFINEMENT_PERIMETER_0_1 = u"perimeter_0_1"
 CABEZAL_CONFINEMENT_TIE_LAYER_1 = u"tie_layer_1"
+# Tipo 3 = Tipo 2 (estribo + trabas de capa) + trabas longitudinales en índices interiores.
+CABEZAL_CONFINEMENT_PERIMETER_CROSS = u"perimeter_cross"
 CABEZAL_TIE_LAYER_INDEX = 1
-# Escenarios con Tipo 1 / Tipo 2 definidos (otros n_capas: pendiente).
+# Escenarios con Tipo 1 / Tipo 2 / Tipo 3 definidos (otros n_capas: pendiente).
 CABEZAL_CONFINEMENT_SCENARIO_CAPAS = (2, 3, 4, 5, 6)
 
 
 def cabezal_confinement_scenario_applies(n_capas):
-    """True si ``n_capas`` tiene escenario de confinamiento Tipo 1 / Tipo 2."""
+    """True si ``n_capas`` tiene escenario de confinamiento Tipo 1 / 2 / 3."""
     try:
         return int(n_capas) in CABEZAL_CONFINEMENT_SCENARIO_CAPAS
     except Exception:
@@ -255,11 +258,14 @@ def cabezal_confinement_layout_spec(n_capas, conf_type):
     """
     Índices de capa para estribo perimetral y trabas según escenario.
 
-    2 capas — Tipo 1: trabas [1]; Tipo 2: estribo [0, 1].
-    3 capas — Tipo 1: trabas [1, 2]; Tipo 2: estribo [0, 2] + traba [1].
-    4 capas — Tipo 1: trabas [1, 2, 3]; Tipo 2: estribo [0, 3] + trabas [1, 2].
-    5 capas — Tipo 1: trabas [1, 2, 3, 4]; Tipo 2: estribo [0, 4] + trabas [1, 2, 3].
-    6 capas — Tipo 1: trabas [1, 2, 3, 4, 5]; Tipo 2: estribo [0, 5] + trabas [1, 2, 3, 4].
+    2 capas — Tipo 1: trabas [1]; Tipo 2/3: estribo [0, 1].
+    3 capas — Tipo 1: trabas [1, 2]; Tipo 2/3: estribo [0, 2] + traba [1].
+    4 capas — Tipo 1: trabas [1, 2, 3]; Tipo 2/3: estribo [0, 3] + trabas [1, 2].
+    5 capas — Tipo 1: trabas [1, 2, 3, 4]; Tipo 2/3: estribo [0, 4] + trabas [1, 2, 3].
+    6 capas — Tipo 1: trabas [1, 2, 3, 4, 5]; Tipo 2/3: estribo [0, 5] + trabas [1, 2, 3, 4].
+
+    Tipo 3 añade además trabas longitudinales (índices de barra interiores); ver
+    ``cabezal_confinement_cross_tie_bar_indices``.
     """
     try:
         n = int(n_capas)
@@ -270,22 +276,55 @@ def cabezal_confinement_layout_spec(n_capas, conf_type):
     if n == 6:
         if cabezal_confinement_is_tie_layer_1(conf_type):
             return [], [1, 2, 3, 4, 5]
-        if cabezal_confinement_is_perimeter(conf_type):
+        if cabezal_confinement_has_perimeter_stirrup(conf_type):
             return [0, 5], [1, 2, 3, 4]
         return [], []
     if cabezal_confinement_is_tie_layer_1(conf_type):
         return [], list(range(1, n))
-    if cabezal_confinement_is_perimeter(conf_type):
+    if cabezal_confinement_has_perimeter_stirrup(conf_type):
         inner_ties = list(range(1, n - 1)) if n > 2 else []
         return [0, n - 1], inner_ties
     return [], []
 
 
+def cabezal_confinement_cross_tie_bar_indices(n_bars):
+    """
+    Índices de barra (0-based) para trabas longitudinales Tipo 3.
+
+    Interiores: excluye 0 y n-1. Vacío si ``n_bars < 3``.
+    Ej.: 3 → [1]; 4 → [1, 2].
+    """
+    try:
+        n = int(n_bars)
+    except Exception:
+        return []
+    if n < 3:
+        return []
+    return list(range(1, n - 1))
+
+
 def cabezal_confinement_is_perimeter(conf_type):
+    """True solo para Tipo 2 (estribo perimetral sin trabas entre capas)."""
     try:
         return unicode(conf_type or u"").strip() == CABEZAL_CONFINEMENT_PERIMETER_0_1
     except Exception:
         return conf_type == CABEZAL_CONFINEMENT_PERIMETER_0_1
+
+
+def cabezal_confinement_is_perimeter_cross(conf_type):
+    """True para Tipo 3 (Tipo 2 + trabas longitudinales en índices interiores)."""
+    try:
+        return unicode(conf_type or u"").strip() == CABEZAL_CONFINEMENT_PERIMETER_CROSS
+    except Exception:
+        return conf_type == CABEZAL_CONFINEMENT_PERIMETER_CROSS
+
+
+def cabezal_confinement_has_perimeter_stirrup(conf_type):
+    """True si el tipo dibuja/crea estribo perimetral (Tipo 2 o Tipo 3)."""
+    return (
+        cabezal_confinement_is_perimeter(conf_type)
+        or cabezal_confinement_is_perimeter_cross(conf_type)
+    )
 
 
 def cabezal_confinement_is_tie_layer_1(conf_type):
@@ -368,7 +407,7 @@ def cabezal_stamp_confinement_type(ex_cfg, conf_type, doc=None, fallback_bar_typ
     if conf_type:
         merged[u"type"] = conf_type
     ex_cfg[u"confinement"] = normalize_cabezal_confinement(merged, n_capas)
-    if cabezal_confinement_is_perimeter(ex_cfg[u"confinement"].get(u"type")):
+    if cabezal_confinement_has_perimeter_stirrup(ex_cfg[u"confinement"].get(u"type")):
         conf = ex_cfg[u"confinement"]
         conf[u"layer_indices"] = cabezal_perimeter_stirrup_layer_indices(n_capas)
         ex_cfg[u"confinement"] = conf
@@ -442,15 +481,16 @@ def cabezal_resolve_bar_type_fallback(doc, cabezal_por_muro_id, walls=None):
 
 def cabezal_confinement_has_lote_z(conf_type):
     return (
-        cabezal_confinement_is_perimeter(conf_type)
+        cabezal_confinement_has_perimeter_stirrup(conf_type)
         or cabezal_confinement_is_tie_layer_1(conf_type)
     )
 
 
 CABEZAL_STIRRUP_DIAM_MM = 10.0
 CABEZAL_STIRRUP_SPACING_MM = 200.0
-# Distancia del rebar set de confinamiento (estribos/trabas en Z); fija, no sigue @ malla horizontal.
+# Distancia del rebar set de confinamiento (estribos/trabas en Z); editable en UI.
 CABEZAL_CONFINEMENT_REBAR_SET_SPACING_MM = 100.0
+CABEZAL_CONFINEMENT_SPACING_OPTIONS_MM = (50, 75, 100, 125, 150, 175, 200, 250, 300)
 CABEZAL_CONFINEMENT_STIRRUP_SHAPE_NAME = u"10"
 CABEZAL_CONFINEMENT_STIRRUP_PAD_MM = 10.0
 # Estiramiento del array de estribos hacia −Z si hay fundación unida (Join Geometry).
@@ -468,21 +508,39 @@ _CAB_PBAR_BASE_CONF = u"Arainco: Cabezal muros (confinamiento)"
 _CAB_PBAR_BASE_TAGS = u"Arainco: Cabezal muros (etiquetas)"
 
 
-def cabezal_confinement_diam_mm_for_long_layer0(d0_mm):
-    """
-    Ø de confinamiento (mm): menor valor del catálogo >= ``d0_mm / 3``
-    (cumple o supera el mínimo normativo).
-    """
+def cabezal_confinement_min_diam_mm(d0_mm):
+    """Mínimo normativo de Ø confinamiento (mm): ``d0_mm / 3`` (sin redondear)."""
     try:
         d0 = float(d0_mm)
     except Exception:
         d0 = float(CABEZAL_DEFAULT_BAR_DIAM_MM)
     if d0 < 1e-6:
         d0 = float(CABEZAL_DEFAULT_BAR_DIAM_MM)
-    d_min = d0 / 3.0
-    ok = [d for d in CABEZAL_CONFINEMENT_DIAMETERS_MM if d >= d_min - 1e-6]
+    return d0 / 3.0
+
+
+def cabezal_confinement_diam_mm_for_long_layer0(d0_mm, available_diams_mm=None):
+    """
+    Ø de confinamiento por defecto (mm): menor valor del catálogo (o lista
+    ``available_diams_mm``) >= ``d0_mm / 3``.
+    """
+    d_min = cabezal_confinement_min_diam_mm(d0_mm)
+    catalog = list(available_diams_mm) if available_diams_mm else None
+    if not catalog:
+        catalog = list(CABEZAL_CONFINEMENT_DIAMETERS_MM)
+    ok = []
+    for d in catalog:
+        try:
+            dv = float(d)
+        except Exception:
+            continue
+        if dv >= d_min - 1e-6:
+            ok.append(dv)
     if not ok:
-        return float(CABEZAL_CONFINEMENT_DIAMETERS_MM[-1])
+        try:
+            return float(max(float(x) for x in catalog))
+        except Exception:
+            return float(CABEZAL_CONFINEMENT_DIAMETERS_MM[-1])
     best = ok[0]
     best_key = (best - d_min, best)
     for d in ok[1:]:
@@ -530,6 +588,57 @@ def cabezal_longitudinal_layer0_diam_mm(doc, ex_cfg, fallback_bar_type_id=None):
     return float(CABEZAL_DEFAULT_BAR_DIAM_MM)
 
 
+def _rebar_bar_types_doc_key(doc):
+    try:
+        return int(doc.GetHashCode())
+    except Exception:
+        try:
+            return id(doc)
+        except Exception:
+            return 0
+
+
+_REBAR_BAR_TYPES_CACHE = {}
+
+
+def clear_rebar_bar_types_cache(doc=None):
+    """Invalida catálogo RebarBarType (toda la sesión o un documento)."""
+    if doc is None:
+        _REBAR_BAR_TYPES_CACHE.clear()
+        return
+    try:
+        del _REBAR_BAR_TYPES_CACHE[_rebar_bar_types_doc_key(doc)]
+    except Exception:
+        pass
+
+
+def _cached_rebar_bar_types(doc):
+    """Lista de ``RebarBarType`` del documento (una sola recolección por sesión)."""
+    if doc is None:
+        return []
+    key = _rebar_bar_types_doc_key(doc)
+    cached = _REBAR_BAR_TYPES_CACHE.get(key)
+    if cached is not None:
+        return cached
+    try:
+        rts = list(FilteredElementCollector(doc).OfClass(RebarBarType))
+    except Exception:
+        rts = []
+    _REBAR_BAR_TYPES_CACHE[key] = rts
+    return rts
+
+
+def seed_rebar_bar_types_cache(doc, bar_types):
+    """Permite a la UI reutilizar el collector ya hecho en ``_prepare_ui_templates``."""
+    if doc is None:
+        return
+    key = _rebar_bar_types_doc_key(doc)
+    try:
+        _REBAR_BAR_TYPES_CACHE[key] = list(bar_types or [])
+    except Exception:
+        pass
+
+
 def _bar_type_for_catalog_diameter_mm(doc, diam_mm, fallback=None):
     """``RebarBarType`` cuyo nominal coincide con un Ø del catálogo de confinamiento."""
     if doc is None:
@@ -542,7 +651,7 @@ def _bar_type_for_catalog_diameter_mm(doc, diam_mm, fallback=None):
     best = None
     best_diff = None
     try:
-        for bt in FilteredElementCollector(doc).OfClass(RebarBarType):
+        for bt in _cached_rebar_bar_types(doc):
             d = _bar_diameter_mm(bt)
             if abs(d - target) <= tol:
                 diff = abs(d - target)
@@ -560,8 +669,10 @@ def _bar_type_for_catalog_diameter_mm(doc, diam_mm, fallback=None):
 
 def cabezal_sync_confinement_from_extremo(ex_cfg, doc=None, fallback_bar_type_id=None):
     """
-    Ø confinamiento: catálogo >= d_long capa 0 / 3; @ rebar set fijo 100 mm.
-    Actualiza ``confinement`` y ``conf_bar_type_id``.
+    Sincroniza ``conf_bar_type_id`` con Ø de confinamiento.
+
+    Respeta ``stirrup_diam_mm`` / ``stirrup_spacing_mm`` del usuario; solo
+    sube el Ø si queda por debajo del mínimo (d_long capa0 / 3).
     """
     if not ex_cfg or not isinstance(ex_cfg, dict):
         return ex_cfg
@@ -572,13 +683,28 @@ def cabezal_sync_confinement_from_extremo(ex_cfg, doc=None, fallback_bar_type_id
     d0 = cabezal_longitudinal_layer0_diam_mm(
         doc, ex_cfg, fallback_bar_type_id,
     )
-    diam_conf = cabezal_confinement_diam_mm_for_long_layer0(d0)
+    # Umbral normativo real (d0/3). El redondeo a catálogo solo aplica al default.
+    diam_floor = cabezal_confinement_min_diam_mm(d0)
+    diam_default = cabezal_confinement_diam_mm_for_long_layer0(d0)
     conf = normalize_cabezal_confinement(
         ex_cfg.get(u"confinement"), n_capas,
     )
-    conf[u"stirrup_diam_mm"] = float(diam_conf)
-    conf[u"stirrup_spacing_mm"] = float(CABEZAL_CONFINEMENT_REBAR_SET_SPACING_MM)
+    try:
+        cur_diam = float(conf.get(u"stirrup_diam_mm") or 0.0)
+    except Exception:
+        cur_diam = 0.0
+    if cur_diam < 1e-6:
+        conf[u"stirrup_diam_mm"] = float(diam_default)
+    elif cur_diam + 1e-6 < float(diam_floor):
+        conf[u"stirrup_diam_mm"] = float(diam_default)
+    try:
+        cur_sp = float(conf.get(u"stirrup_spacing_mm") or 0.0)
+    except Exception:
+        cur_sp = 0.0
+    if cur_sp < 1e-6:
+        conf[u"stirrup_spacing_mm"] = float(CABEZAL_CONFINEMENT_REBAR_SET_SPACING_MM)
     ex_cfg[u"confinement"] = conf
+    diam_conf = float(conf.get(u"stirrup_diam_mm") or diam_default)
     bt_conf = _bar_type_for_catalog_diameter_mm(
         doc, diam_conf, _element_to_bar_type(doc, fallback_bar_type_id),
     )
@@ -588,6 +714,17 @@ def cabezal_sync_confinement_from_extremo(ex_cfg, doc=None, fallback_bar_type_id
         except Exception:
             pass
     return ex_cfg
+
+
+def cabezal_confinement_spacing_mm(conf):
+    """``stirrup_spacing_mm`` usable para el array Z (estribo/trabas)."""
+    try:
+        sp = float((conf or {}).get(u"stirrup_spacing_mm") or 0.0)
+    except Exception:
+        sp = 0.0
+    if sp < 1e-6:
+        return float(CABEZAL_CONFINEMENT_REBAR_SET_SPACING_MM)
+    return max(25.0, sp)
 
 
 def _stamp_armadura_arainco(rebar, layer_index=None):
@@ -610,6 +747,7 @@ def _stamp_armadura_arainco(rebar, layer_index=None):
 
 
 def default_cabezal_layer_config(n_bars=2, bar_type_id=None):
+    """Capa longitudinal (cada capa es independiente en n/ø)."""
     return {
         u"n_bars": int(n_bars),
         u"bar_type_id": bar_type_id,
@@ -739,7 +877,7 @@ def cabezal_extremo_armado_activo(ex_cfg):
 
 
 def cabezal_confinement_options(n_capas):
-    """Opciones UI: (valor, etiqueta). Tipo 1/2 en escenarios de 2 a 6 capas."""
+    """Opciones UI: (valor, etiqueta). Tipo 1/2/3 en escenarios de 2 a 6 capas."""
     opts = [(CABEZAL_CONFINEMENT_NONE, u"Sin confinamiento")]
     try:
         n = int(n_capas or 0)
@@ -749,6 +887,10 @@ def cabezal_confinement_options(n_capas):
         opts.append((
             CABEZAL_CONFINEMENT_PERIMETER_0_1,
             u"Tipo 2",
+        ))
+        opts.append((
+            CABEZAL_CONFINEMENT_PERIMETER_CROSS,
+            u"Tipo 3",
         ))
         opts.append((
             CABEZAL_CONFINEMENT_TIE_LAYER_1,
@@ -773,9 +915,16 @@ def normalize_cabezal_confinement(raw, n_capas=None):
     except Exception:
         base[u"stirrup_diam_mm"] = float(CABEZAL_STIRRUP_DIAM_MM)
     try:
-        base[u"stirrup_spacing_mm"] = float(CABEZAL_CONFINEMENT_REBAR_SET_SPACING_MM)
+        base[u"stirrup_spacing_mm"] = float(
+            raw.get(
+                u"stirrup_spacing_mm",
+                CABEZAL_CONFINEMENT_REBAR_SET_SPACING_MM,
+            ),
+        )
     except Exception:
-        pass
+        base[u"stirrup_spacing_mm"] = float(CABEZAL_CONFINEMENT_REBAR_SET_SPACING_MM)
+    if float(base[u"stirrup_spacing_mm"]) < 1e-6:
+        base[u"stirrup_spacing_mm"] = float(CABEZAL_CONFINEMENT_REBAR_SET_SPACING_MM)
     ctype = raw.get(u"type")
     if ctype is None:
         ctype = (
@@ -791,6 +940,17 @@ def normalize_cabezal_confinement(raw, n_capas=None):
         and cabezal_confinement_scenario_applies(n)
     ):
         base[u"type"] = CABEZAL_CONFINEMENT_PERIMETER_0_1
+        base[u"layer_indices"] = list(stirrup_idx)
+        base[u"tie_layer_indices"] = list(tie_idx)
+        if tie_idx:
+            base[u"tie_layer_index"] = tie_idx[0]
+        else:
+            base.pop(u"tie_layer_index", None)
+    elif (
+        ctype == CABEZAL_CONFINEMENT_PERIMETER_CROSS
+        and cabezal_confinement_scenario_applies(n)
+    ):
+        base[u"type"] = CABEZAL_CONFINEMENT_PERIMETER_CROSS
         base[u"layer_indices"] = list(stirrup_idx)
         base[u"tie_layer_indices"] = list(tie_idx)
         if tie_idx:
@@ -923,7 +1083,8 @@ def cabezal_build_confinement_jobs(
     wall, wid, extremo, ex_cfg, stack_idx, segment_ctx,
     line_jobs=None,
 ):
-    """Un job por estribo y/o por cada traba (Tipo 2 @ 3 capas = estribo + traba)."""
+    """Un job por estribo y/o por cada traba (Tipo 2/3 = estribo + trabas de capa;
+    Tipo 3 añade trabas longitudinales por índice interior)."""
     _normalize_cabezal_extremo_layers(ex_cfg)
     conf_type, stirrup_idx = cabezal_active_confinement(ex_cfg)
     if conf_type == CABEZAL_CONFINEMENT_NONE:
@@ -945,10 +1106,24 @@ def cabezal_build_confinement_jobs(
         u"line_jobs": list(line_jobs or []),
     }
     jobs = []
-    if stirrup_idx and cabezal_confinement_is_perimeter(conf_type):
+    if stirrup_idx and cabezal_confinement_has_perimeter_stirrup(conf_type):
         jobs.append(dict(base, job_kind=u"stirrup", layer_indices=list(stirrup_idx)))
     for li in tie_idx:
         jobs.append(dict(base, job_kind=u"tie", tie_layer_index=int(li)))
+    if cabezal_confinement_is_perimeter_cross(conf_type):
+        layers = cabezal_active_layers(ex_cfg)
+        n_bars = CABEZAL_MIN_BARRAS_POR_CAPA
+        if layers:
+            try:
+                n_bars = int(layers[0].get(u"n_bars", CABEZAL_MIN_BARRAS_POR_CAPA))
+            except Exception:
+                n_bars = CABEZAL_MIN_BARRAS_POR_CAPA
+        n_bars = max(
+            CABEZAL_MIN_BARRAS_POR_CAPA,
+            min(CABEZAL_MAX_BARRAS_POR_CAPA, n_bars),
+        )
+        for bi in cabezal_confinement_cross_tie_bar_indices(n_bars):
+            jobs.append(dict(base, job_kind=u"tie_cross", tie_bar_index=int(bi)))
     return jobs
 
 
@@ -964,7 +1139,7 @@ def cabezal_active_confinement(ex_cfg):
         ex_cfg.get(u"confinement"), n_capas,
     )
     conf_type = conf.get(u"type")
-    if cabezal_confinement_is_perimeter(conf_type):
+    if cabezal_confinement_has_perimeter_stirrup(conf_type):
         active_n = cabezal_effective_n_capas(ex_cfg)
         return conf_type, cabezal_perimeter_stirrup_layer_indices(active_n)
     return conf_type, list(conf.get(u"layer_indices") or [])
@@ -1354,8 +1529,8 @@ def _n_bars_for_stack_index(cabezal_por_muro_id, walls, extremo, stack_index, la
     )
 
 
-def _normalize_cabezal_layer_dict(ly, fallback_bar_type_id=None, n_tramos=1):
-    """Garantiza claves mínimas en una capa (``n_bars`` + ``bar_type_id`` legacy)."""
+def _normalize_cabezal_layer_dict(ly, fallback_bar_type_id=None, n_tramos=1, layer_index=None):
+    """Garantiza claves mínimas en una capa (``n_bars`` + ``bar_type_id``)."""
     if not ly or not isinstance(ly, dict):
         ly = {}
     out = dict(ly)
@@ -1381,8 +1556,8 @@ def _normalize_cabezal_extremo_layers(ex_cfg, n_tramos=1):
     fb = ex_cfg.get(u"bar_type_id")
     raw = _cabezal_as_python_list(ex_cfg.get(u"layers"))
     layers = [
-        _normalize_cabezal_layer_dict(ly, fb)
-        for ly in raw
+        _normalize_cabezal_layer_dict(ly, fb, layer_index=i)
+        for i, ly in enumerate(raw)
     ]
     try:
         n_capas = int(ex_cfg.get(u"n_capas", len(layers) or CABEZAL_MIN_CAPAS))
@@ -1398,26 +1573,19 @@ def _normalize_cabezal_extremo_layers(ex_cfg, n_tramos=1):
     if not layers:
         n_capas = max(n_capas, CABEZAL_MIN_CAPAS)
     while len(layers) < CABEZAL_MAX_CAPAS:
-        prev = default_cabezal_layer_config(2, fb)
-        if layers and len(layers) > 0:
-            prev = layers[-1]
+        if layers:
+            src = layers[0]
+        else:
+            src = default_cabezal_layer_config(2, fb)
         try:
-            prev_nb = int(prev.get(u"n_bars", CABEZAL_MIN_BARRAS_POR_CAPA))
+            src_nb = int(src.get(u"n_bars", CABEZAL_MIN_BARRAS_POR_CAPA))
         except Exception:
-            prev_nb = CABEZAL_MIN_BARRAS_POR_CAPA
-        prev_bid = prev.get(u"bar_type_id") or fb
-        layers.append(default_cabezal_layer_config(prev_nb, prev_bid))
-    layers = [
-        _normalize_cabezal_layer_dict(ly, fb)
-        for ly in layers[:CABEZAL_MAX_CAPAS]
-    ]
-    ex_cfg[u"layers"] = layers
-    ex_cfg[u"n_capas"] = n_capas
-    if u"segment_bar_type_ids" not in ex_cfg:
-        ex_cfg[u"segment_bar_type_ids"] = {}
-    ex_cfg[u"confinement"] = normalize_cabezal_confinement(
-        ex_cfg.get(u"confinement"), n_capas,
-    )
+            src_nb = CABEZAL_MIN_BARRAS_POR_CAPA
+        src_bid = src.get(u"bar_type_id") or fb
+        layers.append(default_cabezal_layer_config(src_nb, src_bid))
+    layers = layers[:CABEZAL_MAX_CAPAS]
+    for i, ly in enumerate(layers):
+        layers[i] = _normalize_cabezal_layer_dict(ly, fb, layer_index=i)
     if cabezal_extremo_es_encuentro_l(ex_cfg) and _cab_enc_l is not None:
         for ly in layers[:n_capas]:
             try:
@@ -1425,6 +1593,13 @@ def _normalize_cabezal_extremo_layers(ex_cfg, n_tramos=1):
             except Exception:
                 nb = CABEZAL_MIN_BARRAS_POR_CAPA
             ly[u"n_bars"] = max(2, min(CABEZAL_MAX_BARRAS_POR_CAPA, nb))
+    ex_cfg[u"layers"] = layers
+    ex_cfg[u"n_capas"] = n_capas
+    if u"segment_bar_type_ids" not in ex_cfg:
+        ex_cfg[u"segment_bar_type_ids"] = {}
+    ex_cfg[u"confinement"] = normalize_cabezal_confinement(
+        ex_cfg.get(u"confinement"), n_capas,
+    )
     return layers
 
 
@@ -1470,19 +1645,12 @@ def malla_n_capas_activas_raw(ex_cfg):
 
 def malla_n_remove_por_extremo(ex_cfg):
     """
-    Barras de malla a excluir en un extremo = capas activas del cabezal.
+    Barras verticales de malla a excluir en un extremo.
 
-    Capa cabezal índice ``k`` (0…5) → la ``k``-ésima barra de malla contigua a ese
-    extremo. Sin cabezal → 1; cabezal apagado en el extremo → 0.
+    Regla simplificada: siempre 1 por extremo (solo la primera y la última barra
+    del set vertical). Independiente de cabezal / encuentro / ``n_capas``.
     """
-    if ex_cfg is None:
-        return 1
-    if not cabezal_extremo_armado_activo(ex_cfg):
-        return 0
-    layers = cabezal_active_layers(ex_cfg)
-    if layers:
-        return min(len(layers), CABEZAL_MAX_CAPAS)
-    return malla_n_capas_activas_raw(ex_cfg)
+    return 1
 
 
 def _rebar_coincide_tipo_capas_malla(rebar, params_dict, layer_keys):
@@ -1530,7 +1698,7 @@ def rebar_coincide_tipo_capa_malla_horizontal(rebar, params_dict, muro_contencio
     return _rebar_coincide_tipo_capas_malla(rebar, params_dict, keys)
 
 
-def aplicar_exclusion_horizontal_malla_ultima_barra(rebar, doc=None):
+def aplicar_exclusion_horizontal_malla_ultima_barra(rebar, doc=None, regenerate=True):
     u"""Remove last bar en cada set horizontal de malla (exterior/interior)."""
     if rebar is None:
         return False
@@ -1539,7 +1707,9 @@ def aplicar_exclusion_horizontal_malla_ultima_barra(rebar, doc=None):
     except Exception:
         return False
     return bool(
-        ajustar_inclusion_extremos_rebar_set_con_fallback(rebar, doc, True, False),
+        ajustar_inclusion_extremos_rebar_set_con_fallback(
+            rebar, doc, True, False, regenerate=regenerate,
+        ),
     )
 
 
@@ -1564,10 +1734,11 @@ def rebar_es_malla_vertical_por_tipo(rebar, params_dict, muro_contencion=False):
 
 def malla_indices_lineas_a_excluir(n_lines, ex_cfg_inicio, ex_cfg_fin):
     """
-    Índices de líneas verticales de malla a excluir según cabezal ini/fin.
+    Índices de líneas verticales de malla a excluir (regla simplificada).
 
-    Capa cabezal ``k`` (0…5) ↔ barra ``k`` contigua a ese extremo del muro.
-    Si hay solapamiento ini+fin, se prioriza inicio.
+    Siempre se apaga solo la **primera** y la **última** barra del set vertical
+    (una por extremo), sin importar cabezal / encuentro / ``n_capas``.
+    Si hay solapamiento ini+fin (sets muy cortos), se prioriza inicio.
 
     Rebar set malla vertical (post Remove System), alineado con ``LocationCurve``:
     índice ``0`` = **inicio** (P0); índice ``n-1`` = **fin / término** (P1).
@@ -1620,7 +1791,7 @@ def cabezal_extremos_config_for_muro(cabezal_por_muro_id, wall_id):
 
 
 def aplicar_exclusion_verticales_malla_rebar(
-    rebar, ex_cfg_inicio, ex_cfg_fin, doc=None, host=None,
+    rebar, ex_cfg_inicio, ex_cfg_fin, doc=None, host=None, regenerate=True,
 ):
     """
     Excluye barras verticales de malla según capas cabezal (post Remove System).
@@ -1651,12 +1822,9 @@ def aplicar_exclusion_verticales_malla_rebar(
     indices = malla_indices_lineas_a_excluir(n, ex_cfg_inicio, ex_cfg_fin)
     if not indices:
         return False
-    ok = _excluir_barras_por_indices(rebar, indices, doc=doc)
-    if doc is not None:
-        try:
-            doc.Regenerate()
-        except Exception:
-            pass
+    ok = _excluir_barras_por_indices(
+        rebar, indices, doc=doc, regenerate=regenerate,
+    )
     if ok:
         return True
     try:
@@ -2137,6 +2305,12 @@ def _wall_extremo_frame(wall, extremo):
     else:
         station = p0
         into_wall = t_hat
+    try:
+        other = p0 if extremo == CABEZAL_EXTREMO_FIN else p1
+        if float(into_wall.DotProduct(other.Subtract(station))) < 0.0:
+            into_wall = into_wall.Negate()
+    except Exception:
+        pass
 
     inward = None
     try:
@@ -2368,6 +2542,106 @@ def cabezal_tie_preview_geometry(
     }
 
 
+def cabezal_cross_tie_preview_geometry(
+    dots,
+    bar_index,
+    hook_frac=0.12,
+    pitch_frac=None,
+    bar_diam_mm=12.0,
+    tie_diam_mm=None,
+):
+    """
+    Traba longitudinal Tipo 3 en coordenadas normalizadas (fx, fy).
+
+    Pata a lo largo de las capas (índice de barra fijo), empalmes verticales a
+    cada barra de ese índice y ganchos esquemáticos en los extremos.
+    """
+    if not dots:
+        return None
+    try:
+        bi = int(bar_index)
+    except Exception:
+        return None
+    subset = [
+        d for d in dots
+        if int(d.get(u"bar_index", -1)) == bi
+        or (
+            # dots antiguos sin bar_index: agrupar por fy
+            False
+        )
+    ]
+    if not subset:
+        # Fallback: agrupar por fy cercano al índice bi entre capas layer 0
+        by_layer = {}
+        for d in dots:
+            try:
+                li = int(d.get(u"layer_index", -1))
+            except Exception:
+                continue
+            by_layer.setdefault(li, []).append(d)
+        if not by_layer:
+            return None
+        subset = []
+        for li in sorted(by_layer.keys()):
+            layer_dots = sorted(
+                by_layer[li],
+                key=lambda x: float(x.get(u"fy", 0.0)),
+            )
+            if 0 <= bi < len(layer_dots):
+                subset.append(layer_dots[bi])
+    if len(subset) < 2:
+        return None
+    subset = sorted(subset, key=lambda d: float(d.get(u"fx", 0.0)))
+    fys = [float(d[u"fy"]) for d in subset]
+    bar_fy = sum(fys) / float(len(fys))
+    fxs = [float(d[u"fx"]) for d in subset]
+    fx_bar0 = min(fxs)
+    fx_bar1 = max(fxs)
+
+    offset_mm = _cabezal_tie_offset_mm(
+        None, tie_diam_mm, bar_diam_mm_fallback=bar_diam_mm,
+    )
+    # Preview: Tipo 2 (bar_r+tie_r) + mitad ø traba en cada extremo.
+    pf = float(pitch_frac) if pitch_frac is not None else 0.0
+    if pf <= 1e-9 and len(subset) >= 2:
+        pf = abs(fx_bar1 - fx_bar0) / float(len(subset) - 1)
+    if pf <= 1e-9:
+        pf = 0.12
+    pitch_mm = max(float(CABEZAL_LAYER_PITCH_MM), 50.0)
+    tie_d = float(tie_diam_mm or CABEZAL_STIRRUP_DIAM_MM)
+    embrace_mm = float(bar_diam_mm) * 0.5 + tie_d * 0.5 + tie_d * 0.5
+    embrace_frac = (embrace_mm / pitch_mm) * pf
+    offset_frac = (offset_mm / pitch_mm) * max(pf, 0.05)
+    tie_fy = bar_fy - abs(offset_frac)
+    fx0 = fx_bar0 - abs(embrace_frac)
+    fx1 = fx_bar1 + abs(embrace_frac)
+
+    hook_len = max(0.02, float(hook_frac) * abs(fx1 - fx0 + 1e-6) * 0.2)
+    cos45 = 0.707106781
+
+    leg = ((fx0, tie_fy), (fx1, tie_fy))
+    left_hook = ((fx0, tie_fy), (fx0 + hook_len * cos45, tie_fy - hook_len * cos45))
+    right_hook = ((fx1, tie_fy), (fx1 - hook_len * cos45, tie_fy - hook_len * cos45))
+    bar_grips = []
+    for d in subset:
+        bx = float(d[u"fx"])
+        by = float(d[u"fy"])
+        bar_grips.append(((bx, tie_fy), (bx, by)))
+
+    return {
+        u"bar_index": bi,
+        u"tie_fy": tie_fy,
+        u"bar_fy": bar_fy,
+        u"fx0": fx0,
+        u"fx1": fx1,
+        u"leg": leg,
+        u"left_hook": left_hook,
+        u"right_hook": right_hook,
+        u"bar_grips": bar_grips,
+        u"segments": [leg, left_hook, right_hook] + bar_grips,
+    }
+
+
 def cabezal_seccion_preview_layout(thickness_mm, layers, cover_mm=None,
                                     row_inset_frac=0.10,
                                     row_inset_frac_x=None,
@@ -2464,6 +2738,7 @@ def cabezal_seccion_preview_layout(thickness_mm, layers, cover_mm=None,
             dots.append({
                 u"layer": i + 1,
                 u"layer_index": i,
+                u"bar_index": bi,
                 u"fx": cx,
                 u"fy": fy,
             })
@@ -2472,13 +2747,17 @@ def cabezal_seccion_preview_layout(thickness_mm, layers, cover_mm=None,
     stirrup_segments = None
     tie_preview = None
     tie_previews = []
+    cross_tie_previews = []
     stirrup_layer_indices = []
     tie_layer_indices = []
     if confinement_type and cabezal_confinement_scenario_applies(n_capas):
         stirrup_layer_indices, tie_layer_indices = cabezal_confinement_layout_spec(
             n_capas, confinement_type,
         )
-        if cabezal_confinement_is_perimeter(confinement_type) and stirrup_layer_indices:
+        if (
+            cabezal_confinement_has_perimeter_stirrup(confinement_type)
+            and stirrup_layer_indices
+        ):
             stirrup_rect = cabezal_stirrup_preview_rect(
                 dots, stirrup_layer_indices, pad_frac=stirrup_pad_frac,
             )
@@ -2505,6 +2784,31 @@ def cabezal_seccion_preview_layout(thickness_mm, layers, cover_mm=None,
                 tie_previews.append(tp)
         if tie_previews:
             tie_preview = tie_previews[0]
+        if cabezal_confinement_is_perimeter_cross(confinement_type):
+            n_bars_cross = 0
+            if layers:
+                try:
+                    n_bars_cross = int(
+                        layers[0].get(u"n_bars", CABEZAL_MIN_BARRAS_POR_CAPA),
+                    )
+                except Exception:
+                    n_bars_cross = CABEZAL_MIN_BARRAS_POR_CAPA
+            n_bars_cross = max(
+                CABEZAL_MIN_BARRAS_POR_CAPA,
+                min(CABEZAL_MAX_BARRAS_POR_CAPA, n_bars_cross),
+            )
+            for bi in cabezal_confinement_cross_tie_bar_indices(n_bars_cross):
+                ctp = cabezal_cross_tie_preview_geometry(
+                    dots,
+                    bar_index=bi,
+                    pitch_frac=pitch_frac,
+                    bar_diam_mm=bar_diam_mm,
+                    tie_diam_mm=float(
+                        confinement_stirrup_diam_mm or CABEZAL_STIRRUP_DIAM_MM,
+                    ),
+                )
+                if ctp:
+                    cross_tie_previews.append(ctp)
 
     return {
         u"thickness_mm": e_mm,
@@ -2526,6 +2830,7 @@ def cabezal_seccion_preview_layout(thickness_mm, layers, cover_mm=None,
         u"tie_layer_indices": tie_layer_indices,
         u"tie_preview": tie_preview,
         u"tie_previews": tie_previews,
+        u"cross_tie_previews": cross_tie_previews,
     }
 
 
@@ -2569,6 +2874,9 @@ def _wall_longitudinal_at_extremo(wall, extremo):
     Punto del extremo, vector hacia el interior del muro y normal exterior.
 
     Alineado con el script multicapa de referencia (LocationCurve + Orientation).
+
+    Convención de capas: índice 0 (1ºC.) en la cara del extremo; índices
+    siguientes hacia el interior (hacia el otro extremo de la LocationCurve).
     """
     lc = location_curve_wall(wall) if location_curve_wall else None
     if lc is None:
@@ -2586,6 +2894,16 @@ def _wall_longitudinal_at_extremo(wall, extremo):
         if vl < 1e-12:
             return None
         vector_long = v_long.Normalize()
+        # Garantizar sentido hacia el otro extremo (interior del muro).
+        # Si el vector apunta hacia fuera, capa 1 queda hacia dentro y la más
+        # extrema recibe el índice alto (p. ej. 2ºC. con 2 capas).
+        try:
+            other = p0 if extremo == CABEZAL_EXTREMO_FIN else p1
+            to_other = other.Subtract(pt_ext)
+            if float(vector_long.DotProduct(to_other)) < 0.0:
+                vector_long = vector_long.Negate()
+        except Exception:
+            pass
     except Exception:
         return None
 
@@ -2618,7 +2936,8 @@ def _cabezal_capa_offsets_mm(layer_index, bar_type, conf_bar_type, layer_spacing
     """
     Offsets transversal (espesor) y longitudinal (profundidad en el muro) por capa.
 
-    Transversal constante por capa; longitudinal crece con el índice de capa.
+    Transversal constante por capa; longitudinal crece con el índice de capa
+    (capa 0 = cara del extremo → interior).
     """
     cover_mm = float(cover_mm if cover_mm is not None else CABEZAL_COVER_MM)
     spacing_mm = float(layer_spacing_mm if layer_spacing_mm is not None else CABEZAL_LAYER_PITCH_MM)
@@ -2626,6 +2945,45 @@ def _cabezal_capa_offsets_mm(layer_index, bar_type, conf_bar_type, layer_spacing
     offset_trans_mm = cover_mm + conf_diam_mm + 10.0
     offset_long_mm = offset_trans_mm + float(layer_index) * spacing_mm
     return offset_trans_mm, offset_long_mm
+
+
+def cabezal_enum_layer_index(layer_index, n_capas=None, extremo=None, ex_cfg=None):
+    """
+    Índice de capa para sello/etiquetas (0 → 1ºC.).
+
+    Por defecto coincide con ``layer_index`` de la UI. La ranura espacial de
+    encuentro L en creación (``inicio``) se resuelve aparte; el preview dibuja
+    ``layers[i] → xs[i]`` sin invertir.
+    """
+    try:
+        li = int(layer_index)
+    except Exception:
+        li = 0
+    return max(0, li)
+
+
+def cabezal_encuentro_l_capa_slot_index(layer_index, n_capas=None, extremo=None):
+    """
+    Ranura en el espesor detectado (``xs``) para la capa UI ``layer_index``.
+
+    Usado en creación Revit (``cabezal_encuentro_l_capa_line_endpoints``).
+    El preview WPF no invierte: dibuja ``layers[i] → xs[i]`` (fuera → dentro).
+    """
+    try:
+        li = int(layer_index)
+    except Exception:
+        li = 0
+    if li < 0:
+        li = 0
+    if extremo != CABEZAL_EXTREMO_INICIO:
+        return li
+    try:
+        nc = int(n_capas) if n_capas is not None else 0
+    except Exception:
+        nc = 0
+    if nc <= 1:
+        return li
+    return max(0, nc - 1 - li)
 
 
 def _cabezal_layer_bar_trans_coords_ft(trans_origin_ft, distrib_ft, n_bars):
@@ -2722,11 +3080,8 @@ def _cabezal_capa_line_endpoints(
     desplazamiento_lateral = dist_eje_cara - offset_trans_ft
 
     try:
-        inicio = (
-            pt_ext
-            + vector_long.Multiply(offset_long_ft)
-            + normal_muro.Multiply(desplazamiento_lateral)
-        )
+        inicio = pt_ext.Add(vector_long.Multiply(offset_long_ft))
+        inicio = inicio.Add(normal_muro.Multiply(desplazamiento_lateral))
     except Exception as ex_pt:
         return None, None, None, u"Offset capa: {0}".format(str(ex_pt))
 
@@ -3891,6 +4246,9 @@ def _troceo_planificar_seg_jobs_from_fused_line(
                 u"want_top_pata": want_top,
                 u"pata_ft": pata_ft_seg,
                 u"layer_index": layer_index,
+                u"enum_layer_index": int(
+                    fj.get(u"enum_layer_index", layer_index) or layer_index,
+                ),
                 u"extremo": extremo,
                 u"fusion_key": u"fj_{0}".format(fj_idx),
                 u"seg_index": int(si),
@@ -3946,6 +4304,9 @@ def _fuse_colinear_cabezal_lines(line_jobs):
                 u"wall": job[u"wall"],
                 u"wid": job[u"wid"],
                 u"layer_index": layer_index,
+                u"enum_layer_index": int(
+                    job.get(u"enum_layer_index", layer_index) or layer_index,
+                ),
                 u"extremo": extremo,
                 u"contrib_wids": {job[u"wid"]},
                 u"troceo_walls": troceo_walls,
@@ -3977,6 +4338,9 @@ def _fuse_colinear_cabezal_lines(line_jobs):
             u"wall": bk[u"wall"],
             u"wid": bk[u"wid"],
             u"layer_index": bk[u"layer_index"],
+            u"enum_layer_index": int(
+                bk.get(u"enum_layer_index", bk[u"layer_index"]) or bk[u"layer_index"],
+            ),
             u"extremo": bk.get(u"extremo"),
             u"contrib_wids": bk[u"contrib_wids"],
             u"troceo_walls": list(tw.values()),
@@ -4127,7 +4491,7 @@ def _bar_type_for_diameter_mm(doc, diam_mm, fallback=None):
     best = None
     best_diff = None
     try:
-        for bt in FilteredElementCollector(doc).OfClass(RebarBarType):
+        for bt in _cached_rebar_bar_types(doc):
             d = _bar_diameter_mm(bt)
             diff = abs(d - target)
             if best is None or diff < best_diff:
@@ -4190,7 +4554,7 @@ def _cabezal_stirrup_envelope_from_line_jobs_ft(
     conf_norm = normalize_cabezal_confinement(
         ex_cfg.get(u"confinement"), ex_cfg.get(u"n_capas"),
     )
-    if cabezal_confinement_is_perimeter(conf_norm.get(u"type")):
+    if cabezal_confinement_has_perimeter_stirrup(conf_norm.get(u"type")):
         idx_set.update(
             cabezal_perimeter_stirrup_layer_indices(
                 cabezal_effective_n_capas(ex_cfg),
@@ -4370,6 +4734,7 @@ def _cabezal_stirrup_envelope_ft(
         _p_lo, _p_hi, distrib_ft, err_geom = _cabezal_capa_line_endpoints(
             wall, extremo, li, bar_type, conf_type,
             layer_spacing_mm=layer_spacing_mm,
+            doc=doc, ex_cfg=ex_cfg,
         )
         if err_geom:
             return None, None, None, None, err_geom
@@ -4539,6 +4904,41 @@ def _cabezal_stirrup_inset_envelope_bounds(
     )
 
 
+def _cabezal_stirrup_clamp_tip_face_cover(
+    long_min, long_max, stirrup_r_ft, cover_mm=None,
+):
+    """
+    Cara exterior de la punta (long→0 en ``pt_extremo``): el envelope + pad
+    puede meter el estribo en el recubrimiento.
+
+    Tras el inset, el eje del estribo en ese lado no puede quedar más cerca
+    de la cara que ``cover + ø_estribo`` (2×radio). Con solo ``cover+radio``
+    la fibra exterior quedaba ~20 mm (faltaba 1 radio respecto a 25 mm).
+    No altera ``long_max`` ni el espesor (trans).
+    """
+    try:
+        c_mm = float(cover_mm if cover_mm is not None else CABEZAL_COVER_MM)
+    except Exception:
+        c_mm = float(CABEZAL_COVER_MM)
+    cover_ft = _mm_to_internal(max(0.0, c_mm))
+    try:
+        r = max(0.0, float(stirrup_r_ft))
+    except Exception:
+        r = 0.0
+    # Eje @ cover + diámetro estribo → fibra exterior hacia la punta @ cover.
+    face_axis_min = float(cover_ft) + 2.0 * float(r)
+    try:
+        lm = float(long_min)
+        lx = float(long_max)
+    except Exception:
+        return long_min, long_max
+    if lm < face_axis_min:
+        lm = face_axis_min
+    if lm >= lx - 1e-9:
+        return long_min, long_max
+    return lm, lx
+
+
 def _clear_cabezal_stirrup_hook_rotations(rebar):
     """Fuerza rotación de gancho 0° (orientación solo vía Left/Right en creación)."""
     if rebar is None:
@@ -4600,6 +5000,16 @@ def _find_cabezal_confinement_rebar_shape(doc, nombre):
     key = _cabezal_rebar_shape_name_key(nombre)
     if not key:
         return None
+    cache = getattr(_find_cabezal_confinement_rebar_shape, u"_cache", None)
+    if cache is None:
+        _find_cabezal_confinement_rebar_shape._cache = {}
+        cache = _find_cabezal_confinement_rebar_shape._cache
+    try:
+        dkey = (int(doc.GetHashCode()), key)
+    except Exception:
+        dkey = (id(doc), key)
+    if dkey in cache:
+        return cache[dkey]
     try:
         key_lower = key.lower()
     except Exception:
@@ -4607,9 +5017,11 @@ def _find_cabezal_confinement_rebar_shape(doc, nombre):
     key_digits = u"".join(ch for ch in key if ch in u"0123456789")
     match_lower = None
     match_digits = None
+    found = None
     try:
         shapes = FilteredElementCollector(doc).OfClass(RebarShape)
     except Exception:
+        cache[dkey] = None
         return None
     for sh in shapes:
         if sh is None:
@@ -4618,7 +5030,8 @@ def _find_cabezal_confinement_rebar_shape(doc, nombre):
         if not sn:
             continue
         if sn == key:
-            return sh
+            found = sh
+            break
         try:
             sn_low = sn.lower()
         except Exception:
@@ -4630,7 +5043,10 @@ def _find_cabezal_confinement_rebar_shape(doc, nombre):
             match_digits = sh
         elif key_digits and dig == key_digits and match_digits is None:
             match_digits = sh
-    return match_lower or match_digits
+    if found is None:
+        found = match_lower or match_digits
+    cache[dkey] = found
+    return found
 
 
 def _cabezal_stirrup_curve_variants(curves_list):
@@ -5163,7 +5579,7 @@ def _create_cabezal_confinement_tie(
             msg = u"CreateFromCurves traba: {0}".format(str(create_err))
         return None, msg
 
-    spacing_ft = _mm_to_internal(float(CABEZAL_CONFINEMENT_REBAR_SET_SPACING_MM))
+    spacing_ft = _mm_to_internal(cabezal_confinement_spacing_mm(conf))
     try:
         accessor = rb.GetShapeDrivenAccessor()
         accessor.SetLayoutAsMaximumSpacing(
@@ -5178,22 +5594,298 @@ def _create_cabezal_confinement_tie(
     return _stamp_armadura_arainco(rb), None
 
 
+def _cabezal_tie_across_layers_geometry_ft(
+    wall, extremo, ex_cfg, doc,
+    segment_ctx=None, stack_index=0, bar_type_fallback=None,
+    bar_index=1,
+):
+    """
+    Geometría de traba longitudinal Tipo 3 en índice de barra ``bar_index``.
+
+    Como trabas de capa Tipo 2 (pata tangente bar_r+tie_r, empalmes pata→eje),
+    con medio diámetro de traba extra en cada extremo del largo.
+    """
+    try:
+        bi = int(bar_index)
+    except Exception:
+        bi = 1
+    geom = _wall_longitudinal_at_extremo(wall, extremo)
+    if geom is None:
+        return None, None, None, None, u"Sin geometría longitudinal del muro."
+
+    pt_ext = geom[u"pt_extremo"]
+    v_long = geom[u"vector_longitudinal"]
+    n_muro = geom[u"normal_muro"]
+    espesor_ft = float(geom[u"espesor_ft"])
+    dist_eje_cara = espesor_ft * 0.5
+
+    layer_spacing_mm = float(
+        ex_cfg.get(u"layer_spacing_mm") or CABEZAL_LAYER_PITCH_MM,
+    )
+    conf = normalize_cabezal_confinement(
+        ex_cfg.get(u"confinement"), ex_cfg.get(u"n_capas"),
+    )
+    tie_diam_mm = float(conf.get(u"stirrup_diam_mm") or CABEZAL_STIRRUP_DIAM_MM)
+
+    layers = cabezal_active_layers(ex_cfg)
+    if len(layers) < 2:
+        return None, None, None, None, u"Tipo 3: se requieren al menos 2 capas."
+
+    try:
+        n_bars = int(layers[0].get(u"n_bars", CABEZAL_MIN_BARRAS_POR_CAPA))
+    except Exception:
+        n_bars = CABEZAL_MIN_BARRAS_POR_CAPA
+    n_bars = max(
+        CABEZAL_MIN_BARRAS_POR_CAPA,
+        min(CABEZAL_MAX_BARRAS_POR_CAPA, n_bars),
+    )
+    if bi not in cabezal_confinement_cross_tie_bar_indices(n_bars):
+        return None, None, None, None, u"Tipo 3: índice de barra no interior."
+
+    bar_pts = []  # (long_bar, trans_bar, bar_type)
+    for li, ly in enumerate(layers):
+        bar_type = _resolver_bar_type_for_layer(
+            doc, ex_cfg, ly, bar_type_fallback,
+            segment_ctx=segment_ctx,
+            stack_index=stack_index,
+            layer_index=li,
+        )
+        if bar_type is None:
+            return None, None, None, None, u"Tipo 3: sin RebarBarType en capa {0}.".format(li)
+        conf_type = _resolver_conf_bar_type(
+            doc, ex_cfg, bar_type, bar_type_fallback,
+        )
+        if conf_type is None:
+            conf_type = bar_type
+        _p_lo, _p_hi, distrib_ft, err_geom = _cabezal_capa_line_endpoints(
+            wall, extremo, li, bar_type, conf_type,
+            layer_spacing_mm=layer_spacing_mm,
+            doc=doc, ex_cfg=ex_cfg,
+        )
+        if err_geom:
+            return None, None, None, None, err_geom
+        offset_trans_mm, offset_long_mm = _cabezal_capa_offsets_mm(
+            li, bar_type, conf_type, layer_spacing_mm, None,
+        )
+        offset_trans_ft = _mm_to_internal(offset_trans_mm)
+        offset_long_ft = _mm_to_internal(offset_long_mm)
+        trans_origin = dist_eje_cara - offset_trans_ft
+        if cabezal_extremo_es_encuentro_l(ex_cfg):
+            try:
+                delta = _p_lo.Subtract(geom[u"pt_extremo"])
+                into = geom[u"vector_longitudinal"]
+                long_bar = abs(float(delta.DotProduct(into)))
+            except Exception:
+                long_bar = offset_long_ft
+        else:
+            long_bar = offset_long_ft
+        try:
+            nb_ly = int(ly.get(u"n_bars", n_bars))
+        except Exception:
+            nb_ly = n_bars
+        nb_ly = max(
+            CABEZAL_MIN_BARRAS_POR_CAPA,
+            min(CABEZAL_MAX_BARRAS_POR_CAPA, nb_ly),
+        )
+        if bi >= nb_ly:
+            return None, None, None, None, u"Tipo 3: índice fuera de capa {0}.".format(li)
+        trans_coords = _cabezal_layer_bar_trans_coords_ft(
+            trans_origin, distrib_ft, nb_ly,
+        )
+        if not trans_coords or bi >= len(trans_coords):
+            return None, None, None, None, u"Tipo 3: sin cota transversal."
+        bar_pts.append((float(long_bar), float(trans_coords[bi]), bar_type))
+
+    # Offset de la pata en dirección transversal (tangente exterior a la fila).
+    # Misma regla que trabas de capa Tipo 2: bar_r + tie_r desde el eje.
+    ref_bt = bar_pts[0][2]
+    tie_r_ft = _mm_to_internal(tie_diam_mm * 0.5)
+    bar_r_ft = 0.0
+    for _lb, _tb, bt in bar_pts:
+        try:
+            bar_r_ft = max(bar_r_ft, _mm_to_internal(_bar_diameter_mm(bt) * 0.5))
+        except Exception:
+            pass
+    if bar_r_ft < 1e-9:
+        bar_r_ft = _mm_to_internal(_bar_diameter_mm(ref_bt) * 0.5)
+    tie_offset_ft = float(bar_r_ft) + float(tie_r_ft)
+    # Empujar hacia -normal (mismo sentido que el reparto de barras).
+    trans_avg = sum(t[1] for t in bar_pts) / float(len(bar_pts))
+    trans_tie = float(trans_avg) - float(tie_offset_ft)
+
+    z_bot, z_top = _wall_z_bounds_ft(wall)
+    foundation_drop_ft = _cabezal_stirrup_foundation_drop_ft(doc, wall)
+    z_plane = float(z_bot) - float(foundation_drop_ft)
+
+    def _pt(long_c, trans_c):
+        base = (
+            pt_ext
+            + v_long.Multiply(float(long_c))
+            + n_muro.Multiply(float(trans_c))
+        )
+        return XYZ(float(base.X), float(base.Y), z_plane)
+
+    # Ordenar por profundidad de capa (long).
+    ordered = sorted(bar_pts, key=lambda t: t[0])
+    long_bar_min = float(ordered[0][0])
+    long_bar_max = float(ordered[-1][0])
+    # Mismo abrazo base que Tipo 2: eje ± (bar_r + tie_r), más mitad del
+    # diámetro de la traba en cada extremo (pedido explícito).
+    embrace_ft = float(bar_r_ft) + float(tie_r_ft) + float(tie_r_ft)
+    long_leg_min = long_bar_min - embrace_ft
+    long_leg_max = long_bar_max + embrace_ft
+    if long_leg_min < 0.0:
+        long_leg_min = max(0.0, long_bar_min - embrace_ft)
+    if long_leg_max < long_leg_min + 1e-9:
+        long_leg_min, long_leg_max = long_leg_max, long_leg_min
+
+    p_start = _pt(long_leg_min, trans_tie)
+    p_end = _pt(long_leg_max, trans_tie)
+    # Interior = hacia los ejes de las barras (orientación de ganchos).
+    interior_pt = _pt(
+        0.5 * (long_bar_min + long_bar_max),
+        float(trans_avg),
+    )
+
+    try:
+        tol = float(doc.Application.ShortCurveTolerance)
+    except Exception:
+        tol = 1e-6
+
+    try:
+        cl = List[Curve]()
+        # Misma topología que Tipo 2: extremos fuera → empalme pata→eje en
+        # cada capa → extremo. Así Revit coloca el gancho como en las trabas
+        # de espesor (abrazo justo, no eje–eje ni sobrante).
+        prev = p_start
+        for long_bar, trans_bar, _bt in ordered:
+            p_on = _pt(float(long_bar), trans_tie)
+            p_bar = _pt(float(long_bar), float(trans_bar))
+            if prev.DistanceTo(p_on) > tol:
+                cl.Add(Line.CreateBound(prev, p_on))
+            if p_on.DistanceTo(p_bar) > tol:
+                cl.Add(Line.CreateBound(p_on, p_bar))
+            if p_bar.DistanceTo(p_on) > tol:
+                cl.Add(Line.CreateBound(p_bar, p_on))
+            prev = p_on
+        if prev.DistanceTo(p_end) > tol:
+            cl.Add(Line.CreateBound(prev, p_end))
+        if cl.Count < 1:
+            cl.Add(Line.CreateBound(p_start, p_end))
+    except Exception as ex_path:
+        try:
+            return None, None, None, None, u"Curvas traba long.: {0}".format(unicode(ex_path))
+        except Exception:
+            return None, None, None, None, u"Curvas traba long.: {0}".format(str(ex_path))
+
+    return cl, p_start, p_end, interior_pt, None
+
+
+def _create_cabezal_confinement_cross_tie(
+    doc, wall, extremo, ex_cfg,
+    segment_ctx=None, stack_index=0, bar_type_fallback=None,
+    bar_index=1,
+):
+    """
+    Traba longitudinal Tipo 3 en ``bar_index`` @ spacing a lo largo de Z.
+    """
+    conf_type, _ = cabezal_active_confinement(ex_cfg)
+    if not cabezal_confinement_is_perimeter_cross(conf_type):
+        return None, None
+
+    geom = _wall_longitudinal_at_extremo(wall, extremo)
+    plane_normals = _cabezal_tie_plane_normals(geom)
+
+    curves, p_top, p_bot, interior_pt, err = _cabezal_tie_across_layers_geometry_ft(
+        wall, extremo, ex_cfg, doc,
+        segment_ctx=segment_ctx,
+        stack_index=stack_index,
+        bar_type_fallback=bar_type_fallback,
+        bar_index=bar_index,
+    )
+    if err:
+        return None, err
+
+    z_bot, z_top = _wall_z_bounds_ft(wall)
+    foundation_drop_ft = _cabezal_stirrup_foundation_drop_ft(doc, wall)
+    z_array_bot = float(z_bot) - float(foundation_drop_ft)
+    array_len = float(z_top) - z_array_bot
+    if array_len < 1e-9:
+        return None, u"Altura de muro nula para traba longitudinal."
+
+    conf = normalize_cabezal_confinement(
+        ex_cfg.get(u"confinement"), ex_cfg.get(u"n_capas"),
+    )
+    tie_type = _bar_type_for_diameter_mm(
+        doc, conf.get(u"stirrup_diam_mm"), bar_type_fallback,
+    )
+    if tie_type is None:
+        return None, u"Sin RebarBarType ø{0} mm para traba long.".format(
+            conf.get(u"stirrup_diam_mm"),
+        )
+
+    hook_type, hook_err = _resolve_cabezal_stirrup_hook_135(doc)
+    if hook_type is None:
+        return None, hook_err or u"Sin RebarHookType 135° para traba long."
+
+    rb, create_err = _try_create_cabezal_tie_from_curves(
+        doc, wall, tie_type, hook_type, curves, plane_normals,
+        p_top, p_bot, interior_pt,
+    )
+    if rb is None:
+        try:
+            cl_simple = List[Curve]()
+            cl_simple.Add(Line.CreateBound(p_top, p_bot))
+            rb, create_err = _try_create_cabezal_tie_from_curves(
+                doc, wall, tie_type, hook_type, cl_simple, plane_normals,
+                p_top, p_bot, interior_pt,
+            )
+        except Exception as ex_fb:
+            try:
+                create_err = unicode(ex_fb)
+            except Exception:
+                create_err = str(ex_fb)
+    if rb is None:
+        try:
+            msg = u"CreateFromCurves traba long.: {0}".format(unicode(create_err))
+        except Exception:
+            msg = u"CreateFromCurves traba long.: {0}".format(str(create_err))
+        return None, msg
+
+    spacing_ft = _mm_to_internal(cabezal_confinement_spacing_mm(conf))
+    try:
+        accessor = rb.GetShapeDrivenAccessor()
+        accessor.SetLayoutAsMaximumSpacing(
+            float(spacing_ft), float(array_len), True, True, False,
+        )
+    except Exception as ex_lay:
+        try:
+            return _stamp_armadura_arainco(rb), u"SetLayoutAsMaximumSpacing traba long.: {0}".format(unicode(ex_lay))
+        except Exception:
+            return _stamp_armadura_arainco(rb), u"SetLayoutAsMaximumSpacing traba long.: {0}".format(str(ex_lay))
+
+    return _stamp_armadura_arainco(rb), None
+
+
 def _create_cabezal_confinement_stirrup(
     doc, wall, extremo, ex_cfg,
     segment_ctx=None, stack_index=0, bar_type_fallback=None,
     line_jobs=None,
 ):
     """
-    Estribo perimetrico @ spacing fijo a lo largo de la altura del muro (Z),
-    con ``RebarShape`` «10» (``CreateFromCurvesAndShape``) y ganchos 135°
-    hacia el interior del muro.
+    Estribo perimetrico @ spacing de ``confinement.stirrup_spacing_mm`` a lo
+    largo de la altura del muro (Z), con ``RebarShape`` «10»
+    (``CreateFromCurvesAndShape``) y ganchos 135° hacia el interior del muro.
 
     Si el muro tiene fundación estructural unida, el plano del loop y el array
     bajan ``CABEZAL_STIRRUP_FOUNDATION_DROP_MM`` (300 mm) y la longitud del
     array crece en la misma cantidad (criterio alineado con estribos de columnas).
     """
     conf_type, layer_indices = cabezal_active_confinement(ex_cfg)
-    if conf_type != CABEZAL_CONFINEMENT_PERIMETER_0_1 or not layer_indices:
+    if (
+        not cabezal_confinement_has_perimeter_stirrup(conf_type)
+        or not layer_indices
+    ):
         return None, None
 
     long_min, long_max, trans_min, trans_max, err = _cabezal_stirrup_envelope_ft(
@@ -5235,6 +5927,14 @@ def _create_cabezal_confinement_stirrup(
     long_min, long_max, trans_min, trans_max = _cabezal_stirrup_inset_envelope_bounds(
         long_min, long_max, trans_min, trans_max, stirrup_r_ft,
     )
+    # Solo cara de la punta: no invadir el recubrimiento (otros 3 lados OK).
+    try:
+        cover_mm = float(ex_cfg.get(u"cover_mm") or CABEZAL_COVER_MM)
+    except Exception:
+        cover_mm = float(CABEZAL_COVER_MM)
+    long_min, long_max = _cabezal_stirrup_clamp_tip_face_cover(
+        long_min, long_max, stirrup_r_ft, cover_mm=cover_mm,
+    )
 
     def _corner(long_c, trans_c):
         base = (
@@ -5269,7 +5969,7 @@ def _create_cabezal_confinement_stirrup(
         return None, hook_err or u"Sin RebarHookType 135° para estribo de confinamiento."
 
     plane_norm = XYZ.BasisZ
-    spacing_ft = _mm_to_internal(float(CABEZAL_CONFINEMENT_REBAR_SET_SPACING_MM))
+    spacing_ft = _mm_to_internal(cabezal_confinement_spacing_mm(conf))
     rb, create_err = _try_create_cabezal_stirrup_from_curves(
         doc, wall, stirrup_type, hook_type, cl, plane_norm,
         p_br, p_bl, p_tr, p_center,
@@ -5459,6 +6159,14 @@ def _cabezal_create_longitudinal_job(doc, sj, curve_tol, res, rebars_por):
     if span < curve_tol:
         res[u"n_fail"] = int(res.get(u"n_fail", 0)) + 1
         return False
+    try:
+        li = int(sj.get(u"layer_index", 0) or 0)
+    except Exception:
+        li = 0
+    try:
+        enum_li = int(sj.get(u"enum_layer_index", li) or li)
+    except Exception:
+        enum_li = li
     rb, _did_bot, _did_top = _create_cabezal_rebar_with_optional_patas(
         doc,
         sj[u"bx"],
@@ -5474,11 +6182,10 @@ def _cabezal_create_longitudinal_job(doc, sj, curve_tol, res, rebars_por):
         sj[u"want_bot_pata"],
         sj[u"want_top_pata"],
         sj[u"pata_ft"],
-        layer_index=int(sj.get(u"layer_index", 0) or 0),
+        layer_index=enum_li,
     )
     if rb is not None:
-        li = int(sj.get(u"layer_index", 0) or 0)
-        _stamp_armadura_arainco(rb, layer_index=li)
+        _stamp_armadura_arainco(rb, layer_index=enum_li)
         sj[u"rebar_id"] = rb.Id
         res[u"n_created"] = int(res.get(u"n_created", 0)) + 1
         res[u"n_bars_total"] = int(res.get(u"n_bars_total", 0)) + int(sj[u"n_bars"])
@@ -5488,7 +6195,7 @@ def _cabezal_create_longitudinal_job(doc, sj, curve_tol, res, rebars_por):
             tag_meta = res.setdefault(u"rebars_longitudinales_tag_meta", [])
             tag_meta.append({
                 u"rebar_id": rb.Id,
-                u"layer_index": int(sj.get(u"layer_index", 0)),
+                u"layer_index": enum_li,
                 u"wid": sj.get(u"wid"),
                 u"extremo": sj.get(u"extremo"),
                 u"zs": float(sj.get(u"zs", 0.0) or 0.0),
@@ -5512,9 +6219,12 @@ def _cabezal_etiquetar_confinamiento_rebar(doc, view, res, cj, rb_conf):
         return False, None, None
     ex_cfg = cj.get(u"ex_cfg") or {}
     try:
-        n_capas_conf = int(ex_cfg.get(u"n_capas", CABEZAL_MIN_CAPAS))
+        n_capas_conf = int(cabezal_effective_n_capas(ex_cfg))
     except Exception:
-        n_capas_conf = CABEZAL_MIN_CAPAS
+        try:
+            n_capas_conf = int(ex_cfg.get(u"n_capas", CABEZAL_MIN_CAPAS))
+        except Exception:
+            n_capas_conf = CABEZAL_MIN_CAPAS
     job_kind = cj.get(u"job_kind")
     if job_kind is None:
         job_kind = (
@@ -5522,8 +6232,10 @@ def _cabezal_etiquetar_confinamiento_rebar(doc, view, res, cj, rb_conf):
             if cabezal_confinement_is_tie_layer_1(cj.get(u"conf_type"))
             else u"stirrup"
         )
+    # Etiquetas: trabas de capa y longitudinales Tipo 3 usan el flujo de «tie».
+    tag_job_kind = u"tie" if job_kind in (u"tie", u"tie_cross") else job_kind
     tag_mode = _cab_tags.confinement_tag_mode(
-        cj.get(u"conf_type"), n_capas_conf, job_kind,
+        cj.get(u"conf_type"), n_capas_conf, tag_job_kind,
     )
     if tag_mode == u"conf_tag_multihost":
         try:
@@ -5547,19 +6259,20 @@ def _cabezal_etiquetar_confinamiento_rebar(doc, view, res, cj, rb_conf):
             tag_map = {}
         res[u"_conf_tag_map"] = tag_map
     extra_mm = 0.0
-    if job_kind == u"tie":
+    if tag_job_kind == u"tie":
         extra_mm = _cab_tags.confinement_tag_extra_offset_mm_for_view(
             view,
             n_capas_conf,
             cj.get(u"conf_type"),
-            job_kind,
+            tag_job_kind,
             tie_layer_index=cj.get(u"tie_layer_index"),
         )
     anchor_override = None
     if (
         n_capas_conf == 3
+        and tag_job_kind == u"tie"
         and job_kind == u"tie"
-        and cabezal_confinement_is_perimeter(cj.get(u"conf_type"))
+        and cabezal_confinement_has_perimeter_stirrup(cj.get(u"conf_type"))
     ):
         anchor_override = _cab_tags.get_confinement_tipo2_stirrup_anchor(
             res, cj,
@@ -5575,7 +6288,7 @@ def _cabezal_etiquetar_confinamiento_rebar(doc, view, res, cj, rb_conf):
             extra_offset_mm=extra_mm,
             n_capas=n_capas_conf,
             conf_type=cj.get(u"conf_type"),
-            job_kind=job_kind,
+            job_kind=tag_job_kind,
             anchor_override=anchor_override,
         )
     except Exception as ex_tag:
@@ -5587,7 +6300,7 @@ def _cabezal_etiquetar_confinamiento_rebar(doc, view, res, cj, rb_conf):
         ok_tag
         and n_capas_conf >= 3
         and job_kind == u"stirrup"
-        and cabezal_confinement_is_perimeter(cj.get(u"conf_type"))
+        and cabezal_confinement_has_perimeter_stirrup(cj.get(u"conf_type"))
     ):
         try:
             anc = _cab_tags.compute_confinement_tag_anchor(
@@ -5616,7 +6329,7 @@ def _cabezal_etiquetar_confinamiento_rebar(doc, view, res, cj, rb_conf):
                 )
         except Exception:
             pass
-    kind_lbl = u"traba" if job_kind == u"tie" else u"estribo"
+    kind_lbl = u"traba" if job_kind in (u"tie", u"tie_cross") else u"estribo"
     return ok_tag, err_tag, kind_lbl
 
 
@@ -5631,7 +6344,18 @@ def _cabezal_create_confinement_job(
             if cabezal_confinement_is_tie_layer_1(cj.get(u"conf_type"))
             else u"stirrup"
         )
-    if job_kind == u"tie":
+    if job_kind == u"tie_cross":
+        rb_conf, err_conf = _create_cabezal_confinement_cross_tie(
+            doc,
+            cj[u"wall"],
+            cj[u"extremo"],
+            cj[u"ex_cfg"],
+            segment_ctx=cj.get(u"segment_ctx"),
+            stack_index=cj.get(u"stack_idx", 0),
+            bar_type_fallback=bar_type_fallback,
+            bar_index=cj.get(u"tie_bar_index", 1),
+        )
+    elif job_kind == u"tie":
         rb_conf, err_conf = _create_cabezal_confinement_tie(
             doc,
             cj[u"wall"],
@@ -5670,12 +6394,18 @@ def _cabezal_create_confinement_job(
         if defer_tags:
             ex_cfg = cj.get(u"ex_cfg") or {}
             try:
-                n_capas_conf = int(ex_cfg.get(u"n_capas", CABEZAL_MIN_CAPAS))
+                n_capas_conf = int(cabezal_effective_n_capas(ex_cfg))
             except Exception:
-                n_capas_conf = CABEZAL_MIN_CAPAS
+                try:
+                    n_capas_conf = int(ex_cfg.get(u"n_capas", CABEZAL_MIN_CAPAS))
+                except Exception:
+                    n_capas_conf = CABEZAL_MIN_CAPAS
+            tag_job_kind = (
+                u"tie" if job_kind in (u"tie", u"tie_cross") else job_kind
+            )
             tag_mode = (
                 _cab_tags.confinement_tag_mode(
-                    cj.get(u"conf_type"), n_capas_conf, job_kind,
+                    cj.get(u"conf_type"), n_capas_conf, tag_job_kind,
                 )
                 if _cab_tags is not None
                 else None
@@ -5696,6 +6426,17 @@ def _cabezal_create_confinement_job(
                     u"cj": cj,
                     u"rebar_id": rb_conf.Id,
                 })
+            elif _cab_tags is not None and len(res.get(u"messages") or []) < 24:
+                res.setdefault(u"messages", []).append(
+                    u"Muro {0} {1}: confinamiento creado sin modo de etiqueta "
+                    u"(tipo={2}, kind={3}, capas={4}).".format(
+                        cj.get(u"wid"),
+                        cj.get(u"extremo"),
+                        cj.get(u"conf_type"),
+                        job_kind,
+                        n_capas_conf,
+                    ),
+                )
         elif view is not None and _cab_tags is not None:
             ok_tag, err_tag, kind_lbl = _cabezal_etiquetar_confinamiento_rebar(
                 doc, view, res, cj, rb_conf,
@@ -5721,7 +6462,7 @@ def _cabezal_create_confinement_job(
         return True
     if err_conf:
         res[u"n_fail"] = int(res.get(u"n_fail", 0)) + 1
-        kind = u"traba" if job_kind == u"tie" else u"confinamiento"
+        kind = u"traba" if job_kind in (u"tie", u"tie_cross") else u"confinamiento"
         cap_lbl = u""
         if job_kind == u"tie":
             try:
@@ -5742,6 +6483,78 @@ def _cabezal_aplicar_etiquetado_confinamiento_animado(doc, view, res, uidoc):
     """Etiqueta confinamiento: individuales y multihost, lote a lote."""
     if _cab_tags is None or doc is None or view is None:
         return
+    inline_peek = res.get(u"_conf_inline_tag_pending") or []
+    mh_pending = res.get(u"_conf_multihost_traba_pending") or {}
+    if not inline_peek and not mh_pending:
+        return
+
+    # Misma validación temprana que longitudinales: un mensaje claro, no N fallos mudos.
+    if not _cab_tags._vista_permite_rebar_tags(view):
+        n_pend = len(inline_peek) + len(mh_pending)
+        res[u"n_conf_tags_fail"] = int(res.get(u"n_conf_tags_fail", 0)) + n_pend
+        res.setdefault(u"messages", []).append(
+            u"Etiquetas confinamiento: use planta, alzado o sección "
+            u"(no plantilla ni 3D). Pendientes: {0}.".format(n_pend),
+        )
+        res.pop(u"_conf_inline_tag_pending", None)
+        res.pop(u"_conf_multihost_traba_pending", None)
+        res.pop(u"_conf_multihost_flush_order", None)
+        return
+
+    try:
+        tag_map_probe = _cab_tags.collect_confinement_tag_symbol_map(doc)
+    except Exception:
+        tag_map_probe = {}
+    try:
+        mh_map_probe = _cab_tags.collect_confinement_multihost_tag_symbol_map(doc)
+    except Exception:
+        mh_map_probe = {}
+    if not tag_map_probe and inline_peek:
+        fam = getattr(
+            _cab_tags, u"CABEZAL_CONFINEMENT_TAG_FAMILY_NAME",
+            u"EST_A_STRUCTURAL REBAR_WALL_CONFINAMIENTO_MULTIHOST",
+        )
+        res[u"n_conf_tags_fail"] = int(res.get(u"n_conf_tags_fail", 0)) + len(
+            inline_peek,
+        )
+        res.setdefault(u"messages", []).append(
+            u"Etiquetas estribo confinamiento: no hay tipos OST_RebarTags "
+            u"para «{0}» ni fallbacks ({1} pendientes).".format(
+                fam, len(inline_peek),
+            ),
+        )
+        res.pop(u"_conf_inline_tag_pending", None)
+        inline_peek = []
+        if not mh_pending:
+            return
+    elif tag_map_probe:
+        res[u"_conf_tag_map"] = tag_map_probe
+    if not mh_map_probe and mh_pending:
+        fam_mh = getattr(
+            _cab_tags, u"CABEZAL_CONFINEMENT_MULTIHOST_TAG_FAMILY_NAME",
+            u"EST_A_STRUCTURAL REBAR_WALL_CONFINAMIENTO_MULTIHOST",
+        )
+        n_mh = len(mh_pending)
+        res[u"n_conf_tags_fail"] = int(res.get(u"n_conf_tags_fail", 0)) + n_mh
+        res.setdefault(u"messages", []).append(
+            u"Etiquetas multihost confinamiento: no hay tipos OST_RebarTags "
+            u"para «{0}» ni fallbacks ({1} grupos pendientes).".format(
+                fam_mh, n_mh,
+            ),
+        )
+        res.pop(u"_conf_multihost_traba_pending", None)
+        res.pop(u"_conf_multihost_flush_order", None)
+        mh_pending = {}
+        if not inline_peek:
+            return
+    elif mh_map_probe:
+        res[u"_conf_multihost_tag_map"] = mh_map_probe
+
+    try:
+        doc.Regenerate()
+    except Exception:
+        pass
+
     inline = list(res.pop(u"_conf_inline_tag_pending", None) or [])
     mh_pending = res.get(u"_conf_multihost_traba_pending") or {}
     if not inline and not mh_pending:
@@ -5750,6 +6563,12 @@ def _cabezal_aplicar_etiquetado_confinamiento_animado(doc, view, res, uidoc):
     batch_tags = _tamano_lote_ejecucion(
         len(inline) + len(mh_pending), CABEZAL_TAGS_POR_LOTE_ANIMACION,
     )
+    # Etiquetas: lotes acotados (evita rollback total si Commit falla en modo rápido).
+    try:
+        batch_tags = min(int(batch_tags), 12)
+    except Exception:
+        batch_tags = max(1, int(CABEZAL_TAGS_POR_LOTE_ANIMACION or 1))
+    batch_tags = max(1, int(batch_tags))
     n_inline_lotes = int(math.ceil(float(len(inline)) / float(batch_tags))) if inline else 0
     mh_order = list(res.get(u"_conf_multihost_flush_order") or [])
     mh_keys = [k for k in mh_order if k in mh_pending]
@@ -5793,6 +6612,11 @@ def _cabezal_aplicar_etiquetado_confinamiento_animado(doc, view, res, uidoc):
                     u"{0}–{1} de {2}".format(i0 + 1, i1, len(inline))
                 )
             t = Transaction(doc, txn_name)
+            try:
+                from armado_muros_txn import attach_rebar_outside_host_swallower
+                attach_rebar_outside_host_swallower(t)
+            except Exception:
+                pass
             t.Start()
             lote_ok = False
             try:
@@ -5995,6 +6819,11 @@ def _cabezal_aplicar_creacion_animada(
                 )
 
             t = Transaction(doc, txn_name)
+            try:
+                from armado_muros_txn import attach_rebar_outside_host_swallower
+                attach_rebar_outside_host_swallower(t)
+            except Exception:
+                pass
             t.Start()
             lote_ok = False
             try:
@@ -6047,7 +6876,7 @@ def _cabezal_aplicar_creacion_animada(
                     cj0 = lote[0]
                     kind = (
                         u"traba"
-                        if cj0.get(u"job_kind") == u"tie"
+                        if cj0.get(u"job_kind") in (u"tie", u"tie_cross")
                         else u"estribo"
                     )
                     txn_name = u"Arainco: Cabezal muros — {0} muro {1} {2}".format(
@@ -6061,6 +6890,11 @@ def _cabezal_aplicar_creacion_animada(
                     )
 
                 t = Transaction(doc, txn_name)
+                try:
+                    from armado_muros_txn import attach_rebar_outside_host_swallower
+                    attach_rebar_outside_host_swallower(t)
+                except Exception:
+                    pass
                 t.Start()
                 lote_ok = False
                 try:
@@ -6187,17 +7021,38 @@ def cabezal_aplicar_etiquetado_confinamiento_pendiente(doc, res, uidoc=None):
     """Etiquetas de confinamiento (tras etiquetas longitudinales y mallas en flujo unificado)."""
     if not res or not res.get(u"_defer_etiquetado"):
         return res
+    n_pend = (
+        len(res.get(u"_conf_inline_tag_pending") or [])
+        + len(res.get(u"_conf_multihost_traba_pending") or {})
+    )
     tag_view = _cabezal_tag_view(uidoc)
-    if tag_view is not None:
-        try:
-            _cabezal_aplicar_etiquetado_confinamiento_animado(
-                doc, tag_view, res, uidoc,
-            )
-        except Exception as ex_tag:
+    if tag_view is None:
+        if n_pend:
             res.setdefault(u"messages", []).append(
-                u"Etiquetado confinamiento: {0}".format(ex_tag),
+                u"Etiquetas confinamiento: sin vista activa; "
+                u"{0} pendiente(s) no aplicadas.".format(n_pend),
             )
-    res[u"_defer_etiquetado"] = False
+            res[u"n_conf_tags_fail"] = int(res.get(u"n_conf_tags_fail", 0)) + n_pend
+            res.pop(u"_conf_inline_tag_pending", None)
+            res.pop(u"_conf_multihost_traba_pending", None)
+            res.pop(u"_conf_multihost_flush_order", None)
+        res[u"_defer_etiquetado"] = False
+        return res
+    try:
+        _cabezal_aplicar_etiquetado_confinamiento_animado(
+            doc, tag_view, res, uidoc,
+        )
+    except Exception as ex_tag:
+        res.setdefault(u"messages", []).append(
+            u"Etiquetado confinamiento: {0}".format(ex_tag),
+        )
+        return res
+    n_left = (
+        len(res.get(u"_conf_inline_tag_pending") or [])
+        + len(res.get(u"_conf_multihost_traba_pending") or {})
+    )
+    if n_left <= 0:
+        res[u"_defer_etiquetado"] = False
     return res
 
 
@@ -6389,6 +7244,12 @@ def _aplicar_cabezales_muros_pipeline(
                         u"wall": wall,
                         u"wid": wid,
                         u"layer_index": layer_index,
+                        u"enum_layer_index": cabezal_enum_layer_index(
+                            layer_index,
+                            n_capas=len(layers),
+                            extremo=extremo,
+                            ex_cfg=ex_cfg,
+                        ),
                         u"extremo": extremo,
                         u"thickness_mm": _wall_thickness_mm_for_fusion(wall),
                         u"troceo_por_muro": _troceo_por_muro_from_extremo_cfg(ex_cfg),

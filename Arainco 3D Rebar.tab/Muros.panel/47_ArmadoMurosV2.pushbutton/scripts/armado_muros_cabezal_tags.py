@@ -67,11 +67,20 @@ except Exception:
     MultiPlanarOption = None
 
 CABEZAL_REBAR_TAG_FAMILY_NAME = u"EST_A_STRUCTURAL REBAR TAG_WALL_HORIZONTAL"
-CABEZAL_CONFINEMENT_TAG_FAMILY_NAME = u"EST_A_STRUCTURAL REBAR TAG_CONFINAMIENTO"
-# Familia de etiqueta multihost (Add / Remove Host) para trabas (3+ capas Tipo 1 / Tipo 2).
-CABEZAL_CONFINEMENT_MULTIHOST_TAG_FAMILY_NAME = (
-    u"EST_A_STRUCTURAL REBAR TAG_CONFINAMIENTO_MULTI HOST"
+# Misma familia WALL para estribo suelto y trabas multihost (AddReferences).
+# Tipo de etiqueta = RebarShape de la barra de confinamiento.
+CABEZAL_CONFINEMENT_TAG_FAMILY_NAME = (
+    u"EST_A_STRUCTURAL REBAR_WALL_CONFINAMIENTO_MULTIHOST"
 )
+CABEZAL_CONFINEMENT_TAG_FAMILY_FALLBACKS = (
+    u"EST_A_STRUCTURAL REBAR TAG_CONFINAMIENTO_MULTI HOST",
+    u"EST_A_STRUCTURAL REBAR TAG_CONFINAMIENTO_VIGA_MULTI HOST",
+    u"EST_A_STRUCTURAL REBAR TAG_CONFINAMIENTO",
+    u"EST_A_STRUCTURAL REBAR TAG_CONFINAMIENTO_VIGA",
+)
+# Alias: estribos y trabas comparten familia / fallbacks.
+CABEZAL_CONFINEMENT_MULTIHOST_TAG_FAMILY_NAME = CABEZAL_CONFINEMENT_TAG_FAMILY_NAME
+CABEZAL_CONFINEMENT_MULTIHOST_TAG_FAMILY_FALLBACKS = CABEZAL_CONFINEMENT_TAG_FAMILY_FALLBACKS
 # Desplazamiento genérico (2 capas, 4+ capas) fuera del muro @ 1/50.
 CABEZAL_CONFINEMENT_TAG_OFFSET_MM_AT_REF_SCALE = 250.0
 # Claves de espaciado @ 3 capas (mm modelo en vista de referencia 1/50).
@@ -255,38 +264,63 @@ def _vista_permite_rebar_tags(view):
     return True
 
 
+def _family_name_of_symbol(sym):
+    if sym is None:
+        return u""
+    try:
+        fn = sym.FamilyName
+        if fn:
+            return fn
+    except Exception:
+        pass
+    try:
+        fam = sym.Family
+        if fam is not None:
+            return fam.Name or u""
+    except Exception:
+        pass
+    return u""
+
+
 def _family_symbols_rebar_tag(document, family_name):
+    """Tipos OST_RebarTags de la familia; match exacto y luego alfanumérico."""
     if document is None or not family_name:
         return []
     tgt = _norm_key(family_name)
-    out = []
+    tgt_alnum = _norm_alnum_key(family_name)
+
+    def _match_in_collector(col):
+        exact = []
+        fuzzy = []
+        for sym in col:
+            if sym is None:
+                continue
+            fn = _family_name_of_symbol(sym)
+            if not fn:
+                continue
+            if _norm_key(fn) == tgt:
+                exact.append(sym)
+            elif tgt_alnum and _norm_alnum_key(fn) == tgt_alnum:
+                fuzzy.append(sym)
+        return exact if exact else fuzzy
+
     try:
         col = (
             FilteredElementCollector(document)
             .OfClass(FamilySymbol)
             .OfCategory(BuiltInCategory.OST_RebarTags)
         )
-        for sym in col:
-            if sym is None:
-                continue
-            fn = u""
-            try:
-                fn = sym.FamilyName
-            except Exception:
-                pass
-            if not fn:
-                try:
-                    fam = sym.Family
-                    if fam is not None:
-                        fn = fam.Name
-                except Exception:
-                    fn = u""
-            if _norm_key(fn) != tgt:
-                continue
-            out.append(sym)
+        found = _match_in_collector(col)
+        if found:
+            return found
+    except Exception:
+        pass
+    # Algunas plantillas cargan la familia sin categoría OST_RebarTags filtrable.
+    try:
+        col_all = FilteredElementCollector(document).OfClass(FamilySymbol)
+        return _match_in_collector(col_all)
     except Exception:
         return []
-    return out
 
 
 def _symbol_type_labels(sym):
@@ -327,6 +361,24 @@ def _collect_tag_symbol_map(document, family_name):
             if lab not in out:
                 out[lab] = sym
     return out
+
+
+def _collect_tag_symbol_map_with_fallbacks(document, primary_name, fallbacks=None):
+    """
+    Primero la familia canónica; si no hay tipos, prueba fallbacks (p. ej. _VIGA).
+    Retorna ``(tag_map, family_name_usada)``.
+    """
+    names = [primary_name]
+    for fb in fallbacks or ():
+        if fb and fb not in names:
+            names.append(fb)
+    last_name = primary_name
+    for name in names:
+        last_name = name
+        tag_map = _collect_tag_symbol_map(document, name)
+        if tag_map:
+            return tag_map, name
+    return {}, last_name
 
 
 def _lookup_tag_symbol(tag_map, label):
@@ -505,6 +557,54 @@ def _resolve_tag_symbol_for_rebar(document, family_name, tag_map, rebar):
         return sym, CABEZAL_TAG_SHAPE_FALLBACK + u" (fallback)"
 
     return None, None
+
+
+def _resolve_confinement_tag_symbol_for_rebar(document, tag_map, rebar):
+    """
+    Tipo de etiqueta de confinamiento = ``RebarShape`` de la barra.
+
+    Sin inferencia geométrica ni fallback «01» (un estribo cerrado mal
+    etiquetaba como 04/01). Misma regla para estribo suelto y trabas multihost.
+    """
+    if not tag_map or rebar is None:
+        return None, None
+
+    candidates = []
+    primary = _primary_rebar_shape_tag_key(document, rebar)
+    if primary:
+        candidates.append(primary)
+    candidates.extend(_rebar_shape_name_candidates(document, rebar))
+
+    seen = set()
+    ordered = []
+    digit_keys = []
+    for c in candidates:
+        if not c or c in seen:
+            continue
+        seen.add(c)
+        ordered.append(c)
+        try:
+            digits = re.sub(r"\D", u"", unicode(c))
+        except Exception:
+            digits = re.sub(r"\D", u"", str(c or u""))
+        if digits:
+            try:
+                n = int(digits)
+                for alt in (u"{0:02d}".format(n), str(n)):
+                    if alt not in seen:
+                        seen.add(alt)
+                        digit_keys.append(alt)
+            except Exception:
+                pass
+
+    # Claves numéricas primero (shape «10» → tipo «10»), luego el resto.
+    for c in digit_keys + ordered:
+        sym = _lookup_tag_symbol(tag_map, c)
+        if sym is not None:
+            return sym, c
+
+    hint = primary or (ordered[0] if ordered else None)
+    return None, hint
 
 
 def _mm_to_internal(mm):
@@ -837,7 +937,7 @@ def confinement_tag_extra_offset_mm(n_capas, conf_type, job_kind, tie_layer_inde
     if n != 3 or job_kind != u"tie":
         return 0.0
     ct = _norm_conf_type(conf_type)
-    if ct != _CONF_TYPE_PERIMETER:
+    if ct not in (_CONF_TYPE_PERIMETER, _CONF_TYPE_PERIMETER_CROSS):
         return 0.0
     return float(
         CABEZAL_CONFINEMENT_TAG_3CAPAS_SPACING_BY_SCALE.get(
@@ -860,16 +960,43 @@ def confinement_tag_extra_offset_mm_for_view(
     )
 
 
+def _normalize_confinement_tie_job_kind(job_kind):
+    """Trabas de capa y longitudinales (``tie_cross``) comparten flujo de etiqueta «tie»."""
+    jk = job_kind
+    if jk == u"tie_cross":
+        jk = u"tie"
+    return jk
+
+
 def _confinement_multihost_tipo2_tie(n_capas, conf_type, job_kind):
-    """Trabas interiores Tipo 2 con multihost (4 capas: [1,2]; 5: [1,2,3]; 6: [1..4])."""
+    """Trabas interiores Tipo 2/3 con multihost (4 capas: [1,2]; 5: [1,2,3]; 6: [1..4])."""
     try:
         n = int(n_capas)
     except Exception:
         return False
+    jk = _normalize_confinement_tie_job_kind(job_kind)
     return (
         n >= 4
-        and job_kind == u"tie"
-        and _norm_conf_type(conf_type) == _CONF_TYPE_PERIMETER
+        and jk == u"tie"
+        and _conf_type_has_perimeter_stirrup(conf_type)
+    )
+
+
+def _confinement_multihost_tipo3_tie(n_capas, conf_type, job_kind):
+    """
+    Tipo 3 @ 3 capas: trabas de capa + longitudinales en una sola etiqueta multihost.
+
+    Tipo 2 @ 3 capas sigue con traba individual (``conf_tag``); solo ``perimeter_cross``.
+    """
+    try:
+        n = int(n_capas)
+    except Exception:
+        return False
+    jk = _normalize_confinement_tie_job_kind(job_kind)
+    return (
+        n >= 3
+        and jk == u"tie"
+        and _norm_conf_type(conf_type) == _CONF_TYPE_PERIMETER_CROSS
     )
 
 
@@ -879,9 +1006,10 @@ def _confinement_multihost_tipo1_tie(n_capas, conf_type, job_kind):
         n = int(n_capas)
     except Exception:
         return False
+    jk = _normalize_confinement_tie_job_kind(job_kind)
     return (
         n >= 3
-        and job_kind == u"tie"
+        and jk == u"tie"
         and _norm_conf_type(conf_type) == _CONF_TYPE_TIE_LAYER_1
     )
 
@@ -894,7 +1022,7 @@ def _confinement_tag_lateral_mm_for_view(view, n_capas, conf_type, job_kind):
         return 0.0
     if n != 3 or job_kind != u"tie":
         return 0.0
-    if _norm_conf_type(conf_type) != _CONF_TYPE_PERIMETER:
+    if not _conf_type_has_perimeter_stirrup(conf_type):
         return 0.0
     return _confinement_ncapas_spacing_mm(
         view, n, CABEZAL_CONF_3C_TIPO2_TRABA_LATERAL,
@@ -2087,18 +2215,26 @@ def etiquetar_cabezal_longitudinales_en_vista(
 
 
 def collect_confinement_tag_symbol_map(document):
-    """Mapa clave de tipo (según ``RebarShape``) → ``FamilySymbol`` de etiqueta confinamiento."""
-    return _collect_tag_symbol_map(document, CABEZAL_CONFINEMENT_TAG_FAMILY_NAME)
+    """
+    Mapa clave de tipo (según ``RebarShape``) → ``FamilySymbol``.
+
+    Misma familia WALL MULTIHOST que trabas (estribo suelto y multihost).
+    """
+    return collect_confinement_multihost_tag_symbol_map(document)
 
 
 def collect_confinement_multihost_tag_symbol_map(document):
-    """Mapa de tipos para familia multihost de confinamiento (3+ capas)."""
-    return _collect_tag_symbol_map(
-        document, CABEZAL_CONFINEMENT_MULTIHOST_TAG_FAMILY_NAME,
+    """Mapa de tipos para familia WALL confinamiento (estribo / trabas multihost)."""
+    tag_map, _used = _collect_tag_symbol_map_with_fallbacks(
+        document,
+        CABEZAL_CONFINEMENT_MULTIHOST_TAG_FAMILY_NAME,
+        CABEZAL_CONFINEMENT_MULTIHOST_TAG_FAMILY_FALLBACKS,
     )
+    return tag_map
 
 
 _CONF_TYPE_PERIMETER = u"perimeter_0_1"
+_CONF_TYPE_PERIMETER_CROSS = u"perimeter_cross"
 _CONF_TYPE_TIE_LAYER_1 = u"tie_layer_1"
 
 
@@ -2109,34 +2245,41 @@ def _norm_conf_type(conf_type):
         return str(conf_type or u"").strip()
 
 
+def _conf_type_has_perimeter_stirrup(conf_type):
+    ct = _norm_conf_type(conf_type)
+    return ct in (_CONF_TYPE_PERIMETER, _CONF_TYPE_PERIMETER_CROSS)
+
+
 def confinement_tag_mode(conf_type, n_capas, job_kind):
     """
     Modo de etiqueta de confinamiento.
 
-    **2 capas:** estribo (Tipo 2) o traba (Tipo 1) — ``TAG_CONFINAMIENTO``.
+    **2 capas:** estribo (Tipo 2/3) o traba (Tipo 1) — familia WALL confinamiento.
     **3 capas Tipo 1:** trabas [1,2] — multihost.
-    **3 capas Tipo 2:** estribo + traba [1] — ``TAG_CONFINAMIENTO``.
-    **4 capas Tipo 1:** trabas [1,2,3] — multihost.
-    **4 capas Tipo 2:** estribo + trabas [1,2] — estribo + multihost.
-    **5 capas Tipo 1:** trabas [1,2,3,4] — multihost.
-    **5 capas Tipo 2:** estribo + trabas [1,2,3] — estribo + multihost.
-    **6 capas Tipo 1:** trabas [1..5] — multihost.
-    **6 capas Tipo 2:** estribo + trabas [1..4] — estribo + multihost.
+    **3 capas Tipo 2:** estribo + traba [1] — estribo + traba individual.
+    **3+ capas Tipo 3:** estribo + trabas de capa + longitudinales — multihost único.
+    **4+ capas Tipo 2/3:** estribo + trabas interiores — estribo + multihost.
+    ``tie_cross`` (longitudinales Tipo 3) usa el mismo multihost que ``tie``.
     """
     ct = _norm_conf_type(conf_type)
+    jk = _normalize_confinement_tie_job_kind(job_kind)
     try:
         n = int(n_capas)
     except Exception:
         n = 0
-    if job_kind == u"stirrup" and ct == _CONF_TYPE_PERIMETER:
+    if jk == u"stirrup" and _conf_type_has_perimeter_stirrup(ct):
         return u"conf_tag"
-    if n == 2 and job_kind == u"tie" and ct == _CONF_TYPE_TIE_LAYER_1:
+    if n == 2 and jk == u"tie" and ct == _CONF_TYPE_TIE_LAYER_1:
         return u"conf_tag"
-    if _confinement_multihost_tipo1_tie(n, ct, job_kind):
+    if _confinement_multihost_tipo1_tie(n, ct, jk):
         return u"conf_tag_multihost"
-    if n == 3 and job_kind == u"tie" and ct == _CONF_TYPE_PERIMETER:
+    # Tipo 2 @ 3 capas: traba de capa individual (sin multihost).
+    if n == 3 and jk == u"tie" and ct == _CONF_TYPE_PERIMETER:
         return u"conf_tag"
-    if _confinement_multihost_tipo2_tie(n, ct, job_kind):
+    # Tipo 3 @ 3+ capas: capa + longitudinales en el mismo multihost.
+    if _confinement_multihost_tipo3_tie(n, ct, jk):
+        return u"conf_tag_multihost"
+    if _confinement_multihost_tipo2_tie(n, ct, jk):
         return u"conf_tag_multihost"
     return None
 
@@ -2428,60 +2571,124 @@ def _calcular_cabeza_tag_confinamiento_estribo(
     return head
 
 
+def _referencias_tag_rebar_confinamiento(document, rebar, view):
+    """Referencias para etiqueta de confinamiento (API local + candidatos shaft)."""
+    refs = list(_referencias_tag_rebar(document, rebar, view) or [])
+    if _rebar_reference_candidates_for_tag is None:
+        return refs
+    try:
+        extra = _rebar_reference_candidates_for_tag(document, view, rebar) or []
+    except Exception:
+        extra = []
+    seen = set()
+    out = []
+    for r in list(refs) + list(extra):
+        if r is None:
+            continue
+        try:
+            k = r.ConvertToStableRepresentation(document)
+        except Exception:
+            try:
+                k = unicode(r)
+            except Exception:
+                k = id(r)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(r)
+    return out
+
+
 def _crear_tag_rebar_confinamiento(document, view, rebar, tag_symbol_id, head_pos):
-    """``IndependentTag`` vertical, sin leader."""
+    """``IndependentTag`` de confinamiento: Vertical sin leader primero; fallbacks."""
     if head_pos is None:
         return None, u"sin punto de inserción"
-    refs = _referencias_tag_rebar(document, rebar, view)
+    refs = _referencias_tag_rebar_confinamiento(document, rebar, view)
     if not refs:
         return None, u"sin referencia API"
-    orient = TagOrientation.Vertical
-    add_leader = False
+    try:
+        sym = document.GetElement(tag_symbol_id)
+        if sym is not None and hasattr(sym, u"IsActive") and not sym.IsActive:
+            sym.Activate()
+    except Exception:
+        pass
+
+    def _force_tag_type(tag):
+        if tag is None or tag_symbol_id is None:
+            return
+        try:
+            cur = tag.GetTypeId()
+            if cur is not None and cur == tag_symbol_id:
+                return
+        except Exception:
+            pass
+        try:
+            tag.ChangeTypeId(tag_symbol_id)
+            return
+        except Exception:
+            pass
+        try:
+            tag.SetTypeId(tag_symbol_id)
+        except Exception:
+            pass
+
+    def _finalize(tag):
+        if tag is None:
+            return None
+        _force_tag_type(tag)
+        _aplicar_estilo_tag_confinamiento_estribo(tag, head_pos)
+        try:
+            tag.TagOrientation = TagOrientation.Vertical
+        except Exception:
+            pass
+        try:
+            tag.HasLeader = False
+        except Exception:
+            pass
+        try:
+            tag.TagHeadPosition = head_pos
+        except Exception:
+            pass
+        return tag
+
+    # Preferencia muros: vertical sin leader; luego horizontales / con leader.
+    attempts = (
+        (TagOrientation.Vertical, False),
+        (TagOrientation.Vertical, True),
+        (TagOrientation.Horizontal, False),
+        (TagOrientation.Horizontal, True),
+    )
     last_ex = None
-    for ref in refs:
-        try:
-            tag = IndependentTag.Create(
-                document,
-                tag_symbol_id,
-                view.Id,
-                ref,
-                add_leader,
-                orient,
-                head_pos,
-            )
-            if tag is not None:
-                _aplicar_estilo_tag_confinamiento_estribo(tag, head_pos)
-                try:
-                    tag.TagHeadPosition = head_pos
-                except Exception:
-                    pass
-                return tag, None
-        except Exception as ex:
-            last_ex = ex
-    for ref in refs:
-        try:
-            tag = IndependentTag.Create(
-                document,
-                view.Id,
-                ref,
-                add_leader,
-                TagMode.TM_ADDBY_CATEGORY,
-                orient,
-                head_pos,
-            )
-            if tag is not None:
-                try:
-                    tag.SetTypeId(tag_symbol_id)
-                except Exception:
-                    pass
-                _aplicar_estilo_tag_confinamiento_estribo(tag, head_pos)
-                try:
-                    tag.TagHeadPosition = head_pos
-                except Exception:
-                    pass
-                return tag, None
-        except Exception as ex:
-            last_ex = ex
+    for orient, add_leader in attempts:
+        for ref in refs:
+            try:
+                tag = IndependentTag.Create(
+                    document,
+                    tag_symbol_id,
+                    view.Id,
+                    ref,
+                    add_leader,
+                    orient,
+                    head_pos,
+                )
+                if tag is not None:
+                    return _finalize(tag), None
+            except Exception as ex:
+                last_ex = ex
+            try:
+                tag = IndependentTag.Create(
+                    document,
+                    view.Id,
+                    ref,
+                    add_leader,
+                    TagMode.TM_ADDBY_CATEGORY,
+                    orient,
+                    head_pos,
+                )
+                if tag is not None:
+                    return _finalize(tag), None
+            except Exception as ex:
+                last_ex = ex
     if last_ex is not None:
         try:
             return None, unicode(last_ex)
@@ -2506,7 +2713,8 @@ def etiquetar_cabezal_estribo_confinamiento(
     """
     Etiqueta de confinamiento (estribo / traba).
 
-    Familia ``EST_A_STRUCTURAL REBAR TAG_CONFINAMIENTO``; tipo según ``RebarShape``.
+    Familia ``EST_A_STRUCTURAL REBAR_WALL_CONFINAMIENTO_MULTIHOST`` (igual que trabas);
+    tipo según ``RebarShape`` de la barra (p. ej. estribo shape «10» → tipo «10»).
     @ 3 capas Tipo 2: estribo 280 mm; traba +220 mm radial y mismo anclaje (alineada).
     """
     if document is None or view is None or rebar is None:
@@ -2521,11 +2729,14 @@ def etiquetar_cabezal_estribo_confinamiento(
     if tag_map is None:
         tag_map = collect_confinement_tag_symbol_map(document)
     if not tag_map:
-        return False, (
-            u"Etiqueta estribo: no hay tipos OST_RebarTags para «{0}».".format(family)
+        alts = u", ".join(
+            [family] + list(CABEZAL_CONFINEMENT_TAG_FAMILY_FALLBACKS or ()),
         )
-    sym, shape_lbl = _resolve_tag_symbol_for_rebar(
-        document, family, tag_map, rebar,
+        return False, (
+            u"Etiqueta estribo: no hay tipos OST_RebarTags para «{0}».".format(alts)
+        )
+    sym, shape_lbl = _resolve_confinement_tag_symbol_for_rebar(
+        document, tag_map, rebar,
     )
     if sym is None:
         shape_hint = shape_lbl or _primary_rebar_shape_tag_key(document, rebar) or u"?"
@@ -2555,12 +2766,29 @@ def etiquetar_cabezal_estribo_confinamiento(
 
 
 def confinement_multihost_group_key(cj):
-    """Una etiqueta multihost por muro y extremo (capas [1] y [2] del mismo cabezal)."""
+    """Una etiqueta multihost por muro y extremo (todas las trabas del cabezal)."""
     try:
         wid = int(cj.get(u"wid", 0) or 0)
     except Exception:
         wid = 0
     return (wid, _norm_extremo(cj.get(u"extremo")))
+
+
+def _multihost_traba_item_sort_key(cj):
+    """
+    Orden en multihost: trabas de capa por ``tie_layer_index``; longitudinales
+    (``tie_cross``) después, por ``tie_bar_index``.
+    """
+    jk = cj.get(u"job_kind")
+    if jk == u"tie_cross":
+        try:
+            return 1000 + int(cj.get(u"tie_bar_index", 0) or 0)
+        except Exception:
+            return 1000
+    try:
+        return int(cj.get(u"tie_layer_index", 0) or 0)
+    except Exception:
+        return 0
 
 
 def register_confinement_multihost_traba_pending(res, cj, rebar):
@@ -2570,22 +2798,29 @@ def register_confinement_multihost_traba_pending(res, cj, rebar):
     key = confinement_multihost_group_key(cj)
     pending = res.setdefault(u"_conf_multihost_traba_pending", {})
     grp = pending.get(key)
+    ex_cfg = cj.get(u"ex_cfg") or {}
+    n_capas_stored = ex_cfg.get(u"n_capas")
+    layers = ex_cfg.get(u"layers")
+    if layers:
+        try:
+            n_capas_stored = max(int(n_capas_stored or 0), len(list(layers)))
+        except Exception:
+            pass
     if grp is None:
         grp = {
             u"items": [],
             u"wall": cj.get(u"wall"),
             u"extremo": cj.get(u"extremo"),
             u"conf_type": cj.get(u"conf_type"),
-            u"n_capas": cj.get(u"ex_cfg", {}).get(u"n_capas"),
+            u"n_capas": n_capas_stored,
         }
         pending[key] = grp
-    try:
-        li = int(cj.get(u"tie_layer_index", 0) or 0)
-    except Exception:
-        li = 0
+    sort_key = _multihost_traba_item_sort_key(cj)
     grp.setdefault(u"items", []).append({
         u"rebar_id": rebar.Id,
-        u"tie_layer_index": li,
+        u"tie_layer_index": sort_key,
+        u"sort_key": sort_key,
+        u"job_kind": cj.get(u"job_kind"),
     })
 
 
@@ -2593,8 +2828,15 @@ def _ordered_rebar_ids_from_multihost_grp(grp):
     items = list(grp.get(u"items") or [])
     if not items:
         return []
+
+    def _item_sort_key(it):
+        try:
+            return int(it.get(u"sort_key", it.get(u"tie_layer_index", 0)))
+        except Exception:
+            return 0
+
     try:
-        items.sort(key=lambda x: int(x.get(u"tie_layer_index", 0)))
+        items.sort(key=_item_sort_key)
     except Exception:
         pass
     out = []
@@ -2657,12 +2899,15 @@ def etiquetar_cabezal_trabas_multihost_confinamiento(
     conf_type=None,
     anchor_override=None,
     stirrup_head_override=None,
+    mh_regen_once=None,
 ):
     """
     Una ``IndependentTag`` multihost para trabas (Tipo 1 / Tipo 2 @ 3+ capas).
 
-    Familia ``EST_A_STRUCTURAL REBAR TAG_CONFINAMIENTO_MULTI HOST``.
+    Familia ``EST_A_STRUCTURAL REBAR_WALL_CONFINAMIENTO_MULTIHOST``.
     ``AddReferences`` (patrón Borde Losa). Sin fallback a etiquetas sueltas.
+
+    ``mh_regen_once``: ``{u"pending": True}`` para un solo Regenerate por txn de lote.
     """
     if document is None or view is None:
         return False, u"Etiqueta multihost: parámetros inválidos."
@@ -2677,9 +2922,12 @@ def etiquetar_cabezal_trabas_multihost_confinamiento(
     if tag_map is None:
         tag_map = collect_confinement_multihost_tag_symbol_map(document)
     if not tag_map:
+        alts = u", ".join(
+            [family] + list(CABEZAL_CONFINEMENT_MULTIHOST_TAG_FAMILY_FALLBACKS or ()),
+        )
         return False, (
             u"Etiqueta multihost: no hay tipos OST_RebarTags para «{0}».".format(
-                family,
+                alts,
             )
         )
     if _rebar_reference_candidates_for_tag is None:
@@ -2690,8 +2938,8 @@ def etiquetar_cabezal_trabas_multihost_confinamiento(
     if not isinstance(primary_rb, Rebar):
         return False, u"Etiqueta multihost: barra principal no encontrada."
 
-    sym, shape_lbl = _resolve_tag_symbol_for_rebar(
-        document, family, tag_map, primary_rb,
+    sym, shape_lbl = _resolve_confinement_tag_symbol_for_rebar(
+        document, tag_map, primary_rb,
     )
     if sym is None:
         shape_hint = shape_lbl or _primary_rebar_shape_tag_key(document, primary_rb) or u"?"
@@ -2752,10 +3000,16 @@ def etiquetar_cabezal_trabas_multihost_confinamiento(
     for ref in extra_refs:
         refs_add.Add(ref)
 
-    try:
-        document.Regenerate()
-    except Exception:
-        pass
+    do_regen = True
+    if mh_regen_once is not None:
+        do_regen = bool(mh_regen_once.get(u"pending", True))
+    if do_regen:
+        try:
+            document.Regenerate()
+        except Exception:
+            pass
+        if mh_regen_once is not None:
+            mh_regen_once[u"pending"] = False
 
     st = SubTransaction(document)
     try:
@@ -2783,7 +3037,9 @@ def etiquetar_cabezal_trabas_multihost_confinamiento(
         return False, u"Multihost trabas (AddReferences): {0}".format(msg)
 
 
-def _flush_cabezal_confinement_multihost_one(document, view, res, _key, grp, tag_map):
+def _flush_cabezal_confinement_multihost_one(
+    document, view, res, _key, grp, tag_map, mh_regen_once=None,
+):
     """Una etiqueta multihost (grupo muro/extremo). Retorna (ok, err)."""
     ordered_ids = _ordered_rebar_ids_from_multihost_grp(grp)
     if not ordered_ids:
@@ -2796,21 +3052,73 @@ def _flush_cabezal_confinement_multihost_one(document, view, res, _key, grp, tag
     anchor_override = None
     stirrup_head_override = None
     cj_stub = {u"wid": _key[0], u"extremo": _key[1]}
-    if _confinement_multihost_tipo2_tie(n_capas_g, conf_type_g, u"tie"):
+    if (
+        _confinement_multihost_tipo2_tie(n_capas_g, conf_type_g, u"tie")
+        or _confinement_multihost_tipo3_tie(n_capas_g, conf_type_g, u"tie")
+    ):
         anchor_override = get_confinement_tipo2_stirrup_anchor(res, cj_stub)
         stirrup_head_override = get_confinement_tipo2_stirrup_head(res, cj_stub)
-    return etiquetar_cabezal_trabas_multihost_confinamiento(
-        document,
-        view,
-        ordered_ids,
-        tag_map=tag_map,
-        wall=grp.get(u"wall"),
-        extremo=grp.get(u"extremo"),
-        n_capas=n_capas_g,
-        conf_type=conf_type_g,
-        anchor_override=anchor_override,
-        stirrup_head_override=stirrup_head_override,
-    )
+    last_err = None
+    n_ids = len(ordered_ids)
+    for pi in range(n_ids if n_ids > 1 else 1):
+        if n_ids <= 1:
+            try_order = ordered_ids
+        else:
+            try_order = (
+                ordered_ids[:pi] + ordered_ids[pi + 1:] + [ordered_ids[pi]]
+            )
+        ok, err = etiquetar_cabezal_trabas_multihost_confinamiento(
+            document,
+            view,
+            try_order,
+            tag_map=tag_map,
+            wall=grp.get(u"wall"),
+            extremo=grp.get(u"extremo"),
+            n_capas=n_capas_g,
+            conf_type=conf_type_g,
+            anchor_override=anchor_override,
+            stirrup_head_override=stirrup_head_override,
+            mh_regen_once=mh_regen_once,
+        )
+        if ok:
+            return True, None
+        last_err = err
+    err = last_err
+    # Fallback: etiquetas individuales (familia simple) si multihost no aplica.
+    tag_map_ind = res.get(u"_conf_tag_map")
+    if tag_map_ind is None:
+        try:
+            tag_map_ind = collect_confinement_tag_symbol_map(document)
+        except Exception:
+            tag_map_ind = {}
+        res[u"_conf_tag_map"] = tag_map_ind
+    if not tag_map_ind:
+        return False, err
+    n_ok = 0
+    last_ind_err = err
+    for rid in ordered_ids:
+        rb = document.GetElement(rid) if rid is not None else None
+        if not isinstance(rb, Rebar):
+            continue
+        ok_i, err_i = etiquetar_cabezal_estribo_confinamiento(
+            document,
+            view,
+            rb,
+            tag_map=tag_map_ind,
+            wall=grp.get(u"wall"),
+            extremo=grp.get(u"extremo"),
+            n_capas=n_capas_g,
+            conf_type=conf_type_g,
+            job_kind=u"tie",
+            anchor_override=anchor_override,
+        )
+        if ok_i:
+            n_ok += 1
+        elif err_i:
+            last_ind_err = err_i
+    if n_ok > 0:
+        return True, None
+    return False, last_ind_err or err
 
 
 def _record_conf_multihost_tag_result(res, _key, ok, err):
@@ -2848,9 +3156,11 @@ def flush_cabezal_confinement_multihost_trabas(document, view, res):
         except Exception:
             tag_map = {}
         res[u"_conf_multihost_tag_map"] = tag_map
+    mh_regen_once = {u"pending": True}
     for _key, grp in pending.items():
         ok, err = _flush_cabezal_confinement_multihost_one(
             document, view, res, _key, grp, tag_map,
+            mh_regen_once=mh_regen_once,
         )
         _record_conf_multihost_tag_result(res, _key, ok, err)
 
@@ -2904,12 +3214,14 @@ def etiquetar_cabezal_confinamiento_multihost_animado(
         t.Start()
         lote_ok = False
         try:
+            mh_regen_once = {u"pending": True}
             for _key in lote_keys:
                 grp = pending.pop(_key, None)
                 if grp is None:
                     continue
                 ok, err = _flush_cabezal_confinement_multihost_one(
                     document, view, res, _key, grp, tag_map,
+                    mh_regen_once=mh_regen_once,
                 )
                 _record_conf_multihost_tag_result(res, _key, ok, err)
                 if ok:

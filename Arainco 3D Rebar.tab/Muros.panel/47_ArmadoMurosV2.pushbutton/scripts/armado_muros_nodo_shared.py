@@ -110,7 +110,7 @@ def _rebar_bar_included(rebar, idx):
         return True
 
 
-def _excluir_barras_por_indices(rebar, indices, doc=None):
+def _excluir_barras_por_indices(rebar, indices, doc=None, regenerate=True):
     """Excluye posiciones concretas de un set (``SetBarIncluded``), con verificación."""
     if rebar is None or not isinstance(rebar, Rebar):
         return False
@@ -135,7 +135,7 @@ def _excluir_barras_por_indices(rebar, indices, doc=None):
             rebar.SetBarIncluded(False, idx)
         except Exception:
             pass
-    if doc is not None:
+    if doc is not None and regenerate:
         try:
             doc.Regenerate()
         except Exception:
@@ -147,7 +147,7 @@ def _excluir_barras_por_indices(rebar, indices, doc=None):
                 rebar.SetBarIncluded(False, idx)
             except Exception:
                 pass
-        if doc is not None:
+        if doc is not None and regenerate:
             try:
                 doc.Regenerate()
             except Exception:
@@ -156,7 +156,7 @@ def _excluir_barras_por_indices(rebar, indices, doc=None):
     return len(still) < len(targets)
 
 
-def ajustar_inclusion_extremos_rebar_set(rebar, document, include_first=True, include_last=True):
+def ajustar_inclusion_extremos_rebar_set(rebar, document, include_first=True, include_last=True, regenerate=True):
     if rebar is None or not isinstance(rebar, Rebar):
         return False
     if include_first and include_last:
@@ -212,7 +212,7 @@ def ajustar_inclusion_extremos_rebar_set(rebar, document, include_first=True, in
     for b_try in (b_side, not b_side):
         try:
             _aplicar(b_try)
-            if document is not None:
+            if document is not None and regenerate:
                 try:
                     document.Regenerate()
                 except Exception:
@@ -227,7 +227,7 @@ def ajustar_inclusion_extremos_rebar_set(rebar, document, include_first=True, in
     for b_try in (b_side, not b_side):
         try:
             _aplicar(b_try)
-            if document is not None:
+            if document is not None and regenerate:
                 try:
                     document.Regenerate()
                 except Exception:
@@ -263,14 +263,14 @@ def _excluir_barras_extremos_por_indice(rebar, include_first, include_last):
 
 
 def ajustar_inclusion_extremos_rebar_set_con_fallback(
-    rebar, document, include_first=True, include_last=True,
+    rebar, document, include_first=True, include_last=True, regenerate=True,
 ):
     if not use_rebar_setlayout_inclusion(document):
         if include_first and include_last:
             return False
         return _excluir_barras_extremos_por_indice(rebar, include_first, include_last)
     if ajustar_inclusion_extremos_rebar_set(
-        rebar, document, include_first, include_last,
+        rebar, document, include_first, include_last, regenerate=regenerate,
     ):
         return True
     if include_first and include_last:
