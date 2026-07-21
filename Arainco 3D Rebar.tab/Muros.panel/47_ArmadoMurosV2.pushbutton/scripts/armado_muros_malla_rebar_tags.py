@@ -11,7 +11,7 @@ de la **cara interior**; la barra de la cara exterior se agrega con ``AddReferen
 
 La orientación y el tipo de etiqueta se resuelven **solo** con el parámetro de instancia
 ``Armadura_Malla_Orientacion`` (``V.`` → tipo ``Vertical``; ``H.`` → tipo ``Horizontal``).
-No se usa geometría ni ``RebarShape`` para elegir el tipo.
+No se usa longitud de tramo ni geometría para elegir el tipo.
 """
 
 from __future__ import print_function
@@ -387,11 +387,13 @@ def _agrupar_rebars_malla_por_cara_orient(
     host,
     rebar_ids,
     result=None,
+    horiz_ids=None,
 ):
     """
     ``{ vertical: {interior: Rebar, exterior: Rebar}, horizontal: {...} }``.
 
     Agrupa por ``Armadura_Malla_Orientacion`` (``V.`` / ``H.``) y cara int/ext del muro.
+    ``horiz_ids`` se ignora: la orientación sale solo del parámetro de la barra.
     """
     out = {u"vertical": {}, u"horizontal": {}}
     por_orient = {u"vertical": [], u"horizontal": []}
@@ -568,6 +570,7 @@ def etiquetar_rebars_malla_muro(
     muro_contencion=False,
     result=None,
     mh_regen_once=None,
+    horiz_ids=None,
 ):
     """
     Etiqueta malla de un muro (sin transacción): una etiqueta multihost por orientación,
@@ -710,6 +713,7 @@ def etiquetar_rebars_malla_en_vista(
     params_por_muro_id=None,
     muro_contencion=False,
     walls_by_id=None,
+    rebars_horizontal_por_muro_id=None,
 ):
     """
     Etiqueta malla en ``rebars_por_muro_id`` (una transacción para todos los muros).

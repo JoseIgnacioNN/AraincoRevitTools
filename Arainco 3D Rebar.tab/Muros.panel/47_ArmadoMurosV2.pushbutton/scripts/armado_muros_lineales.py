@@ -177,12 +177,7 @@ def _stamp_malla_pre_etiquetar_lote(
     rebars_horizontal_por_muro_id,
 ):
     """Sincroniza ``Armadura_Malla_Orientacion`` H./V. antes de etiquetar (en lineales)."""
-    if (
-        doc is None
-        or not lote
-        or not rebars_por_muro_id
-        or not rebars_horizontal_por_muro_id
-    ):
+    if doc is None or not lote or not rebars_por_muro_id:
         return
     rebars_lote = {}
     for wall in lote:
@@ -237,15 +232,14 @@ def _crear_tags_rebar_malla_tras_commit_lote(
     _reload_malla_rebar_tags_mod()
     if _malla_rebar_tags_mod is None or view is None or tags_rebar_malla is None or not lote:
         return
-    if rebars_horizontal_por_muro_id:
-        _stamp_malla_pre_etiquetar_lote(
-            doc,
-            lote,
-            rebars_por_muro_id,
-            params_por_muro_id,
-            muro_contencion,
-            rebars_horizontal_por_muro_id,
-        )
+    _stamp_malla_pre_etiquetar_lote(
+        doc,
+        lote,
+        rebars_por_muro_id,
+        params_por_muro_id,
+        muro_contencion,
+        rebars_horizontal_por_muro_id,
+    )
     wall_by_id = {}
     for wall in lote:
         try:
@@ -268,6 +262,7 @@ def _crear_tags_rebar_malla_tras_commit_lote(
                 params_por_muro_id=params_por_muro_id,
                 muro_contencion=muro_contencion,
                 walls_by_id=wall_by_id,
+                rebars_horizontal_por_muro_id=rebars_horizontal_por_muro_id,
             )
             tags_rebar_malla[0] += int(tag_res.get(u"n_ok", 0))
             tags_rebar_malla[1] += int(tag_res.get(u"n_fail", 0))
@@ -327,15 +322,6 @@ def _aplicar_etiquetas_malla_todos(
         horiz_map = {}
         if embed_resumen:
             horiz_map = embed_resumen.get(u"rebars_malla_horizontal_por_muro_id") or {}
-        if horiz_map:
-            _stamp_malla_pre_etiquetar_lote(
-                doc,
-                walls_ord,
-                rebars_por_muro_id,
-                params_por_muro_id,
-                muro_contencion,
-                horiz_map,
-            )
         batch = _tamano_lote_ejecucion(len(walls_ord), MUROS_POR_LOTE_ANIMACION)
         for i0 in range(0, len(walls_ord), batch):
             lote = walls_ord[i0:i0 + batch]
@@ -3636,13 +3622,15 @@ def _stamp_malla_params_rebars_por_muro(
     Verticales: Tipo = D.M., Orientación = V.
     Horizontales: Orientación = H.
 
-    Si ``rebars_horizontal_por_muro_id`` está disponible (post-proceso horizontal),
-    tiene prioridad sobre geometría (forma 06 / patas L no reclasifican H. como V.).
+    Fuente de verdad para etiquetas: el parámetro ``Armadura_Malla_Orientacion``.
+    Si hay registro de post-proceso horizontal, ese set → H. y el resto → V.
+    Si no, se respeta el parámetro ya estampado; si falta, tipo de capa / geometría.
     """
     if doc is None or not rebars_por_muro_id:
         return 0
     try:
         from armado_muros_rebar_params import (
+            get_armadura_malla_orientacion,
             stamp_malla_horizontal_rebar,
             stamp_malla_vertical_rebar,
         )
@@ -3696,7 +3684,6 @@ def _stamp_malla_params_rebars_por_muro(
                 n += 1
                 continue
             try:
-                from armado_muros_rebar_params import get_armadura_malla_orientacion
                 orient_actual = get_armadura_malla_orientacion(rb)
             except Exception:
                 orient_actual = None
