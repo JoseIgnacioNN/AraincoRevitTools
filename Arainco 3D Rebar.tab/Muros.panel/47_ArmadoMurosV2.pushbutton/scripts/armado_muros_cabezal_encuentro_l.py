@@ -2,7 +2,9 @@
 """
 Cabezal en encuentro L — capas equitativas en espesor detectado, barras en espesor seleccionado.
 
-S.I.C. «encuentros de muros»; mínimo 2 capas × 2 barras; confinamiento por defecto sin.
+S.I.C. «encuentros de muros»; mínimo 2 capas × 2 barras.
+Confinamiento por defecto sin; UI Tipo 1/2/3 (enc_fiber*):
+  Tipo 1 estribo perimetral a la fibra; Tipo 2 + traba ⊥ host; Tipo 3 + long.
 """
 
 from __future__ import print_function
@@ -297,7 +299,9 @@ def cabezal_extremo_config_encuentro_l(
     sic_basis=u"seleccionado",
 ):
     """
-    Config de extremo para encuentro L (S.I.C. encuentros, 2×2 mínimo, sin confinamiento).
+    Config de extremo para encuentro L (S.I.C. encuentros, 2×2 mínimo).
+
+    Confinamiento inicia en ``none``; el usuario puede elegir Tipo 1/2/3 (E1–E3 zona).
     """
     e_sel = espesor_mm_wall(host_wall)
     e_det = espesor_mm_wall(neighbor_wall)
@@ -503,7 +507,7 @@ def cabezal_seccion_preview_layout_encuentro_l(
         fx = max(0.0, min(dw, fx))
         fxs = []
         fys = []
-        for y_mm in bp.get(u"ys") or []:
+        for bi, y_mm in enumerate(bp.get(u"ys") or []):
             if preview_fill_zone:
                 fy = (float(y_mm) / e_sel) * dh
             else:
@@ -513,6 +517,7 @@ def cabezal_seccion_preview_layout_encuentro_l(
             fxs.append(fx)
             dots.append({
                 u"layer_index": i,
+                u"bar_index": int(bi),
                 u"fx": fx / dw,
                 u"fy": fy / dh,
             })
@@ -525,15 +530,120 @@ def cabezal_seccion_preview_layout_encuentro_l(
                 u"fy1": max(fys) / dh,
             })
 
-    stirrups = []
-    if confinement_type and confinement_type != CABEZAL_CONFINEMENT_NONE:
-        pass
+    stirrup_rect = None
+    stirrup_segments = None
+    tie_preview = None
+    tie_previews = []
+    cross_tie_previews = []
+    stirrup_layer_indices = []
+    tie_layer_indices = []
+    cab = _cab()
+    if (
+        cab is not None
+        and confinement_type
+        and confinement_type != CABEZAL_CONFINEMENT_NONE
+        and cab.cabezal_confinement_scenario_applies(n_capas)
+    ):
+        stirrup_layer_indices, tie_layer_indices = cab.cabezal_confinement_layout_spec(
+            n_capas, confinement_type,
+        )
+        pitch_frac = 0.12
+        try:
+            pitch_mm = float(lp.get(u"pitch_equitativo_mm") or 0.0)
+            if pitch_mm > 1e-6 and e_det > 1e-6:
+                pitch_frac = max(0.04, min(0.45, pitch_mm / e_det))
+        except Exception:
+            pass
+        bar_diam_mm = 16.0
+        if layers:
+            try:
+                bar_diam_mm = float(layers[0].get(u"bar_diam_mm") or bar_diam_mm)
+            except Exception:
+                pass
+        conf_diam = float(
+            confinement_stirrup_diam_mm
+            if confinement_stirrup_diam_mm is not None
+            else 10.0
+        )
+        if (
+            cab.cabezal_confinement_has_perimeter_stirrup(confinement_type)
+            and stirrup_layer_indices
+        ):
+            # Estribo anclado a caras de zona (recubrimiento uniforme), no a AABB barras.
+            fiber_idx = list(range(n_capas))
+            try:
+                c_mm = float(
+                    cover_mm if cover_mm is not None else CABEZAL_COVER_MM,
+                )
+            except Exception:
+                c_mm = float(CABEZAL_COVER_MM)
+            fx0 = max(0.0, min(0.49, c_mm / e_det))
+            fy0 = max(0.0, min(0.49, c_mm / e_sel))
+            stirrup_rect = {
+                u"fx0": fx0,
+                u"fx1": 1.0 - fx0,
+                u"fy0": fy0,
+                u"fy1": 1.0 - fy0,
+            }
+            stirrup_segments = cab.cabezal_stirrup_preview_segments(stirrup_rect)
+            stirrup_layer_indices = list(fiber_idx)
+        # Encuentro Tipo 1 = solo estribo; Tipo 2/3 = + trabas ⊥ (tie_layer_indices).
+        for li in tie_layer_indices:
+            ly_t = layers[li] if len(layers) > li else {}
+            try:
+                bar_d = float(ly_t.get(u"bar_diam_mm") or bar_diam_mm)
+            except Exception:
+                bar_d = bar_diam_mm
+            tp = cab.cabezal_tie_preview_geometry(
+                dots,
+                layer_index=li,
+                pitch_frac=pitch_frac,
+                bar_diam_mm=bar_d,
+                tie_diam_mm=conf_diam,
+            )
+            if tp:
+                tie_previews.append(tp)
+        if tie_previews:
+            tie_preview = tie_previews[0]
+        if (
+            cab.cabezal_confinement_is_perimeter_cross(confinement_type)
+            or cab.cabezal_confinement_is_enc_fiber_cross(confinement_type)
+        ):
+            n_bars_cross = ENC_L_MIN_BARS
+            if layers:
+                try:
+                    n_bars_cross = int(
+                        layers[0].get(u"n_bars", ENC_L_MIN_BARS),
+                    )
+                except Exception:
+                    n_bars_cross = ENC_L_MIN_BARS
+            n_bars_cross = max(
+                ENC_L_MIN_BARS,
+                min(CABEZAL_MAX_BARRAS_POR_CAPA, n_bars_cross),
+            )
+            for bi in cab.cabezal_confinement_cross_tie_bar_indices(n_bars_cross):
+                ctp = cab.cabezal_cross_tie_preview_geometry(
+                    dots,
+                    bar_index=bi,
+                    pitch_frac=pitch_frac,
+                    bar_diam_mm=bar_diam_mm,
+                    tie_diam_mm=conf_diam,
+                )
+                if ctp:
+                    cross_tie_previews.append(ctp)
 
     return {
         u"dots": dots,
         u"layer_bounds": layer_bounds,
-        u"stirrups": stirrups,
+        u"stirrups": [],
         u"ties": [],
+        u"stirrup_rect": stirrup_rect,
+        u"stirrup_segments": stirrup_segments,
+        u"stirrup_layer_indices": stirrup_layer_indices,
+        u"tie_layer_indices": tie_layer_indices,
+        u"tie_preview": tie_preview,
+        u"tie_previews": tie_previews,
+        u"cross_tie_previews": cross_tie_previews,
         u"pitch_equitativo_mm": lp.get(u"pitch_equitativo_mm"),
         u"encuentro_l": True,
     }

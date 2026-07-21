@@ -6389,7 +6389,12 @@ class ArmadoMurosPreviewWindow(object):
         if cabezal is None:
             return []
         n = self._cabezal_n_capas_from_ui(wid, extremo)
-        return cabezal.cabezal_confinement_options(n)
+        is_enc = False
+        try:
+            is_enc = bool(self._cabezal_extremo_es_encuentro_preview(wid, extremo))
+        except Exception:
+            is_enc = False
+        return cabezal.cabezal_confinement_options(n, encuentro=is_enc)
 
     def _on_cabezal_confinement_changed(self, wid, extremo):
         """Sync + redibujar preview tras cambio real en el combo de confinamiento."""
@@ -6411,9 +6416,15 @@ class ArmadoMurosPreviewWindow(object):
         cfg = self._cabezal_by_wall_id.setdefault(wid, {})
         ex_cfg = cfg.setdefault(extremo, cabezal.default_cabezal_extremo_config())
         n_capas = self._cabezal_n_capas_from_ui(wid, extremo)
+        is_enc = False
+        try:
+            is_enc = bool(self._cabezal_extremo_es_encuentro_preview(wid, extremo))
+        except Exception:
+            is_enc = False
         conf = cabezal.normalize_cabezal_confinement(
             ex_cfg.get(u"confinement"),
             n_capas,
+            encuentro=is_enc,
         )
         ex_cfg[u"confinement"] = conf
         opts = self._cabezal_confinement_options_for_ui(wid, extremo)
@@ -6450,7 +6461,7 @@ class ArmadoMurosPreviewWindow(object):
         except Exception:
             pass
 
-    def _match_cabezal_confinement_label(self, txt, fresh_opts):
+    def _match_cabezal_confinement_label(self, txt, fresh_opts, encuentro=False):
         """Resuelve etiqueta visible del combo → valor ``confinement.type``."""
         if cabezal is None:
             return None
@@ -6460,17 +6471,32 @@ class ArmadoMurosPreviewWindow(object):
             txt = u""
         if not txt:
             return None
-        if txt == u"Tipo 1" or u"Traba capa" in txt or u"traba capa" in txt.lower():
-            return cabezal.CABEZAL_CONFINEMENT_TIE_LAYER_1
-        if txt == u"Tipo 3" or u"perimeter_cross" in txt:
-            return cabezal.CABEZAL_CONFINEMENT_PERIMETER_CROSS
-        if txt == u"Tipo 2" or u"\u00edndice 0" in txt or u"0 y 1" in txt:
-            return cabezal.CABEZAL_CONFINEMENT_PERIMETER_0_1
-        if txt == u"Sin confinamiento":
-            return cabezal.CABEZAL_CONFINEMENT_NONE
+        # Preferir opciones del contexto (encuentro vs punta libre).
         for val, lbl in fresh_opts or []:
             try:
-                if lbl == txt or txt in lbl or lbl.startswith(txt):
+                if lbl == txt:
+                    return val
+            except Exception:
+                pass
+        if txt == u"Sin confinamiento":
+            return cabezal.CABEZAL_CONFINEMENT_NONE
+        if encuentro:
+            if txt == u"Tipo 1":
+                return cabezal.CABEZAL_CONFINEMENT_ENC_FIBER
+            if txt == u"Tipo 2":
+                return cabezal.CABEZAL_CONFINEMENT_ENC_FIBER_PERP
+            if txt == u"Tipo 3":
+                return cabezal.CABEZAL_CONFINEMENT_ENC_FIBER_CROSS
+        else:
+            if txt == u"Tipo 1" or u"Traba capa" in txt or u"traba capa" in txt.lower():
+                return cabezal.CABEZAL_CONFINEMENT_TIE_LAYER_1
+            if txt == u"Tipo 3" or u"perimeter_cross" in txt:
+                return cabezal.CABEZAL_CONFINEMENT_PERIMETER_CROSS
+            if txt == u"Tipo 2" or u"\u00edndice 0" in txt or u"0 y 1" in txt:
+                return cabezal.CABEZAL_CONFINEMENT_PERIMETER_0_1
+        for val, lbl in fresh_opts or []:
+            try:
+                if txt in lbl or lbl.startswith(txt):
                     return val
             except Exception:
                 pass
@@ -6483,12 +6509,21 @@ class ArmadoMurosPreviewWindow(object):
         ui = self._cabezal_ui_ext(owner_wid, extremo)
         cb = ui.get(u"confinement_cb")
         fresh_opts = self._cabezal_confinement_options_for_ui(owner_wid, extremo)
+        is_enc = False
+        try:
+            is_enc = bool(
+                self._cabezal_extremo_es_encuentro_preview(owner_wid, extremo),
+            )
+        except Exception:
+            is_enc = False
         if cb is not None:
             for txt_src in (
                 getattr(cb, u"SelectedItem", None),
                 getattr(cb, u"Text", None),
             ):
-                matched = self._match_cabezal_confinement_label(txt_src, fresh_opts)
+                matched = self._match_cabezal_confinement_label(
+                    txt_src, fresh_opts, encuentro=is_enc,
+                )
                 if matched:
                     return matched
             try:
@@ -6504,7 +6539,9 @@ class ArmadoMurosPreviewWindow(object):
                     label = unicode(cb.Items[idx])
                 except Exception:
                     label = u""
-                matched = self._match_cabezal_confinement_label(label, fresh_opts)
+                matched = self._match_cabezal_confinement_label(
+                    label, fresh_opts, encuentro=is_enc,
+                )
                 if matched:
                     return matched
                 if idx < len(fresh_opts):
@@ -6515,6 +6552,9 @@ class ArmadoMurosPreviewWindow(object):
             return cabezal.normalize_cabezal_confinement(
                 ex_cfg.get(u"confinement"),
                 self._cabezal_n_capas_from_ui(owner_wid, extremo),
+                encuentro=self._cabezal_extremo_es_encuentro_preview(
+                    owner_wid, extremo,
+                ),
             ).get(u"type")
         opts = ui.get(u"confinement_options") or fresh_opts
         try:
@@ -6565,6 +6605,7 @@ class ArmadoMurosPreviewWindow(object):
                 conf_type == cabezal.CABEZAL_CONFINEMENT_PERIMETER_0_1
                 or conf_type == cabezal.CABEZAL_CONFINEMENT_PERIMETER_CROSS
                 or conf_type == cabezal.CABEZAL_CONFINEMENT_TIE_LAYER_1
+                or cabezal.cabezal_confinement_is_encuentro(conf_type)
             )
 
     def _cabezal_stirrup_segments_for_preview(self, wid, extremo, layout):
@@ -6576,6 +6617,9 @@ class ArmadoMurosPreviewWindow(object):
             if conf_type not in (
                 cabezal.CABEZAL_CONFINEMENT_PERIMETER_0_1,
                 cabezal.CABEZAL_CONFINEMENT_PERIMETER_CROSS,
+                cabezal.CABEZAL_CONFINEMENT_ENC_FIBER,
+                cabezal.CABEZAL_CONFINEMENT_ENC_FIBER_PERP,
+                cabezal.CABEZAL_CONFINEMENT_ENC_FIBER_CROSS,
             ):
                 return None
         segs = layout.get(u"stirrup_segments")
@@ -6609,11 +6653,16 @@ class ArmadoMurosPreviewWindow(object):
                 return conf_type
             if cabezal.cabezal_confinement_is_tie_layer_1(conf_type):
                 return conf_type
+            if cabezal.cabezal_confinement_is_encuentro(conf_type):
+                return conf_type
         except Exception:
             if conf_type in (
                 cabezal.CABEZAL_CONFINEMENT_PERIMETER_0_1,
                 cabezal.CABEZAL_CONFINEMENT_PERIMETER_CROSS,
                 cabezal.CABEZAL_CONFINEMENT_TIE_LAYER_1,
+                cabezal.CABEZAL_CONFINEMENT_ENC_FIBER,
+                cabezal.CABEZAL_CONFINEMENT_ENC_FIBER_PERP,
+                cabezal.CABEZAL_CONFINEMENT_ENC_FIBER_CROSS,
             ):
                 return conf_type
         cfg = self._cabezal_by_wall_id.get(wid) or {}
@@ -6621,6 +6670,7 @@ class ArmadoMurosPreviewWindow(object):
         norm = cabezal.normalize_cabezal_confinement(
             ex_cfg.get(u"confinement"),
             n_capas,
+            encuentro=self._cabezal_extremo_es_encuentro_preview(wid, extremo),
         )
         return norm.get(u"type") or cabezal.CABEZAL_CONFINEMENT_NONE
 
@@ -6735,7 +6785,11 @@ class ArmadoMurosPreviewWindow(object):
                 )
             show_tie = False
             try:
-                show_tie = cabezal.cabezal_confinement_is_tie_layer_1(conf_type)
+                show_tie = (
+                    cabezal.cabezal_confinement_is_tie_layer_1(conf_type)
+                    or cabezal.cabezal_confinement_is_enc_fiber_perp(conf_type)
+                    or cabezal.cabezal_confinement_is_enc_fiber_cross(conf_type)
+                )
             except Exception:
                 show_tie = conf_type == cabezal.CABEZAL_CONFINEMENT_TIE_LAYER_1
             if not show_tie and not bulk_preview:
@@ -6745,24 +6799,36 @@ class ArmadoMurosPreviewWindow(object):
             dots = layout.get(u"dots") or []
             if not dots:
                 return
-            tie_li = cabezal.CABEZAL_TIE_LAYER_INDEX
-            if bulk_preview:
-                tie_layers = layout.get(u"tie_layer_indices") or []
-                if tie_layers:
-                    tie_li = int(tie_layers[0])
-                else:
+            tie_layers = layout.get(u"tie_layer_indices") or []
+            if tie_layers:
+                ties = []
+                for tli in tie_layers:
+                    try:
+                        tie = cabezal.cabezal_tie_preview_geometry(
+                            dots,
+                            layer_index=int(tli),
+                            inner_y0=layout.get(u"inner_y0"),
+                            inner_h=layout.get(u"inner_h"),
+                        )
+                    except Exception:
+                        tie = None
+                    if tie:
+                        ties.append(tie)
+            else:
+                tie_li = cabezal.CABEZAL_TIE_LAYER_INDEX
+                if bulk_preview:
                     return
-            try:
-                tie = cabezal.cabezal_tie_preview_geometry(
-                    dots,
-                    layer_index=tie_li,
-                    inner_y0=layout.get(u"inner_y0"),
-                    inner_h=layout.get(u"inner_h"),
-                )
-            except Exception:
-                tie = None
-            if tie:
-                ties = [tie]
+                try:
+                    tie = cabezal.cabezal_tie_preview_geometry(
+                        dots,
+                        layer_index=tie_li,
+                        inner_y0=layout.get(u"inner_y0"),
+                        inner_h=layout.get(u"inner_h"),
+                    )
+                except Exception:
+                    tie = None
+                if tie:
+                    ties = [tie]
         if not ties:
             return
 
@@ -7058,49 +7124,25 @@ class ArmadoMurosPreviewWindow(object):
         return cabezal.CABEZAL_MIN_BARRAS_POR_CAPA if cabezal else 2
 
     def _refresh_cabezal_encuentro_ui_state(self, wid, extremo):
-        """Encuentro L: oculta confinamiento, badge en toolbar y canvas ampliado."""
+        """Encuentro L: badge en toolbar, canvas ampliado; confinamiento Tipo 1/2/3 visible."""
         from System.Windows import Visibility
 
         ui = self._cabezal_ui_ext(wid, extremo)
         wall = self._wall_for_integer_id(wid)
         enc_ctx = self._cabezal_preview_encuentro_ctx(wid, wall, extremo)
         is_enc = enc_ctx is not None
-        vis_on = Visibility.Visible
         vis_off = Visibility.Collapsed
 
-        for key in (
-            u"confinement_lbl",
-            u"confinement_cb",
-            u"confinement_params_row",
-        ):
-            el = ui.get(key)
-            if el is not None:
-                try:
-                    el.Visibility = vis_off if is_enc else vis_on
-                except Exception:
-                    pass
-        if not is_enc:
-            try:
-                self._refresh_cabezal_confinement_params(wid, extremo)
-            except Exception:
-                pass
+        try:
+            self._refresh_cabezal_confinement_params(wid, extremo)
+        except Exception:
+            pass
         hint = ui.get(u"encuentro_hint_lbl")
         if hint is not None:
             try:
                 hint.Visibility = vis_off
             except Exception:
                 pass
-
-        if is_enc and cabezal is not None:
-            cfg = self._cabezal_by_wall_id.setdefault(wid, {})
-            ex_cfg = cfg.setdefault(extremo, cabezal.default_cabezal_extremo_config())
-            try:
-                n_capas = int(self._cabezal_n_capas_from_ui(wid, extremo))
-            except Exception:
-                n_capas = 2
-            ex_cfg[u"confinement"] = cabezal.normalize_cabezal_confinement(
-                {u"type": cabezal.CABEZAL_CONFINEMENT_NONE}, n_capas,
-            )
 
         base = ui.get(u"tramo_toolbar_text_base")
         tramo_text = base
@@ -7271,7 +7313,7 @@ class ArmadoMurosPreviewWindow(object):
             pass
         if sync_confinement:
             conf_cb = ui.get(u"confinement_cb")
-            if conf_cb is not None and not self._cabezal_extremo_es_encuentro_preview(owner_wid, extremo):
+            if conf_cb is not None:
                 try:
                     n_capas = int(ex_cfg.get(u"n_capas", cabezal.CABEZAL_MIN_CAPAS))
                 except Exception:
@@ -7302,7 +7344,11 @@ class ArmadoMurosPreviewWindow(object):
                     except Exception:
                         pass
                     ex_cfg[u"confinement"] = cabezal.normalize_cabezal_confinement(
-                        merged, n_capas,
+                        merged,
+                        n_capas,
+                        encuentro=self._cabezal_extremo_es_encuentro_preview(
+                            owner_wid, extremo,
+                        ),
                     )
         segs = self._cabezal_segments_for_extremo(extremo)
         cabezal._migrate_tramo_to_segment_bar_type_ids(
@@ -9467,7 +9513,11 @@ class ArmadoMurosPreviewWindow(object):
         if conf_type_override is not None:
             conf_type = conf_type_override
             conf_norm = cabezal.normalize_cabezal_confinement(
-                {u"type": conf_type_override}, n_capas_preview,
+                {u"type": conf_type_override},
+                n_capas_preview,
+                encuentro=bool(
+                    self._cabezal_preview_encuentro_ctx(wid, wall, extremo),
+                ),
             )
         else:
             conf_type = self._cabezal_effective_confinement_type_for_preview(
@@ -9475,7 +9525,11 @@ class ArmadoMurosPreviewWindow(object):
             )
             cfg_ex = (self._cabezal_by_wall_id.get(wid) or {}).get(extremo) or {}
             conf_norm = cabezal.normalize_cabezal_confinement(
-                cfg_ex.get(u"confinement"), n_capas_preview,
+                cfg_ex.get(u"confinement"),
+                n_capas_preview,
+                encuentro=bool(
+                    self._cabezal_preview_encuentro_ctx(wid, wall, extremo),
+                ),
             )
         stirrup_diam_preview = conf_norm.get(u"stirrup_diam_mm")
         cfg_ex = (self._cabezal_by_wall_id.get(wid) or {}).get(extremo) or {}
@@ -9647,15 +9701,14 @@ class ArmadoMurosPreviewWindow(object):
             self._canvas_set_zindex(el, 10)
             canv.Children.Add(el)
 
-        if not use_enc_layout:
-            self._draw_cabezal_stirrup_overlay_preview(
-                canv, layout, wid, extremo, _px, conf_type=conf_type,
-                bulk_preview=bulk_preview,
-            )
-            self._draw_cabezal_tie_overlay_preview(
-                canv, layout, wid, extremo, _px, conf_type=conf_type,
-                bulk_preview=bulk_preview,
-            )
+        self._draw_cabezal_stirrup_overlay_preview(
+            canv, layout, wid, extremo, _px, conf_type=conf_type,
+            bulk_preview=bulk_preview,
+        )
+        self._draw_cabezal_tie_overlay_preview(
+            canv, layout, wid, extremo, _px, conf_type=conf_type,
+            bulk_preview=bulk_preview,
+        )
 
         if not enc_ctx:
             if mirror:
@@ -10476,14 +10529,9 @@ class ArmadoMurosPreviewWindow(object):
         return cb
 
     def _cabezal_confinement_params_visible(self, wid, extremo):
-        """True si Tipo 1/2 activo (no encuentro, no «Sin confinamiento»)."""
+        """True si Tipo 1/2/3 activo (no «Sin confinamiento»)."""
         if cabezal is None:
             return False
-        try:
-            if self._cabezal_extremo_es_encuentro_preview(wid, extremo):
-                return False
-        except Exception:
-            pass
         n_capas = self._cabezal_n_capas_from_ui(wid, extremo)
         if not cabezal.cabezal_confinement_scenario_applies(n_capas):
             return False
@@ -10491,16 +10539,19 @@ class ArmadoMurosPreviewWindow(object):
         try:
             if conf_type in (None, u"", cabezal.CABEZAL_CONFINEMENT_NONE):
                 return False
-            return (
-                cabezal.cabezal_confinement_has_perimeter_stirrup(conf_type)
-                or cabezal.cabezal_confinement_is_tie_layer_1(conf_type)
-            )
+            return cabezal.cabezal_confinement_has_lote_z(conf_type)
         except Exception:
             return False
 
     def _cabezal_confinement_params_label(self, wid, extremo):
         conf_type = self._read_cabezal_confinement_combo(wid, extremo)
         try:
+            if cabezal.cabezal_confinement_is_enc_fiber_cross(conf_type):
+                return u"Estribo + ⊥ + long."
+            if cabezal.cabezal_confinement_is_enc_fiber_perp(conf_type):
+                return u"Estribo + trabas ⊥"
+            if cabezal.cabezal_confinement_is_enc_fiber(conf_type):
+                return u"Estribo fibra"
             if cabezal.cabezal_confinement_is_perimeter_cross(conf_type):
                 return u"Estribo + trabas + long."
             if cabezal.cabezal_confinement_has_perimeter_stirrup(conf_type):
@@ -10920,28 +10971,25 @@ class ArmadoMurosPreviewWindow(object):
             return cabezal.CABEZAL_CONFINEMENT_TIE_LAYER_1
         return cabezal.CABEZAL_CONFINEMENT_NONE
 
-    def _cabezal_confinement_for_capas_change(self, n_capas, prev_conf=None):
-        """Confinamiento por defecto al variar CAPAS (2–6 capas → Tipo 1)."""
+    def _cabezal_confinement_for_capas_change(
+        self, n_capas, prev_conf=None, encuentro=False,
+    ):
+        """Recalcula índices de confinamiento al variar CAPAS; conserva el tipo."""
         if cabezal is None:
             return {}
-        conf = cabezal.default_cabezal_confinement_config(n_capas)
-        if isinstance(prev_conf, dict):
-            try:
-                conf[u"stirrup_diam_mm"] = float(
-                    prev_conf.get(u"stirrup_diam_mm", conf.get(u"stirrup_diam_mm")),
+        raw = dict(prev_conf) if isinstance(prev_conf, dict) else {}
+        if not raw.get(u"type"):
+            if encuentro:
+                raw[u"type"] = cabezal.CABEZAL_CONFINEMENT_NONE
+            else:
+                raw[u"type"] = (
+                    cabezal.CABEZAL_CONFINEMENT_TIE_LAYER_1
+                    if cabezal.cabezal_confinement_scenario_applies(n_capas)
+                    else cabezal.CABEZAL_CONFINEMENT_NONE
                 )
-            except Exception:
-                pass
-            try:
-                conf[u"stirrup_spacing_mm"] = float(
-                    prev_conf.get(
-                        u"stirrup_spacing_mm",
-                        conf.get(u"stirrup_spacing_mm"),
-                    ),
-                )
-            except Exception:
-                pass
-        return conf
+        return cabezal.normalize_cabezal_confinement(
+            raw, n_capas, encuentro=encuentro,
+        )
 
     def _refresh_cabezal_bulk_confinement_combo(self, extremo):
         if cabezal is None:
@@ -11147,14 +11195,11 @@ class ArmadoMurosPreviewWindow(object):
         except Exception:
             pass
         try:
-            if cabezal.cabezal_extremo_es_encuentro_l(ex_cfg):
-                ex_cfg[u"confinement"] = cabezal.normalize_cabezal_confinement(
-                    {u"type": cabezal.CABEZAL_CONFINEMENT_NONE}, n_capas,
-                )
-            else:
-                ex_cfg[u"confinement"] = self._cabezal_confinement_for_capas_change(
-                    n_capas, prev_conf,
-                )
+            ex_cfg[u"confinement"] = self._cabezal_confinement_for_capas_change(
+                n_capas,
+                prev_conf,
+                encuentro=cabezal.cabezal_extremo_es_encuentro_l(ex_cfg),
+            )
         except Exception:
             pass
         self._cabezal_refresh_encuentro_pitch(wid, extremo)
@@ -11675,8 +11720,19 @@ class ArmadoMurosPreviewWindow(object):
                 prev = {}
             merged = dict(prev)
             merged[u"type"] = conf_type
+            is_enc = False
+            try:
+                is_enc = bool(
+                    self._cabezal_extremo_es_encuentro_preview(wid, extremo),
+                )
+            except Exception:
+                is_enc = False
+            if is_enc:
+                merged[u"type"] = cabezal.cabezal_confinement_migrate_type_to_encuentro(
+                    merged[u"type"],
+                )
             ex_cfg[u"confinement"] = cabezal.normalize_cabezal_confinement(
-                merged, n_capas,
+                merged, n_capas, encuentro=is_enc,
             )
             self._refresh_cabezal_confinement_combo(wid, extremo)
             n += 1

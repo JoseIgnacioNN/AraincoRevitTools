@@ -47,6 +47,7 @@ from Autodesk.Revit.DB import (
     TransactionGroup,
     UnitUtils,
     UnitTypeId,
+    UV,
     ViewDetailLevel,
     Wall,
     XYZ,
@@ -227,6 +228,8 @@ CABEZAL_MIN_CAPAS = 1
 CABEZAL_MIN_BARRAS_POR_CAPA = 2
 CABEZAL_MAX_BARRAS_POR_CAPA = 4
 CABEZAL_COVER_MM = 25.0
+# Encuentro L: crear perímetro sin ganchos y asignar 135° después (SetHookTypeId).
+CABEZAL_ENCUENTRO_STIRRUP_HOOKS_AFTER_CREATE = True
 # Largo máximo de barra de acero comercial (mm) — aviso UI en controlador de tramo.
 CABEZAL_MAX_BARRA_COMERCIAL_MM = 12000.0
 # Separación entre ejes de capas sucesivas (desde cara cabezal hacia interior).
@@ -241,6 +244,11 @@ CABEZAL_CONFINEMENT_PERIMETER_0_1 = u"perimeter_0_1"
 CABEZAL_CONFINEMENT_TIE_LAYER_1 = u"tie_layer_1"
 # Tipo 3 = Tipo 2 (estribo + trabas de capa) + trabas longitudinales en índices interiores.
 CABEZAL_CONFINEMENT_PERIMETER_CROSS = u"perimeter_cross"
+# Encuentro de muro (definición canvas): distintos del extremo libre.
+# Tipo 1: estribo perimetral a la fibra. Tipo 2: + traba ⊥ host. Tipo 3: + long.
+CABEZAL_CONFINEMENT_ENC_FIBER = u"enc_fiber"
+CABEZAL_CONFINEMENT_ENC_FIBER_PERP = u"enc_fiber_perp"
+CABEZAL_CONFINEMENT_ENC_FIBER_CROSS = u"enc_fiber_cross"
 CABEZAL_TIE_LAYER_INDEX = 1
 # Escenarios con Tipo 1 / Tipo 2 / Tipo 3 definidos (otros n_capas: pendiente).
 CABEZAL_CONFINEMENT_SCENARIO_CAPAS = (2, 3, 4, 5, 6)
@@ -254,19 +262,114 @@ def cabezal_confinement_scenario_applies(n_capas):
         return False
 
 
+def cabezal_confinement_is_encuentro(conf_type):
+    """True si el tipo es de la familia encuentro (enc_fiber*)."""
+    try:
+        t = unicode(conf_type or u"").strip()
+    except Exception:
+        t = conf_type
+    return t in (
+        CABEZAL_CONFINEMENT_ENC_FIBER,
+        CABEZAL_CONFINEMENT_ENC_FIBER_PERP,
+        CABEZAL_CONFINEMENT_ENC_FIBER_CROSS,
+    )
+
+
+def cabezal_confinement_is_enc_fiber(conf_type):
+    """Encuentro Tipo 1: solo estribo perimetral a la fibra."""
+    try:
+        return unicode(conf_type or u"").strip() == CABEZAL_CONFINEMENT_ENC_FIBER
+    except Exception:
+        return conf_type == CABEZAL_CONFINEMENT_ENC_FIBER
+
+
+def cabezal_confinement_is_enc_fiber_perp(conf_type):
+    """Encuentro Tipo 2: estribo + traba ⊥ muro host."""
+    try:
+        return unicode(conf_type or u"").strip() == CABEZAL_CONFINEMENT_ENC_FIBER_PERP
+    except Exception:
+        return conf_type == CABEZAL_CONFINEMENT_ENC_FIBER_PERP
+
+
+def cabezal_confinement_is_enc_fiber_cross(conf_type):
+    """Encuentro Tipo 3: Tipo 2 + traba longitudinal."""
+    try:
+        return unicode(conf_type or u"").strip() == CABEZAL_CONFINEMENT_ENC_FIBER_CROSS
+    except Exception:
+        return conf_type == CABEZAL_CONFINEMENT_ENC_FIBER_CROSS
+
+
+def cabezal_confinement_migrate_type_to_encuentro(conf_type):
+    """
+    Mapea tipos de extremo libre → definición encuentro (canvas).
+
+    Libre Tipo 1 (solo trabas) no aplica en encuentro; se interpreta como
+    estribo a la fibra (enc Tipo 1).
+    """
+    try:
+        t = unicode(conf_type or u"").strip()
+    except Exception:
+        t = conf_type or u""
+    if not t or t == CABEZAL_CONFINEMENT_NONE:
+        return CABEZAL_CONFINEMENT_NONE
+    if cabezal_confinement_is_encuentro(t):
+        return t
+    if t == CABEZAL_CONFINEMENT_TIE_LAYER_1 or t == u"perimeter_0_1_tie_1":
+        return CABEZAL_CONFINEMENT_ENC_FIBER
+    if t == CABEZAL_CONFINEMENT_PERIMETER_0_1:
+        return CABEZAL_CONFINEMENT_ENC_FIBER_PERP
+    if t == CABEZAL_CONFINEMENT_PERIMETER_CROSS:
+        return CABEZAL_CONFINEMENT_ENC_FIBER_CROSS
+    return CABEZAL_CONFINEMENT_NONE
+
+
+def cabezal_confinement_layout_spec_encuentro(n_capas, conf_type):
+    """
+    Layout encuentro (fibra en zona intersección).
+
+    Tipo 1 (enc_fiber): estribo [0, n-1]; sin trabas.
+    Tipo 2 (enc_fiber_perp): estribo + trabas ⊥ host
+      — 2 capas: solo estribo (sin trabas; igual punta libre T2 @ 2 capas);
+      — n>2: interiores [1 .. n-2].
+    Tipo 3 (enc_fiber_cross): igual Tipo 2 (+ cross-ties vía
+    ``cabezal_confinement_cross_tie_bar_indices``).
+    """
+    try:
+        n = int(n_capas)
+    except Exception:
+        n = 0
+    if not cabezal_confinement_scenario_applies(n):
+        return [], []
+    if not cabezal_confinement_is_encuentro(conf_type):
+        return [], []
+    stirrup = [0, n - 1]
+    if cabezal_confinement_is_enc_fiber(conf_type):
+        return stirrup, []
+    if (
+        cabezal_confinement_is_enc_fiber_perp(conf_type)
+        or cabezal_confinement_is_enc_fiber_cross(conf_type)
+    ):
+        if n <= 2:
+            return stirrup, []
+        return stirrup, list(range(1, n - 1))
+    return [], []
+
+
 def cabezal_confinement_layout_spec(n_capas, conf_type):
     """
     Índices de capa para estribo perimetral y trabas según escenario.
 
-    2 capas — Tipo 1: trabas [1]; Tipo 2/3: estribo [0, 1].
-    3 capas — Tipo 1: trabas [1, 2]; Tipo 2/3: estribo [0, 2] + traba [1].
-    4 capas — Tipo 1: trabas [1, 2, 3]; Tipo 2/3: estribo [0, 3] + trabas [1, 2].
-    5 capas — Tipo 1: trabas [1, 2, 3, 4]; Tipo 2/3: estribo [0, 4] + trabas [1, 2, 3].
-    6 capas — Tipo 1: trabas [1, 2, 3, 4, 5]; Tipo 2/3: estribo [0, 5] + trabas [1, 2, 3, 4].
+    Extremo libre:
+      2 capas — Tipo 1: trabas [1]; Tipo 2/3: estribo [0, 1].
+      3 capas — Tipo 1: trabas [1, 2]; Tipo 2/3: estribo [0, 2] + traba [1].
+      …
+      Tipo 3 añade trabas longitudinales; ver
+      ``cabezal_confinement_cross_tie_bar_indices``.
 
-    Tipo 3 añade además trabas longitudinales (índices de barra interiores); ver
-    ``cabezal_confinement_cross_tie_bar_indices``.
+    Encuentro (enc_fiber*): ver ``cabezal_confinement_layout_spec_encuentro``.
     """
+    if cabezal_confinement_is_encuentro(conf_type):
+        return cabezal_confinement_layout_spec_encuentro(n_capas, conf_type)
     try:
         n = int(n_capas)
     except Exception:
@@ -304,7 +407,7 @@ def cabezal_confinement_cross_tie_bar_indices(n_bars):
 
 
 def cabezal_confinement_is_perimeter(conf_type):
-    """True solo para Tipo 2 (estribo perimetral sin trabas entre capas)."""
+    """True solo para extremo libre Tipo 2 (estribo perimetral)."""
     try:
         return unicode(conf_type or u"").strip() == CABEZAL_CONFINEMENT_PERIMETER_0_1
     except Exception:
@@ -312,18 +415,23 @@ def cabezal_confinement_is_perimeter(conf_type):
 
 
 def cabezal_confinement_is_perimeter_cross(conf_type):
-    """True para Tipo 3 (Tipo 2 + trabas longitudinales en índices interiores)."""
+    """True para Tipo 3 (libre o encuentro) con trabas longitudinales."""
     try:
-        return unicode(conf_type or u"").strip() == CABEZAL_CONFINEMENT_PERIMETER_CROSS
+        t = unicode(conf_type or u"").strip()
     except Exception:
-        return conf_type == CABEZAL_CONFINEMENT_PERIMETER_CROSS
+        t = conf_type
+    return (
+        t == CABEZAL_CONFINEMENT_PERIMETER_CROSS
+        or t == CABEZAL_CONFINEMENT_ENC_FIBER_CROSS
+    )
 
 
 def cabezal_confinement_has_perimeter_stirrup(conf_type):
-    """True si el tipo dibuja/crea estribo perimetral (Tipo 2 o Tipo 3)."""
+    """True si el tipo dibuja/crea estribo perimetral (libre T2/T3 o encuentro T1–T3)."""
     return (
         cabezal_confinement_is_perimeter(conf_type)
         or cabezal_confinement_is_perimeter_cross(conf_type)
+        or cabezal_confinement_is_encuentro(conf_type)
     )
 
 
@@ -334,8 +442,19 @@ def cabezal_confinement_is_tie_layer_1(conf_type):
         return conf_type == CABEZAL_CONFINEMENT_TIE_LAYER_1
 
 
+def cabezal_confinement_has_perp_ties(conf_type):
+    """Trabas ⊥ al espesor (libre T1/T2/T3 capas, o encuentro T2/T3)."""
+    return (
+        cabezal_confinement_is_tie_layer_1(conf_type)
+        or cabezal_confinement_is_perimeter(conf_type)
+        or cabezal_confinement_is_perimeter_cross(conf_type)
+        or cabezal_confinement_is_enc_fiber_perp(conf_type)
+        or cabezal_confinement_is_enc_fiber_cross(conf_type)
+    )
+
+
 def cabezal_perimeter_stirrup_layer_indices(n_capas):
-    """Índices de capa para estribo Tipo 2: siempre ``[0, n-1]``."""
+    """Índices de capa para estribo perimetral: siempre ``[0, n-1]``."""
     try:
         n = int(n_capas)
     except Exception:
@@ -493,6 +612,8 @@ CABEZAL_CONFINEMENT_REBAR_SET_SPACING_MM = 100.0
 CABEZAL_CONFINEMENT_SPACING_OPTIONS_MM = (50, 75, 100, 125, 150, 175, 200, 250, 300)
 CABEZAL_CONFINEMENT_STIRRUP_SHAPE_NAME = u"10"
 CABEZAL_CONFINEMENT_STIRRUP_PAD_MM = 10.0
+# Gancho de estribo/traba (nombre de tipo en el proyecto).
+CABEZAL_STIRRUP_HOOK_NAME = u"Stirrup/Tie - 135 deg."
 # Estiramiento del array de estribos hacia −Z si hay fundación unida (Join Geometry).
 CABEZAL_STIRRUP_FOUNDATION_DROP_MM = 300.0
 # Diámetro por defecto (UI) de barras longitudinales del cabezal.
@@ -876,31 +997,32 @@ def cabezal_extremo_armado_activo(ex_cfg):
         return True
 
 
-def cabezal_confinement_options(n_capas):
+def cabezal_confinement_options(n_capas, encuentro=False):
     """Opciones UI: (valor, etiqueta). Tipo 1/2/3 en escenarios de 2 a 6 capas."""
     opts = [(CABEZAL_CONFINEMENT_NONE, u"Sin confinamiento")]
     try:
         n = int(n_capas or 0)
     except Exception:
         n = 0
-    if cabezal_confinement_scenario_applies(n):
-        opts.append((
-            CABEZAL_CONFINEMENT_PERIMETER_0_1,
-            u"Tipo 2",
-        ))
-        opts.append((
-            CABEZAL_CONFINEMENT_PERIMETER_CROSS,
-            u"Tipo 3",
-        ))
-        opts.append((
-            CABEZAL_CONFINEMENT_TIE_LAYER_1,
-            u"Tipo 1",
-        ))
+    if not cabezal_confinement_scenario_applies(n):
+        return opts
+    if encuentro:
+        # Definición canvas encuentro: T1 estribo fibra; T2 +⊥; T3 +long.
+        opts.append((CABEZAL_CONFINEMENT_ENC_FIBER, u"Tipo 1"))
+        opts.append((CABEZAL_CONFINEMENT_ENC_FIBER_PERP, u"Tipo 2"))
+        opts.append((CABEZAL_CONFINEMENT_ENC_FIBER_CROSS, u"Tipo 3"))
+        return opts
+    opts.append((CABEZAL_CONFINEMENT_PERIMETER_0_1, u"Tipo 2"))
+    opts.append((CABEZAL_CONFINEMENT_PERIMETER_CROSS, u"Tipo 3"))
+    opts.append((CABEZAL_CONFINEMENT_TIE_LAYER_1, u"Tipo 1"))
     return opts
 
 
-def normalize_cabezal_confinement(raw, n_capas=None):
-    """Normaliza bloque ``confinement`` del extremo."""
+def normalize_cabezal_confinement(raw, n_capas=None, encuentro=False):
+    """Normaliza bloque ``confinement`` del extremo.
+
+    Con ``encuentro=True`` migra tipos de extremo libre a ``enc_fiber*``.
+    """
     try:
         n = int(n_capas if n_capas is not None else CABEZAL_MAX_CAPAS)
     except Exception:
@@ -927,13 +1049,18 @@ def normalize_cabezal_confinement(raw, n_capas=None):
         base[u"stirrup_spacing_mm"] = float(CABEZAL_CONFINEMENT_REBAR_SET_SPACING_MM)
     ctype = raw.get(u"type")
     if ctype is None:
-        ctype = (
-            CABEZAL_CONFINEMENT_TIE_LAYER_1
-            if cabezal_confinement_scenario_applies(n)
-            else CABEZAL_CONFINEMENT_NONE
-        )
+        if encuentro:
+            ctype = CABEZAL_CONFINEMENT_NONE
+        else:
+            ctype = (
+                CABEZAL_CONFINEMENT_TIE_LAYER_1
+                if cabezal_confinement_scenario_applies(n)
+                else CABEZAL_CONFINEMENT_NONE
+            )
     elif not ctype:
         ctype = CABEZAL_CONFINEMENT_NONE
+    if encuentro:
+        ctype = cabezal_confinement_migrate_type_to_encuentro(ctype)
     stirrup_idx, tie_idx = cabezal_confinement_layout_spec(n, ctype)
     if (
         ctype == CABEZAL_CONFINEMENT_PERIMETER_0_1
@@ -962,6 +1089,17 @@ def normalize_cabezal_confinement(raw, n_capas=None):
         and cabezal_confinement_scenario_applies(n)
     ):
         base[u"type"] = CABEZAL_CONFINEMENT_TIE_LAYER_1
+        base[u"layer_indices"] = list(stirrup_idx)
+        base[u"tie_layer_indices"] = list(tie_idx)
+        if tie_idx:
+            base[u"tie_layer_index"] = tie_idx[0]
+        else:
+            base.pop(u"tie_layer_index", None)
+    elif (
+        cabezal_confinement_is_encuentro(ctype)
+        and cabezal_confinement_scenario_applies(n)
+    ):
+        base[u"type"] = ctype
         base[u"layer_indices"] = list(stirrup_idx)
         base[u"tie_layer_indices"] = list(tie_idx)
         if tie_idx:
@@ -1083,17 +1221,28 @@ def cabezal_build_confinement_jobs(
     wall, wid, extremo, ex_cfg, stack_idx, segment_ctx,
     line_jobs=None,
 ):
-    """Un job por estribo y/o por cada traba (Tipo 2/3 = estribo + trabas de capa;
-    Tipo 3 añade trabas longitudinales por índice interior)."""
+    """Un job por estribo y/o trabas.
+
+    Extremo libre: Tipo 1 trabas; Tipo 2/3 estribo + trabas capa; Tipo 3 + long.
+    Encuentro: Tipo 1 estribo fibra; Tipo 2 +⊥ host; Tipo 3 + long.
+    """
     _normalize_cabezal_extremo_layers(ex_cfg)
     conf_type, stirrup_idx = cabezal_active_confinement(ex_cfg)
     if conf_type == CABEZAL_CONFINEMENT_NONE:
         return []
     n_capas = cabezal_effective_n_capas(ex_cfg)
+    is_enc = cabezal_extremo_es_encuentro_l(ex_cfg)
     conf = normalize_cabezal_confinement(
-        ex_cfg.get(u"confinement"), n_capas,
+        ex_cfg.get(u"confinement"), n_capas, encuentro=is_enc,
     )
     ex_cfg[u"confinement"] = conf
+    conf_type = conf.get(u"type") or CABEZAL_CONFINEMENT_NONE
+    if conf_type == CABEZAL_CONFINEMENT_NONE:
+        return []
+    if cabezal_confinement_has_perimeter_stirrup(conf_type):
+        stirrup_idx = cabezal_perimeter_stirrup_layer_indices(n_capas)
+    else:
+        stirrup_idx = list(conf.get(u"layer_indices") or [])
     tie_idx = cabezal_confinement_tie_layer_indices(conf, n_capas)
     base = {
         u"wall": wall,
@@ -1110,7 +1259,10 @@ def cabezal_build_confinement_jobs(
         jobs.append(dict(base, job_kind=u"stirrup", layer_indices=list(stirrup_idx)))
     for li in tie_idx:
         jobs.append(dict(base, job_kind=u"tie", tie_layer_index=int(li)))
-    if cabezal_confinement_is_perimeter_cross(conf_type):
+    if (
+        cabezal_confinement_is_perimeter_cross(conf_type)
+        or cabezal_confinement_is_enc_fiber_cross(conf_type)
+    ):
         layers = cabezal_active_layers(ex_cfg)
         n_bars = CABEZAL_MIN_BARRAS_POR_CAPA
         if layers:
@@ -1135,8 +1287,9 @@ def cabezal_active_confinement(ex_cfg):
         n_capas = int(ex_cfg.get(u"n_capas", CABEZAL_MIN_CAPAS))
     except Exception:
         n_capas = CABEZAL_MIN_CAPAS
+    is_enc = cabezal_extremo_es_encuentro_l(ex_cfg)
     conf = normalize_cabezal_confinement(
-        ex_cfg.get(u"confinement"), n_capas,
+        ex_cfg.get(u"confinement"), n_capas, encuentro=is_enc,
     )
     conf_type = conf.get(u"type")
     if cabezal_confinement_has_perimeter_stirrup(conf_type):
@@ -1598,7 +1751,9 @@ def _normalize_cabezal_extremo_layers(ex_cfg, n_tramos=1):
     if u"segment_bar_type_ids" not in ex_cfg:
         ex_cfg[u"segment_bar_type_ids"] = {}
     ex_cfg[u"confinement"] = normalize_cabezal_confinement(
-        ex_cfg.get(u"confinement"), n_capas,
+        ex_cfg.get(u"confinement"),
+        n_capas,
+        encuentro=cabezal_extremo_es_encuentro_l(ex_cfg),
     )
     return layers
 
@@ -2146,6 +2301,15 @@ def validar_cabezal_config(cfg):
 
 def _mm_to_internal(mm):
     return UnitUtils.ConvertToInternalUnits(float(mm), UnitTypeId.Millimeters)
+
+
+def _ft_to_mm(ft):
+    try:
+        return float(
+            UnitUtils.ConvertFromInternalUnits(float(ft), UnitTypeId.Millimeters),
+        )
+    except Exception:
+        return float(ft) * 304.8
 
 
 def _wall_z_bounds_ft(wall):
@@ -4651,6 +4815,344 @@ def _cabezal_stirrup_envelope_from_line_jobs_ft(
     )
 
 
+def _wall_orientation_unit(wall):
+    """Normal unitaria hacia la cara exterior (``Wall.Orientation``)."""
+    if wall is None:
+        return None
+    try:
+        n = wall.Orientation
+        if n is not None and float(n.GetLength()) > 1e-9:
+            return n.Normalize()
+    except Exception:
+        pass
+    return None
+
+
+def _wall_location_face_offsets_ft(wall, width_ft):
+    """
+    Distancias (ft) desde la LocationCurve hasta cara exterior / interior
+    a lo largo de ``Orientation``:
+
+    - cara exterior ≈ loc + Orientation · off_ext
+    - cara interior ≈ loc − Orientation · off_int
+    """
+    half = max(0.0, float(width_ft or 0.0)) * 0.5
+    full = max(0.0, float(width_ft or 0.0))
+    off_ext = half
+    off_int = half
+    try:
+        from Autodesk.Revit.DB import WallLocationLine
+
+        param = wall.get_Parameter(BuiltInParameter.WALL_KEY_REF_PARAM)
+        if param is not None and param.HasValue:
+            loc_line = WallLocationLine(int(param.AsInteger()))
+            if loc_line in (
+                WallLocationLine.FinishFaceExterior,
+                WallLocationLine.CoreFaceExterior,
+            ):
+                off_ext, off_int = 0.0, full
+            elif loc_line in (
+                WallLocationLine.FinishFaceInterior,
+                WallLocationLine.CoreFaceInterior,
+            ):
+                off_ext, off_int = full, 0.0
+    except Exception:
+        pass
+    return float(off_ext), float(off_int)
+
+
+def _wall_side_face_t_along_orientation_ft(wall, p_on_location, shell_exterior=True):
+    """
+    Cota firmada (ft) desde ``p_on_location`` hasta una cara lateral del muro,
+    proyectada en ``Orientation`` (+ hacia exterior).
+    """
+    if wall is None or p_on_location is None:
+        return None
+    n = _wall_orientation_unit(wall)
+    if n is None:
+        return None
+    try:
+        from Autodesk.Revit.DB import HostObjectUtils, ShellLayerType
+
+        layer = (
+            ShellLayerType.Exterior if shell_exterior else ShellLayerType.Interior
+        )
+        refs = HostObjectUtils.GetSideFaces(wall, layer)
+        if refs is None or int(refs.Count) < 1:
+            return None
+    except Exception:
+        return None
+
+    best_t = None
+    best_score = -1.0e9
+    for i in range(int(refs.Count)):
+        try:
+            face = wall.GetGeometryObjectFromReference(refs[i])
+        except Exception:
+            face = None
+        if face is None:
+            continue
+        try:
+            bb = face.GetBoundingBox()
+            u = 0.5 * (float(bb.Min.U) + float(bb.Max.U))
+            v = 0.5 * (float(bb.Min.V) + float(bb.Max.V))
+            uv = UV(u, v)
+            pt = face.Evaluate(uv)
+            fn = face.ComputeNormal(uv)
+            t = float(pt.Subtract(p_on_location).DotProduct(n))
+        except Exception:
+            continue
+        align = 0.0
+        try:
+            fn_xy = XYZ(float(fn.X), float(fn.Y), 0.0)
+            fl = float(fn_xy.GetLength())
+            if fl > 1e-9:
+                fn_xy = fn_xy.Normalize()
+                align = float(fn_xy.DotProduct(n))
+                if not shell_exterior:
+                    align = -align
+        except Exception:
+            align = 0.0
+        if align > best_score:
+            best_score = align
+            best_t = t
+    return best_t
+
+
+def _wall_thickness_range_along_orientation_ft(wall, p_on_location, width_ft):
+    """
+    Intervalo ``[t0, t1]`` del espesor del muro a lo largo de ``Orientation``,
+    medido desde un punto de la LocationCurve.
+
+    Preferencia: caras reales (``HostObjectUtils``). Respaldo: Location Line + Width.
+    """
+    t_ext = _wall_side_face_t_along_orientation_ft(
+        wall, p_on_location, shell_exterior=True,
+    )
+    t_int = _wall_side_face_t_along_orientation_ft(
+        wall, p_on_location, shell_exterior=False,
+    )
+    if (
+        t_ext is not None
+        and t_int is not None
+        and abs(float(t_ext) - float(t_int)) > 1e-9
+    ):
+        return min(float(t_ext), float(t_int)), max(float(t_ext), float(t_int))
+
+    off_ext, off_int = _wall_location_face_offsets_ft(wall, width_ft)
+    return -float(off_int), float(off_ext)
+
+
+def _cabezal_encuentro_zone_bounds_host_ft(doc, wall, extremo, ex_cfg):
+    """
+    AABB de la zona de intersección L en ejes del host (long, trans) desde ``pt_extremo``.
+
+    Ancla las caras reales de ambos muros (Location Line / side faces), no
+    ±Width/2 asumiendo eje en el centro del espesor.
+    """
+    if doc is None or wall is None or not cabezal_extremo_es_encuentro_l(ex_cfg):
+        return None
+    if _cab_enc_l is None:
+        return None
+    geom = _wall_longitudinal_at_extremo(wall, extremo)
+    if geom is None:
+        return None
+    neighbor = _neighbor_wall_from_ex_cfg(doc, ex_cfg)
+    if neighbor is None:
+        return None
+    p_join = _cab_enc_l.cabezal_encuentro_l_p_join(doc, wall, neighbor, extremo)
+    if p_join is None:
+        p_join = geom[u"pt_extremo"]
+    try:
+        e_det_mm = float(
+            ex_cfg.get(u"espesor_detectado_mm")
+            or _cab_enc_l.espesor_mm_wall(neighbor)
+            or 200.0
+        )
+    except Exception:
+        e_det_mm = 200.0
+    try:
+        e_sel_mm = float(
+            ex_cfg.get(u"espesor_seleccionado_mm")
+            or _cab_enc_l.espesor_mm_wall(wall)
+            or 200.0
+        )
+    except Exception:
+        e_sel_mm = 200.0
+    e_det_ft = _mm_to_internal(e_det_mm)
+    e_sel_ft = _mm_to_internal(e_sel_mm)
+
+    n_host = _wall_orientation_unit(wall)
+    if n_host is None:
+        n_host = geom[u"normal_muro"]
+    n_det = _wall_orientation_unit(neighbor)
+    if n_det is None:
+        ex_vec = CABEZAL_EXTREMO_INICIO
+        try:
+            ex_vec = _cab_enc_l._vecino_extremo_mas_cercano(neighbor, p_join)
+        except Exception:
+            pass
+        frame_n = _wall_extremo_frame(neighbor, ex_vec)
+        if frame_n is None:
+            return None
+        # ``inward`` = −Orientation; para el rango usamos Orientation.
+        try:
+            n_det = frame_n[u"inward"].Negate()
+        except Exception:
+            n_det = frame_n[u"inward"]
+    if n_host is None or n_det is None:
+        return None
+
+    try:
+        z_ref = float(geom[u"pt_extremo"].Z)
+    except Exception:
+        z_ref = float(p_join.Z)
+    try:
+        p_ref = XYZ(float(p_join.X), float(p_join.Y), z_ref)
+    except Exception:
+        p_ref = p_join
+
+    th0, th1 = _wall_thickness_range_along_orientation_ft(wall, p_ref, e_sel_ft)
+    tn0, tn1 = _wall_thickness_range_along_orientation_ft(
+        neighbor, p_ref, e_det_ft,
+    )
+
+    longs = []
+    transs = []
+    for th in (float(th0), float(th1)):
+        for tn in (float(tn0), float(tn1)):
+            try:
+                pt = p_ref.Add(n_host.Multiply(th))
+                pt = pt.Add(n_det.Multiply(tn))
+                pt = XYZ(float(pt.X), float(pt.Y), z_ref)
+            except Exception:
+                continue
+            lo, tr = _cabezal_project_pt_extremo_axes_ft(geom, pt)
+            longs.append(float(lo))
+            transs.append(float(tr))
+    if len(longs) < 2 or len(transs) < 2:
+        return None
+    return (
+        min(longs), max(longs),
+        min(transs), max(transs),
+    )
+
+
+def _cabezal_stirrup_envelope_encuentro_fiber_ft(
+    wall, extremo, ex_cfg, doc, layer_indices,
+    segment_ctx=None, stack_index=0, bar_type_fallback=None,
+):
+    """
+    Envelope del estribo en encuentro L con recubrimiento uniforme.
+
+    Primario: caras de la zona de intersección (e_det × e_sel) insetadas
+    ``CABEZAL_COVER_MM`` (fibra exterior del estribo → cara hormigón).
+    Respaldo: AABB de la fibra de barras si no hay zona resoluble.
+    """
+    geom = _wall_longitudinal_at_extremo(wall, extremo)
+    if geom is None:
+        return None, None, None, None, u"Sin geometría longitudinal del muro."
+    if not cabezal_extremo_es_encuentro_l(ex_cfg):
+        return None, None, None, None, u"Envelope fibra solo aplica en encuentro L."
+
+    conf = normalize_cabezal_confinement(
+        ex_cfg.get(u"confinement"),
+        ex_cfg.get(u"n_capas"),
+        encuentro=True,
+    )
+    try:
+        cover_mm = float(ex_cfg.get(u"cover_mm") or CABEZAL_COVER_MM)
+    except Exception:
+        cover_mm = float(CABEZAL_COVER_MM)
+    cover_ft = _mm_to_internal(max(0.0, cover_mm))
+
+    zone = _cabezal_encuentro_zone_bounds_host_ft(doc, wall, extremo, ex_cfg)
+    if zone is not None:
+        z_lo0, z_lo1, z_tr0, z_tr1 = zone
+        # Cotas = posición de la fibra exterior del estribo (antes del inset
+        # por radio en ``_create_cabezal_confinement_stirrup``).
+        long_min = float(z_lo0) + cover_ft
+        long_max = float(z_lo1) - cover_ft
+        trans_min = float(z_tr0) + cover_ft
+        trans_max = float(z_tr1) - cover_ft
+        if long_max - long_min < 1e-9 or trans_max - trans_min < 1e-9:
+            return None, None, None, None, u"Zona encuentro demasiado estrecha para ø/cubierta."
+        return long_min, long_max, trans_min, trans_max, None
+
+    # Respaldo: AABB barras + pad (no garantiza 25 mm en caras).
+    pad_mm = (
+        float(conf.get(u"stirrup_diam_mm") or CABEZAL_STIRRUP_DIAM_MM) * 0.5
+        + CABEZAL_CONFINEMENT_STIRRUP_PAD_MM
+    )
+    pad_ft = _mm_to_internal(pad_mm)
+    layer_spacing_mm = float(
+        ex_cfg.get(u"layer_spacing_mm") or CABEZAL_LAYER_PITCH_MM,
+    )
+    layers = cabezal_active_layers(ex_cfg)
+    n_capas = len(layers) if layers else cabezal_effective_n_capas(ex_cfg)
+    fiber_idx = list(range(max(1, int(n_capas))))
+
+    long_vals = []
+    trans_vals = []
+    for li in fiber_idx:
+        if li < 0 or li >= len(layers):
+            continue
+        ly = layers[li]
+        try:
+            n_bars = int(ly.get(u"n_bars", CABEZAL_MIN_BARRAS_POR_CAPA))
+        except Exception:
+            n_bars = CABEZAL_MIN_BARRAS_POR_CAPA
+        n_bars = max(
+            CABEZAL_MIN_BARRAS_POR_CAPA,
+            min(CABEZAL_MAX_BARRAS_POR_CAPA, n_bars),
+        )
+        bar_type = _resolver_bar_type_for_layer(
+            doc, ex_cfg, ly, bar_type_fallback,
+            segment_ctx=segment_ctx,
+            stack_index=stack_index,
+            layer_index=li,
+        )
+        if bar_type is None:
+            return None, None, None, None, u"Capa {0}: sin RebarBarType.".format(li + 1)
+        conf_bt = _resolver_conf_bar_type(
+            doc, ex_cfg, bar_type, bar_type_fallback,
+        )
+        if conf_bt is None:
+            conf_bt = bar_type
+        p_lo, _p_hi, distrib_ft, err_geom = _cabezal_capa_line_endpoints(
+            wall, extremo, li, bar_type, conf_bt,
+            layer_spacing_mm=layer_spacing_mm,
+            doc=doc, ex_cfg=ex_cfg,
+        )
+        if err_geom or p_lo is None:
+            return None, None, None, None, err_geom or u"Sin p_lo capa {0}.".format(li + 1)
+        long_c, trans_origin = _cabezal_project_pt_extremo_axes_ft(geom, p_lo)
+        bar_r_ft = _mm_to_internal(_bar_diameter_mm(bar_type) * 0.5)
+        trans_coords = _cabezal_layer_bar_trans_coords_ft(
+            float(trans_origin), float(distrib_ft or 0.0), n_bars,
+        )
+        if not trans_coords:
+            return None, None, None, None, u"Capa {0}: sin cotas transversales.".format(li + 1)
+        long_vals.extend([
+            float(long_c) - bar_r_ft - pad_ft,
+            float(long_c) + bar_r_ft + pad_ft,
+        ])
+        for tc in trans_coords:
+            trans_vals.extend([
+                float(tc) - bar_r_ft - pad_ft,
+                float(tc) + bar_r_ft + pad_ft,
+            ])
+
+    if not long_vals or not trans_vals:
+        return None, None, None, None, u"Fibra encuentro: sin barras para estribo."
+
+    return (
+        min(long_vals), max(long_vals),
+        min(trans_vals), max(trans_vals),
+        None,
+    )
+
+
 def _cabezal_stirrup_envelope_ft(
     wall, extremo, ex_cfg, doc, layer_indices,
     segment_ctx=None, stack_index=0, bar_type_fallback=None,
@@ -4659,10 +5161,17 @@ def _cabezal_stirrup_envelope_ft(
     """
     Envelope perimetral en ft (ejes ``v_long`` / ``normal_muro`` desde ``pt_extremo``).
 
-    Misma lógica que ``31_ArmadoMurosCabezal``: offsets escalares por capa +
-    reparto ``SetLayoutAsFixedNumber`` (``long_c = offset_long_ft``, sin proyección
-    3D de ``p_lo``). ``line_jobs`` se ignora aquí (solo sirve para barras long.).
+    Extremo libre: offsets escalares por capa + reparto FixedNumber.
+    Encuentro L: ``_cabezal_stirrup_envelope_encuentro_fiber_ft`` (abrazo fibra).
     """
+    if cabezal_extremo_es_encuentro_l(ex_cfg):
+        return _cabezal_stirrup_envelope_encuentro_fiber_ft(
+            wall, extremo, ex_cfg, doc, layer_indices,
+            segment_ctx=segment_ctx,
+            stack_index=stack_index,
+            bar_type_fallback=bar_type_fallback,
+        )
+
     geom = _wall_longitudinal_at_extremo(wall, extremo)
     if geom is None:
         return None, None, None, None, u"Sin geometría longitudinal del muro."
@@ -4685,22 +5194,6 @@ def _cabezal_stirrup_envelope_ft(
     trans_vals = []
     layer_long_mm = {}
     layers = cabezal_active_layers(ex_cfg)
-
-    jobs_by_layer = {}
-    for job in line_jobs or []:
-        try:
-            jli = int(job.get(u"layer_index", -1))
-        except Exception:
-            continue
-        if job.get(u"extremo") != extremo:
-            continue
-        try:
-            jw = job.get(u"wall")
-            if jw is not None and wall is not None and jw.Id != wall.Id:
-                continue
-        except Exception:
-            pass
-        jobs_by_layer.setdefault(jli, []).append(job)
 
     for li in layer_indices or []:
         try:
@@ -4745,14 +5238,6 @@ def _cabezal_stirrup_envelope_ft(
         offset_long_ft = _mm_to_internal(offset_long_mm)
         trans_origin = dist_eje_cara - offset_trans_ft
         long_c = float(offset_long_ft)
-        long_src = u"offset"
-        job0 = (jobs_by_layer.get(int(li)) or [None])[0]
-        if job0 is not None and job0.get(u"p_lo") is not None:
-            long_proj, _ = _cabezal_project_pt_extremo_axes_ft(
-                geom, job0.get(u"p_lo"),
-            )
-            long_c = float(long_proj)
-            long_src = u"p_lo"
         bar_r_ft = _mm_to_internal(_bar_diameter_mm(bar_type) * 0.5)
         trans_coords = _cabezal_layer_bar_trans_coords_ft(
             trans_origin, distrib_ft, n_bars,
@@ -4764,7 +5249,7 @@ def _cabezal_stirrup_envelope_ft(
         layer_long_mm[int(li)] = {
             u"long_mm": round(float(long_c) * 304.8, 2),
             u"offset_long_mm": round(float(offset_long_ft) * 304.8, 2),
-            u"src": long_src,
+            u"src": u"offset",
         }
         for tc in trans_coords:
             trans_vals.extend([
@@ -4783,11 +5268,52 @@ def _cabezal_stirrup_envelope_ft(
 
 
 def _resolve_cabezal_stirrup_hook_135(doc):
-    """``RebarHookType`` 135° para estribos de confinamiento (mismo criterio que columnas)."""
+    """
+    ``RebarHookType`` 135° para estribos/trabas de confinamiento.
+
+    Preferencia: tipo «Stirrup/Tie - 135 deg.» por nombre; respaldo vía l135.
+    """
     if doc is None:
         return None, u"Documento no válido."
+
+    name_targets = (
+        CABEZAL_STIRRUP_HOOK_NAME,
+        u"Stirrup/Tie - 135 deg",
+        u"Stirrup/Tie - 135 deg. ",
+    )
+    try:
+        for ht in FilteredElementCollector(doc).OfClass(RebarHookType):
+            try:
+                nm = u"{0}".format(ht.Name or u"").strip()
+            except Exception:
+                continue
+            for target in name_targets:
+                if nm == target or nm.lower() == target.lower():
+                    return ht, None
+            # Coincidencia flexible: contiene stirrup/tie y 135.
+            try:
+                nl = nm.lower()
+            except Exception:
+                nl = u""
+            if (
+                (u"stirrup" in nl or u"tie" in nl)
+                and u"135" in nl
+            ):
+                try:
+                    ang = math.degrees(float(ht.HookAngle))
+                except Exception:
+                    ang = None
+                if ang is None or abs(ang - 135.0) <= 2.0:
+                    return ht, None
+    except Exception:
+        pass
+
     if l135 is None:
-        return None, u"Módulo rebar_extender_l_ganchos_135_rps no disponible."
+        return None, (
+            u"No se encontró «{0}» ni módulo l135 de respaldo.".format(
+                CABEZAL_STIRRUP_HOOK_NAME,
+            )
+        )
     try:
         largo_mm = float(getattr(l135, u"HOOK_LENGTH_MM_135", 100.0))
         hid, err = l135._resolve_rebar_hook_135_id(doc, largo_mm)
@@ -4797,14 +5323,22 @@ def _resolve_cabezal_stirrup_hook_135(doc):
         except Exception:
             return None, u"Resolver gancho 135°: {0}".format(str(ex))
     if hid is None or hid == ElementId.InvalidElementId:
-        return None, err or u"RebarHookType 135° no resuelto en el proyecto."
+        return None, err or (
+            u"RebarHookType «{0}» no resuelto en el proyecto.".format(
+                CABEZAL_STIRRUP_HOOK_NAME,
+            )
+        )
     try:
         ht = doc.GetElement(hid)
         if isinstance(ht, RebarHookType):
             return ht, None
     except Exception:
         pass
-    return None, err or u"RebarHookType 135° no resuelto en el proyecto."
+    return None, err or (
+        u"RebarHookType «{0}» no resuelto en el proyecto.".format(
+            CABEZAL_STIRRUP_HOOK_NAME,
+        )
+    )
 
 
 def _cabezal_hook_orient_inward(tangent, plane_normal, at_pt, interior_pt):
@@ -4957,6 +5491,95 @@ def _clear_cabezal_stirrup_hook_rotations(rebar):
                 fn(0.0, int(end_idx))
         except Exception:
             pass
+
+
+def _cabezal_set_hook_type_id_at_end(rebar, end_idx, type_id, doc=None, max_attempts=2):
+    """Asigna ``SetHookTypeId`` y verifica; regenera y reintenta si hace falta."""
+    if rebar is None or type_id is None:
+        return False
+    e = int(end_idx)
+    for attempt in range(int(max_attempts)):
+        try:
+            rebar.SetHookTypeId(e, type_id)
+        except Exception:
+            return False
+        try:
+            got = rebar.GetHookTypeId(e)
+            if got is not None and int(got.IntegerValue) == int(type_id.IntegerValue):
+                return True
+        except Exception:
+            pass
+        if doc is not None and attempt + 1 < int(max_attempts):
+            try:
+                doc.Regenerate()
+            except Exception:
+                pass
+    return False
+
+
+def _cabezal_set_hook_orientation_at_end(rebar, end_idx, orient):
+    """``SetHookOrientation`` / ``SetTerminationOrientation`` según API."""
+    if rebar is None or orient is None:
+        return False
+    e = int(end_idx)
+    try:
+        fn = getattr(rebar, u"SetTerminationOrientation", None)
+        if fn is not None:
+            fn(e, orient)
+            return True
+    except Exception:
+        pass
+    try:
+        rebar.SetHookOrientation(e, orient)
+        return True
+    except Exception:
+        return False
+
+
+def _apply_cabezal_encuentro_stirrup_hooks_after_create(
+    doc, rebar, hook_type,
+    p_corner, p_next, p_prev, p_center, plane_normal,
+):
+    """
+    Mitigación geometría: el perímetro se creó sin ganchos; aquí se asignan
+    «Stirrup/Tie - 135 deg.» en start/end sin recrear las curvas.
+    """
+    if rebar is None or hook_type is None:
+        return False
+    try:
+        hid = hook_type.Id
+    except Exception:
+        return False
+    if hid is None or hid == ElementId.InvalidElementId:
+        return False
+
+    inv = ElementId.InvalidElementId
+    # Limpia ganchos por defecto del RebarBarType.
+    _cabezal_set_hook_type_id_at_end(rebar, 0, inv, doc)
+    _cabezal_set_hook_type_id_at_end(rebar, 1, inv, doc)
+
+    ok0 = _cabezal_set_hook_type_id_at_end(rebar, 0, hid, doc)
+    ok1 = _cabezal_set_hook_type_id_at_end(rebar, 1, hid, doc)
+
+    o_start, o_end = _cabezal_confinement_hook_orientations(
+        p_corner, p_next, p_prev, p_center, plane_normal,
+    )
+    # Probar orientación calculada y su flip (Revit a veces invierte en planta).
+    for o0, o1 in (
+        (o_start, o_end),
+        (_flip_cabezal_hook_orient(o_start), _flip_cabezal_hook_orient(o_end)),
+    ):
+        _cabezal_set_hook_orientation_at_end(rebar, 0, o0)
+        _cabezal_set_hook_orientation_at_end(rebar, 1, o1)
+        break
+
+    _clear_cabezal_stirrup_hook_rotations(rebar)
+    if doc is not None:
+        try:
+            doc.Regenerate()
+        except Exception:
+            pass
+    return bool(ok0 and ok1)
 
 
 def _cabezal_rebar_shape_name_key(name):
@@ -5178,6 +5801,124 @@ def _try_create_cabezal_stirrup_from_curves(
     )
 
 
+def _try_create_cabezal_stirrup_from_curves_plain(
+    doc, wall, bar_type, hook_type, curves_list, plane_normal,
+    p_corner, p_next, p_prev, p_center,
+    allow_no_hooks=False,
+):
+    """
+    Estribo perimetral con ``CreateFromCurves`` (sin RebarShape «10»).
+
+    Con ganchos: «Stirrup/Tie - 135 deg.» en start y end hacia el interior.
+    Con ``allow_no_hooks=True``: perímetro sin ganchos (prueba de geometría).
+    """
+    if curves_list is None:
+        return None, u"Sin curvas para estribo."
+
+    hook_el = None
+    if not allow_no_hooks:
+        if hook_type is None:
+            return None, u"RebarHookType 135° no válido."
+        hook_el = hook_type
+        if not isinstance(hook_el, RebarHookType):
+            try:
+                hook_el = doc.GetElement(hook_type)
+            except Exception:
+                hook_el = None
+        if hook_el is None or not isinstance(hook_el, RebarHookType):
+            return None, (
+                u"RebarHookType «{0}» no válido.".format(CABEZAL_STIRRUP_HOOK_NAME)
+            )
+
+    normals = []
+    if plane_normal is not None:
+        try:
+            if float(plane_normal.GetLength()) > 1e-12:
+                normals.append(plane_normal.Normalize())
+                normals.append(plane_normal.Normalize().Negate())
+        except Exception:
+            pass
+    if not normals:
+        normals = [XYZ.BasisZ, XYZ.BasisZ.Negate()]
+
+    curve_variants = _cabezal_stirrup_curve_variants(curves_list)
+    styles = (RebarStyle.StirrupTie, RebarStyle.Standard)
+    flag_pairs = ((True, True), (True, False), (False, True), (False, False))
+    last_err = None
+
+    def _create_once(curves, nv, style, o0, o1, use_ex, create_new):
+        try:
+            rb = Rebar.CreateFromCurves(
+                doc,
+                style,
+                bar_type,
+                hook_el,
+                hook_el,
+                wall,
+                nv,
+                curves,
+                o0,
+                o1,
+                use_ex,
+                create_new,
+            )
+            if rb is not None:
+                if hook_el is not None:
+                    _clear_cabezal_stirrup_hook_rotations(rb)
+                return _stamp_armadura_arainco(rb), None
+        except Exception as ex:
+            try:
+                return None, unicode(ex)
+            except Exception:
+                return None, str(ex)
+        return None, None
+
+    for curves_clr in curve_variants:
+        if curves_clr is None:
+            continue
+        try:
+            if int(curves_clr.Count) < 2:
+                continue
+        except Exception:
+            continue
+        for nv in normals:
+            if allow_no_hooks or hook_el is None:
+                orient_tries = (
+                    (RebarHookOrientation.Left, RebarHookOrientation.Left),
+                )
+            else:
+                o_start, o_end = _cabezal_confinement_hook_orientations(
+                    p_corner, p_next, p_prev, p_center, nv,
+                )
+                orient_tries = (
+                    (o_start, o_end),
+                    (
+                        _flip_cabezal_hook_orient(o_start),
+                        _flip_cabezal_hook_orient(o_end),
+                    ),
+                    (RebarHookOrientation.Left, RebarHookOrientation.Left),
+                    (RebarHookOrientation.Right, RebarHookOrientation.Right),
+                )
+            for o0, o1 in orient_tries:
+                for style in styles:
+                    for use_ex, create_new in flag_pairs:
+                        rb, err = _create_once(
+                            curves_clr, nv, style, o0, o1, use_ex, create_new,
+                        )
+                        if rb is not None:
+                            return rb, None
+                        if err:
+                            last_err = err
+
+    if allow_no_hooks:
+        return None, last_err or u"CreateFromCurves estribo sin ganchos falló."
+    return None, last_err or (
+        u"CreateFromCurves estribo (ganchos «{0}») falló.".format(
+            CABEZAL_STIRRUP_HOOK_NAME,
+        )
+    )
+
+
 def _cabezal_tie_layer_geometry_ft(
     wall, extremo, ex_cfg, doc,
     segment_ctx=None, stack_index=0, bar_type_fallback=None,
@@ -5209,7 +5950,9 @@ def _cabezal_tie_layer_geometry_ft(
         ex_cfg.get(u"layer_spacing_mm") or CABEZAL_LAYER_PITCH_MM,
     )
     conf = normalize_cabezal_confinement(
-        ex_cfg.get(u"confinement"), ex_cfg.get(u"n_capas"),
+        ex_cfg.get(u"confinement"),
+        ex_cfg.get(u"n_capas"),
+        encuentro=cabezal_extremo_es_encuentro_l(ex_cfg),
     )
     tie_diam_mm = float(conf.get(u"stirrup_diam_mm") or CABEZAL_STIRRUP_DIAM_MM)
     tie_r_ft = _mm_to_internal(tie_diam_mm * 0.5)
@@ -5247,26 +5990,26 @@ def _cabezal_tie_layer_geometry_ft(
     )
     if err_geom:
         return None, None, None, None, err_geom
-    offset_trans_mm, offset_long_mm = _cabezal_capa_offsets_mm(
-        li, bar_type, conf_type, layer_spacing_mm, None,
-    )
-    offset_trans_ft = _mm_to_internal(offset_trans_mm)
-    offset_long_ft = _mm_to_internal(offset_long_mm)
-    trans_origin = dist_eje_cara - offset_trans_ft
-    if cabezal_extremo_es_encuentro_l(ex_cfg):
-        try:
-            delta = _p_lo.Subtract(geom[u"pt_extremo"])
-            into = geom[u"vector_longitudinal"]
-            long_bar = abs(float(delta.DotProduct(into)))
-        except Exception:
-            long_bar = offset_long_ft
+
+    is_enc_l = cabezal_extremo_es_encuentro_l(ex_cfg)
+    if is_enc_l:
+        # Encuentro: anclar traba a la fibra real de la capa (p_lo), no a
+        # offsets de extremo libre — si no, varias trabas coinciden en planta.
+        long_bar, trans_origin = _cabezal_project_pt_extremo_axes_ft(geom, _p_lo)
     else:
+        offset_trans_mm, offset_long_mm = _cabezal_capa_offsets_mm(
+            li, bar_type, conf_type, layer_spacing_mm, None,
+        )
+        offset_trans_ft = _mm_to_internal(offset_trans_mm)
+        offset_long_ft = _mm_to_internal(offset_long_mm)
+        trans_origin = dist_eje_cara - offset_trans_ft
         long_bar = offset_long_ft
+
     bar_r_ft = _mm_to_internal(_bar_diameter_mm(bar_type) * 0.5)
     tie_offset_ft = _cabezal_tie_offset_ft(bar_type, tie_diam_mm)
     long_tie = float(long_bar) + tie_offset_ft
     trans_coords = _cabezal_layer_bar_trans_coords_ft(
-        trans_origin, distrib_ft, n_bars,
+        float(trans_origin), float(distrib_ft or 0.0), n_bars,
     )
     if not trans_coords:
         return None, None, None, None, u"Capa [1]: sin cotas transversales."
@@ -5498,9 +6241,10 @@ def _create_cabezal_confinement_tie(
         n_capas = int(ex_cfg.get(u"n_capas", CABEZAL_MIN_CAPAS))
     except Exception:
         n_capas = CABEZAL_MIN_CAPAS
+    is_enc = cabezal_extremo_es_encuentro_l(ex_cfg)
     tie_layers = cabezal_confinement_tie_layer_indices(
         normalize_cabezal_confinement(
-            ex_cfg.get(u"confinement"), n_capas,
+            ex_cfg.get(u"confinement"), n_capas, encuentro=is_enc,
         ),
         n_capas,
     )
@@ -5541,7 +6285,9 @@ def _create_cabezal_confinement_tie(
         return None, u"Altura de muro nula para traba."
 
     conf = normalize_cabezal_confinement(
-        ex_cfg.get(u"confinement"), ex_cfg.get(u"n_capas"),
+        ex_cfg.get(u"confinement"),
+        ex_cfg.get(u"n_capas"),
+        encuentro=cabezal_extremo_es_encuentro_l(ex_cfg),
     )
     tie_type = _bar_type_for_diameter_mm(
         doc, conf.get(u"stirrup_diam_mm"), bar_type_fallback,
@@ -5664,9 +6410,21 @@ def _cabezal_tie_across_layers_geometry_ft(
         )
         if err_geom:
             return None, None, None, None, err_geom
-        offset_trans_mm, offset_long_mm = _cabezal_capa_offsets_mm(
-            li, bar_type, conf_type, layer_spacing_mm, None,
-        )
+        if cabezal_extremo_es_encuentro_l(ex_cfg) and _cab_enc_l is not None:
+            try:
+                cover_mm = float(CABEZAL_COVER_MM)
+            except Exception:
+                cover_mm = 25.0
+            offset_trans_mm = float(
+                _cab_enc_l.cabezal_encuentro_l_offset_trans_mm(
+                    cover_mm, conf_type, bar_type,
+                )
+            )
+            offset_long_mm = offset_trans_mm
+        else:
+            offset_trans_mm, offset_long_mm = _cabezal_capa_offsets_mm(
+                li, bar_type, conf_type, layer_spacing_mm, None,
+            )
         offset_trans_ft = _mm_to_internal(offset_trans_mm)
         offset_long_ft = _mm_to_internal(offset_long_mm)
         trans_origin = dist_eje_cara - offset_trans_ft
@@ -5874,8 +6632,10 @@ def _create_cabezal_confinement_stirrup(
 ):
     """
     Estribo perimetrico @ spacing de ``confinement.stirrup_spacing_mm`` a lo
-    largo de la altura del muro (Z), con ``RebarShape`` «10»
-    (``CreateFromCurvesAndShape``) y ganchos 135° hacia el interior del muro.
+    largo de la altura del muro (Z).
+
+    Extremo libre: ``RebarShape`` «10» (``CreateFromCurvesAndShape``).
+    Encuentro L: ``CreateFromCurves`` + ganchos «Stirrup/Tie - 135 deg.» start/end.
 
     Si el muro tiene fundación estructural unida, el plano del loop y el array
     bajan ``CABEZAL_STIRRUP_FOUNDATION_DROP_MM`` (300 mm) y la longitud del
@@ -5912,8 +6672,11 @@ def _create_cabezal_confinement_stirrup(
     if array_len < 1e-9:
         return None, u"Altura de muro nula para estribos."
 
+    is_enc_l = cabezal_extremo_es_encuentro_l(ex_cfg)
     conf = normalize_cabezal_confinement(
-        ex_cfg.get(u"confinement"), ex_cfg.get(u"n_capas"),
+        ex_cfg.get(u"confinement"),
+        ex_cfg.get(u"n_capas"),
+        encuentro=is_enc_l,
     )
     stirrup_type = _bar_type_for_diameter_mm(
         doc, conf.get(u"stirrup_diam_mm"), bar_type_fallback,
@@ -5927,14 +6690,15 @@ def _create_cabezal_confinement_stirrup(
     long_min, long_max, trans_min, trans_max = _cabezal_stirrup_inset_envelope_bounds(
         long_min, long_max, trans_min, trans_max, stirrup_r_ft,
     )
-    # Solo cara de la punta: no invadir el recubrimiento (otros 3 lados OK).
-    try:
-        cover_mm = float(ex_cfg.get(u"cover_mm") or CABEZAL_COVER_MM)
-    except Exception:
-        cover_mm = float(CABEZAL_COVER_MM)
-    long_min, long_max = _cabezal_stirrup_clamp_tip_face_cover(
-        long_min, long_max, stirrup_r_ft, cover_mm=cover_mm,
-    )
+    # Cara de punta solo en extremo libre: en encuentro L recorta la fibra.
+    if not is_enc_l:
+        try:
+            cover_mm = float(ex_cfg.get(u"cover_mm") or CABEZAL_COVER_MM)
+        except Exception:
+            cover_mm = float(CABEZAL_COVER_MM)
+        long_min, long_max = _cabezal_stirrup_clamp_tip_face_cover(
+            long_min, long_max, stirrup_r_ft, cover_mm=cover_mm,
+        )
 
     def _corner(long_c, trans_c):
         base = (
@@ -5964,21 +6728,50 @@ def _create_cabezal_confinement_stirrup(
     except Exception as ex_ln:
         return None, u"Curvas estribo: {0}".format(ex_ln)
 
-    hook_type, hook_err = _resolve_cabezal_stirrup_hook_135(doc)
-    if hook_type is None:
-        return None, hook_err or u"Sin RebarHookType 135° para estribo de confinamiento."
+    hook_type = None
+    hook_err = None
+    hooks_after = bool(
+        is_enc_l and CABEZAL_ENCUENTRO_STIRRUP_HOOKS_AFTER_CREATE
+    )
+    create_no_hooks = bool(hooks_after)
+    if not create_no_hooks:
+        hook_type, hook_err = _resolve_cabezal_stirrup_hook_135(doc)
+        if hook_type is None:
+            return None, hook_err or u"Sin RebarHookType 135° para estribo de confinamiento."
+    elif hooks_after:
+        hook_type, hook_err = _resolve_cabezal_stirrup_hook_135(doc)
+        if hook_type is None:
+            return None, hook_err or (
+                u"Sin «{0}» para aplicar tras crear el estribo.".format(
+                    CABEZAL_STIRRUP_HOOK_NAME,
+                )
+            )
 
     plane_norm = XYZ.BasisZ
     spacing_ft = _mm_to_internal(cabezal_confinement_spacing_mm(conf))
-    rb, create_err = _try_create_cabezal_stirrup_from_curves(
-        doc, wall, stirrup_type, hook_type, cl, plane_norm,
-        p_br, p_bl, p_tr, p_center,
-    )
+    if is_enc_l:
+        # Encuentro: CreateFromCurves (sin Shape «10»).
+        # Mitigación: perímetro sin ganchos; 135° se asignan después.
+        rb, create_err = _try_create_cabezal_stirrup_from_curves_plain(
+            doc, wall, stirrup_type, hook_type, cl, plane_norm,
+            p_br, p_bl, p_tr, p_center,
+            allow_no_hooks=bool(create_no_hooks),
+        )
+        if hooks_after:
+            err_prefix = u"CreateFromCurves estribo encuentro (ganchos post)"
+        else:
+            err_prefix = u"CreateFromCurves estribo encuentro"
+    else:
+        rb, create_err = _try_create_cabezal_stirrup_from_curves(
+            doc, wall, stirrup_type, hook_type, cl, plane_norm,
+            p_br, p_bl, p_tr, p_center,
+        )
+        err_prefix = u"CreateFromCurvesAndShape estribo (Shape 10)"
     if rb is None:
         try:
-            msg = u"CreateFromCurvesAndShape estribo (Shape 10): {0}".format(unicode(create_err))
+            msg = u"{0}: {1}".format(err_prefix, unicode(create_err))
         except Exception:
-            msg = u"CreateFromCurvesAndShape estribo (Shape 10): {0}".format(str(create_err))
+            msg = u"{0}: {1}".format(err_prefix, str(create_err))
         return None, msg
 
     try:
@@ -5992,6 +6785,13 @@ def _create_cabezal_confinement_stirrup(
             return _stamp_armadura_arainco(rb), u"SetLayoutAsMaximumSpacing: {0}".format(unicode(ex_lay))
         except Exception:
             return _stamp_armadura_arainco(rb), u"SetLayoutAsMaximumSpacing: {0}".format(str(ex_lay))
+
+    # Tras el layout (puede resetear HookTypeId): aplicar 135° sin recrear curvas.
+    if hooks_after and hook_type is not None:
+        _apply_cabezal_encuentro_stirrup_hooks_after_create(
+            doc, rb, hook_type,
+            p_br, p_bl, p_tr, p_center, plane_norm,
+        )
 
     return _stamp_armadura_arainco(rb), None
 

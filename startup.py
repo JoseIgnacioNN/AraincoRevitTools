@@ -6,8 +6,8 @@ Aquí se registran los DMU que reaccionan a cambios en Rebar. pyRevit busca
 `startup.py` en la raíz del directorio `*.extension`, al mismo nivel que las
 carpetas `*.tab`.
 
-- DMU etiquetas / RebarShape: `ENABLE_REBAR_SHAPE_TAG_AUTO_SYNC` y
-  `rebar_tag_shape_sync_core.REBAR_TAG_SYNC_DEFAULT_FAMILY_NAMES`.
+- DMU etiquetas / RebarShape: `ENABLE_REBAR_SHAPE_TAG_AUTO_SYNC`
+  (tipo homónimo en la misma familia de cada IndependentTag).
 - DMU ``Armadura_Largo Total`` (desactivado): el parámetro lo rellenan las
   herramientas al crear barras; ver `_apply_armadura_largo_total_to_rebars`.
 - DMU anotaciones (empalme + cotas empotramiento): `ENABLE_LAP_DETAIL_LINK_DMU` y
@@ -15,6 +15,10 @@ carpetas `*.tab`.
   (`lap_detail_link_vigas_schema.py`) y geometría opcional `compute_lap_segment_endpoints_vigas`.
 - DMU marcadores de cota confinamiento (columnas): `ENABLE_CONFINEMENT_DIM_LINK_DMU` y
   `scripts/confinement_dim_updater_dmu.py`.
+- Interceptar «Duplicate as a Dependent»: hook
+  `hooks/command-before-exec[ID_CREATE_DEPENDENT_VIEW].py` +
+  `scripts/dependent_view_duplicate_intercept.py`
+  (`ENABLE_DEPENDENT_VIEW_DUPLICATE_INTERCEPT` solo registra binding manual de respaldo).
 """
 
 from __future__ import print_function
@@ -24,7 +28,7 @@ import sys
 
 # Interruptor global para habilitar/deshabilitar el DMU de sincronización
 # automática de Rebar Tag por Shape.
-ENABLE_REBAR_SHAPE_TAG_AUTO_SYNC = False
+ENABLE_REBAR_SHAPE_TAG_AUTO_SYNC = True
 
 # DMU desactivado: ``Armadura_Largo Total`` solo se escribe desde herramientas (no al editar Rebar).
 ENABLE_ARMADURA_LARGO_TOTAL_DMU = False
@@ -34,6 +38,10 @@ ENABLE_LAP_DETAIL_LINK_DMU = True
 
 # Borrar DetailCurve marcadores al eliminar cotas de confinamiento (columnas).
 ENABLE_CONFINEMENT_DIM_LINK_DMU = True
+
+# Binding manual de respaldo (el camino principal es el hook en hooks/).
+# Dejar en False si el hook está activo, para no duplicar suscripciones.
+ENABLE_DEPENDENT_VIEW_DUPLICATE_INTERCEPT = False
 
 
 def _register():
@@ -72,6 +80,15 @@ def _register():
         from confinement_dim_updater_dmu import register_confinement_dim_link_updater
 
         register_confinement_dim_link_updater(addin_id, doc=None)
+
+    if ENABLE_DEPENDENT_VIEW_DUPLICATE_INTERCEPT:
+        from dependent_view_duplicate_intercept import (
+            register_dependent_view_duplicate_intercept,
+        )
+
+        uiapp = getattr(HOST_APP, "uiapp", None)
+        if uiapp is not None:
+            register_dependent_view_duplicate_intercept(uiapp)
 
 
 try:

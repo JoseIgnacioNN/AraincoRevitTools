@@ -937,7 +937,7 @@ def confinement_tag_extra_offset_mm(n_capas, conf_type, job_kind, tie_layer_inde
     if n != 3 or job_kind != u"tie":
         return 0.0
     ct = _norm_conf_type(conf_type)
-    if ct not in (_CONF_TYPE_PERIMETER, _CONF_TYPE_PERIMETER_CROSS):
+    if not _conf_type_has_perimeter_stirrup(ct):
         return 0.0
     return float(
         CABEZAL_CONFINEMENT_TAG_3CAPAS_SPACING_BY_SCALE.get(
@@ -986,7 +986,8 @@ def _confinement_multihost_tipo3_tie(n_capas, conf_type, job_kind):
     """
     Tipo 3 @ 3 capas: trabas de capa + longitudinales en una sola etiqueta multihost.
 
-    Tipo 2 @ 3 capas sigue con traba individual (``conf_tag``); solo ``perimeter_cross``.
+    Tipo 2 @ 3 capas sigue con traba individual (``conf_tag``); solo familia Tipo 3
+    (``perimeter_cross`` / ``enc_fiber_cross``).
     """
     try:
         n = int(n_capas)
@@ -996,7 +997,7 @@ def _confinement_multihost_tipo3_tie(n_capas, conf_type, job_kind):
     return (
         n >= 3
         and jk == u"tie"
-        and _norm_conf_type(conf_type) == _CONF_TYPE_PERIMETER_CROSS
+        and _conf_type_is_tipo3_family(conf_type)
     )
 
 
@@ -2236,6 +2237,10 @@ def collect_confinement_multihost_tag_symbol_map(document):
 _CONF_TYPE_PERIMETER = u"perimeter_0_1"
 _CONF_TYPE_PERIMETER_CROSS = u"perimeter_cross"
 _CONF_TYPE_TIE_LAYER_1 = u"tie_layer_1"
+# Encuentro L (mismos modos de etiqueta que punta libre T2/T3 / estribo T1).
+_CONF_TYPE_ENC_FIBER = u"enc_fiber"
+_CONF_TYPE_ENC_FIBER_PERP = u"enc_fiber_perp"
+_CONF_TYPE_ENC_FIBER_CROSS = u"enc_fiber_cross"
 
 
 def _norm_conf_type(conf_type):
@@ -2246,8 +2251,27 @@ def _norm_conf_type(conf_type):
 
 
 def _conf_type_has_perimeter_stirrup(conf_type):
+    """Estribo perimetral: punta libre T2/T3 o encuentro T1–T3."""
     ct = _norm_conf_type(conf_type)
-    return ct in (_CONF_TYPE_PERIMETER, _CONF_TYPE_PERIMETER_CROSS)
+    return ct in (
+        _CONF_TYPE_PERIMETER,
+        _CONF_TYPE_PERIMETER_CROSS,
+        _CONF_TYPE_ENC_FIBER,
+        _CONF_TYPE_ENC_FIBER_PERP,
+        _CONF_TYPE_ENC_FIBER_CROSS,
+    )
+
+
+def _conf_type_is_tipo2_stirrup_family(conf_type):
+    """Tipo 2 (estribo + trabas ⊥): punta ``perimeter_0_1`` o encuentro ``enc_fiber_perp``."""
+    ct = _norm_conf_type(conf_type)
+    return ct in (_CONF_TYPE_PERIMETER, _CONF_TYPE_ENC_FIBER_PERP)
+
+
+def _conf_type_is_tipo3_family(conf_type):
+    """Tipo 3 (estribo + trabas + long.): punta ``perimeter_cross`` o encuentro ``enc_fiber_cross``."""
+    ct = _norm_conf_type(conf_type)
+    return ct in (_CONF_TYPE_PERIMETER_CROSS, _CONF_TYPE_ENC_FIBER_CROSS)
 
 
 def confinement_tag_mode(conf_type, n_capas, job_kind):
@@ -2260,6 +2284,9 @@ def confinement_tag_mode(conf_type, n_capas, job_kind):
     **3+ capas Tipo 3:** estribo + trabas de capa + longitudinales — multihost único.
     **4+ capas Tipo 2/3:** estribo + trabas interiores — estribo + multihost.
     ``tie_cross`` (longitudinales Tipo 3) usa el mismo multihost que ``tie``.
+
+    Encuentro L: ``enc_fiber`` / ``enc_fiber_perp`` / ``enc_fiber_cross`` usan
+    la misma lógica de etiqueta que el estribo/trabas de punta libre equivalentes.
     """
     ct = _norm_conf_type(conf_type)
     jk = _normalize_confinement_tie_job_kind(job_kind)
@@ -2274,7 +2301,7 @@ def confinement_tag_mode(conf_type, n_capas, job_kind):
     if _confinement_multihost_tipo1_tie(n, ct, jk):
         return u"conf_tag_multihost"
     # Tipo 2 @ 3 capas: traba de capa individual (sin multihost).
-    if n == 3 and jk == u"tie" and ct == _CONF_TYPE_PERIMETER:
+    if n == 3 and jk == u"tie" and _conf_type_is_tipo2_stirrup_family(ct):
         return u"conf_tag"
     # Tipo 3 @ 3+ capas: capa + longitudinales en el mismo multihost.
     if _confinement_multihost_tipo3_tie(n, ct, jk):

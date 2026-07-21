@@ -1,0 +1,43 @@
+=== BIMTools encuentro stirrup debug ===
+extremo=fin cover_mm=25.0 source=zone
+host_id=960008
+neighbor_id=960009
+pt_extremo_xyz=(943.9288,-250.7930,69.5866)
+p_join_xyz=(943.9288,-250.7930,69.5866)
+p_join_vs_pt_ext_mm long=0.00 trans=0.00
+--- host ---
+  LocationLine=WallCenterline Flipped=False Width_mm=200.00
+  loc_line_off_ext_mm=100.00 off_int_mm=100.00
+  HostObjectUtils t_ext_mm=100.00 t_int_mm=-100.00
+  thickness_range_mm=[-100.00, 100.00] span=200.00
+  thickness_mid_from_loc_mm=0.00 (0=eje en centro geométrico)
+--- neighbor ---
+  LocationLine=WallCenterline Flipped=False Width_mm=200.00
+  loc_line_off_ext_mm=100.00 off_int_mm=100.00
+  HostObjectUtils t_ext_mm=100.00 t_int_mm=-100.00
+  thickness_range_mm=[-100.00, 100.00] span=200.00
+  thickness_mid_from_loc_mm=0.00 (0=eje en centro geométrico)
+--- zone AABB host axes (mm from pt_extremo) ---
+  long=[-100.00, 100.00] span=200.00
+  trans=[-100.00, 100.00] span=200.00
+  zone_center_mm long=-0.00 trans=0.00
+--- envelope OUTER fiber (mm) ---
+  long=[-75.00, 75.00] span=150.00
+  trans=[-75.00, 75.00] span=150.00
+  theo_cover_to_zone_mm:
+    long_lo=25.00 long_hi=25.00
+    trans_lo=25.00 trans_hi=25.00
+stirrup_r_mm=5.00
+--- envelope CENTERLINE after inset r (mm) ---
+  long=[-70.00, 70.00]
+  trans=[-70.00, 70.00]
+  implied_outer_cover_to_zone_mm (center-/+r):
+    long_lo=25.00 long_hi=25.00
+    trans_lo=25.00 trans_hi=25.00
+  bar_layer[0] long_mm=-55.00 trans_mm=55.00,-55.00
+  bar_layer[1] long_mm=-18.33 trans_mm=55.00,-55.00
+  bar_layer[2] long_mm=18.33 trans_mm=55.00,-55.00
+  bar_layer[3] long_mm=55.00 trans_mm=55.00,-55.00
+  bar_AABB_mm long=[-55.00,55.00] trans=[-55.00,55.00]
+  bar_center_mm long=-0.00 trans=0.00
+=== end ===
