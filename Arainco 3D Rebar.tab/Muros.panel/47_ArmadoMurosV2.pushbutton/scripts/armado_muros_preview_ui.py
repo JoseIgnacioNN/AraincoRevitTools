@@ -8016,6 +8016,12 @@ class ArmadoMurosPreviewWindow(object):
         wire_malla_conf=False,
         wall_id=None,
     ):
+        """
+        Combos Ø/@: primer par (md/ms) y segundo (id/is).
+
+        Etiquetas por defecto Vertical/Horizontal. El mapeo a capas Major/Minor
+        lo resuelve ``_gather_params_for_wall_id`` según modo tradicional/contención.
+        """
         from System.Windows.Controls import StackPanel, ComboBox, TextBlock, Orientation
         from System.Windows import Thickness, FontWeights
 
@@ -13492,9 +13498,11 @@ class ArmadoMurosPreviewWindow(object):
         layer_active_dict = {}
 
         if self._mesh_modo_tradicional():
+            # UI: ct_md/ms = "Vertical", ct_id/is = "Horizontal".
+            # Muro tradicional (major = horizontal): vertical→minor, horizontal→major.
             combo_cfg = (
-                ("exterior_major", u"ct_md", u"ct_ms"),
-                ("exterior_minor", u"ct_id", u"ct_is"),
+                ("exterior_minor", u"ct_md", u"ct_ms"),
+                ("exterior_major", u"ct_id", u"ct_is"),
             )
             for lk, dnk, ensk in combo_cfg:
                 bid, esp_txt = self._read_bar_spacing_from_controls(ctr, dnk, ensk)
@@ -13506,6 +13514,7 @@ class ArmadoMurosPreviewWindow(object):
             layer_active_dict["interior_minor"] = True
             return params_dict, layer_active_dict
 
+        # Contención (major = vertical): Vertical→major, Horizontal→minor.
         combo_cfg = (
             ("exterior_major", u"cex_md", u"cex_ms"),
             ("exterior_minor", u"cex_id", u"cex_is"),
