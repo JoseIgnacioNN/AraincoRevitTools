@@ -54,70 +54,15 @@ _XAML = (
 """
     + _DARK_STYLES
     + u"""
-    <Style x:Key="ExpLamFechaComboItem" TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}">
-      <Setter Property="Padding" Value="10,8"/>
-      <Setter Property="FontSize" Value="12"/>
-    </Style>
-    <Style x:Key="ExpLamFechaCombo" TargetType="ComboBox" BasedOn="{StaticResource Combo}">
-      <Setter Property="Width" Value="{x:Static sys:Double.NaN}"/>
-      <Setter Property="Height" Value="{x:Static sys:Double.NaN}"/>
-      <Setter Property="HorizontalAlignment" Value="Stretch"/>
-      <Setter Property="MinWidth" Value="120"/>
-      <Setter Property="MaxWidth" Value="99999"/>
+    <Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/>
+    <Style x:Key="ExpLamFechaCombo" TargetType="ComboBox" BasedOn="{StaticResource ComboStretch}">
       <Setter Property="MinHeight" Value="32"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="FontSize" Value="12"/>
-      <Setter Property="Foreground" Value="#F2F8FC"/>
-      <Setter Property="ItemContainerStyle" Value="{StaticResource ExpLamFechaComboItem}"/>
-    </Style>
-    <Style x:Key="StepBadge" TargetType="TextBlock" BasedOn="{StaticResource Label}">
-      <Setter Property="Margin" Value="0,0,0,8"/>
-    </Style>
-    <Style x:Key="PanelInset" TargetType="Border">
-      <Setter Property="Background" Value="#0a1620"/>
-      <Setter Property="BorderBrush" Value="#21465C"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="4"/>
-      <Setter Property="Padding" Value="12,10"/>
-      <Setter Property="Margin" Value="0,0,0,12"/>
-    </Style>
-    <Style x:Key="BtnGhost" TargetType="Button">
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="Foreground" Value="#95B8CC"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
-      <Setter Property="FontSize" Value="11"/>
-      <Setter Property="Padding" Value="12,7"/>
-      <Setter Property="BorderBrush" Value="#21465C"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="Cursor" Value="Hand"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="Button">
-            <Border x:Name="R" Background="{TemplateBinding Background}" CornerRadius="5"
-                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
-                    Padding="{TemplateBinding Padding}">
-              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="R" Property="Background" Value="#0F2035"/>
-                <Setter TargetName="R" Property="BorderBrush" Value="#21465C"/>
-                <Setter Property="Foreground" Value="#E8F4F8"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-    <Style x:Key="BtnTertiary" TargetType="Button" BasedOn="{StaticResource BtnSelectOutline}">
-      <Setter Property="FontSize" Value="10"/>
-      <Setter Property="Padding" Value="12,6"/>
-      <Setter Property="Background" Value="#0D1829"/>
-      <Setter Property="Foreground" Value="#B8D4E5"/>
-      <Setter Property="BorderBrush" Value="#355973"/>
+      <Setter Property="Foreground" Value="#FFFFFF"/>
     </Style>
     <Style x:Key="ExpFmtToggle" TargetType="CheckBox">
-      <Setter Property="Foreground" Value="#B8D4E5"/>
+      <Setter Property="Foreground" Value="#E8F4F8"/>
       <Setter Property="FontSize" Value="10"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="Cursor" Value="Hand"/>
@@ -125,13 +70,13 @@ _XAML = (
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="CheckBox">
-            <Border x:Name="Bd" Background="#0D1829" BorderBrush="#355973" BorderThickness="1" CornerRadius="5" Padding="8,5" MinHeight="30" HorizontalAlignment="Stretch" SnapsToDevicePixels="True">
+            <Border x:Name="Bd" Background="#0A1627" BorderBrush="#5BC0DE" BorderThickness="1" CornerRadius="5" Padding="8,5" MinHeight="30" HorizontalAlignment="Stretch" SnapsToDevicePixels="True">
               <Grid HorizontalAlignment="Center">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="Auto"/>
                   <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Border x:Name="Box" Grid.Column="0" Width="14" Height="14" Background="#050E18" BorderBrush="#355973" BorderThickness="1" CornerRadius="2" Margin="0,0,6,0" VerticalAlignment="Center">
+                <Border x:Name="Box" Grid.Column="0" Width="14" Height="14" Background="#050E18" BorderBrush="#21465C" BorderThickness="1" CornerRadius="2" Margin="0,0,6,0" VerticalAlignment="Center">
                   <Path x:Name="Glyph" Data="M 2.5,7 L 5,9.5 L 10,3.5" Stroke="#5BC0DE" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed" SnapsToDevicePixels="True"/>
                 </Border>
                 <ContentPresenter Grid.Column="1" VerticalAlignment="Center" RecognizesAccessKey="True"/>
@@ -143,8 +88,8 @@ _XAML = (
                 <Setter TargetName="Box" Property="BorderBrush" Value="#5BC0DE"/>
               </Trigger>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Bd" Property="Background" Value="#0F2035"/>
-                <Setter TargetName="Bd" Property="BorderBrush" Value="#5BC0DE"/>
+                <Setter TargetName="Bd" Property="Background" Value="#0E1B32"/>
+                <Setter TargetName="Bd" Property="BorderBrush" Value="#7ED4ED"/>
                 <Setter Property="Foreground" Value="#E8F4F8"/>
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
@@ -210,12 +155,10 @@ _XAML = (
         </Trigger>
       </Style.Triggers>
     </Style>
-    <Style TargetType="TextBox">
-      <Setter Property="Background" Value="#050E18"/>
-      <Setter Property="Foreground" Value="#FFFFFF"/>
-      <Setter Property="BorderBrush" Value="#1A3A4D"/>
-      <Setter Property="Padding" Value="8,6"/>
-      <Setter Property="FontSize" Value="11"/>
+    <Style x:Key="DgEditLeft" TargetType="TextBox" BasedOn="{StaticResource BimToolsTextBoxDark}">
+      <Setter Property="TextAlignment" Value="Left"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="FontSize" Value="12"/>
     </Style>
     <Style x:Key="ChkSheetSel" TargetType="CheckBox">
       <Setter Property="Foreground" Value="#C8E4EF"/>
@@ -238,10 +181,6 @@ _XAML = (
       <Setter Property="VerticalAlignment" Value="Center"/>
       <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
     </Style>
-    <Style x:Key="DgEditLeft" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-      <Setter Property="TextAlignment" Value="Left"/>
-      <Setter Property="VerticalContentAlignment" Value="Center"/>
-    </Style>
     <Style x:Key="DgTbLeftPadded" TargetType="TextBlock" BasedOn="{StaticResource DgTbLeft}">
       <Setter Property="Margin" Value="12,0,8,0"/>
     </Style>
@@ -254,39 +193,10 @@ _XAML = (
     <Style x:Key="DgHdrLeft" TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
       <Setter Property="HorizontalContentAlignment" Value="Left"/>
     </Style>
-    <Style x:Key="BtnNombreArchivoHeader" TargetType="Button">
-      <Setter Property="Background" Value="#0A1627"/>
-      <Setter Property="Foreground" Value="#95B8CC"/>
-      <Setter Property="BorderBrush" Value="#5BC0DE"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
+    <Style x:Key="BtnNombreArchivoHeader" TargetType="Button" BasedOn="{StaticResource BtnSelectOutline}">
       <Setter Property="FontSize" Value="11"/>
       <Setter Property="Padding" Value="12,10"/>
-      <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="HorizontalContentAlignment" Value="Center"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="Button">
-            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5"
-                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
-                    Padding="{TemplateBinding Padding}">
-              <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Bd" Property="Background" Value="#0F2035"/>
-                <Setter TargetName="Bd" Property="BorderBrush" Value="#5BC0DE"/>
-                <Setter Property="Foreground" Value="#E8F4F8"/>
-              </Trigger>
-              <Trigger Property="IsPressed" Value="True">
-                <Setter TargetName="Bd" Property="Background" Value="#1B3D5C"/>
-                <Setter TargetName="Bd" Property="BorderBrush" Value="#5BC0DE"/>
-                <Setter Property="Foreground" Value="#FFFFFF"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
     </Style>
     <Style x:Key="DgHdrNombreArchivo" TargetType="DataGridColumnHeader" BasedOn="{StaticResource DgHdrLeft}">
       <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -304,13 +214,15 @@ _XAML = (
       <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
     <StackPanel Grid.Row="0" Margin="0,0,0,10">
       <TextBlock x:Name="TxtTitle" Text="Arainco: Exportar Láminas" Foreground="#E8F4F8" FontSize="18" FontWeight="Bold"/>
       <TextBlock x:Name="TxtSubtitle" Margin="0,6,0,0" Foreground="#95B8CC" TextWrapping="Wrap"
                  Text="Selecciona láminas y exporta a PDF, DWG y/o listado Excel."/>
     </StackPanel>
-    <Border Grid.Row="1" Style="{StaticResource PanelInset}" Margin="0,0,0,10" Padding="10,8">
+    <Border Grid.Row="1" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1"
+            CornerRadius="4" Padding="10,8" Margin="0,0,0,10">
       <Grid VerticalAlignment="Center">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*"/>
@@ -324,16 +236,17 @@ _XAML = (
             <ColumnDefinition Width="*"/>
             <ColumnDefinition Width="*"/>
           </Grid.ColumnDefinitions>
-          <Border Grid.Column="0" Margin="0,0,6,0" Background="#050E18" BorderBrush="#1A3A4D" BorderThickness="1" CornerRadius="5" Padding="0" MinHeight="32">
+          <Border Grid.Column="0" Margin="0,0,6,0" Background="#050E18" BorderBrush="#21465C" BorderThickness="1" CornerRadius="4" Padding="0" MinHeight="32">
             <Grid>
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
               </Grid.ColumnDefinitions>
               <TextBlock Grid.Column="0" Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="15"
-                         Foreground="#6B94AA" VerticalAlignment="Center" Margin="10,0,4,0" IsHitTestVisible="False"/>
+                         Foreground="#7AA3B8" VerticalAlignment="Center" Margin="10,0,4,0" IsHitTestVisible="False"/>
               <Grid Grid.Column="1" MinHeight="28">
                 <TextBox x:Name="TxtBuscar" Background="Transparent" BorderThickness="0"
+                         Foreground="#E8F4F8" CaretBrush="#7AA3B8"
                          VerticalContentAlignment="Center" Padding="0,6,10,6"
                          ToolTip="Filtrar por número, nombre o fecha de entrega (lista principal)"/>
                 <TextBlock x:Name="TxtBuscarWatermark" Text="Buscar" IsHitTestVisible="False"
@@ -341,7 +254,7 @@ _XAML = (
               </Grid>
             </Grid>
           </Border>
-          <Border Grid.Column="1" Background="#050E18" BorderBrush="#1A3A4D" BorderThickness="1" CornerRadius="5"
+          <Border Grid.Column="1" Background="#050E18" BorderBrush="#21465C" BorderThickness="1" CornerRadius="4"
                   Padding="0" MinHeight="32">
             <Grid>
               <Grid.ColumnDefinitions>
@@ -349,7 +262,7 @@ _XAML = (
                 <ColumnDefinition Width="*"/>
               </Grid.ColumnDefinitions>
               <TextBlock Grid.Column="0" Text="&#xE787;" FontFamily="Segoe MDL2 Assets" FontSize="15"
-                         Foreground="#6B94AA" VerticalAlignment="Center" Margin="10,0,4,0" IsHitTestVisible="False"
+                         Foreground="#7AA3B8" VerticalAlignment="Center" Margin="10,0,4,0" IsHitTestVisible="False"
                          ToolTip="Fecha de entrega (parámetros FCH)"/>
               <Grid Grid.Column="1" MinHeight="28">
                 <ComboBox x:Name="CmbFechaEntrega" Style="{StaticResource ExpLamFechaCombo}"
@@ -367,17 +280,17 @@ _XAML = (
                   ToolTip="Exportar a DWG con setup «Default» del proyecto (subcarpeta /DWG). MergedViews: un solo archivo."/>
         <CheckBox x:Name="ChkListadoPlanos" Grid.Column="3" Style="{StaticResource ExpFmtToggle}" Content="Listado" IsChecked="True" Margin="0,0,8,0"
                   ToolTip="Excel en la carpeta de entrega: solo las láminas seleccionadas (plantilla TemplateListado, requiere Excel)."/>
-        <Button x:Name="BtnRefrescar" Grid.Column="4" Style="{StaticResource BtnGhost}" Margin="0,0,0,0" Padding="8,5" FontSize="10"
+        <Button x:Name="BtnRefrescar" Grid.Column="4" Style="{StaticResource BtnSelectOutline}" MinWidth="110"
                 ToolTip="Actualizar la lista de láminas desde el proyecto">
           <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
             <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="13"
                        VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <TextBlock Text="Actualizar" VerticalAlignment="Center" FontSize="10" FontWeight="SemiBold"/>
+            <TextBlock Text="Actualizar" VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold"/>
           </StackPanel>
         </Button>
       </Grid>
     </Border>
-    <Border Grid.Row="2" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1" CornerRadius="4,4,0,0" Padding="0" Margin="0,0,0,0">
+    <Border Grid.Row="2" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1" CornerRadius="4" Padding="0" Margin="0,0,0,0">
       <DataGrid x:Name="GridSheets" MinHeight="396" AutoGenerateColumns="False" CanUserAddRows="False"
                 RowHeaderWidth="0" SelectionMode="Extended" SelectionUnit="FullRow"
                 AlternationCount="2"
@@ -457,38 +370,29 @@ _XAML = (
         </DataGrid.Columns>
       </DataGrid>
     </Border>
-    <TextBlock Grid.Row="3" Text="Carpeta de salida" Style="{StaticResource StepBadge}" Margin="0,12,0,8"/>
-    <Border Grid.Row="4" Background="Transparent" Margin="0,0,0,0">
+    <TextBlock Grid.Row="3" Text="Carpeta de salida" Style="{StaticResource Label}" Margin="0,12,0,8"/>
+    <Border Grid.Row="4" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1"
+            CornerRadius="4" Padding="10,8" Margin="0,0,0,10">
       <Grid>
-        <Grid.RowDefinitions>
-          <RowDefinition Height="Auto"/>
-          <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-        <Border Grid.Row="0" Style="{StaticResource PanelInset}" Margin="0,0,0,0" Padding="10,8">
-          <Grid>
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*"/>
-              <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <TextBox x:Name="TxtCarpeta" Grid.Column="0" Margin="0,0,12,0"/>
-            <Button x:Name="BtnCarpeta" Grid.Column="1" Content="Examinar…" Style="{StaticResource BtnSelectOutline}"
-                    MinWidth="132" MinHeight="38" Padding="18,9" FontSize="12"/>
-          </Grid>
-        </Border>
-        <Border Grid.Row="1" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1"
-                CornerRadius="4" Padding="14,12" Margin="0,10,0,0">
-          <Grid>
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*"/>
-              <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock x:Name="TxtEstado" Grid.Column="0" VerticalAlignment="Center"
-                       Foreground="#64748b" FontSize="10" TextWrapping="Wrap" Margin="0,0,12,0"/>
-            <Button x:Name="BtnExportar" Grid.Column="1" Content="Exportar" Style="{StaticResource BtnPrimary}" MinWidth="132" MinHeight="38"/>
-          </Grid>
-        </Border>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <TextBox x:Name="TxtCarpeta" Grid.Column="0" Style="{StaticResource BimToolsTextBoxDark}"
+                 MinHeight="32" FontSize="12" Margin="0,0,12,0"/>
+        <Button x:Name="BtnCarpeta" Grid.Column="1" Content="Examinar…" Style="{StaticResource BtnSelectOutline}"
+                MinWidth="132"/>
       </Grid>
     </Border>
+    <Grid Grid.Row="5" Margin="0,14,0,0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+      <TextBlock x:Name="TxtEstado" Grid.Column="0" VerticalAlignment="Center"
+                 Foreground="#64748b" FontSize="10" TextWrapping="Wrap" Margin="0,0,12,0"/>
+      <Button x:Name="BtnExportar" Grid.Column="1" Content="Exportar" Style="{StaticResource BtnPrimary}" MinWidth="132"/>
+    </Grid>
     </Grid>
   </Border>
 </Window>

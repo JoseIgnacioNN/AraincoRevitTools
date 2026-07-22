@@ -609,18 +609,7 @@ def cabezal_seccion_preview_layout_encuentro_l(
             cab.cabezal_confinement_is_perimeter_cross(confinement_type)
             or cab.cabezal_confinement_is_enc_fiber_cross(confinement_type)
         ):
-            n_bars_cross = ENC_L_MIN_BARS
-            if layers:
-                try:
-                    n_bars_cross = int(
-                        layers[0].get(u"n_bars", ENC_L_MIN_BARS),
-                    )
-                except Exception:
-                    n_bars_cross = ENC_L_MIN_BARS
-            n_bars_cross = max(
-                ENC_L_MIN_BARS,
-                min(CABEZAL_MAX_BARRAS_POR_CAPA, n_bars_cross),
-            )
+            n_bars_cross = cab.cabezal_confinement_cross_tie_govern_n_bars(layers)
             for bi in cab.cabezal_confinement_cross_tie_bar_indices(n_bars_cross):
                 ctp = cab.cabezal_cross_tie_preview_geometry(
                     dots,

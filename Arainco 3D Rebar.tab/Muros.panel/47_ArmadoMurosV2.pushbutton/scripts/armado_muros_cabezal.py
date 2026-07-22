@@ -242,8 +242,10 @@ CABEZAL_EXTREMOS = (CABEZAL_EXTREMO_INICIO, CABEZAL_EXTREMO_FIN)
 CABEZAL_CONFINEMENT_NONE = u"none"
 CABEZAL_CONFINEMENT_PERIMETER_0_1 = u"perimeter_0_1"
 CABEZAL_CONFINEMENT_TIE_LAYER_1 = u"tie_layer_1"
-# Tipo 3 = Tipo 2 (estribo + trabas de capa) + trabas longitudinales en índices interiores.
+# Tipo 3 = Tipo 2 (estribo + trabas de capa) + trabas longitudinales
+# gobernadas por capa 0 y última (índices interiores; tramo solo extremos).
 CABEZAL_CONFINEMENT_PERIMETER_CROSS = u"perimeter_cross"
+
 # Encuentro de muro (definición canvas): distintos del extremo libre.
 # Tipo 1: estribo perimetral a la fibra. Tipo 2: + traba ⊥ host. Tipo 3: + long.
 CABEZAL_CONFINEMENT_ENC_FIBER = u"enc_fiber"
@@ -390,9 +392,43 @@ def cabezal_confinement_layout_spec(n_capas, conf_type):
     return [], []
 
 
+def _clamp_cabezal_n_bars(n_bars):
+    """``n_bars`` de capa clamp a [MIN, MAX]."""
+    try:
+        n = int(n_bars)
+    except Exception:
+        n = CABEZAL_MIN_BARRAS_POR_CAPA
+    return max(
+        CABEZAL_MIN_BARRAS_POR_CAPA,
+        min(CABEZAL_MAX_BARRAS_POR_CAPA, n),
+    )
+
+
+def cabezal_confinement_cross_tie_govern_n_bars(layers):
+    """
+    Nº de barras que gobierna trabas longitudinales Tipo 3.
+
+    Cantidad y tramo se rigen por capa 0 y la última capa activa:
+    ``min(n_bars_capa0, n_bars_última)``.
+    """
+    layers = list(layers or [])
+    if not layers:
+        return CABEZAL_MIN_BARRAS_POR_CAPA
+    n0 = _clamp_cabezal_n_bars(
+        layers[0].get(u"n_bars", CABEZAL_MIN_BARRAS_POR_CAPA),
+    )
+    n_last = _clamp_cabezal_n_bars(
+        layers[-1].get(u"n_bars", CABEZAL_MIN_BARRAS_POR_CAPA),
+    )
+    return min(n0, n_last)
+
+
 def cabezal_confinement_cross_tie_bar_indices(n_bars):
     """
     Índices de barra (0-based) para trabas longitudinales Tipo 3.
+
+    ``n_bars`` debe ser el valor gobernante
+    (``cabezal_confinement_cross_tie_govern_n_bars``).
 
     Interiores: excluye 0 y n-1. Vacío si ``n_bars < 3``.
     Ej.: 3 → [1]; 4 → [1, 2].
@@ -1264,16 +1300,7 @@ def cabezal_build_confinement_jobs(
         or cabezal_confinement_is_enc_fiber_cross(conf_type)
     ):
         layers = cabezal_active_layers(ex_cfg)
-        n_bars = CABEZAL_MIN_BARRAS_POR_CAPA
-        if layers:
-            try:
-                n_bars = int(layers[0].get(u"n_bars", CABEZAL_MIN_BARRAS_POR_CAPA))
-            except Exception:
-                n_bars = CABEZAL_MIN_BARRAS_POR_CAPA
-        n_bars = max(
-            CABEZAL_MIN_BARRAS_POR_CAPA,
-            min(CABEZAL_MAX_BARRAS_POR_CAPA, n_bars),
-        )
+        n_bars = cabezal_confinement_cross_tie_govern_n_bars(layers)
         for bi in cabezal_confinement_cross_tie_bar_indices(n_bars):
             jobs.append(dict(base, job_kind=u"tie_cross", tie_bar_index=int(bi)))
     return jobs
@@ -2717,8 +2744,8 @@ def cabezal_cross_tie_preview_geometry(
     """
     Traba longitudinal Tipo 3 en coordenadas normalizadas (fx, fy).
 
-    Pata a lo largo de las capas (índice de barra fijo), empalmes verticales a
-    cada barra de ese índice y ganchos esquemáticos en los extremos.
+    Pata capa 0 ↔ última capa (índice de barra fijo), empalmes pata→eje solo
+    en esos extremos y ganchos esquemáticos. Capas intermedias no intervienen.
     """
     if not dots:
         return None
@@ -2726,25 +2753,37 @@ def cabezal_cross_tie_preview_geometry(
         bi = int(bar_index)
     except Exception:
         return None
+
+    # Capas extremas del croquis (misma regla que creación).
+    layer_idxs = []
+    for d in dots:
+        try:
+            li = int(d.get(u"layer_index", -1))
+        except Exception:
+            continue
+        if li >= 0 and li not in layer_idxs:
+            layer_idxs.append(li)
+    layer_idxs = sorted(layer_idxs)
+    if len(layer_idxs) < 2:
+        return None
+    end_layers = set([layer_idxs[0], layer_idxs[-1]])
+
     subset = [
         d for d in dots
-        if int(d.get(u"bar_index", -1)) == bi
-        or (
-            # dots antiguos sin bar_index: agrupar por fy
-            False
-        )
+        if int(d.get(u"layer_index", -1)) in end_layers
+        and int(d.get(u"bar_index", -1)) == bi
     ]
     if not subset:
-        # Fallback: agrupar por fy cercano al índice bi entre capas layer 0
+        # Fallback: agrupar por fy en capas extremas.
         by_layer = {}
         for d in dots:
             try:
                 li = int(d.get(u"layer_index", -1))
             except Exception:
                 continue
+            if li not in end_layers:
+                continue
             by_layer.setdefault(li, []).append(d)
-        if not by_layer:
-            return None
         subset = []
         for li in sorted(by_layer.keys()):
             layer_dots = sorted(
@@ -2768,7 +2807,7 @@ def cabezal_cross_tie_preview_geometry(
     # Preview: Tipo 2 (bar_r+tie_r) + mitad ø traba en cada extremo.
     pf = float(pitch_frac) if pitch_frac is not None else 0.0
     if pf <= 1e-9 and len(subset) >= 2:
-        pf = abs(fx_bar1 - fx_bar0) / float(len(subset) - 1)
+        pf = abs(fx_bar1 - fx_bar0) / float(max(1, len(layer_idxs) - 1))
     if pf <= 1e-9:
         pf = 0.12
     pitch_mm = max(float(CABEZAL_LAYER_PITCH_MM), 50.0)
@@ -2949,18 +2988,7 @@ def cabezal_seccion_preview_layout(thickness_mm, layers, cover_mm=None,
         if tie_previews:
             tie_preview = tie_previews[0]
         if cabezal_confinement_is_perimeter_cross(confinement_type):
-            n_bars_cross = 0
-            if layers:
-                try:
-                    n_bars_cross = int(
-                        layers[0].get(u"n_bars", CABEZAL_MIN_BARRAS_POR_CAPA),
-                    )
-                except Exception:
-                    n_bars_cross = CABEZAL_MIN_BARRAS_POR_CAPA
-            n_bars_cross = max(
-                CABEZAL_MIN_BARRAS_POR_CAPA,
-                min(CABEZAL_MAX_BARRAS_POR_CAPA, n_bars_cross),
-            )
+            n_bars_cross = cabezal_confinement_cross_tie_govern_n_bars(layers)
             for bi in cabezal_confinement_cross_tie_bar_indices(n_bars_cross):
                 ctp = cabezal_cross_tie_preview_geometry(
                     dots,
@@ -6348,8 +6376,9 @@ def _cabezal_tie_across_layers_geometry_ft(
     """
     Geometría de traba longitudinal Tipo 3 en índice de barra ``bar_index``.
 
-    Como trabas de capa Tipo 2 (pata tangente bar_r+tie_r, empalmes pata→eje),
-    con medio diámetro de traba extra en cada extremo del largo.
+    Cantidad y tramo regidos por capa 0 y última: pata tangente bar_r+tie_r,
+    empalmes pata→eje solo en esos extremos, más medio ø traba extra en cada
+    extremo del largo. Capas intermedias no intervienen.
     """
     try:
         bi = int(bar_index)
@@ -6377,19 +6406,16 @@ def _cabezal_tie_across_layers_geometry_ft(
     if len(layers) < 2:
         return None, None, None, None, u"Tipo 3: se requieren al menos 2 capas."
 
-    try:
-        n_bars = int(layers[0].get(u"n_bars", CABEZAL_MIN_BARRAS_POR_CAPA))
-    except Exception:
-        n_bars = CABEZAL_MIN_BARRAS_POR_CAPA
-    n_bars = max(
-        CABEZAL_MIN_BARRAS_POR_CAPA,
-        min(CABEZAL_MAX_BARRAS_POR_CAPA, n_bars),
-    )
+    n_bars = cabezal_confinement_cross_tie_govern_n_bars(layers)
     if bi not in cabezal_confinement_cross_tie_bar_indices(n_bars):
         return None, None, None, None, u"Tipo 3: índice de barra no interior."
 
+    # Solo capa 0 y última: longitud y ganchos independientes de capas intermedias.
+    end_layer_indices = [0, len(layers) - 1]
+
     bar_pts = []  # (long_bar, trans_bar, bar_type)
-    for li, ly in enumerate(layers):
+    for li in end_layer_indices:
+        ly = layers[li]
         bar_type = _resolver_bar_type_for_layer(
             doc, ex_cfg, ly, bar_type_fallback,
             segment_ctx=segment_ctx,
@@ -6441,10 +6467,7 @@ def _cabezal_tie_across_layers_geometry_ft(
             nb_ly = int(ly.get(u"n_bars", n_bars))
         except Exception:
             nb_ly = n_bars
-        nb_ly = max(
-            CABEZAL_MIN_BARRAS_POR_CAPA,
-            min(CABEZAL_MAX_BARRAS_POR_CAPA, nb_ly),
-        )
+        nb_ly = _clamp_cabezal_n_bars(nb_ly)
         if bi >= nb_ly:
             return None, None, None, None, u"Tipo 3: índice fuera de capa {0}.".format(li)
         trans_coords = _cabezal_layer_bar_trans_coords_ft(
@@ -6513,8 +6536,7 @@ def _cabezal_tie_across_layers_geometry_ft(
     try:
         cl = List[Curve]()
         # Misma topología que Tipo 2: extremos fuera → empalme pata→eje en
-        # cada capa → extremo. Así Revit coloca el gancho como en las trabas
-        # de espesor (abrazo justo, no eje–eje ni sobrante).
+        # capa 0 y última → extremo. Capas intermedias no agarran.
         prev = p_start
         for long_bar, trans_bar, _bt in ordered:
             p_on = _pt(float(long_bar), trans_tie)

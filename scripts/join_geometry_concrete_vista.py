@@ -17,7 +17,9 @@ Paquete portable: vive en ``<pushbutton>/scripts/`` (sin depender de scripts/ de
 - Fallos «Can't cut joined element»: ``IFailuresPreprocessor`` aplica la resolución API
   equivalente a *Unjoin elements* (``FailureResolutionType.UnjoinElements`` / ``DetachElements``)
   y devuelve ``ProceedWithCommit`` para no mostrar el diálogo modal de Revit.
-- API: ``JoinGeometryUtils`` (Revit 2024+; pyRevit / IronPython).
+- API: ``JoinGeometryUtils`` (Revit 2024–2026; pyRevit / IronPython).
+- ElementId: lectura vía ``Value`` (respaldo ``IntegerValue``); construcción con
+  ``ElementId(Int64)`` — en Revit 2026 se eliminaron ``IntegerValue`` y el ctor Int32.
 - Durante lectura / candidatos / unión: se deshabilita la ventana principal de Revit
   (``user32.EnableWindow``) para que no se lancen otros comandos; la barra de pyRevit
   es otra ventana de nivel superior y sigue mostrando el progreso.
@@ -56,6 +58,7 @@ from Autodesk.Revit.DB import (
     ViewSheet,
     XYZ,
 )
+from System import Int64
 from System.Collections.Generic import List
 try:
     from pyrevit import forms as _pyrevit_forms
@@ -444,15 +447,31 @@ def _exc_text(ex):
 
 
 def _element_id_to_int(eid):
+    """Revit 2026+: ``Value``; 2024–2025: respaldo ``IntegerValue`` si existe."""
     if eid is None or eid == ElementId.InvalidElementId:
         return None
     try:
         return int(eid.Value)
     except Exception:
-        try:
-            return int(eid.IntegerValue)
-        except Exception:
-            return None
+        pass
+    try:
+        return int(eid.IntegerValue)
+    except Exception:
+        return None
+
+
+def _element_id_from_int(val):
+    """``int`` → ``ElementId`` (ctor Int64; obligatorio en Revit 2026)."""
+    if val is None:
+        return ElementId.InvalidElementId
+    try:
+        return ElementId(Int64(int(val)))
+    except Exception:
+        pass
+    try:
+        return ElementId(int(val))
+    except Exception:
+        return ElementId.InvalidElementId
 
 
 def _vista_permitida(view):
@@ -598,7 +617,7 @@ def _pares_unicos_por_caja(doc, view, elements_concrete, pbar_cajas=None):
             if key in processed:
                 continue
             processed.add(key)
-            yield ElementId(a), ElementId(b)
+            yield _element_id_from_int(a), _element_id_from_int(b)
 
 
 def _es_floor(elem):
@@ -606,7 +625,10 @@ def _es_floor(elem):
         c = elem.Category
         if c is None:
             return False
-        return int(c.Id.IntegerValue) == int(BuiltInCategory.OST_Floors)
+        cid = _element_id_to_int(c.Id)
+        if cid is None:
+            return False
+        return cid == int(BuiltInCategory.OST_Floors)
     except Exception:
         return False
 

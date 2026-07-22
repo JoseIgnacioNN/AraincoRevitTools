@@ -152,9 +152,7 @@ def get_logo_paths(extension_root=None):
             os.path.join(panel, "22_EnfierradoFundacionAislada.pushbutton"),
             os.path.join(panel, "02_NumerarFundaciones.pushbutton"),
             os.path.join(panel, "20_BordeLosaGanchoEmpotramiento.pushbutton"),
-            os.path.join(panel, "23_EnfierradoVigas.pushbutton"),
             os.path.join(panel, "26_WallFoundationReinforcement.pushbutton"),
-            os.path.join(panel, "09_CrearAreaReinforcementMuroRPS.pushbutton"),
             os.path.join(model, "01_SpotElevVerticesLosa.pushbutton"),
             os.path.join(model, "04_ExportarLaminasPDFDWG.pushbutton"),
         )
@@ -211,9 +209,7 @@ def get_header_logo_paths(extension_root=None):
             os.path.join(panel, "22_EnfierradoFundacionAislada.pushbutton"),
             os.path.join(panel, "02_NumerarFundaciones.pushbutton"),
             os.path.join(panel, "20_BordeLosaGanchoEmpotramiento.pushbutton"),
-            os.path.join(panel, "23_EnfierradoVigas.pushbutton"),
             os.path.join(panel, "26_WallFoundationReinforcement.pushbutton"),
-            os.path.join(panel, "09_CrearAreaReinforcementMuroRPS.pushbutton"),
             os.path.join(model, "01_SpotElevVerticesLosa.pushbutton"),
             os.path.join(model, "04_ExportarLaminasPDFDWG.pushbutton"),
         )

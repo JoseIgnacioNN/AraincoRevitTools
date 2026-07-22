@@ -281,6 +281,8 @@ class SheetExportManager(object):
 
         Revit 2024+: ``FileName`` y ``Combine`` siguen siendo el patrón recomendado
         para un archivo por lámina con nombre controlado.
+        ``HideReferencePlane = False`` para que los planos de referencia/trabajo
+        salgan en el PDF cuando estén visibles en VG de las vistas de la lámina.
 
         :param folder: Carpeta de salida.
         :param sheet_id: ``ElementId`` de la ``ViewSheet``.
@@ -300,6 +302,8 @@ class SheetExportManager(object):
             opts.Combine = True
             # La API de Revit añade ".pdf" automáticamente a FileName (no incluir extensión).
             opts.FileName = stem
+            # False = planos de referencia/trabajo visibles en el PDF (si lo están en VG de la vista).
+            opts.HideReferencePlane = False
             ids = List[ElementId]()
             ids.Add(sheet_id)
             result = self._doc.Export(folder, ids, opts)

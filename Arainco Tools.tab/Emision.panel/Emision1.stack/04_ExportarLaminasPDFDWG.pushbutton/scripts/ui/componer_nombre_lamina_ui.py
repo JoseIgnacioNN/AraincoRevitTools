@@ -183,45 +183,7 @@ XAML = (
 """
     + BIMTOOLS_DARK_STYLES_XML
     + u"""
-    <Style x:Key="StepBadge" TargetType="TextBlock" BasedOn="{StaticResource Label}">
-      <Setter Property="Margin" Value="0,0,0,8"/>
-    </Style>
-    <Style x:Key="PanelInset" TargetType="Border">
-      <Setter Property="Background" Value="#0a1620"/>
-      <Setter Property="BorderBrush" Value="#21465C"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="4"/>
-      <Setter Property="Padding" Value="12,10"/>
-      <Setter Property="Margin" Value="0,0,0,12"/>
-    </Style>
-    <Style x:Key="BtnGhost" TargetType="Button">
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="Foreground" Value="#C8E4EF"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
-      <Setter Property="FontSize" Value="11"/>
-      <Setter Property="Padding" Value="12,7"/>
-      <Setter Property="BorderBrush" Value="#2A4A5E"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="Cursor" Value="Hand"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="Button">
-            <Border x:Name="R" Background="{TemplateBinding Background}" CornerRadius="5"
-                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
-                    Padding="{TemplateBinding Padding}">
-              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="R" Property="Background" Value="#0D1E2E"/>
-                <Setter TargetName="R" Property="BorderBrush" Value="#5BC0DE"/>
-                <Setter Property="Foreground" Value="#E8F4F8"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
+    <Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/>
     <Style x:Key="BtnTransfer" TargetType="Button" BasedOn="{StaticResource BtnPrimary}">
       <Setter Property="FontSize" Value="14"/>
       <Setter Property="Padding" Value="0,0"/>
@@ -236,71 +198,35 @@ XAML = (
       <Setter Property="Height" Value="44"/>
       <Setter Property="FontWeight" Value="Bold"/>
     </Style>
-    <Style TargetType="TextBox">
-      <Setter Property="Background" Value="#050E18"/>
-      <Setter Property="Foreground" Value="#FFFFFF"/>
-      <Setter Property="BorderBrush" Value="#284760"/>
-      <Setter Property="Padding" Value="8,6"/>
-      <Setter Property="FontSize" Value="11"/>
-    </Style>
-    <Style x:Key="DgEditLeft" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+    <Style x:Key="DgEditLeft" TargetType="TextBox" BasedOn="{StaticResource BimToolsTextBoxDark}">
       <Setter Property="TextAlignment" Value="Left"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
-      <Setter Property="Foreground" Value="#F2F8FC"/>
-      <Setter Property="CaretBrush" Value="#5BC0DE"/>
+      <Setter Property="FontSize" Value="12"/>
     </Style>
     <Style x:Key="DgTbLeft" TargetType="TextBlock">
-      <Setter Property="Foreground" Value="#F2F8FC"/>
+      <Setter Property="Foreground" Value="#E8F4F8"/>
       <Setter Property="TextAlignment" Value="Left"/>
       <Setter Property="VerticalAlignment" Value="Center"/>
       <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
     </Style>
-    <Style x:Key="NbDgHeaderDark" TargetType="DataGridColumnHeader">
-      <Setter Property="OverridesDefaultStyle" Value="True"/>
-      <Setter Property="Background" Value="#122A3A"/>
-      <Setter Property="Foreground" Value="#F2F8FC"/>
-      <Setter Property="BorderBrush" Value="#1E3F55"/>
+    <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+      <Setter Property="Background" Value="#11253D"/>
+      <Setter Property="Foreground" Value="#95B8CC"/>
+      <Setter Property="BorderBrush" Value="#21465C"/>
       <Setter Property="BorderThickness" Value="0,0,1,1"/>
       <Setter Property="Padding" Value="12,10"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="FontSize" Value="11"/>
-      <Setter Property="SnapsToDevicePixels" Value="True"/>
-      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-      <Setter Property="VerticalContentAlignment" Value="Center"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="DataGridColumnHeader">
-            <Grid>
-              <Border x:Name="HeaderBorder" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True"
-                      Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                      BorderThickness="{TemplateBinding BorderThickness}"
-                      TextElement.Foreground="{TemplateBinding Foreground}">
-                <ContentPresenter RecognizesAccessKey="True" SnapsToDevicePixels="True"
-                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
-              </Border>
-            </Grid>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="HeaderBorder" Property="Background" Value="#1B405C"/>
-              </Trigger>
-              <Trigger Property="IsPressed" Value="True">
-                <Setter TargetName="HeaderBorder" Property="Background" Value="#0F2840"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
     </Style>
-    <Style x:Key="DgHdrCenter" TargetType="DataGridColumnHeader" BasedOn="{StaticResource NbDgHeaderDark}">
+    <Style x:Key="DgHdrCenter" TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
       <Setter Property="HorizontalContentAlignment" Value="Center"/>
     </Style>
-    <Style x:Key="DgHdrLeft" TargetType="DataGridColumnHeader" BasedOn="{StaticResource NbDgHeaderDark}">
+    <Style x:Key="DgHdrLeft" TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
       <Setter Property="HorizontalContentAlignment" Value="Left"/>
     </Style>
     <Style x:Key="OpcionesListBoxStyle" TargetType="ListBox">
       <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="Foreground" Value="#F2F8FC"/>
+      <Setter Property="Foreground" Value="#E8F4F8"/>
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="Padding" Value="4,2"/>
       <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Visible"/>
@@ -309,7 +235,7 @@ XAML = (
       <Setter Property="ItemContainerStyle">
         <Setter.Value>
           <Style TargetType="ListBoxItem">
-            <Setter Property="Foreground" Value="#F2F8FC"/>
+            <Setter Property="Foreground" Value="#E8F4F8"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Margin" Value="0,2"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -338,19 +264,18 @@ XAML = (
       </Setter>
     </Style>
     <Style TargetType="DataGrid" BasedOn="{StaticResource {x:Type DataGrid}}">
-      <Setter Property="Background" Value="#040A12"/>
-      <Setter Property="Foreground" Value="#F2F8FC"/>
+      <Setter Property="Background" Value="#0a1620"/>
+      <Setter Property="Foreground" Value="#E8F4F8"/>
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="RowBackground" Value="#0B1726"/>
-      <Setter Property="AlternatingRowBackground" Value="#071420"/>
-      <Setter Property="HorizontalGridLinesBrush" Value="#152A3D"/>
-      <Setter Property="VerticalGridLinesBrush" Value="#152A3D"/>
+      <Setter Property="AlternatingRowBackground" Value="#071018"/>
+      <Setter Property="HorizontalGridLinesBrush" Value="#21465C"/>
+      <Setter Property="VerticalGridLinesBrush" Value="#21465C"/>
       <Setter Property="HeadersVisibility" Value="Column"/>
       <Setter Property="RowHeight" Value="34"/>
       <Setter Property="GridLinesVisibility" Value="Horizontal"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
-    <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource NbDgHeaderDark}"/>
     <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
       <Setter Property="Background" Value="#0B1726"/>
       <Style.Triggers>
@@ -358,7 +283,7 @@ XAML = (
           <Setter Property="Background" Value="#0B1726"/>
         </Trigger>
         <Trigger Property="AlternationIndex" Value="1">
-          <Setter Property="Background" Value="#071420"/>
+          <Setter Property="Background" Value="#071018"/>
         </Trigger>
         <MultiTrigger>
           <MultiTrigger.Conditions>
@@ -377,7 +302,7 @@ XAML = (
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
-      <Setter Property="Foreground" Value="#F2F8FC"/>
+      <Setter Property="Foreground" Value="#E8F4F8"/>
       <Style.Triggers>
         <Trigger Property="IsSelected" Value="True">
           <Setter Property="Background" Value="Transparent"/>
@@ -407,15 +332,17 @@ XAML = (
         <ColumnDefinition Width="Auto"/>
         <ColumnDefinition Width="*"/>
       </Grid.ColumnDefinitions>
-      <Border Grid.Column="0" Style="{StaticResource PanelInset}" Margin="0,0,12,12" VerticalAlignment="Stretch">
+      <Border Grid.Column="0" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1"
+              CornerRadius="4" Padding="12,10" Margin="0,0,12,12" VerticalAlignment="Stretch">
         <Grid VerticalAlignment="Stretch">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
           </Grid.RowDefinitions>
-          <TextBlock Grid.Row="0" Text="Parámetros disponibles" Style="{StaticResource StepBadge}"/>
-          <TextBox x:Name="TxtFiltroOpciones" Grid.Row="1" Margin="0,0,0,8" ToolTip="Filtrar por nombre de parámetro"/>
+          <TextBlock Grid.Row="0" Text="Parámetros disponibles" Style="{StaticResource Label}" Margin="0,0,0,8"/>
+          <TextBox x:Name="TxtFiltroOpciones" Grid.Row="1" Style="{StaticResource BimToolsTextBoxDark}"
+                   MinHeight="32" FontSize="12" Margin="0,0,0,8" ToolTip="Filtrar por nombre de parámetro"/>
           <Border x:Name="BdOpcionesLista" Grid.Row="2" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1" CornerRadius="4"
                   MinHeight="200" VerticalAlignment="Stretch" SnapsToDevicePixels="True">
             <ListBox x:Name="LstOpciones" Style="{StaticResource OpcionesListBoxStyle}" DisplayMemberPath="Label"/>
@@ -426,7 +353,8 @@ XAML = (
         <Button x:Name="BtnAnadir" Content="&#x2192;" ToolTip="Añadir a la secuencia" Style="{StaticResource BtnTransfer}" Margin="0,0,0,10"/>
         <Button x:Name="BtnQuitar" Content="&#x2190;" ToolTip="Quitar de la secuencia" Style="{StaticResource BtnTransferOut}"/>
       </StackPanel>
-      <Border Grid.Column="2" Style="{StaticResource PanelInset}" VerticalAlignment="Stretch">
+      <Border Grid.Column="2" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1"
+              CornerRadius="4" Padding="12,10" VerticalAlignment="Stretch">
         <Grid VerticalAlignment="Stretch">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -435,7 +363,7 @@ XAML = (
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
           </Grid.RowDefinitions>
-          <TextBlock Grid.Row="0" Text="Secuencia del nombre" Style="{StaticResource StepBadge}"/>
+          <TextBlock Grid.Row="0" Text="Secuencia del nombre" Style="{StaticResource Label}" Margin="0,0,0,8"/>
           <DataGrid x:Name="GridReceta" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" CanUserSortColumns="False"
                     CanUserResizeColumns="False" SelectionMode="Single" MinHeight="140" Margin="0,0,0,10" GridLinesVisibility="Horizontal"
                     RowHeaderWidth="0" VerticalContentAlignment="Center">
@@ -494,11 +422,11 @@ XAML = (
             </DataGrid.Columns>
           </DataGrid>
           <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,12">
-            <Button x:Name="BtnSubir" Content="Subir" Style="{StaticResource BtnGhost}" Margin="0,0,8,0" MinWidth="72"/>
-            <Button x:Name="BtnBajar" Content="Bajar" Style="{StaticResource BtnGhost}" Margin="0,0,8,0" MinWidth="72"/>
-            <Button x:Name="BtnLimpiar" Content="Limpiar secuencia" Style="{StaticResource BtnGhost}" MinWidth="132"/>
+            <Button x:Name="BtnSubir" Content="Subir" Style="{StaticResource BtnSelectOutline}" Margin="0,0,8,0" MinWidth="72"/>
+            <Button x:Name="BtnBajar" Content="Bajar" Style="{StaticResource BtnSelectOutline}" Margin="0,0,8,0" MinWidth="72"/>
+            <Button x:Name="BtnLimpiar" Content="Limpiar secuencia" Style="{StaticResource BtnSelectOutline}" MinWidth="132"/>
           </StackPanel>
-          <TextBlock Grid.Row="3" Text="Vista previa" Style="{StaticResource StepBadge}"/>
+          <TextBlock Grid.Row="3" Text="Vista previa" Style="{StaticResource Label}" Margin="0,0,0,8"/>
           <Border Grid.Row="4" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1" CornerRadius="4"
                   Padding="14,12" MinHeight="88" VerticalAlignment="Stretch">
             <TextBlock x:Name="TxtVistaPrevia" Foreground="#E8F4F8" FontSize="13" FontWeight="SemiBold"

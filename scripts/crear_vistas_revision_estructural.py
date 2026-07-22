@@ -909,11 +909,17 @@ def main(doc=None):
                     def _parametrize_one(eid=vid, pcs=param_catalog_shown):
                         v = doc.GetElement(eid)
                         if v is None:
+                            eid_num = None
+                            try:
+                                eid_num = int(eid.Value)
+                            except Exception:
+                                try:
+                                    eid_num = int(eid.IntegerValue)
+                                except Exception:
+                                    eid_num = eid
                             param_issues.append(
-                                "ElementId IntegerValue={}: GetElement devolvió None "
-                                "(no se puede asignar parámetros).".format(
-                                    eid.IntegerValue
-                                )
+                                "ElementId={}: GetElement devolvió None "
+                                "(no se puede asignar parámetros).".format(eid_num)
                             )
                             return None
                         added = _apply_revision_instance_parameters(

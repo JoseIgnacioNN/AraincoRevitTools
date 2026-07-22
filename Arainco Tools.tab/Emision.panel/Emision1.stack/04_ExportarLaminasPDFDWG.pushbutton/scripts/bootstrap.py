@@ -41,7 +41,16 @@ _MODULES_TO_PURGE = (
     "bimtools_paths__ComponerNombreLamina",
 )
 
-_PACKAGE_PREFIXES = ("lib.", "mvvm.", "ui.", "infra.")
+_PACKAGE_PREFIXES = (
+    "lib",
+    "lib.",
+    "mvvm",
+    "mvvm.",
+    "ui",
+    "ui.",
+    "infra",
+    "infra.",
+)
 
 
 def setup_export_laminas_paths():
@@ -50,7 +59,12 @@ def setup_export_laminas_paths():
         scripts_dir = os.path.dirname(os.path.abspath(__file__))
     except NameError:
         scripts_dir = os.getcwd()
-    if scripts_dir and os.path.isdir(scripts_dir) and scripts_dir not in sys.path:
+    if scripts_dir and os.path.isdir(scripts_dir):
+        try:
+            while scripts_dir in sys.path:
+                sys.path.remove(scripts_dir)
+        except Exception:
+            pass
         sys.path.insert(0, scripts_dir)
     return scripts_dir
 
@@ -63,8 +77,10 @@ def purge_export_laminas_modules():
         except Exception:
             pass
     for key in list(sys.modules.keys()):
-        if key.startswith(_PACKAGE_PREFIXES):
-            try:
-                del sys.modules[key]
-            except Exception:
-                pass
+        for prefix in _PACKAGE_PREFIXES:
+            if key == prefix.rstrip(".") or key.startswith(prefix):
+                try:
+                    del sys.modules[key]
+                except Exception:
+                    pass
+                break
