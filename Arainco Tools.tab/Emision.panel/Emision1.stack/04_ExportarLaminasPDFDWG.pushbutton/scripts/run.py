@@ -27,6 +27,23 @@ clr.AddReference("System")
 
 import System  # noqa: E402
 
+try:
+    unicode
+except NameError:
+    unicode = str
+
+
+def _as_unicode(value):
+    if value is None:
+        return u""
+    try:
+        return unicode(value)
+    except Exception:
+        try:
+            return str(value)
+        except Exception:
+            return u""
+
 from infra.bimtools_paths import set_pushbutton_dir  # noqa: E402
 from infra.revit_wpf_window_position import revit_main_hwnd  # noqa: E402
 from lib.exportar_laminas_pdf_dwg import (  # noqa: E402
@@ -96,6 +113,8 @@ def _get_active_tool_window():
 
 
 def _show_message(revit, msg, wpf_win=None):
+    text = _as_unicode(msg).strip() or u"Error desconocido."
+    shown = False
     try:
         uiapp = None
         try:
@@ -111,13 +130,15 @@ def _show_message(revit, msg, wpf_win=None):
             except Exception:
                 top = None
         try:
-            show_message_dialog(
-                _TASK_TITLE,
-                msg,
-                u"",
-                ok_text=u"Entendido",
-                hwnd_revit=hwnd,
-                uiapp=uiapp,
+            shown = bool(
+                show_message_dialog(
+                    _TASK_TITLE,
+                    text,
+                    u"",
+                    ok_text=u"Entendido",
+                    hwnd_revit=hwnd,
+                    uiapp=uiapp,
+                )
             )
         finally:
             if wpf_win is not None and top is not None:
@@ -126,7 +147,19 @@ def _show_message(revit, msg, wpf_win=None):
                 except Exception:
                     pass
     except Exception:
-        pass
+        shown = False
+    if shown:
+        return
+    try:
+        from Autodesk.Revit.UI import TaskDialog
+
+        TaskDialog.Show(_TASK_TITLE, text)
+    except Exception:
+        try:
+            if _pyrevit_forms is not None:
+                _pyrevit_forms.alert(text, title=_TASK_TITLE)
+        except Exception:
+            pass
 
 
 def _load_listado_core():
@@ -221,5 +254,5 @@ def main(revit):
     except Exception as ex:
         _show_message(
             revit,
-            u"No se pudo abrir el formulario.\n\n{0}".format(unicode(str(ex))),
+            u"No se pudo abrir el formulario.\n\n{0}".format(_as_unicode(ex)),
         )

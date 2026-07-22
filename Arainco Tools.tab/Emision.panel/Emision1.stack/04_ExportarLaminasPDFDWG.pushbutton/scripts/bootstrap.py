@@ -6,10 +6,26 @@ from __future__ import print_function
 import os
 import sys
 
+# Solo módulos de esta herramienta (hot-reload). No usar startswith("lib")/("ui")
+# sin punto: borraría lib2to3, uiautomation, etc. y puede dejar diálogos pyRevit en blanco.
 _MODULES_TO_PURGE = (
     "run",
+    "export_laminas_run_04",
     "bootstrap",
     "bootstrap_path",
+    # Capas locales
+    "lib",
+    "mvvm",
+    "ui",
+    "infra",
+    # Copias planas de acceso / tema (scripts/)
+    "corporate_access",
+    "bimtools_script_guard",
+    "bimtools_instruction_dialog",
+    "bimtools_ui_tokens",
+    "bimtools_wpf_shell",
+    "bimtools_wpf_dark_theme",
+    "revit_wpf_window_position",
     # Nombres planos (versiones anteriores)
     "export_laminas_app",
     "export_laminas_run",
@@ -26,8 +42,6 @@ _MODULES_TO_PURGE = (
     "sheet_export_manager",
     "listado_planos_excel_core",
     "bimtools_paths",
-    "bimtools_wpf_dark_theme",
-    "revit_wpf_window_position",
     # Nombres históricos (imp.load_source en versiones anteriores)
     "bimtools_exportar_laminas_pdf_dwg__04pushbutton",
     "bimtools_componer_nombre_lamina_ui__04pushbutton",
@@ -41,15 +55,12 @@ _MODULES_TO_PURGE = (
     "bimtools_paths__ComponerNombreLamina",
 )
 
-_PACKAGE_PREFIXES = (
+# Paquetes locales bajo scripts/: solo raíz exacta o hijos con punto.
+_PACKAGE_ROOTS = (
     "lib",
-    "lib.",
     "mvvm",
-    "mvvm.",
     "ui",
-    "ui.",
     "infra",
-    "infra.",
 )
 
 
@@ -77,8 +88,8 @@ def purge_export_laminas_modules():
         except Exception:
             pass
     for key in list(sys.modules.keys()):
-        for prefix in _PACKAGE_PREFIXES:
-            if key == prefix.rstrip(".") or key.startswith(prefix):
+        for root in _PACKAGE_ROOTS:
+            if key == root or key.startswith(root + "."):
                 try:
                     del sys.modules[key]
                 except Exception:
