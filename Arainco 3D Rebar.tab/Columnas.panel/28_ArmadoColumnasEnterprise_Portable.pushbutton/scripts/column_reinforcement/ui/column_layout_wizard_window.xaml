@@ -1,0 +1,330 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:swc="clr-namespace:System.Windows.Controls;assembly=PresentationFramework"
+        x:Name="ColumnLayoutWizardWin"
+        Title="Arainco: Armado Columnas"
+        Height="680" Width="1100"
+        MinHeight="520" MinWidth="980"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize"
+        Background="#071018"
+        FontFamily="Segoe UI"
+        FontSize="12">
+  <Window.Resources>
+__BIMTOOLS_DARK_STYLES__
+    <Style x:Key="BarSliderInvisibleRepeat" TargetType="RepeatButton">
+      <Setter Property="SnapsToDevicePixels" Value="True"/>
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RepeatButton">
+            <Border Background="Transparent"/>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <!-- Tramo izquierdo del Track = progreso relleno (cian acento UI, como la pista “activa”). -->
+    <Style x:Key="BarSliderDecreaseTrack" TargetType="RepeatButton">
+      <Setter Property="SnapsToDevicePixels" Value="True"/>
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RepeatButton">
+            <Border x:Name="FillBar" Height="10" VerticalAlignment="Center" CornerRadius="5,4,4,5"
+                    Margin="0,-1,0,-1">
+              <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                  <GradientStop Color="#38e2ff" Offset="0"/>
+                  <GradientStop Color="#22d3ee" Offset="0.55"/>
+                  <GradientStop Color="#0e9eb8" Offset="1"/>
+                </LinearGradientBrush>
+              </Border.Background>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="BarCountSliderStyle" TargetType="Slider">
+      <Setter Property="SnapsToDevicePixels" Value="True"/>
+      <Setter Property="OverridesDefaultStyle" Value="True"/>
+      <Setter Property="Height" Value="28"/>
+      <Setter Property="Foreground" Value="#22d3ee"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Slider">
+            <Grid>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto" MinHeight="{TemplateBinding MinHeight}"/>
+                <RowDefinition Height="Auto"/>
+              </Grid.RowDefinitions>
+              <TickBar x:Name="TopTick" Grid.Row="0" Placement="Top" Visibility="Collapsed" Fill="{TemplateBinding Foreground}"/>
+              <Border x:Name="TrackBorder" Grid.Row="1" Height="10" CornerRadius="5" Background="#1e293b"
+                      BorderThickness="0" VerticalAlignment="Center" Margin="4,0,8,0"/>
+              <Track x:Name="PART_Track" Grid.Row="1" VerticalAlignment="Center" Margin="4,0,8,0">
+                <Track.DecreaseRepeatButton>
+                  <RepeatButton Command="{x:Static swc:Slider.DecreaseLarge}" Style="{StaticResource BarSliderDecreaseTrack}"/>
+                </Track.DecreaseRepeatButton>
+                <Track.Thumb>
+                  <Thumb Width="12" Height="22" Focusable="False">
+                    <Thumb.Template>
+                      <ControlTemplate TargetType="Thumb">
+                        <Border Background="#94a3b8" CornerRadius="4" BorderBrush="#64748b" BorderThickness="1"/>
+                      </ControlTemplate>
+                    </Thumb.Template>
+                  </Thumb>
+                </Track.Thumb>
+                <Track.IncreaseRepeatButton>
+                  <RepeatButton Command="{x:Static swc:Slider.IncreaseLarge}" Style="{StaticResource BarSliderInvisibleRepeat}"/>
+                </Track.IncreaseRepeatButton>
+              </Track>
+              <TickBar x:Name="BottomTick" Grid.Row="2" Placement="Bottom" Visibility="Collapsed" Fill="{TemplateBinding Foreground}"/>
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </Window.Resources>
+  <Border Background="#071018" BorderBrush="#21465C" BorderThickness="1" Padding="18">
+    <Grid x:Name="WizardRootGrid">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
+
+      <StackPanel Grid.Row="0" Margin="0,0,0,10">
+        <TextBlock Text="Arainco: Armado Columnas" Foreground="#E8F4F8" FontSize="18" FontWeight="Bold"/>
+      </StackPanel>
+
+      <Grid Grid.Row="1" Margin="0,0,0,12">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0" Orientation="Horizontal">
+          <Border x:Name="Step1Badge" CornerRadius="4" Padding="12,6" Margin="0,0,10,0" Background="#164e63" BorderBrush="#22d3ee" BorderThickness="1">
+            <TextBlock x:Name="Step1BadgeText" Text="(1) Esquema Horizontal" Foreground="#E8F4F8" FontWeight="SemiBold"/>
+          </Border>
+          <Border x:Name="Step2Badge" CornerRadius="4" Padding="12,6" Background="#0f172a" BorderBrush="#475569" BorderThickness="1">
+            <TextBlock x:Name="Step2BadgeText" Text="(2) Esquema Vertical" Foreground="#94a3b8" FontWeight="SemiBold"/>
+          </Border>
+        </StackPanel>
+        <TextBlock x:Name="WizardStepProgress" Grid.Column="1" VerticalAlignment="Center"
+                   Foreground="#94a3b8" FontSize="11" FontWeight="SemiBold" Margin="12,0,0,0"
+                   Text="Paso 1 de 2"/>
+      </Grid>
+
+      <Grid Grid.Row="2">
+        <ScrollViewer x:Name="ScrollGridStep" VerticalAlignment="Top"
+                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Visibility="Visible">
+          <Grid x:Name="GridStepRoot" Margin="0,0,0,0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="330" MinWidth="280"/>
+              <ColumnDefinition Width="12"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <GroupBox x:Name="GbGridSection" Grid.Column="0" Header="Rejilla por sección" Style="{StaticResource GbParams}" VerticalAlignment="Top">
+              <StackPanel>
+                <TextBlock x:Name="GridSectionTitle" Foreground="#E8F4F8" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                <TextBlock x:Name="GridSectionIndex" Foreground="#94a3b8" FontSize="11" TextWrapping="Wrap"
+                           Margin="0,0,0,10" Visibility="Collapsed"/>
+                <TextBlock Text="Sección del modelo (mm, solo lectura)" Foreground="#7eb8d0" FontSize="11" Margin="0,0,0,6"/>
+                <Border Background="#050E18" BorderBrush="#335c6e" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="0,0,0,14"
+                        ToolTip="Dimensiones tomadas de la geometría Revit; no editables aquí.">
+                  <TextBlock x:Name="BlockSectionDims" Foreground="#94a3b8" FontSize="15" FontWeight="SemiBold" Text="—×—"/>
+                </Border>
+                <TextBlock Foreground="#D5EAF2" TextWrapping="Wrap" Margin="0,0,0,6"
+                           Text="Lado A"/>
+                <Grid Margin="0,0,0,12">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <Slider x:Name="SliderBarsA" Grid.Column="0" Minimum="2" Maximum="10" Value="4"
+                          SmallChange="1" LargeChange="1" TickFrequency="1"
+                          IsSnapToTickEnabled="True" IsMoveToPointEnabled="True"
+                          VerticalAlignment="Center" Margin="0,0,10,0"
+                          Style="{StaticResource BarCountSliderStyle}"/>
+                  <Border Grid.Column="1" BorderBrush="#22d3ee" BorderThickness="1" CornerRadius="6"
+                          Background="#050E18" Padding="10,6" MinWidth="52" VerticalAlignment="Center">
+                    <TextBlock x:Name="TbBarsAValue" Text="4" Foreground="#22d3ee" FontSize="18"
+                               FontWeight="SemiBold" VerticalAlignment="Center" TextAlignment="Center" MinWidth="20"/>
+                  </Border>
+                </Grid>
+                <TextBlock Foreground="#D5EAF2" TextWrapping="Wrap" Margin="0,0,0,6"
+                           Text="Lado B"/>
+                <Grid Margin="0,0,0,12">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <Slider x:Name="SliderBarsB" Grid.Column="0" Minimum="2" Maximum="10" Value="6"
+                          SmallChange="1" LargeChange="1" TickFrequency="1"
+                          IsSnapToTickEnabled="True" IsMoveToPointEnabled="True"
+                          VerticalAlignment="Center" Margin="0,0,10,0"
+                          Style="{StaticResource BarCountSliderStyle}"/>
+                  <Border Grid.Column="1" BorderBrush="#22d3ee" BorderThickness="1" CornerRadius="6"
+                          Background="#050E18" Padding="10,6" MinWidth="52" VerticalAlignment="Center">
+                    <TextBlock x:Name="TbBarsBValue" Text="6" Foreground="#22d3ee" FontSize="18"
+                               FontWeight="SemiBold" VerticalAlignment="Center" TextAlignment="Center" MinWidth="20"/>
+                  </Border>
+                </Grid>
+                <TextBlock Foreground="#7eb8d0" FontSize="11" Margin="0,-4,0,14" TextWrapping="Wrap"
+                           Text="A = lado corto · B = lado largo · 2–10 barras por lado"/>
+                <CheckBox x:Name="ChkInnerOutline" Content="Añadir anillo interior de barras"
+                          IsChecked="False" Foreground="#E8F4F8" Margin="0,0,0,4"/>
+                <TextBlock x:Name="InnerBarsCountHint" Foreground="#94a3b8" FontSize="10" TextWrapping="Wrap" Margin="0,0,0,8"/>
+
+                <!-- ── Tipo de confinamiento ───────────────────────────── -->
+                <Border Height="1" Background="#21465C" Margin="0,16,0,14"/>
+
+                <Grid Margin="0,0,0,10">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <Border Grid.Column="0" Width="3" CornerRadius="2" Background="#22d3ee" Margin="0,0,8,0" VerticalAlignment="Center" Height="14"/>
+                  <TextBlock Grid.Column="1" Text="Tipo de Confinamiento" Foreground="#7eb8d0"
+                             FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                </Grid>
+
+                <!-- Stirrup combos injected programmatically by Python -->
+                <StackPanel x:Name="StirrupControlsHost"/>
+              </StackPanel>
+            </GroupBox>
+            <Border x:Name="BorderGridPreviewHost" Grid.Column="2" Background="#0a1620" BorderBrush="#21465C" BorderThickness="1" CornerRadius="4"
+                    MinWidth="320" VerticalAlignment="Top"
+                    Height="{Binding ElementName=GbGridSection, Path=ActualHeight, Mode=OneWay}">
+              <DockPanel LastChildFill="True" Margin="8,8,8,6">
+                <Grid DockPanel.Dock="Top" Margin="0,0,0,6">
+                  <TextBlock Text="Vista en planta" Foreground="#7eb8d0" FontSize="11" FontWeight="SemiBold"
+                             HorizontalAlignment="Center"/>
+                </Grid>
+                <TextBlock DockPanel.Dock="Bottom" Foreground="#475569" FontSize="10"
+                           TextWrapping="Wrap" Margin="0,6,0,0" HorizontalAlignment="Center"
+                           Text="Solo referencia visual · proporcional a la sección"/>
+                <Canvas x:Name="GridPreviewCanvas" Margin="0" ClipToBounds="False"
+                        VerticalAlignment="Stretch" HorizontalAlignment="Stretch"/>
+              </DockPanel>
+            </Border>
+          </Grid>
+        </ScrollViewer>
+
+        <Grid x:Name="ScrollTroceoStep" VerticalAlignment="Stretch" Visibility="Collapsed">
+          <Grid.RowDefinitions>
+            <!-- Esquema + diámetros longitudinales en un único recuadro; reparto vertical del alto útil. -->
+            <RowDefinition Height="*" MinHeight="420"/>
+          </Grid.RowDefinitions>
+          <Border Grid.Row="0" CornerRadius="4" Padding="12" Margin="0,0,0,0" Background="#0b1924" VerticalAlignment="Stretch">
+            <Border Background="#050a10" CornerRadius="4" Padding="10" VerticalAlignment="Stretch">
+                <Grid VerticalAlignment="Stretch">
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*" MinHeight="220"/>
+                    <RowDefinition Height="Auto"/>
+                  </Grid.RowDefinitions>
+                  <Border Grid.Row="0" Margin="0,0,0,6" HorizontalAlignment="Stretch" Background="Transparent">
+                    <Canvas x:Name="TroceoSchemeHeaderCanvas" Height="26" HorizontalAlignment="Center" VerticalAlignment="Top" MinHeight="22"/>
+                  </Border>
+                  <ScrollViewer x:Name="TroceoSchemeScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                                HorizontalScrollBarVisibility="Auto" VerticalAlignment="Stretch" Margin="0,0,0,0">
+                    <StackPanel x:Name="TroceoBlocksHost" VerticalAlignment="Top" MinHeight="120"/>
+                  </ScrollViewer>
+                  <Grid Grid.Row="2" Margin="0,12,0,0">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                      <TextBlock Text="Alternar desde tramo" Foreground="#94a3b8" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBox x:Name="TbTroceoAltStart" Width="40" MinHeight="28" Text="2" MaxLength="4"
+                                 Background="#0f172a" Foreground="#E8F4F8" BorderBrush="#334155" Padding="4,2"
+                                 VerticalContentAlignment="Center" FontSize="11"
+                                 ToolTip="Índice del primer tramo afectado (1 = base del pilar)."/>
+                        <Border BorderBrush="#334155" BorderThickness="1" CornerRadius="0,4,4,0" Background="#0f172a"
+                                Width="26" MinHeight="28" Margin="-1,0,0,0" VerticalAlignment="Stretch">
+                          <Grid>
+                            <Grid.RowDefinitions>
+                              <RowDefinition Height="*"/>
+                              <RowDefinition Height="1"/>
+                              <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <Button x:Name="BtnTroceoAltStartInc" Grid.Row="0"
+                                    Content="&#x25B2;" FontSize="9" Padding="0,1,0,0" Margin="0"
+                                    Background="Transparent" BorderThickness="0" Foreground="#94a3b8"
+                                    VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
+                                    ToolTip="Más 1"/>
+                            <Border Grid.Row="1" Background="#334155" Height="1"/>
+                            <Button x:Name="BtnTroceoAltStartDec" Grid.Row="2"
+                                    Content="&#x25BC;" FontSize="9" Padding="0,0,0,1" Margin="0"
+                                    Background="Transparent" BorderThickness="0" Foreground="#94a3b8"
+                                    VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
+                                    ToolTip="Menos 1"/>
+                          </Grid>
+                        </Border>
+                      </StackPanel>
+                      <TextBlock Text="cada" Foreground="#64748b" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"/>
+                      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBox x:Name="TbTroceoAltStep" Width="40" MinHeight="28" Text="2" MaxLength="4"
+                                 Background="#0f172a" Foreground="#E8F4F8" BorderBrush="#334155" Padding="4,2"
+                                 VerticalContentAlignment="Center" FontSize="11"
+                                 ToolTip="Cada cuántos tramos se repite el patrón (2 = uno sí uno no desde el inicio)."/>
+                        <Border BorderBrush="#334155" BorderThickness="1" CornerRadius="0,4,4,0" Background="#0f172a"
+                                Width="26" MinHeight="28" Margin="-1,0,0,0" VerticalAlignment="Stretch">
+                          <Grid>
+                            <Grid.RowDefinitions>
+                              <RowDefinition Height="*"/>
+                              <RowDefinition Height="1"/>
+                              <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <Button x:Name="BtnTroceoAltStepInc" Grid.Row="0"
+                                    Content="&#x25B2;" FontSize="9" Padding="0,1,0,0" Margin="0"
+                                    Background="Transparent" BorderThickness="0" Foreground="#94a3b8"
+                                    VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
+                                    ToolTip="Más 1"/>
+                            <Border Grid.Row="1" Background="#334155" Height="1"/>
+                            <Button x:Name="BtnTroceoAltStepDec" Grid.Row="2"
+                                    Content="&#x25BC;" FontSize="9" Padding="0,0,0,1" Margin="0"
+                                    Background="Transparent" BorderThickness="0" Foreground="#94a3b8"
+                                    VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
+                                    ToolTip="Menos 1"/>
+                          </Grid>
+                        </Border>
+                      </StackPanel>
+                    </StackPanel>
+                    <Button x:Name="BtnTroceoAlternateSel" Grid.Column="1" Style="{StaticResource BtnSelectOutline}"
+                            Content="Alternar referencia en el esquema" FontSize="11" HorizontalAlignment="Stretch"
+                            VerticalAlignment="Center" Margin="12,0,0,0" Padding="8,7"
+                            ToolTip="Invierte la selección de troceo en los tramos del patrón Desde / Cada (marca si estaba libre, quita si estaba marcado)."/>
+                  </Grid>
+                </Grid>
+            </Border>
+          </Border>
+        </Grid>
+      </Grid>
+
+      <Grid x:Name="FooterStep1" Grid.Row="3" Margin="0,10,0,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock x:Name="FooterStep1Hint" Grid.Column="0" VerticalAlignment="Center"
+                   Foreground="#64748b" FontSize="10" TextWrapping="Wrap" Margin="0,0,12,0"
+                   Visibility="Collapsed"/>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+          <Button x:Name="BtnGridPrev" Content="← Sección anterior" Style="{StaticResource BtnSelectOutline}" MinWidth="150" Margin="0,0,10,0" Visibility="Collapsed"/>
+          <Button x:Name="BtnWizardCancel" Content="Cancelar" Style="{StaticResource BtnSelectOutline}" MinWidth="110" Margin="0,0,10,0"/>
+          <Button x:Name="BtnGridNext" Content="Siguiente sección →" Style="{StaticResource BtnPrimary}" MinWidth="180"/>
+        </StackPanel>
+      </Grid>
+
+      <StackPanel x:Name="FooterStep2" Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0" Visibility="Collapsed">
+        <Button x:Name="BtnTroceoCancel" Content="Cancelar" Style="{StaticResource BtnSelectOutline}" MinWidth="110" Margin="0,0,10,0"/>
+        <Button x:Name="BtnTroceoConfirm" Content="Confirmar troceo" Style="{StaticResource BtnPrimary}" MinWidth="150"/>
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>
