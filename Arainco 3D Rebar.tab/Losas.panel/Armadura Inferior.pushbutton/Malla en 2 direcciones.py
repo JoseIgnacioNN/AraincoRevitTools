@@ -144,7 +144,7 @@ class Formulario(forms.WPFWindow):  # Funciones del formulario
     def __init__(self, xaml_file, datos):
         forms.WPFWindow.__init__(self, xaml_file)
         self.action = None  # Se crea la variable self.action, indicando que aún no se ha seleccionado ningún botón
-        self.cmbCambioRutina.ItemsSource = ["Armadura sobre apoyo", "Armadura de borde", "Malla en 1 dirección", "Malla en 2 direcciones"]
+        self.cmbCambioRutina.ItemsSource = ["Armadura de apoyo", "Armadura de borde", "Malla en 1 dirección", "Malla en 2 direcciones"]
         self.cmbRebar.ItemsSource = rebar_types_names # Se muestran los nombres de barra en la lista desplegable para Vano 1
         self.cmbRebar2.ItemsSource = rebar_types_names # Se muestran los nombres de barra en la lista desplegable para Vano 2
         
@@ -243,7 +243,7 @@ while True:
         except OperationCanceledException: continue
 
         # Transaction Group
-        t_group = DB.TransactionGroup(doc, "ARAINCO - Armadura Inferior (Malla en 2 direcciones)")
+        t_group = DB.TransactionGroup(doc, "ARAINCO - Malla en 2 direcciones (inferior)")
         t_group.Start()
 
 # ===================================================================================
@@ -379,11 +379,11 @@ while True:
             if L_vano < L_vano_opos or (L_vano == L_vano_opos and vano == "vano 1"): 
                 offset_rec = rec_bottom + rebar_fi / 2
                 t1_diff = 0
-                ubicacion = "Fi"
+                posicion = "i"
             else:
                 offset_rec = rec_bottom + rebar_fi_opos + rebar_fi/ 2
                 t1_diff = rebar_fi_opos
-                ubicacion = "Fs"
+                posicion = "s"
 
             offset_lateral = rec_other + rebar_fi / 2
             origen_desplazado = plane_origin - plane_normal * offset_rec # Desplazamos el plano matemático hacia abajo para incluir el recubrimiento y diámetro
@@ -417,8 +417,8 @@ while True:
             p2_3D = p2_3D - v_recorrido_3D * (offset_lateral + rebar_fi_opos)
             desplazamiento = (p1_3D - centro_vano_3D).DotProduct(v_recorrido_3D)
             centro_barra = centro_vano_3D + v_recorrido_3D * desplazamiento
-            start = centro_barra + v_bar_3D * (7*L/20) # Extremo inicial de la barra
-            end = centro_barra - v_bar_3D * (7*L/20) # Extremo final de la barra
+            start = centro_barra + v_bar_3D * (L/2 - offset_lateral - 0.15*L) # Extremo inicial de la barra
+            end = centro_barra - v_bar_3D * (L/2 - offset_lateral - 0.15*L) # Extremo final de la barra
             curves = [DB.Line.CreateBound(start, end)]
             L_barra = (end - start).GetLength()
             L_recorrido = (p2_3D - p1_3D).DotProduct(v_recorrido_3D) # Largo del recorrido (proyectado perpendicular al eje de la barra)
@@ -529,10 +529,25 @@ while True:
             # Parámetros y Visibilidad
                 param = "Armadura_Ubicacion"
                 if rebar.LookupParameter(param) and not rebar.LookupParameter(param).IsReadOnly:
-                    rebar.LookupParameter(param).Set(ubicacion)
+                    rebar.LookupParameter(param).Set("F")
                 else:
                     forms.alert("No se encontró el parámetro de instancia '{}', o está bloqueado.".format(param), title="Error de parámetro")
 
+                param = "Armadura_Posicion"
+                if rebar.LookupParameter(param) and not rebar.LookupParameter(param).IsReadOnly:
+                    rebar.LookupParameter(param).Set(posicion)
+                else:
+                    forms.alert("No se encontró el parámetro de instancia '{}', o está bloqueado.".format(param), title="Error de parámetro")
+
+                param = "Armadura_Orientacion"
+                if rebar.LookupParameter(param) and not rebar.LookupParameter(param).IsReadOnly:
+                    if abs(v_bar_3D.X) >= abs(v_bar_3D.Y):
+                        rebar.LookupParameter(param).Set("Horizontal")
+                    else:
+                        rebar.LookupParameter(param).Set("Vertical")
+                else:
+                    forms.alert("No se encontró el parámetro de instancia '{}', o está bloqueado.".format(param), title="Error de parámetro")
+             
                 param = "Armadura_Arainco"
                 if rebar.LookupParameter(param) and not rebar.LookupParameter(param).IsReadOnly:
                     rebar.LookupParameter(param).Set(1)
