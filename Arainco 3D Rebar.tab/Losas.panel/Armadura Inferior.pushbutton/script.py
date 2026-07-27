@@ -4,7 +4,7 @@ from pyrevit import forms
 
 form_top = None
 form_left = None
-RUTINAS = ["Armadura sobre apoyo.py", "Armadura de borde.py", "Malla en 1 dirección.py", "Malla en 2 direcciones.py"]
+RUTINAS = ["Armadura de apoyo.py", "Armadura de borde.py", "Malla en 1 dirección.py", "Malla en 2 direcciones.py"]
 rutina_actual_idx = 0 # La rutina que se abrirá por defecto
 
 while True:
