@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Unir geometría — hormigón (vista activa). Entrada pyRevit (copia portable).
+Unir geometría — hormigón (vista activa).
 
-Todo el código vive en ``<pushbutton>/scripts/``. Copie solo esta carpeta
-.pushbutton; no depende de BIMTools.extension ni de rutas externas.
+Trigger pyRevit: la lógica vive en ``scripts/join_geometry_concrete_vista.py``.
 """
 
 __title__ = u"Unir\nGeom. Hormigón"
@@ -15,89 +14,51 @@ __doc__ = (
 
 import os
 import sys
-import imp
-
-import clr
-
-clr.AddReference("RevitAPIUI")
-from Autodesk.Revit.UI import TaskDialog
-
-_DIALOG_TITLE = u"Arainco: Unir geometría (hormigón, vista)"
-_MAIN_MODULE = u"join_geometry_concrete_vista.py"
-_REQUIRED_MODULES = (
-    _MAIN_MODULE,
-    u"join_geometry_instruction_dialog.py",
-    u"join_geometry_material_concrete.py",
-    u"bimtools_wpf_dark_theme.py",
-    u"revit_wpf_window_position.py",
-)
-_MODULES_TO_PURGE = (
-    u"join_geometry_concrete_vista",
-    u"join_geometry_instruction_dialog",
-    u"join_geometry_material_concrete",
-    u"bimtools_wpf_dark_theme",
-    u"revit_wpf_window_position",
-)
 
 
-def _scripts_dir(pushbutton_dir):
-    """Única fuente: ``<pushbutton>/scripts/`` (sin fallback externo)."""
-    return os.path.abspath(os.path.join(pushbutton_dir, u"scripts"))
+# --- Validación acceso corporativo (RECURSOS COMPARTIDOS) ---
+import os as _os_ac
+import sys as _sys_ac
 
-
-def _missing_modules(scripts_dir):
-    missing = []
-    for name in _REQUIRED_MODULES:
-        if not os.path.isfile(os.path.join(scripts_dir, name)):
-            missing.append(name)
-    return missing
-
-
-def _ensure_scripts_on_path(scripts_dir):
-    if scripts_dir and scripts_dir not in sys.path:
-        sys.path.insert(0, scripts_dir)
-
-
-def _purge_modules():
-    for mod_name in _MODULES_TO_PURGE:
-        try:
-            if mod_name in sys.modules:
-                del sys.modules[mod_name]
-        except Exception:
-            pass
-
-
-_pushbutton_dir = os.path.dirname(os.path.abspath(__file__))
-_scripts_dir = _scripts_dir(_pushbutton_dir)
-_missing = _missing_modules(_scripts_dir)
-
-if _missing:
-    TaskDialog.Show(
-        _DIALOG_TITLE,
-        u"Paquete portable incompleto. Faltan en scripts/:\n\n- {0}".format(
-            u"\n- ".join(_missing)
-        ),
-    )
-    raise Exception(u"Paquete portable incompleto: {0}".format(u", ".join(_missing)))
-
-_ensure_scripts_on_path(_scripts_dir)
-_purge_modules()
-
-if _pushbutton_dir not in sys.path:
-    sys.path.insert(0, _pushbutton_dir)
+_tab_ac = _os_ac.path.dirname(_os_ac.path.abspath(__file__))
+for _iac in range(16):
+    if _os_ac.path.basename(_tab_ac) == u"BIMTools.tab":
+        break
+    _parent_ac = _os_ac.path.dirname(_tab_ac)
+    if _parent_ac == _tab_ac:
+        _tab_ac = None
+        break
+    _tab_ac = _parent_ac
+if _tab_ac and _tab_ac not in _sys_ac.path:
+    _sys_ac.path.insert(0, _tab_ac)
 import bimtools_access_bootstrap as _bimtools_access
+
 if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
-    try:
-        _module_path = os.path.join(_scripts_dir, _MAIN_MODULE)
-        _mod = imp.load_source(u"join_geometry_concrete_vista", _module_path)
-        _mod.run(__revit__)
-    except Exception as ex:
-        try:
-            msg = unicode(ex)
-        except NameError:
-            msg = str(ex)
-        TaskDialog.Show(
-            _DIALOG_TITLE,
-            u"Error al ejecutar la herramienta:\n\n{}".format(msg),
+    _scripts_dir = None
+    _d = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(24):
+        _sp = os.path.join(_d, "scripts")
+        if os.path.isfile(os.path.join(_sp, "join_geometry_concrete_vista.py")):
+            _scripts_dir = _sp
+            break
+        _p = os.path.dirname(_d)
+        if _p == _d:
+            break
+        _d = _p
+
+    if _scripts_dir is None:
+        from pyrevit import forms
+
+        forms.alert(
+            u"No se encontro scripts/join_geometry_concrete_vista.py en la extension.",
+            title=__title__,
         )
-        raise
+        sys.exit(1)
+
+    if _scripts_dir not in sys.path:
+        sys.path.insert(0, _scripts_dir)
+
+    import join_geometry_concrete_vista as _mod
+
+    reload(_mod)
+    _mod.run(__revit__)
