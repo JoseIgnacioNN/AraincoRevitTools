@@ -3,7 +3,8 @@
 Coronamiento de muros — superior, inferior (fundación / pie), voladizo (reentrada stack).
 
 Superior: host muro tope, recubrimiento 25 mm + Ø/2 desde cara superior.
-Inferior fundación: host fundación, cara inferior + 50 mm + Ø/2, patas L hacia arriba.
+Inferior fundación: geometría en cara inferior de fundación + 50 mm + Ø/2, patas L
+hacia arriba; host estructural = muro (nunca Floor).
 Inferior pie: muro sin apilamiento ni fundación debajo, base + 25 mm + Ø/2, patas L arriba.
 Voladizo superior: base del muro superior más largo + estirón, pata L hacia arriba.
 Voladizo inferior: tope del muro inferior más largo bajo apilamiento más corto,
@@ -1893,10 +1894,10 @@ def _create_coronamiento_inferior_fundacion_rebar(
     leg_host_geom=None,
 ):
     """
-    Coronamiento inferior con host obligatorio = fundación.
+    Coronamiento inferior: geometría en fundación; host estructural = muro.
 
     Usa la API de ``rebar_fundacion_cara_inferior`` (marco cara inferior, normales
-    del host) en lugar de ``CreateFromCurves`` genérico orientado al muro.
+    de la fundación) para orientación; ``CreateFromCurves*`` recibe el muro.
     """
     if doc is None or geom_wall is None or fund is None or bar_type is None:
         return None, 0, u"Doc, muro, fundación o tipo de barra no válido."
@@ -1969,12 +1970,14 @@ def _create_coronamiento_inferior_fundacion_rebar(
     rb = None
     err_msg = None
     norm_create = None
-    fund_id = _element_id_int(fund)
+    wall_id = _element_id_int(geom_wall)
+    # Host estructural = muro; fundación solo aporta marco/caras.
+    host_create = geom_wall
 
     if crear_rebar_u_shape_desde_eje_rebar_shape_nombrado is not None:
         rb, err_msg, norm_create = crear_rebar_u_shape_desde_eje_rebar_shape_nombrado(
             doc,
-            fund,
+            host_create,
             bar_type,
             poli,
             shape_nombre=REBAR_SHAPE_NOMBRE_DEFECTO,
@@ -1986,7 +1989,7 @@ def _create_coronamiento_inferior_fundacion_rebar(
     if rb is None and crear_rebar_polilinea_u_malla_inf_sup_curve_loop is not None:
         rb, err_msg, norm_create = crear_rebar_polilinea_u_malla_inf_sup_curve_loop(
             doc,
-            fund,
+            host_create,
             bar_type,
             poli,
             c2,
@@ -1998,7 +2001,7 @@ def _create_coronamiento_inferior_fundacion_rebar(
     if rb is None and crear_rebar_polilinea_recta_sin_ganchos is not None:
         rb, err_msg, norm_create = crear_rebar_polilinea_recta_sin_ganchos(
             doc,
-            fund,
+            host_create,
             bar_type,
             poli,
             c2,
@@ -2009,15 +2012,26 @@ def _create_coronamiento_inferior_fundacion_rebar(
         )
 
     if rb is None:
-        return None, 0, err_msg or u"No se pudo crear coronamiento inf. en fundación."
+        return None, 0, err_msg or u"No se pudo crear coronamiento inf. (host muro)."
 
-    host_id = _rebar_host_id_int(rb)
-    if fund_id is None or host_id != fund_id:
+    host_ok = False
+    try:
+        from armado_muros_rebar_params import asegurar_host_wall
+        host_ok, _host_act = asegurar_host_wall(doc, rb, geom_wall)
+    except Exception:
+        host_id = _rebar_host_id_int(rb)
+        host_ok = (
+            wall_id is not None
+            and host_id is not None
+            and int(host_id) == int(wall_id)
+        )
+    if not host_ok:
+        got = _rebar_host_id_int(rb)
         _delete_rebar_safe(doc, rb)
         return None, 0, (
-            u"Host incorrecto: esperado fund. Id {0}, obtenido {1}.".format(
-                fund_id if fund_id is not None else u"?",
-                host_id if host_id is not None else u"?",
+            u"Host incorrecto: esperado muro Id {0}, obtenido {1}.".format(
+                wall_id if wall_id is not None else u"?",
+                got if got is not None else u"?",
             )
         )
 
@@ -2181,7 +2195,7 @@ def _crear_coronamiento_inferior_muro(doc, wall, bar_type, diam_mm, res, n_bars=
     if rb is None:
         res[u"n_inferior_fail"] += 1
         res[u"messages"].append(
-            u"Coronamiento inf. muro Id {0} (host fund. {1}): {2}".format(
+            u"Coronamiento inf. muro Id {0} (host muro; fund. {1}): {2}".format(
                 wid, fid, err or u"error",
             ),
         )
@@ -2194,7 +2208,7 @@ def _crear_coronamiento_inferior_muro(doc, wall, bar_type, diam_mm, res, n_bars=
     h_mm = _altura_fundacion_mm(fund)
     h_txt = u"{0:.0f}".format(float(h_mm)) if h_mm is not None else u"?"
     res[u"messages"].append(
-        u"Coronamiento inf. muro Id {0}, host fund. Id {1}: {2}Ø{3} mm "
+        u"Coronamiento inf. muro Id {0} (host muro; fund. Id {1}): {2}Ø{3} mm "
         u"(e={4} mm, H_fund≈{5} mm, recub. cara inf. 50+Ø/2; {6}).".format(
             wid, fid, int(n_bars), int(diam_mm), int(round(e_mm)), h_txt,
             _coronamiento_extremos_resumen(doc, wall),

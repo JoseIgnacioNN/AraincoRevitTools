@@ -3517,6 +3517,29 @@ def _create_cabezal_capa_rebar(
     if rebar is None:
         return None, u"CreateFromCurves devolvió None."
 
+    def _retry_create():
+        try:
+            return Rebar.CreateFromCurves(
+                doc,
+                RebarStyle.Standard,
+                bar_type,
+                None,
+                None,
+                wall,
+                normal_muro,
+                curves_list,
+                RebarHookOrientation.Left,
+                RebarHookOrientation.Left,
+                True,
+                True,
+            )
+        except Exception:
+            return None
+
+    rebar = _cabezal_ensure_rebar_host_wall(doc, rebar, wall, _retry_create)
+    if rebar is None:
+        return None, u"Host incorrecto tras Create (esperado muro)."
+
     if n_bars > 1 and distrib_ft is not None:
         try:
             tol = float(doc.Application.ShortCurveTolerance)
@@ -4025,6 +4048,57 @@ def _resolve_host_wall(bx, by, z_mid, walls, geom_opts, fallback_wall):
         except Exception:
             continue
     return fallback_wall
+
+
+def _cabezal_delete_rebar_safe(doc, rebar):
+    if doc is None or rebar is None:
+        return
+    try:
+        doc.Delete(rebar.Id)
+    except Exception:
+        pass
+
+
+def _cabezal_host_es_wall_esperado(doc, rebar, wall):
+    """True si el host estructural del rebar es el muro (no Floor)."""
+    if rebar is None or wall is None:
+        return False
+    try:
+        from armado_muros_rebar_params import asegurar_host_wall
+        ok, _host = asegurar_host_wall(doc, rebar, wall)
+        return bool(ok)
+    except Exception:
+        pass
+    try:
+        hid = rebar.GetHostId()
+        wid = wall.Id
+        return hid is not None and wid is not None and hid == wid
+    except Exception:
+        return False
+
+
+def _cabezal_ensure_rebar_host_wall(doc, rebar, wall, recreate_fn=None):
+    """
+    Si el rebar quedó con host Floor (u otro distinto del muro), lo borra y
+    opcionalmente recrea una vez con ``recreate_fn`` (sin args → rebar|None).
+    """
+    if rebar is None:
+        return None
+    if _cabezal_host_es_wall_esperado(doc, rebar, wall):
+        return rebar
+    _cabezal_delete_rebar_safe(doc, rebar)
+    if recreate_fn is None:
+        return None
+    try:
+        rb2 = recreate_fn()
+    except Exception:
+        rb2 = None
+    if rb2 is None:
+        return None
+    if _cabezal_host_es_wall_esperado(doc, rb2, wall):
+        return rb2
+    _cabezal_delete_rebar_safe(doc, rb2)
+    return None
 
 
 def _fundaciones_unidas_muro(doc, wall):
@@ -4811,6 +4885,18 @@ def _create_cabezal_rebar_with_optional_patas(
                 )
             except Exception:
                 rb = None
+            if rb is not None:
+                def _retry(_nv=nv, _ue=use_ex, _cn=create_new):
+                    try:
+                        return Rebar.CreateFromCurves(
+                            doc, RebarStyle.Standard, bar_type,
+                            None, None, host_wall, _nv, cl,
+                            RebarHookOrientation.Left, RebarHookOrientation.Left,
+                            _ue, _cn,
+                        )
+                    except Exception:
+                        return None
+                rb = _cabezal_ensure_rebar_host_wall(doc, rb, host_wall, _retry)
             if rb is not None:
                 break
         if rb is not None:
@@ -6003,7 +6089,11 @@ def _try_create_cabezal_stirrup_from_curves(
                 )
                 if rb is not None:
                     _clear_cabezal_stirrup_hook_rotations(rb)
-                    return _stamp_armadura_arainco(rb), None
+                    rb = _cabezal_ensure_rebar_host_wall(
+                        doc, _stamp_armadura_arainco(rb), wall, None,
+                    )
+                    if rb is not None:
+                        return rb, None
             except Exception as ex:
                 try:
                     last_err = unicode(ex)
@@ -6024,7 +6114,11 @@ def _try_create_cabezal_stirrup_from_curves(
                 )
                 if rb is not None:
                     _clear_cabezal_stirrup_hook_rotations(rb)
-                    return _stamp_armadura_arainco(rb), None
+                    rb = _cabezal_ensure_rebar_host_wall(
+                        doc, _stamp_armadura_arainco(rb), wall, None,
+                    )
+                    if rb is not None:
+                        return rb, None
             except Exception as ex:
                 try:
                     last_err = unicode(ex)
@@ -6107,13 +6201,47 @@ def _try_create_cabezal_stirrup_from_curves_plain(
             if rb is not None:
                 if hook_el is not None:
                     _clear_cabezal_stirrup_hook_rotations(rb)
-                return _stamp_armadura_arainco(rb), None
+                rb = _cabezal_ensure_rebar_host_wall(
+                    doc,
+                    _stamp_armadura_arainco(rb),
+                    wall,
+                    lambda c=curves, n=nv, st=style, a=o0, b=o1, ue=use_ex, cn=create_new: (
+                        _create_once_raw(c, n, st, a, b, ue, cn)
+                    ),
+                )
+                if rb is not None:
+                    return rb, None
+                return None, u"Host incorrecto tras Create estribo (esperado muro)."
         except Exception as ex:
             try:
                 return None, unicode(ex)
             except Exception:
                 return None, str(ex)
         return None, None
+
+    def _create_once_raw(curves, nv, style, o0, o1, use_ex, create_new):
+        try:
+            rb = Rebar.CreateFromCurves(
+                doc,
+                style,
+                bar_type,
+                hook_el,
+                hook_el,
+                wall,
+                nv,
+                curves,
+                o0,
+                o1,
+                use_ex,
+                create_new,
+            )
+            if rb is not None:
+                if hook_el is not None:
+                    _clear_cabezal_stirrup_hook_rotations(rb)
+                return _stamp_armadura_arainco(rb)
+        except Exception:
+            return None
+        return None
 
     for curves_clr in curve_variants:
         if curves_clr is None:
@@ -6415,13 +6543,46 @@ def _try_create_cabezal_tie_from_curves(
             )
             if rb is not None:
                 _clear_cabezal_stirrup_hook_rotations(rb)
-                return _stamp_armadura_arainco(rb), None
+                rb = _cabezal_ensure_rebar_host_wall(
+                    doc,
+                    _stamp_armadura_arainco(rb),
+                    wall,
+                    lambda c=curves, n=nv, st=style, a=o0, b=o1, ue=use_ex, cn=create_new: (
+                        _create_once_raw_tie(c, n, st, a, b, ue, cn)
+                    ),
+                )
+                if rb is not None:
+                    return rb, None
+                return None, u"Host incorrecto tras Create traba (esperado muro)."
         except Exception as ex:
             try:
                 return None, unicode(ex)
             except Exception:
                 return None, str(ex)
         return None, None
+
+    def _create_once_raw_tie(curves, nv, style, o0, o1, use_ex, create_new):
+        try:
+            rb = Rebar.CreateFromCurves(
+                doc,
+                style,
+                bar_type,
+                hook_el,
+                hook_el,
+                wall,
+                nv,
+                curves,
+                o0,
+                o1,
+                use_ex,
+                create_new,
+            )
+            if rb is not None:
+                _clear_cabezal_stirrup_hook_rotations(rb)
+                return _stamp_armadura_arainco(rb)
+        except Exception:
+            return None
+        return None
 
     for nv in plane_normals:
         o_top, o_bot = _cabezal_tie_hook_orientations(
@@ -6441,7 +6602,14 @@ def _try_create_cabezal_tie_from_curves(
                         )
                         if rb is not None:
                             _clear_cabezal_stirrup_hook_rotations(rb)
-                            return _stamp_armadura_arainco(rb), None
+                            rb = _cabezal_ensure_rebar_host_wall(
+                                doc,
+                                _stamp_armadura_arainco(rb),
+                                wall,
+                                None,
+                            )
+                            if rb is not None:
+                                return rb, None
                     except Exception:
                         pass
         for style in styles:
@@ -7145,6 +7313,10 @@ def _create_cabezal_confinement_stirrup(
         except Exception:
             msg = u"{0}: {1}".format(err_prefix, str(create_err))
         return None, msg
+
+    rb = _cabezal_ensure_rebar_host_wall(doc, rb, wall, None)
+    if rb is None:
+        return None, u"Host incorrecto tras Create confinamiento (esperado muro)."
 
     try:
         accessor = rb.GetShapeDrivenAccessor()

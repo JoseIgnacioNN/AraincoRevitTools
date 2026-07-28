@@ -366,10 +366,14 @@ def _extender_rebar_por_eje_mm(
     mm_inicio,
     mm_fin,
     pos_idx=0,
+    host_wall=None,
 ):
     """
     Sustituye el rebar alargando en la primera/última curva (mm positivos, según
     sentido: inicio hacia atrás, fin hacia adelante a lo largo del trazado).
+
+    ``host_wall``: si se pasa, se usa como host de ``CreateFromCurves`` (evita
+    propagar Host Category Floor).
     """
     mpo = MultiplanarOption.IncludeAllMultiplanarCurves
     try:
@@ -423,7 +427,17 @@ def _extender_rebar_por_eje_mm(
                     None,
                 )
 
-    host = doc.GetElement(rebar.GetHostId())
+    host = None
+    try:
+        from armado_muros_rebar_params import prefer_wall_host_para_recrear
+        host = prefer_wall_host_para_recrear(doc, rebar, host_wall)
+    except System.Exception:
+        host = None
+    if host is None:
+        try:
+            host = host_wall if host_wall is not None else doc.GetElement(rebar.GetHostId())
+        except System.Exception:
+            host = host_wall
     if host is None:
         return False, u"Host inválido.", None
 

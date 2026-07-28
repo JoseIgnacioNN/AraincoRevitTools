@@ -12,6 +12,7 @@ from Autodesk.Revit.DB import (
     BuiltInParameter,
     ElementId,
     FilteredElementCollector,
+    Floor,
     Level,
     StorageType,
     Wall,
@@ -541,6 +542,115 @@ def _rebar_host_element(rebar, doc=None):
     except Exception:
         pass
     return host
+
+
+def _element_id_int_safe(eid):
+    if eid is None:
+        return None
+    try:
+        if eid == ElementId.InvalidElementId:
+            return None
+    except Exception:
+        pass
+    for attr in (u"Value", u"IntegerValue"):
+        try:
+            return int(getattr(eid, attr))
+        except Exception:
+            pass
+    try:
+        return int(eid)
+    except Exception:
+        return None
+
+
+def host_es_floor_o_losa(doc, host):
+    """
+    True si ``host`` es ``Floor`` (incl. Foundation Slab) o categoría OST_Floors.
+
+    ``doc`` se acepta por simetría con otras helpers; la detección usa el elemento.
+    """
+    if host is None:
+        return False
+    try:
+        if isinstance(host, Floor):
+            return True
+    except Exception:
+        pass
+    try:
+        cat = host.Category
+        if cat is None:
+            return False
+        cid = _element_id_int_safe(cat.Id)
+        if cid is None:
+            return False
+        return int(cid) == int(BuiltInCategory.OST_Floors)
+    except Exception:
+        return False
+
+
+def host_es_wall(host):
+    """True si ``host`` es ``Wall``."""
+    if host is None:
+        return False
+    try:
+        return isinstance(host, Wall)
+    except Exception:
+        return False
+
+
+def host_ids_coinciden(host_a, host_b):
+    if host_a is None or host_b is None:
+        return False
+    try:
+        ia = _element_id_int_safe(host_a.Id)
+        ib = _element_id_int_safe(host_b.Id)
+    except Exception:
+        return False
+    if ia is None or ib is None:
+        return False
+    return int(ia) == int(ib)
+
+
+def asegurar_host_wall(doc, rebar, wall_esperado):
+    """
+    Comprueba si el host estructural del rebar es el ``Wall`` esperado.
+
+    No modifica el rebar (Revit no permite ``SetHostId``). Útil para decidir
+    borrar/recrear.
+
+    :returns: ``(ok, host_actual)`` — ``ok`` True si host es ``wall_esperado``
+        (mismo Id) y no es Floor. Si ``wall_esperado`` es None, ``ok`` solo
+        exige que el host sea Wall y no Floor.
+    """
+    host = _rebar_host_element(rebar, doc=doc)
+    if host is None:
+        return False, None
+    if host_es_floor_o_losa(doc, host):
+        return False, host
+    if wall_esperado is not None:
+        if not host_es_wall(wall_esperado):
+            return False, host
+        if not host_ids_coinciden(host, wall_esperado):
+            return False, host
+        return True, host
+    if not host_es_wall(host):
+        return False, host
+    return True, host
+
+
+def prefer_wall_host_para_recrear(doc, rebar, wall_fallback):
+    """
+    Host a pasar a ``CreateFromCurves`` al recrear una barra.
+
+    Si ``wall_fallback`` es Wall, se usa siempre (evita propagar Floor).
+    Si no, se usa el host actual solo si es Wall; nunca Floor.
+    """
+    if wall_fallback is not None and host_es_wall(wall_fallback):
+        return wall_fallback
+    host = _rebar_host_element(rebar, doc=doc)
+    if host is not None and host_es_wall(host) and not host_es_floor_o_losa(doc, host):
+        return host
+    return wall_fallback if host_es_wall(wall_fallback) else None
 
 
 def _nivel_nombre_desde_element_id(doc, level_id):

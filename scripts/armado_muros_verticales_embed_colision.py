@@ -262,6 +262,27 @@ def _element_id_int(eid):
         return None
 
 
+def _host_para_recrear(doc, rebar, wall_fallback=None):
+    """
+    Host para ``CreateFromCurves`` al recrear: prioriza Wall del lote, nunca Floor.
+    """
+    try:
+        from armado_muros_rebar_params import prefer_wall_host_para_recrear
+        host = prefer_wall_host_para_recrear(doc, rebar, wall_fallback)
+        if host is not None:
+            return host
+    except Exception:
+        pass
+    if wall_fallback is not None:
+        return wall_fallback
+    if doc is None or rebar is None:
+        return None
+    try:
+        return doc.GetElement(rebar.GetHostId())
+    except Exception:
+        return None
+
+
 def _geometry_options():
     opts = Options()
     try:
@@ -787,7 +808,9 @@ def _empotramiento_cabeza_mm_desde_rebar(rebar, doc, concrete_grade=None):
     return _empotramiento_cabeza_mm_desde_diametro(d_mm, concrete_grade)
 
 
-def _extender_vertical_cabeza_tabla_empotramiento(doc, rebar, pos_idx=0, concrete_grade=None):
+def _extender_vertical_cabeza_tabla_empotramiento(
+    doc, rebar, pos_idx=0, concrete_grade=None, host_wall=None,
+):
     """Estira la cabeza (mayor Z) con L = tabla empotramientos por Ø del RebarBarType."""
     if _extender_rebar_por_eje_mm is None or _rebar_eje_p_start_p_end is None:
         return False, u"Extensión por tabla no disponible.", None
@@ -804,11 +827,15 @@ def _extender_vertical_cabeza_tabla_empotramiento(doc, rebar, pos_idx=0, concret
     except Exception:
         eps = 1.0e-4
     if float(p1.Z) >= float(p0.Z) - float(eps):
-        return _extender_rebar_por_eje_mm(doc, rebar, 0.0, L, int(pos_idx))
-    return _extender_rebar_por_eje_mm(doc, rebar, L, 0.0, int(pos_idx))
+        return _extender_rebar_por_eje_mm(
+            doc, rebar, 0.0, L, int(pos_idx), host_wall=host_wall,
+        )
+    return _extender_rebar_por_eje_mm(
+        doc, rebar, L, 0.0, int(pos_idx), host_wall=host_wall,
+    )
 
 
-def _extender_vertical_pie_mm(doc, rebar, mm_pie, pos_idx=0):
+def _extender_vertical_pie_mm(doc, rebar, mm_pie, pos_idx=0, host_wall=None):
     """Estira el pie (menor Z) del trazado vertical ``mm_pie`` mm."""
     if _extender_rebar_por_eje_mm is None or _rebar_eje_p_start_p_end is None:
         return False, u"Extensión en pie no disponible.", None
@@ -823,8 +850,12 @@ def _extender_vertical_pie_mm(doc, rebar, mm_pie, pos_idx=0):
     except Exception:
         eps = 1.0e-4
     if float(p1.Z) >= float(p0.Z) - float(eps):
-        return _extender_rebar_por_eje_mm(doc, rebar, m, 0.0, int(pos_idx))
-    return _extender_rebar_por_eje_mm(doc, rebar, 0.0, m, int(pos_idx))
+        return _extender_rebar_por_eje_mm(
+            doc, rebar, m, 0.0, int(pos_idx), host_wall=host_wall,
+        )
+    return _extender_rebar_por_eje_mm(
+        doc, rebar, 0.0, m, int(pos_idx), host_wall=host_wall,
+    )
 
 
 def _es_fundacion_estructural(element):
@@ -1366,7 +1397,9 @@ def _procesar_rebar_vertical_pie_colision_muro_sin_fundacion(
         return rebar
 
     retract_mm = _retract_mm_sin_colision(d_mm)
-    ok, msg, rb_out = _acortar_vertical_pie_mm(doc, rebar, retract_mm, 0)
+    ok, msg, rb_out = _acortar_vertical_pie_mm(
+        doc, rebar, retract_mm, 0, host_wall=host,
+    )
     if not ok:
         res[u"n_fail"] += 1
         rid = _element_id_int(getattr(rebar, "Id", None))
@@ -1417,7 +1450,9 @@ def _aplicar_estiramiento_fundacion_pie(
         return rebar
 
     if collided:
-        ok, msg, rb_out = _extender_vertical_pie_mm(doc, rebar, mm_accion, 0)
+        ok, msg, rb_out = _extender_vertical_pie_mm(
+            doc, rebar, mm_accion, 0, host_wall=host,
+        )
         if not ok:
             res[u"n_fail"] += 1
             rid = _element_id_int(getattr(rebar, "Id", None))
@@ -1428,7 +1463,9 @@ def _aplicar_estiramiento_fundacion_pie(
         res[u"n_fundacion_pie"] += 1
         rb_work = rb_out if rb_out is not None else rebar
     else:
-        ok, msg, rb_out = _acortar_vertical_pie_mm(doc, rebar, mm_accion, 0)
+        ok, msg, rb_out = _acortar_vertical_pie_mm(
+            doc, rebar, mm_accion, 0, host_wall=host,
+        )
         if not ok:
             res[u"n_fail"] += 1
             rid = _element_id_int(getattr(rebar, "Id", None))
@@ -1445,7 +1482,7 @@ def _aplicar_estiramiento_fundacion_pie(
     return _aplicar_pata_l_pie_fundacion(doc, rb_work, host, res)
 
 
-def _acortar_vertical_pie_mm(doc, rebar, mm_retiro, pos_idx=0):
+def _acortar_vertical_pie_mm(doc, rebar, mm_retiro, pos_idx=0, host_wall=None):
     """
     Acorta el eje en el extremo de menor Z (pie) ``mm_retiro`` mm hacia la cabeza.
     """
@@ -1519,7 +1556,7 @@ def _acortar_vertical_pie_mm(doc, rebar, mm_retiro, pos_idx=0):
                     None,
                 )
 
-    host = doc.GetElement(rebar.GetHostId())
+    host = _host_para_recrear(doc, rebar, host_wall)
     if host is None:
         return False, u"Host inválido.", None
     bar_type = doc.GetElement(rebar.GetTypeId())
@@ -1572,7 +1609,7 @@ def _acortar_vertical_pie_mm(doc, rebar, mm_retiro, pos_idx=0):
     )
 
 
-def _acortar_vertical_cabeza_mm(doc, rebar, mm_retiro, pos_idx=0):
+def _acortar_vertical_cabeza_mm(doc, rebar, mm_retiro, pos_idx=0, host_wall=None):
     """
     Acorta el eje en el extremo de mayor Z (cabeza) ``mm_retiro`` mm hacia el pie.
     Sustituye el Rebar conservando layout (misma lógica que extender, sentido inverso).
@@ -1647,7 +1684,7 @@ def _acortar_vertical_cabeza_mm(doc, rebar, mm_retiro, pos_idx=0):
                     None,
                 )
 
-    host = doc.GetElement(rebar.GetHostId())
+    host = _host_para_recrear(doc, rebar, host_wall)
     if host is None:
         return False, u"Host inválido.", None
     bar_type = doc.GetElement(rebar.GetTypeId())
@@ -1792,10 +1829,9 @@ def _excluir_extremos_rebar_set(doc, rebar, host=None):
     if doc is None or rebar is None or ajustar_inclusion_extremos_rebar_set_con_fallback is None:
         return rebar
     if host is None:
-        try:
-            host = doc.GetElement(rebar.GetHostId())
-        except Exception:
-            host = None
+        host = _host_para_recrear(doc, rebar, None)
+    else:
+        host = _host_para_recrear(doc, rebar, host)
     try:
         if (
             _rebar_es_vertical_por_criterio is not None
@@ -1976,6 +2012,10 @@ def _agregar_pata_l_extremo_sketch(
         return False, u"Helpers de boceto no disponibles.", None
     if largo_p_mm is None or float(largo_p_mm) < 0.1:
         return False, u"Largo pata L inválido.", None
+
+    host = _host_para_recrear(doc, rebar, host)
+    if host is None:
+        return False, u"Host inválido.", None
 
     mpo = MultiplanarOption.IncludeAllMultiplanarCurves
     try:
@@ -2189,7 +2229,7 @@ def _procesar_rebar_vertical_cabeza_colision(
 
     if _host_tiene_apilado_sobre(host, ids_con_apilado_sobre):
         ok_eval, msg_eval, rebar_eval = _extender_vertical_cabeza_tabla_empotramiento(
-            doc, rebar, 0, concrete_grade,
+            doc, rebar, 0, concrete_grade, host_wall=host,
         )
         if not ok_eval:
             res[u"n_fail"] += 1
@@ -2205,7 +2245,7 @@ def _procesar_rebar_vertical_cabeza_colision(
 
     retract_mm = _retract_mm_sin_colision(d_mm)
     ok, msg, rebar_final = _acortar_vertical_cabeza_mm(
-        doc, rebar, retract_mm, 0,
+        doc, rebar, retract_mm, 0, host_wall=host,
     )
     if ok:
         res[u"n_retracted"] += 1

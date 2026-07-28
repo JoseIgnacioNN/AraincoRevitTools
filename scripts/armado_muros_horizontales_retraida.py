@@ -134,6 +134,25 @@ def _element_id_int(eid):
             return None
 
 
+def _host_para_recrear(doc, rebar, wall_fallback=None):
+    """Host para recrear barra: prioriza Wall del lote, nunca Floor."""
+    try:
+        from armado_muros_rebar_params import prefer_wall_host_para_recrear
+        host = prefer_wall_host_para_recrear(doc, rebar, wall_fallback)
+        if host is not None:
+            return host
+    except Exception:
+        pass
+    if wall_fallback is not None:
+        return wall_fallback
+    if doc is None or rebar is None:
+        return None
+    try:
+        return doc.GetElement(rebar.GetHostId())
+    except Exception:
+        return None
+
+
 def _retract_mm_extremo_inicial(d_mm):
     """Acortamiento en el extremo inicial del trazado: 25 mm + mitad del Ø nominal."""
     return float(HORIZONTAL_RETRACT_BASE_MM) + float(d_mm) / 2.0
@@ -473,7 +492,9 @@ def _copy_layout_y_excluir_ultima_barra(doc, src, dst):
     return True, u"", dst
 
 
-def _acortar_rebar_eje_inicio_fin_mm(doc, rebar, mm_inicio, mm_fin, pos_idx=0):
+def _acortar_rebar_eje_inicio_fin_mm(
+    doc, rebar, mm_inicio, mm_fin, pos_idx=0, host_wall=None,
+):
     """Acorta el eje en inicio y/o fin (mm positivos hacia el interior del trazado)."""
     if doc is None or rebar is None:
         return False, u"Doc o rebar no válido.", None
@@ -537,7 +558,7 @@ def _acortar_rebar_eje_inicio_fin_mm(doc, rebar, mm_inicio, mm_fin, pos_idx=0):
                     None,
                 )
 
-    host = doc.GetElement(rebar.GetHostId())
+    host = _host_para_recrear(doc, rebar, host_wall)
     if host is None:
         return False, u"Host inválido.", None
     bar_type = doc.GetElement(rebar.GetTypeId())
@@ -805,7 +826,7 @@ def _procesar_rebar_horizontal_retraida(doc, rebar, host, res, wid=None):
     mm_inicio = _retract_mm_extremo_inicial(d_mm)
     mm_fin = _retract_mm_extremo_final()
     ok, msg, rb_out = _acortar_rebar_eje_inicio_fin_mm(
-        doc, rebar, mm_inicio, mm_fin, 0,
+        doc, rebar, mm_inicio, mm_fin, 0, host_wall=host,
     )
     if not ok:
         res[u"n_fail"] += 1
