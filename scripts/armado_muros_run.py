@@ -34,6 +34,7 @@ _MODULES_TO_PURGE = (
     "armado_muros_run",
     "armado_muros_txn",
     "armado_muros_nodo_shared",
+    "armado_muros_rebar_layout",
     "armado_muros_lap_detail_shared",
     "armado_muros_v3_elevation",
     "armado_muros_v3_troceo",
@@ -104,14 +105,18 @@ def _scripts_dir():
 
 
 def _package_fingerprint():
-    """Fingerprint barato: path + mtime del preview UI (módulo más grande)."""
+    """Fingerprint: path + max mtime de los módulos purgables (no solo preview)."""
     scripts = _scripts_dir()
-    marker = os.path.join(scripts, u"armado_muros_preview_ui.py")
-    try:
-        # IronPython: getmtime → int; evitar format {:.3f} (ValueError).
-        mtime_key = int(os.path.getmtime(marker))
-    except Exception:
-        mtime_key = 0
+    mtime_key = 0
+    for name in _MODULES_TO_PURGE:
+        path = os.path.join(scripts, u"{0}.py".format(name))
+        try:
+            # IronPython: getmtime → int; evitar format {:.3f} (ValueError).
+            mt = int(os.path.getmtime(path))
+            if mt > mtime_key:
+                mtime_key = mt
+        except Exception:
+            pass
     return u"{0}|{1}".format(
         os.path.normcase(os.path.abspath(scripts)),
         mtime_key,

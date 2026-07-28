@@ -76,6 +76,13 @@ if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
         pass
 
     try:
+        # Forzar recarga del bootstrap: si queda en sys.modules, el fingerprint
+        # viejo no ve cambios en scripts/ y el post-malla corre código obsoleto.
+        if u"armado_muros_run" in sys.modules:
+            try:
+                del sys.modules[u"armado_muros_run"]
+            except Exception:
+                pass
         from armado_muros_run import run_pyrevit
 
         run_pyrevit(__revit__)

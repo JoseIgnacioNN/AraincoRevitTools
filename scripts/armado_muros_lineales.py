@@ -129,7 +129,7 @@ except Exception:
     wall_id_int = None
 
 try:
-    from armado_muros_nodo_shared import ajustar_inclusion_extremos_rebar_set_con_fallback
+    from armado_muros_rebar_layout import ajustar_inclusion_extremos_rebar_set_con_fallback
 except Exception:
     ajustar_inclusion_extremos_rebar_set_con_fallback = None
 
@@ -540,16 +540,20 @@ def aplicar_unobscured_armado_muros_en_vista(
         pass
 
     try:
-        from bimtools_rebar_3d_visibility import (
-            apply_rebar_unobscured_in_view,
-            apply_rebar_unobscured_off_in_view,
-        )
+        from bimtools_rebar_3d_visibility import apply_rebar_unobscured_in_view
     except Exception as ex_imp:
         if errores is not None:
             errores.append(
                 u"Visibilidad Armado Muros: módulo no disponible — {0}".format(ex_imp),
             )
         return vacio
+    try:
+        from bimtools_rebar_3d_visibility import apply_rebar_unobscured_off_in_view
+    except Exception:
+        try:
+            from bimtools_rebar_3d_visibility import ensure_rebar_obscured_in_view as apply_rebar_unobscured_off_in_view
+        except Exception:
+            apply_rebar_unobscured_off_in_view = None
 
     ids_malla = _ids_rebars_malla_excluir_unobscured(rebars_malla_por_muro_id)
     rebar_ids_on = _recolectar_rebar_ids_unobscured_armado_muros(
@@ -595,7 +599,9 @@ def aplicar_unobscured_armado_muros_en_vista(
             pass
         if rebars_malla:
             n_vis = _unhide_rebars_malla_en_vista(view, rebars_malla_por_muro_id)
-            n_off = apply_rebar_unobscured_off_in_view(doc, rebars_malla, view)
+            # Malla: nunca Unobscured (ni sólido). Solo visible en vista.
+            if apply_rebar_unobscured_off_in_view is not None:
+                n_off = apply_rebar_unobscured_off_in_view(doc, rebars_malla, view) or 0
         if rebars_on:
             if ids_on_list.Count > 0:
                 try:
@@ -612,7 +618,7 @@ def aplicar_unobscured_armado_muros_en_vista(
                         pass
             except Exception:
                 pass
-            n_on = apply_rebar_unobscured_in_view(doc, rebars_on, view)
+            n_on = apply_rebar_unobscured_in_view(doc, rebars_on, view) or 0
         t.Commit()
     except Exception as ex:
         try:
@@ -1031,8 +1037,9 @@ def _post_procesar_rebars_lote(
     Una Transaction de documento: colisión de malla usa caché de sólidos (sonda antes
     de mutar); mutaciones anidan SubTransaction. Exclusión + stamp al final.
 
-    Regenerates: 1 tras mutaciones geométricas (antes de exclusión) + 1 al cierre
-    (tras exclusión/spacing). Sin regenerates intermedios por exclusión/spacing.
+    Regenerates: 1 al inicio (bbox de rebars recién creados por Remove System; sin esto
+    los filtros ext/int fallan bajo txn padre), 1 tras mutaciones (antes de exclusión)
+    + 1 al cierre (tras exclusión/spacing).
 
     ``fund_solids_cache``: dict compartido entre lotes ``{fund_id: solids}``.
     """
@@ -1043,6 +1050,14 @@ def _post_procesar_rebars_lote(
     def _run_post():
         holder = {u"res": res}
         need_final_regen = False
+
+        # Obligatorio tras Remove System bajo txn padre (SubTransaction.Commit no
+        # regenera): sin esto get_BoundingBox es None y los filtros ext/int
+        # saltan todas las barras → 0 empotramiento / patas L / ganchos 135°.
+        try:
+            doc.Regenerate()
+        except Exception:
+            pass
 
         try:
             import armado_muros_verticales_embed_colision as _embed_mod
@@ -1056,8 +1071,6 @@ def _post_procesar_rebars_lote(
                     params_por_muro_id=params_por_muro_id,
                     muro_contencion=muro_contencion,
                     cabezal_por_muro_id=cabezal_por_muro_id,
-                    # Malla lote ya regeneró antes de Remove System.
-                    regenerate_fund_geom=False,
                     fund_solids_cache=fund_solids_cache,
                 ),
             )
@@ -3410,7 +3423,7 @@ def _rebar_max_tangent_z_abs(rebar, max_pos=None):
         return None
     max_tz = None
     try:
-        from armado_muros_nodo_shared import _rebar_cantidad_posiciones
+        from armado_muros_rebar_layout import _rebar_cantidad_posiciones
         n_pos = min(4, max(1, int(_rebar_cantidad_posiciones(rebar))))
     except Exception:
         n_pos = 1
@@ -3462,7 +3475,7 @@ def _rebar_es_vertical_en_muro(rebar, host):
         return False
     if _rebar_es_vertical_por_criterio is not None:
         try:
-            from armado_muros_nodo_shared import _rebar_cantidad_posiciones
+            from armado_muros_rebar_layout import _rebar_cantidad_posiciones
             n_try = min(4, max(1, int(_rebar_cantidad_posiciones(rebar))))
         except Exception:
             n_try = 1

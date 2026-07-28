@@ -99,7 +99,7 @@ except Exception:
     traslape_mm_from_nominal_diameter_mm = None
 
 try:
-    from armado_muros_nodo_shared import (
+    from armado_muros_rebar_layout import (
         ajustar_inclusion_extremos_rebar_set_con_fallback,
         desactivar_extremos_rebar_set,
     )

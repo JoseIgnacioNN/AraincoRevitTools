@@ -2033,7 +2033,7 @@ def aplicar_exclusion_horizontal_malla_ultima_barra(rebar, doc=None, regenerate=
     if rebar is None:
         return False
     try:
-        from armado_muros_nodo_shared import ajustar_inclusion_extremos_rebar_set_con_fallback
+        from armado_muros_rebar_layout import ajustar_inclusion_extremos_rebar_set_con_fallback
     except Exception:
         return False
     return bool(
@@ -2131,7 +2131,7 @@ def aplicar_exclusion_verticales_malla_rebar(
     if rebar is None:
         return False
     try:
-        from armado_muros_nodo_shared import (
+        from armado_muros_rebar_layout import (
             _excluir_barras_por_indices,
             _rebar_bar_included,
             _rebar_cantidad_posiciones,

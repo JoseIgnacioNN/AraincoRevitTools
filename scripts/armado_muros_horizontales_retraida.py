@@ -64,7 +64,7 @@ def _ensure_pushbutton_path():
 _ensure_pushbutton_path()
 
 try:
-    from armado_muros_nodo_shared import ajustar_inclusion_extremos_rebar_set
+    from armado_muros_rebar_layout import ajustar_inclusion_extremos_rebar_set
 except Exception:
     ajustar_inclusion_extremos_rebar_set = None
 

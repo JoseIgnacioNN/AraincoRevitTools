@@ -193,82 +193,77 @@ def apply_reinforcement_unobscured_in_view(doc, refuerzos, view, unobscured=True
     return n_ok
 
 
+def _resolve_rebar_element(doc, ref):
+    if ref is None:
+        return None
+    if isinstance(ref, Rebar):
+        return ref
+    try:
+        ref = doc.GetElement(ref)
+    except Exception:
+        ref = None
+    if isinstance(ref, Rebar):
+        return ref
+    return None
+
+
+def _apply_rebar_visibility_in_view(doc, rebars, view, unobscured, solid_in_view=None):
+    u"""``SetUnobscuredInView`` + ``SetSolidInView`` en ``Rebar`` para ``view``."""
+    if not rebars or doc is None or view is None:
+        return 0
+    if not isinstance(view, View):
+        return 0
+    try:
+        if view.IsTemplate:
+            return 0
+    except Exception:
+        pass
+    try:
+        view = doc.GetElement(view.Id)
+    except Exception:
+        return 0
+    if not isinstance(view, View):
+        return 0
+    if solid_in_view is None:
+        solid_in_view = unobscured
+    n_ok = 0
+    for ref in rebars:
+        rb = _resolve_rebar_element(doc, ref)
+        if rb is None:
+            continue
+        applied = False
+        try:
+            rb.SetUnobscuredInView(view, unobscured)
+            applied = True
+        except Exception:
+            pass
+        _set_solid_in_view(rb, view, solid_in_view)
+        if applied:
+            n_ok += 1
+    return n_ok
+
+
 def apply_rebar_unobscured_in_view(doc, rebars, view):
     u"""
     Para cada ``Rebar`` en ``rebars``, activa «View Unobscured» y sólido en vista
     **solo** en la vista indicada.
     """
-    if not rebars or doc is None or view is None:
-        return
-    if not isinstance(view, View):
-        return
-    try:
-        if view.IsTemplate:
-            return
-    except Exception:
-        pass
-    try:
-        view = doc.GetElement(view.Id)
-    except Exception:
-        return
-    if not isinstance(view, View):
-        return
-    for rb in rebars:
-        if rb is None:
-            continue
-        if not isinstance(rb, Rebar):
-            try:
-                rb = doc.GetElement(rb)
-            except Exception:
-                rb = None
-            if not isinstance(rb, Rebar):
-                continue
-        try:
-            rb.SetUnobscuredInView(view, True)
-        except Exception:
-            pass
-        try:
-            rb.SetSolidInView(view, True)
-        except Exception:
-            try:
-                fn = getattr(rb, "SetSolidInView", None)
-                if fn is not None:
-                    fn(view, True)
-            except Exception:
-                pass
+    return _apply_rebar_visibility_in_view(doc, rebars, view, True, True)
+
+
+def apply_rebar_unobscured_off_in_view(doc, rebars, view):
+    u"""
+    Para cada ``Rebar`` en ``rebars``, desactiva «View Unobscured» y sólido en vista
+    **solo** en la vista indicada.
+
+    Usado por Armado Muros para barras de **malla** (no deben quedar Unobscured).
+    """
+    return _apply_rebar_visibility_in_view(doc, rebars, view, False, False)
 
 
 def ensure_rebar_obscured_in_view(doc, rebars, view):
-    u"""Desactiva «View Unobscured» **solo** en la vista indicada."""
-    if not rebars or doc is None or view is None:
-        return
-    if not isinstance(view, View):
-        return
-    try:
-        if view.IsTemplate:
-            return
-    except Exception:
-        pass
-    try:
-        view = doc.GetElement(view.Id)
-    except Exception:
-        return
-    if not isinstance(view, View):
-        return
-    for rb in rebars:
-        if rb is None:
-            continue
-        if not isinstance(rb, Rebar):
-            try:
-                rb = doc.GetElement(rb)
-            except Exception:
-                rb = None
-            if not isinstance(rb, Rebar):
-                continue
-        try:
-            rb.SetUnobscuredInView(view, False)
-        except Exception:
-            pass
+    u"""Desactiva «View Unobscured» (+ sólido) **solo** en la vista indicada."""
+    return apply_rebar_unobscured_off_in_view(doc, rebars, view)
 
 
 def apply_rebar_unobscured_in_3d_views(doc, rebars):

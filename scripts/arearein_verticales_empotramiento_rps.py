@@ -225,6 +225,12 @@ def _nominal_diameter_mm_from_rebar(rebar, doc):
         bt = None
     if not isinstance(bt, RebarBarType):
         return None
+    # Preferir BarNominalDiameter (tabla empotramientos/patas); fallback BarModelDiameter.
+    try:
+        d = bt.BarNominalDiameter
+        return float(UnitUtils.ConvertFromInternalUnits(d, UnitTypeId.Millimeters))
+    except System.Exception:
+        pass
     try:
         d = bt.BarModelDiameter
         return float(UnitUtils.ConvertFromInternalUnits(d, UnitTypeId.Millimeters))
@@ -433,27 +439,30 @@ def _extender_rebar_por_eje_mm(
     o0 = _hook_orient_for_create(rebar, 0)
     o1 = _hook_orient_for_create(rebar, 1)
 
-    t = Transaction(doc, u"Arainco: rebar eje + empotramiento (tabla diámetro)")
-    t.Start()
+    # Anidable bajo la txn padre del post-lote (SubTransaction si doc ya es modificable).
+    # No usar Transaction.Start() aquí: aborta empotramiento/patas del lote entero.
+    from armado_muros_txn import TxnScope
+
+    scope = TxnScope(doc, u"Arainco: rebar eje + empotramiento (tabla diámetro)")
     try:
         new_rb = _create_from_curves_no_hooks(
             doc, new_chain, host, norm, bar_type, style, o0, o1
         )
         if new_rb is None:
-            t.RollBack()
+            scope.rollback()
             return False, u"CreateFromCurves devolvió None.", None
         ok_lay, err_lay = _copy_layout_rebar_shape_driven(rebar, new_rb)
         if not ok_lay:
-            t.RollBack()
+            scope.rollback()
             return False, u"Layout: {0}".format(err_lay or u"?"), None
         try:
             doc.Delete(rebar.Id)
         except System.Exception as ex2:
-            t.RollBack()
+            scope.rollback()
             return False, u"Delete rebar: {0!s}".format(ex2), None
-        t.Commit()
+        scope.commit()
     except System.Exception as ex:
-        t.RollBack()
+        scope.rollback()
         return False, u"{0!s}".format(ex), None
     return (
         True,
