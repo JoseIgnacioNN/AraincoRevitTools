@@ -41,15 +41,19 @@ from Autodesk.Revit.DB import (
     BasePoint,
     BuiltInCategory,
     BuiltInParameter,
+    Color,
     Curve,
     ElementId,
     ElementTypeGroup,
     FilteredElementCollector,
+    FillPatternElement,
+    FillPatternTarget,
     GeometryInstance,
     IntersectionResultArray,
     Line,
     LocationCurve,
     Options,
+    OverrideGraphicSettings,
     Plane,
     PlanarFace,
     SetComparisonResult,
@@ -641,6 +645,226 @@ def aplicar_unobscured_armado_muros_en_vista(
     }
 
 
+def _solid_fill_pattern_id(doc):
+    """``ElementId`` del patrón de relleno sólido (Drafting); Invalid si no hay."""
+    invalid = ElementId.InvalidElementId
+    if doc is None:
+        return invalid
+    try:
+        fp = FillPatternElement.GetFillPatternElementByName(
+            doc, FillPatternTarget.Drafting, u"<Solid fill>",
+        )
+        if fp is not None:
+            return fp.Id
+    except Exception:
+        pass
+    try:
+        for el in FilteredElementCollector(doc).OfClass(FillPatternElement):
+            if el is None:
+                continue
+            try:
+                pat = el.GetFillPattern()
+                if pat is not None and pat.IsSolidFill:
+                    return el.Id
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return invalid
+
+
+def _aplicar_override_rojo_rebar_en_vista(view, element_id, solid_fill_id=None):
+    """
+    Override gráfico rojo en la vista (líneas + relleno sólido).
+    Coherente con ``orientacion_muro_alzado._aplicar_override_verde_en_vista``.
+    """
+    if view is None or element_id is None:
+        return False
+    try:
+        ogs = OverrideGraphicSettings()
+        ogs.SetProjectionLineColor(_COLOR_REBAR_LARGO_EXCESO)
+        try:
+            ogs.SetCutLineColor(_COLOR_REBAR_LARGO_EXCESO)
+        except Exception:
+            pass
+        try:
+            ogs.SetSurfaceForegroundPatternColor(_COLOR_REBAR_LARGO_EXCESO)
+        except Exception:
+            pass
+        try:
+            ogs.SetSurfaceBackgroundPatternColor(_COLOR_REBAR_LARGO_EXCESO)
+        except Exception:
+            pass
+        if solid_fill_id is not None:
+            try:
+                if solid_fill_id != ElementId.InvalidElementId:
+                    ogs.SetSurfaceForegroundPatternId(solid_fill_id)
+                    try:
+                        ogs.SetSurfaceBackgroundPatternId(solid_fill_id)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        try:
+            ogs.SetProjectionLineWeight(6)
+        except Exception:
+            pass
+        view.SetElementOverrides(element_id, ogs)
+        return True
+    except Exception:
+        return False
+
+
+def _recolectar_todos_rebar_ids_armado_muros(
+    cab_res=None,
+    embed_resumen=None,
+    cor_res=None,
+    rebars_malla_por_muro_id=None,
+):
+    """Todos los Rebar creados por el flujo (cabezal, coronamiento y malla)."""
+    out = []
+    seen = set()
+    empty_excl = set()
+
+    if cab_res:
+        for eid in cab_res.get(u"rebars_longitudinales_ids") or []:
+            _agregar_rebar_id_si_aplica(out, seen, eid, empty_excl)
+        for _wid, lst in (cab_res.get(u"rebars_por_muro_id") or {}).items():
+            for eid in lst or []:
+                _agregar_rebar_id_si_aplica(out, seen, eid, empty_excl)
+
+    for src in (embed_resumen, cor_res):
+        if not src:
+            continue
+        for eid in src.get(u"rebars_coronamiento_ids") or []:
+            _agregar_rebar_id_si_aplica(out, seen, eid, empty_excl)
+        for iv in src.get(u"rebars_coronamiento_id_ints") or []:
+            try:
+                eid = ElementId(int(iv))
+            except Exception:
+                continue
+            _agregar_rebar_id_si_aplica(out, seen, eid, empty_excl)
+        for _wid, lst in (src.get(u"rebars_por_muro_id") or {}).items():
+            for eid in lst or []:
+                _agregar_rebar_id_si_aplica(out, seen, eid, empty_excl)
+
+    for _wid, lst in (rebars_malla_por_muro_id or {}).items():
+        for eid in lst or []:
+            _agregar_rebar_id_si_aplica(out, seen, eid, empty_excl)
+
+    return out
+
+
+def aplicar_color_rebars_largo_exceso_en_vista(
+    doc,
+    uidoc,
+    cab_res=None,
+    embed_resumen=None,
+    cor_res=None,
+    rebars_malla_por_muro_id=None,
+    max_length_mm=None,
+    errores=None,
+):
+    """
+    Colorea de rojo en la vista activa los Rebar cuyo largo total (una barra)
+    supera ``max_length_mm`` (defecto 12 m / 12000 mm).
+
+    Usa ``OverrideGraphicSettings`` (línea + relleno sólido), mismo mecanismo
+    que helpers de orientación de muro.
+    """
+    vacio = {u"n_rebars_largo_rojo": 0, u"n_rebars_largo_revisados": 0}
+    if doc is None or uidoc is None:
+        return vacio
+    view = None
+    try:
+        view = uidoc.ActiveView
+    except Exception:
+        view = None
+    if view is None:
+        return vacio
+    try:
+        if getattr(view, "IsTemplate", False):
+            return vacio
+    except Exception:
+        pass
+
+    try:
+        from armado_muros_rebar_params import rebar_total_length_mm
+    except Exception as ex_imp:
+        if errores is not None:
+            errores.append(
+                u"Color largo >12 m: módulo no disponible — {0}".format(ex_imp),
+            )
+        return vacio
+
+    try:
+        lim = float(
+            max_length_mm
+            if max_length_mm is not None
+            else ARMADO_MUROS_MAX_BARRA_COMERCIAL_MM
+        )
+    except Exception:
+        lim = float(ARMADO_MUROS_MAX_BARRA_COMERCIAL_MM)
+
+    rebar_ids = _recolectar_todos_rebar_ids_armado_muros(
+        cab_res=cab_res,
+        embed_resumen=embed_resumen,
+        cor_res=cor_res,
+        rebars_malla_por_muro_id=rebars_malla_por_muro_id,
+    )
+    if not rebar_ids:
+        return vacio
+
+    solid_id = _solid_fill_pattern_id(doc)
+    t = None
+    n_rojo = 0
+    n_rev = 0
+    try:
+        from armado_muros_txn import TxnScope
+
+        t = TxnScope(
+            doc,
+            u"Arainco: Color barras largo >12 m Armado Muros",
+        )
+        if not t.HasStarted():
+            raise Exception(u"No se pudo abrir transacción de color por largo.")
+        for eid in rebar_ids:
+            try:
+                el = doc.GetElement(eid)
+            except Exception:
+                el = None
+            if el is None or not isinstance(el, Rebar):
+                continue
+            n_rev += 1
+            try:
+                L_mm = rebar_total_length_mm(el)
+            except Exception:
+                L_mm = None
+            if L_mm is None or float(L_mm) <= lim + 1e-6:
+                continue
+            if _aplicar_override_rojo_rebar_en_vista(view, el.Id, solid_id):
+                n_rojo += 1
+        t.Commit()
+    except Exception as ex:
+        try:
+            if t is not None and t.HasStarted():
+                t.RollBack()
+        except Exception:
+            pass
+        if errores is not None:
+            try:
+                msg = u"Color barras largo >12 m: {0}".format(unicode(ex))
+            except Exception:
+                msg = u"Color barras largo >12 m: {0}".format(str(ex))
+            errores.append(msg)
+        return vacio
+
+    return {
+        u"n_rebars_largo_rojo": int(n_rojo),
+        u"n_rebars_largo_revisados": int(n_rev),
+    }
+
+
 # ── Tolerancias (pies internos salvo uso explícito) ──────────────────────────
 _MM_TOL = 2.5
 try:
@@ -653,6 +877,9 @@ _PLANE_LINE_DIST_TOL_FT = max(1e-5, UnitUtils.ConvertToInternalUnits(0.75, UnitT
 # Rebar Cover por cara (mm) antes de crear Area Reinforcement.
 REBAR_COVER_MM_CARAS_EXT_INT = 25.0
 REBAR_COVER_MM_OTRAS_CARAS = 0.0
+# Largo máximo comercial de una barra (mm). Por encima → override rojo en vista.
+ARMADO_MUROS_MAX_BARRA_COMERCIAL_MM = 12000.0
+_COLOR_REBAR_LARGO_EXCESO = Color(255, 0, 0)
 # True: un lote por fase, sin refresco de vista entre lotes (menor carga en Revit).
 MODO_EJECUCION_RAPIDA = True
 # Muros por lote si MODO_EJECUCION_RAPIDA es False (1 = aparición progresiva abajo→arriba).
@@ -925,6 +1152,7 @@ def _merge_embed_resumen(dest, src):
         u"n_tags_rebar_malla",
         u"n_tags_rebar_malla_fail",
         u"n_tags_rebar_malla_skip",
+        u"n_rebars_largo_rojo",
         u"n_skip",
         u"n_fail",
     ):
@@ -5102,6 +5330,21 @@ def _crear_armado_muros_unificado_impl(
             if extra_vis:
                 embed_resumen = _merge_embed_resumen(embed_resumen, extra_vis)
 
+        color_res = aplicar_color_rebars_largo_exceso_en_vista(
+            doc,
+            uidoc,
+            cab_res=cab_res,
+            embed_resumen=embed_resumen,
+            rebars_malla_por_muro_id=rebars_por_muro_id,
+            errores=errores,
+        )
+        if color_res and int(color_res.get(u"n_rebars_largo_rojo", 0)):
+            embed_resumen = _merge_embed_resumen(embed_resumen, {
+                u"n_rebars_largo_rojo": int(
+                    color_res.get(u"n_rebars_largo_rojo", 0),
+                ),
+            })
+
         return ok, errores, cover_n, embed_resumen
     finally:
         _unificado_outer_pbar_set_active(False)
@@ -5131,6 +5374,7 @@ def crear_armado_muros_unificado(
     7) Etiquetas mallas.
     8) Visibilidad en vista activa: malla visible + unobscured OFF;
        cabezal/coronamiento con unobscured ON.
+    9) Color rojo en vista activa si largo total de barra > 12 m.
 
     Una sola ``Transaction`` ``Arainco: Armado Muros v3`` (un paso Deshacer).
     Los lotes internos usan ``TxnScope`` → ``SubTransaction`` (rollback local);

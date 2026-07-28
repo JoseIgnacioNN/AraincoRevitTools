@@ -51,8 +51,12 @@ except Exception:
     _find_fixed_lap_detail_symbol_id = None
 
 try:
-    from armado_muros_rebar_params import stamp_armadura_conjunto_guid
+    from armado_muros_rebar_params import (
+        stamp_armadura_capa_desde_layer,
+        stamp_armadura_conjunto_guid,
+    )
 except Exception:
+    stamp_armadura_capa_desde_layer = None
     stamp_armadura_conjunto_guid = None
 
 try:
@@ -489,14 +493,21 @@ def colocar_marcadores_empalme_cabezal(document, view, seg_jobs):
                     )
                 continue
 
+            layer_index = int(spec.get(u"layer_index", 0) or 0)
+
             if stamp_armadura_conjunto_guid is not None:
                 try:
                     stamp_armadura_conjunto_guid(lap_inst)
                 except Exception:
                     pass
 
+            if stamp_armadura_capa_desde_layer is not None:
+                try:
+                    stamp_armadura_capa_desde_layer(lap_inst, layer_index)
+                except Exception:
+                    pass
+
             dim_eid = None
-            layer_index = int(spec.get(u"layer_index", 0) or 0)
             if layer_index in _LAP_DIM_LAYER_INDICES:
                 dim_eid, dim_err = _create_lap_dimension_for_detail(
                     document, view, lap_inst, pa, pb, spec,

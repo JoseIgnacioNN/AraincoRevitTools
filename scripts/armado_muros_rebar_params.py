@@ -15,6 +15,8 @@ from Autodesk.Revit.DB import (
     Floor,
     Level,
     StorageType,
+    UnitTypeId,
+    UnitUtils,
     Wall,
 )
 from Autodesk.Revit.DB.Structure import MultiplanarOption, Rebar
@@ -477,12 +479,23 @@ def armadura_capa_valor_desde_layer(layer_index):
     return u"({0}ºC.)".format(n)
 
 
+def stamp_armadura_capa_desde_layer(element, layer_index):
+    """
+    Escribe ``Armadura_Capa`` según índice de capa (0-based → 1ºC., 2ºC., …).
+
+    Aplica a ``Rebar``, Detail Item de empalme u otro elemento con el parámetro.
+    """
+    if element is None:
+        return False
+    valor_txt = armadura_capa_valor_desde_layer(layer_index)
+    return _set_element_string_param(element, ARMADURA_CAPA_PARAM, valor_txt)
+
+
 def set_armadura_capa_desde_layer(rebar, layer_index):
     """Escribe ``Armadura_Capa`` según índice de capa (0-based → 1ºC., 2ºC., …)."""
     if rebar is None or not isinstance(rebar, Rebar):
         return False
-    valor_txt = armadura_capa_valor_desde_layer(layer_index)
-    return _set_rebar_string_param(rebar, ARMADURA_CAPA_PARAM, valor_txt)
+    return stamp_armadura_capa_desde_layer(rebar, layer_index)
 
 
 def stamp_armadura_nivel(rebar, level_name):
@@ -817,6 +830,88 @@ def rebar_main_segment_startpoint(rebar, pos_idx=0):
         return best.GetEndPoint(0)
     except Exception:
         return None
+
+
+def _param_length_mm(param):
+    """Longitud en mm desde un parámetro Double; ``None`` si no aplica."""
+    if param is None:
+        return None
+    try:
+        if not param.HasValue:
+            return None
+    except Exception:
+        pass
+    try:
+        if param.StorageType != StorageType.Double:
+            return None
+    except Exception:
+        return None
+    try:
+        raw = float(param.AsDouble())
+    except Exception:
+        return None
+    try:
+        return float(
+            UnitUtils.ConvertFromInternalUnits(raw, UnitTypeId.Millimeters)
+        )
+    except Exception:
+        return None
+
+
+def rebar_centerline_total_length_mm(rebar, pos_idx=0):
+    """
+    Suma de longitudes de ``GetCenterlineCurves`` (posición ``pos_idx``) en mm.
+    """
+    crvs = _rebar_centerline_curves(rebar, pos_idx=pos_idx)
+    if crvs is None:
+        return None
+    total_ft = 0.0
+    try:
+        n = int(crvs.Count)
+    except Exception:
+        n = 0
+    for i in range(n):
+        try:
+            total_ft += _curve_length_safe(crvs[i])
+        except Exception:
+            continue
+    if total_ft <= 1e-12:
+        return None
+    try:
+        return float(
+            UnitUtils.ConvertFromInternalUnits(total_ft, UnitTypeId.Millimeters)
+        )
+    except Exception:
+        return None
+
+
+def rebar_total_length_mm(rebar):
+    """
+    Largo total de **una** barra del set (mm), no cantidad × largo.
+
+    Orden: ``REBAR_BAR_LENGTH`` / nombres locales → eje ``GetCenterlineCurves``.
+    """
+    if rebar is None or not isinstance(rebar, Rebar):
+        return None
+    try:
+        mm = _param_length_mm(rebar.get_Parameter(BuiltInParameter.REBAR_BAR_LENGTH))
+        if mm is not None and mm > 1e-6:
+            return mm
+    except Exception:
+        pass
+    for name in (
+        u"Bar Length",
+        u"Longitud de barra",
+        u"Actual Bar Length",
+        u"Longitud real de barra",
+    ):
+        try:
+            mm = _param_length_mm(rebar.LookupParameter(name))
+            if mm is not None and mm > 1e-6:
+                return mm
+        except Exception:
+            continue
+    return rebar_centerline_total_length_mm(rebar, pos_idx=0)
 
 
 def listar_niveles_proyecto(doc):
