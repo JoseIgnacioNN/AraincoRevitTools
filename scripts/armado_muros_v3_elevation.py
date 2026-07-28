@@ -36,6 +36,12 @@ _SCALE_PX_PER_MM_MIN = 0.025
 # Fit-to-height solo para hasta N muros; con más → escala fija y scrollbar
 # (en viewport se ven ~N fustes; el resto queda fuera y se scrollea).
 _MAX_WALLS_FIT_SCALE = 8
+# Contorno de fuste: trazo fino + alpha bajo + radio suave (anti-alias).
+_WALL_STROKE_PX = 0.7
+_WALL_STROKE_ALPHA = 100
+_WALL_STROKE_SEL_PX = 1.15
+_WALL_STROKE_SEL_ALPHA = 160
+_WALL_CORNER_R = 2.0
 
 
 def _wall_length_mm(m):
@@ -1467,34 +1473,49 @@ def redraw_elevation(
         Canvas.SetTop(bg, y)
         canvas.Children.Add(bg)
 
+        stroke_px = float(_WALL_STROKE_PX)
         if is_first and is_last:
-            band_bt = Thickness(1.0)
+            band_bt = Thickness(stroke_px)
         elif is_first:
-            band_bt = Thickness(1.0, 1.0, 1.0, 0.0)
+            band_bt = Thickness(stroke_px, stroke_px, stroke_px, 0.0)
         elif is_last:
-            band_bt = Thickness(1.0, 0.0, 1.0, 1.0)
+            band_bt = Thickness(stroke_px, 0.0, stroke_px, stroke_px)
         else:
-            band_bt = Thickness(1.0, 0.0, 1.0, 0.0)
+            band_bt = Thickness(stroke_px, 0.0, stroke_px, 0.0)
 
         wall_band = Border()
         wall_band.Width = draw_w
         wall_band.Height = wall_h_px
+        try:
+            wall_band.CornerRadius = CornerRadius(float(_WALL_CORNER_R))
+        except Exception:
+            pass
         if wall_sel:
             wall_band.Background = _hex_brush("#4ade80", 56 if wall_primary else 34)
-            wall_band.BorderBrush = br_wall
-            wall_band.BorderThickness = Thickness(2.0 if wall_primary else 1.5)
+            wall_band.BorderBrush = _hex_brush(
+                "#4ade80",
+                int(_WALL_STROKE_SEL_ALPHA) + (20 if wall_primary else 0),
+            )
+            sel_px = float(_WALL_STROKE_SEL_PX) + (0.2 if wall_primary else 0.0)
+            wall_band.BorderThickness = Thickness(sel_px)
         elif seg_sel:
             wall_band.Background = _hex_brush(
                 "#5BC0DE", 48 if seg_primary else 28
             )
-            wall_band.BorderBrush = br_sel
-            wall_band.BorderThickness = Thickness(1.5 if seg_primary else 1.25)
+            wall_band.BorderBrush = _hex_brush(
+                "#5BC0DE",
+                int(_WALL_STROKE_SEL_ALPHA) + (15 if seg_primary else 0),
+            )
+            sel_px = float(_WALL_STROKE_SEL_PX) + (0.1 if seg_primary else 0.0)
+            wall_band.BorderThickness = Thickness(sel_px)
         else:
             wall_band.Background = _hex_brush(hx, 34)
-            wall_band.BorderBrush = _hex_brush(hx, 170)
+            wall_band.BorderBrush = _hex_brush(hx, int(_WALL_STROKE_ALPHA))
             wall_band.BorderThickness = band_bt
         try:
-            wall_band.SnapsToDevicePixels = True
+            # Sin snap a píxel: bordes anti-alias más suaves.
+            wall_band.SnapsToDevicePixels = False
+            wall_band.UseLayoutRounding = False
         except Exception:
             pass
         Canvas.SetLeft(wall_band, elev_x + x_off)
@@ -1620,7 +1641,17 @@ def redraw_elevation(
                 on_draw_extremo_marks(
                     canvas, int(wi), float(elev_x + x_off), float(draw_w),
                     float(y), float(wall_h_px),
+                    wall=m.get(u"elem"),
                 )
+            except TypeError:
+                # Compat: callbacks sin kwarg ``wall``.
+                try:
+                    on_draw_extremo_marks(
+                        canvas, int(wi), float(elev_x + x_off), float(draw_w),
+                        float(y), float(wall_h_px),
+                    )
+                except Exception:
+                    pass
             except Exception:
                 pass
 

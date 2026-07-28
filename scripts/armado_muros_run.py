@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Bootstrap de rutas e imports para pushbutton portable 54_ArmadoMurosV3."""
+"""Bootstrap de rutas e imports para Armado Muros v3 (scripts de la extensión).
+
+``script.py`` del pushbutton solo valida acceso y llama ``run_pyrevit``.
+"""
 
 from __future__ import print_function
 
@@ -65,16 +68,12 @@ def setup_armado_muros_paths():
         return ensure_pushbutton_on_path()
     except Exception:
         try:
-            root = os.path.dirname(os.path.abspath(__file__))
+            here = os.path.dirname(os.path.abspath(__file__))
         except NameError:
-            root = os.getcwd()
-        scripts = os.path.join(root, u"scripts")
-        target = scripts if os.path.isdir(scripts) else root
-        if target and os.path.isdir(target) and target not in sys.path:
-            sys.path.insert(0, target)
-        if root and root != target and root not in sys.path:
-            sys.path.insert(1, root)
-        return target
+            here = os.getcwd()
+        if here and os.path.isdir(here) and here not in sys.path:
+            sys.path.insert(0, here)
+        return here
 
 
 def purge_armado_muros_modules():
@@ -99,11 +98,9 @@ def purge_armado_muros_modules():
 
 def _scripts_dir():
     try:
-        root = os.path.dirname(os.path.abspath(__file__))
+        return os.path.dirname(os.path.abspath(__file__))
     except NameError:
-        root = os.getcwd()
-    scripts = os.path.join(root, u"scripts")
-    return scripts if os.path.isdir(scripts) else root
+        return os.getcwd()
 
 
 def _package_fingerprint():
@@ -169,7 +166,7 @@ def _set_cached_fingerprint(fp):
 def ensure_armado_muros_modules_fresh(force=False):
     """
     Purge solo si el paquete cambió, force=True, o los módulos cargados
-    no pertenecen a este pushbutton (p. ej. tras abrir 34_ArmadoMuros).
+    no pertenecen a este scripts/ (p. ej. tras abrir otra copia portable).
     """
     fp = _package_fingerprint()
     if force:
@@ -191,3 +188,12 @@ def ensure_armado_muros_modules_fresh(force=False):
     purge_armado_muros_modules()
     _set_cached_fingerprint(fp)
     return True
+
+
+def run_pyrevit(uiapp):
+    """Entrada canónica desde ``script.py`` tras el guardia de acceso."""
+    setup_armado_muros_paths()
+    ensure_armado_muros_modules_fresh()
+    from armado_muros_lineales import run_unificado
+
+    return run_unificado(uiapp)

@@ -269,7 +269,8 @@ def vecinos_cara_lateral_o_t(doc, host):
     """
     Muros vecinos en encuentro T o en cara lateral a mitad de tramo (no en extremos).
 
-    Complementa ``vecinos_en_extremo`` para el boceto de elevación.
+    No se usa para el boceto de elevación: ahí solo se dibujan encuentros en
+    puntas (``vecinos_en_extremo``). Disponible para otros consumidores.
     """
     if doc is None or host is None or not isinstance(host, Wall):
         return []

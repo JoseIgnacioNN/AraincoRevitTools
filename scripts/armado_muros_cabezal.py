@@ -2,8 +2,9 @@
 """
 Cabezal de muro — barras verticales en extremos (inicio / fin de LocationCurve).
 
-Por extremo: 1–6 capas empurradas en profundidad (longitudinal); 2–4 barras por capa
-repartidas en el espesor con ``SetLayoutAsFixedNumber`` (misma lógica que multicapa).
+Por extremo: 1–8 capas empurradas en profundidad (longitudinal; punta libre);
+encuentro L: hasta 6 en núcleo (+ post). 2–4 barras por capa repartidas en el
+espesor con ``SetLayoutAsFixedNumber`` (misma lógica que multicapa).
 
 Cantidad (``n_bars``) y diámetro (``bar_type_id``) por capa (cada capa es
 independiente). Defaults UI:
@@ -43,7 +44,6 @@ from Autodesk.Revit.DB import (
     OverrideGraphicSettings,
     Plane,
     SketchPlane,
-    Transaction,
     TransactionGroup,
     UnitUtils,
     UnitTypeId,
@@ -223,7 +223,8 @@ except Exception:
     stamp_cabezal_longitudinal_rebar = None
     stamp_confinamiento_rebar = None
 
-CABEZAL_MAX_CAPAS = 6
+CABEZAL_MAX_CAPAS = 8  # punta libre / extremo libre
+CABEZAL_MAX_CAPAS_ENCUENTRO = 6  # núcleo encuentro L (sin post)
 CABEZAL_MIN_CAPAS = 1
 # Capas post-encuentro (host, opt-in) + tope de lista layers.
 CABEZAL_MAX_POST_CAPAS = 4
@@ -255,7 +256,7 @@ CABEZAL_CONFINEMENT_ENC_FIBER = u"enc_fiber"
 CABEZAL_CONFINEMENT_ENC_FIBER_PERP = u"enc_fiber_perp"
 CABEZAL_CONFINEMENT_ENC_FIBER_CROSS = u"enc_fiber_cross"
 CABEZAL_TIE_LAYER_INDEX = 1
-# Escenarios T1/T2/T3: 2..6 (núcleo) y hasta total con post (≤10).
+# Escenarios T1/T2/T3: 2..8 (punta) / núcleo encuentro; hasta total con post (≤10).
 CABEZAL_CONFINEMENT_SCENARIO_CAPAS = (2, 3, 4, 5, 6, 7, 8, 9, 10)
 
 
@@ -281,12 +282,12 @@ def cabezal_n_capas_encuentro(ex_cfg):
         n_tot = CABEZAL_MIN_CAPAS
     if not cabezal_post_encuentro_activo(ex_cfg):
         return max(2 if cabezal_extremo_es_encuentro_l(ex_cfg) else CABEZAL_MIN_CAPAS,
-                   min(CABEZAL_MAX_CAPAS, n_tot))
+                   min(CABEZAL_MAX_CAPAS_ENCUENTRO, n_tot))
     try:
         n_enc = int(ex_cfg.get(u"n_capas_encuentro", n_tot))
     except Exception:
         n_enc = n_tot
-    return max(2, min(CABEZAL_MAX_CAPAS, n_enc))
+    return max(2, min(CABEZAL_MAX_CAPAS_ENCUENTRO, n_enc))
 
 
 def cabezal_n_capas_post(ex_cfg):
@@ -314,7 +315,7 @@ def cabezal_n_capas_total(ex_cfg):
         n_post = cabezal_n_capas_post(ex_cfg)
         return max(n_enc, min(CABEZAL_MAX_CAPAS_TOTAL, n_enc + n_post))
     if cabezal_extremo_es_encuentro_l(ex_cfg):
-        return max(2, min(CABEZAL_MAX_CAPAS, n_tot))
+        return max(2, min(CABEZAL_MAX_CAPAS_ENCUENTRO, n_tot))
     return max(CABEZAL_MIN_CAPAS, min(CABEZAL_MAX_CAPAS, n_tot))
 
 
@@ -441,10 +442,10 @@ def cabezal_confinement_layout_spec(n_capas, conf_type, n_capas_encuentro=None):
     """
     Índices de capa para estribo perimetral y trabas según escenario.
 
-    Extremo libre:
+    Extremo libre (2..8 capas):
       2 capas — Tipo 1: trabas [1]; Tipo 2/3: estribo [0, 1].
-      3 capas — Tipo 1: trabas [1, 2]; Tipo 2/3: estribo [0, 2] + traba [1].
-      …
+      3+ capas — Tipo 1: trabas [1 .. n-1]; Tipo 2/3: estribo [0, n-1]
+        + trabas interiores [1 .. n-2].
       Tipo 3 añade trabas longitudinales; ver
       ``cabezal_confinement_cross_tie_bar_indices``.
 
@@ -460,12 +461,6 @@ def cabezal_confinement_layout_spec(n_capas, conf_type, n_capas_encuentro=None):
     except Exception:
         n = 0
     if not cabezal_confinement_scenario_applies(n):
-        return [], []
-    if n == 6:
-        if cabezal_confinement_is_tie_layer_1(conf_type):
-            return [], [1, 2, 3, 4, 5]
-        if cabezal_confinement_has_perimeter_stirrup(conf_type):
-            return [0, 5], [1, 2, 3, 4]
         return [], []
     if cabezal_confinement_is_tie_layer_1(conf_type):
         return [], list(range(1, n))
@@ -591,10 +586,14 @@ def cabezal_effective_n_capas(ex_cfg):
     if layers:
         return len(layers)
     try:
-        return max(
-            CABEZAL_MIN_CAPAS,
-            min(CABEZAL_MAX_CAPAS, int(ex_cfg.get(u"n_capas", CABEZAL_MIN_CAPAS))),
-        )
+        n = int(ex_cfg.get(u"n_capas", CABEZAL_MIN_CAPAS))
+        if cabezal_post_encuentro_activo(ex_cfg):
+            max_c = CABEZAL_MAX_CAPAS_TOTAL
+        elif cabezal_extremo_es_encuentro_l(ex_cfg):
+            max_c = CABEZAL_MAX_CAPAS_ENCUENTRO
+        else:
+            max_c = CABEZAL_MAX_CAPAS
+        return max(CABEZAL_MIN_CAPAS, min(max_c, n))
     except Exception:
         return CABEZAL_MIN_CAPAS
 
@@ -1135,7 +1134,7 @@ def cabezal_extremo_armado_activo(ex_cfg):
 
 
 def cabezal_confinement_options(n_capas, encuentro=False):
-    """Opciones UI: (valor, etiqueta). Tipo 1/2/3 en escenarios de 2 a 6 capas."""
+    """Opciones UI: (valor, etiqueta). Tipo 1/2/3 en escenarios de 2+ capas."""
     opts = [(CABEZAL_CONFINEMENT_NONE, u"Sin confinamiento")]
     try:
         n = int(n_capas or 0)
@@ -1865,14 +1864,18 @@ def _normalize_cabezal_extremo_layers(ex_cfg, n_tramos=1):
     max_pad = (
         CABEZAL_MAX_CAPAS_TOTAL
         if is_enc_l and post_on
-        else CABEZAL_MAX_CAPAS
+        else (
+            CABEZAL_MAX_CAPAS_ENCUENTRO
+            if is_enc_l
+            else CABEZAL_MAX_CAPAS
+        )
     )
     if is_enc_l and post_on:
         try:
             n_enc = int(ex_cfg.get(u"n_capas_encuentro", n_capas))
         except Exception:
             n_enc = n_capas
-        n_enc = max(2, min(CABEZAL_MAX_CAPAS, n_enc))
+        n_enc = max(2, min(CABEZAL_MAX_CAPAS_ENCUENTRO, n_enc))
         n_post = max(0, min(CABEZAL_MAX_POST_CAPAS, n_capas - n_enc))
         if n_post < 1:
             n_post = 1
@@ -1880,7 +1883,7 @@ def _normalize_cabezal_extremo_layers(ex_cfg, n_tramos=1):
         ex_cfg[u"post_encuentro_activo"] = True
         ex_cfg[u"n_capas_encuentro"] = n_enc
     elif is_enc_l:
-        n_capas = max(2, min(CABEZAL_MAX_CAPAS, n_capas))
+        n_capas = max(2, min(CABEZAL_MAX_CAPAS_ENCUENTRO, n_capas))
         ex_cfg[u"post_encuentro_activo"] = False
         ex_cfg[u"n_capas_encuentro"] = n_capas
     else:
@@ -1958,7 +1961,11 @@ def malla_n_capas_activas_raw(ex_cfg):
     max_cap = (
         CABEZAL_MAX_CAPAS_TOTAL
         if cabezal_post_encuentro_activo(ex_cfg)
-        else CABEZAL_MAX_CAPAS
+        else (
+            CABEZAL_MAX_CAPAS_ENCUENTRO
+            if cabezal_extremo_es_encuentro_l(ex_cfg)
+            else CABEZAL_MAX_CAPAS
+        )
     )
     return min(
         max(CABEZAL_MIN_CAPAS, int(n_capas)),
@@ -2445,7 +2452,11 @@ def validar_cabezal_config(cfg):
         max_capas = (
             CABEZAL_MAX_CAPAS_TOTAL
             if cabezal_post_encuentro_activo(ex_cfg)
-            else CABEZAL_MAX_CAPAS
+            else (
+                CABEZAL_MAX_CAPAS_ENCUENTRO
+                if cabezal_extremo_es_encuentro_l(ex_cfg)
+                else CABEZAL_MAX_CAPAS
+            )
         )
         if n_capas < min_capas or n_capas > max_capas:
             return False, u"Extremo «{0}»: n_capas={1} fuera de rango [{2},{3}].".format(
@@ -2454,10 +2465,10 @@ def validar_cabezal_config(cfg):
         if cabezal_post_encuentro_activo(ex_cfg):
             n_enc = cabezal_n_capas_encuentro(ex_cfg)
             n_post = cabezal_n_capas_post(ex_cfg)
-            if n_enc < 2 or n_enc > CABEZAL_MAX_CAPAS:
+            if n_enc < 2 or n_enc > CABEZAL_MAX_CAPAS_ENCUENTRO:
                 return False, (
                     u"Extremo «{0}»: n_capas_encuentro={1} fuera de rango [2,{2}]."
-                ).format(ex, n_enc, CABEZAL_MAX_CAPAS)
+                ).format(ex, n_enc, CABEZAL_MAX_CAPAS_ENCUENTRO)
             if n_post < 1 or n_post > CABEZAL_MAX_POST_CAPAS:
                 return False, (
                     u"Extremo «{0}»: capas post={1} fuera de rango [1,{2}]."
@@ -7202,6 +7213,13 @@ def _cabezal_pbar_phase_title(base_title, total):
 
 
 def _cabezal_pbar_enabled(doc):
+    # Flujo unificado ya muestra fases en su ProgressBar; no abrir barras anidadas.
+    try:
+        import armado_muros_lineales as _aml
+        if getattr(_aml, u"_UNIFICADO_OUTER_PBAR_ACTIVE", False):
+            return False
+    except Exception:
+        pass
     try:
         return bool(pyrevit_progress_bar_enabled(doc))
     except Exception:
@@ -7775,13 +7793,19 @@ def _cabezal_aplicar_etiquetado_confinamiento_animado(doc, view, res, uidoc):
                     u"Arainco: Cabezal muros — etiquetas confinamiento "
                     u"{0}–{1} de {2}".format(i0 + 1, i1, len(inline))
                 )
-            t = Transaction(doc, txn_name)
+            t = None
             try:
-                from armado_muros_txn import attach_rebar_outside_host_swallower
-                attach_rebar_outside_host_swallower(t)
+                from armado_muros_txn import TxnScope
+                t = TxnScope(doc, txn_name)
             except Exception:
-                pass
-            t.Start()
+                t = None
+            if t is None or not t.HasStarted():
+                res[u"messages"].append(
+                    u"Etiquetado confinamiento lote {0}–{1}: no se pudo abrir transacción.".format(
+                        i0 + 1, i1,
+                    ),
+                )
+                continue
             lote_ok = False
             try:
                 for item in lote:
@@ -7991,13 +8015,20 @@ def _cabezal_aplicar_creacion_animada(
                     i0 + 1, i1, len(seg_sorted),
                 )
 
-            t = Transaction(doc, txn_name)
+            t = None
             try:
-                from armado_muros_txn import attach_rebar_outside_host_swallower
-                attach_rebar_outside_host_swallower(t)
+                from armado_muros_txn import TxnScope
+                t = TxnScope(doc, txn_name)
             except Exception:
-                pass
-            t.Start()
+                t = None
+            if t is None or not t.HasStarted():
+                res[u"messages"].append(
+                    u"Cabezal barras lote {0}–{1}: no se pudo abrir transacción.".format(
+                        i0 + 1, i1,
+                    ),
+                )
+                res[u"n_fail"] = int(res.get(u"n_fail", 0)) + 1
+                continue
             lote_ok = False
             try:
                 for sj in lote:
@@ -8062,13 +8093,20 @@ def _cabezal_aplicar_creacion_animada(
                         i0 + 1, i1, len(conf_sorted),
                     )
 
-                t = Transaction(doc, txn_name)
+                t = None
                 try:
-                    from armado_muros_txn import attach_rebar_outside_host_swallower
-                    attach_rebar_outside_host_swallower(t)
+                    from armado_muros_txn import TxnScope
+                    t = TxnScope(doc, txn_name)
                 except Exception:
-                    pass
-                t.Start()
+                    t = None
+                if t is None or not t.HasStarted():
+                    res[u"messages"].append(
+                        u"Cabezal confinamiento lote {0}–{1}: no se pudo abrir transacción.".format(
+                            i0 + 1, i1,
+                        ),
+                    )
+                    res[u"n_fail"] = int(res.get(u"n_fail", 0)) + 1
+                    continue
                 lote_ok = False
                 try:
                     for cj in lote:

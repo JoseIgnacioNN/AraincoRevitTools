@@ -29,7 +29,6 @@ from Autodesk.Revit.DB import (
     SubTransaction,
     TagMode,
     TagOrientation,
-    Transaction,
 )
 from Autodesk.Revit.DB.Structure import Rebar
 
@@ -737,17 +736,20 @@ def etiquetar_rebars_malla_en_vista(
         return res
 
     wall_map = walls_by_id or {}
-    t = Transaction(
-        document,
-        u"Arainco: Etiquetas rebar malla",
-    )
+    t = None
     try:
-        from armado_muros_txn import attach_rebar_outside_host_swallower
-        attach_rebar_outside_host_swallower(t)
+        from armado_muros_txn import TxnScope
+        t = TxnScope(
+            document,
+            u"Arainco: Etiquetas rebar malla",
+        )
     except Exception:
-        pass
+        t = None
+    if t is None or not t.HasStarted():
+        res[u"n_fail"] += 1
+        _append_msg(res, u"Etiquetas rebar malla: no se pudo abrir transacción.")
+        return res
     try:
-        t.Start()
         mh_regen_once = {u"pending": True}
         for wid, eid_list in rebars_por_muro_id.items():
             if not eid_list:

@@ -54,7 +54,6 @@ from Autodesk.Revit.DB import (
     PlanarFace,
     SetComparisonResult,
     Solid,
-    Transaction,
     TransactionGroup,
     UnitUtils,
     UnitTypeId,
@@ -191,16 +190,17 @@ def _stamp_malla_pre_etiquetar_lote(
             rebars_lote[wid] = list(eids)
     if not rebars_lote:
         return
-    t_pre = Transaction(
-        doc, u"Arainco: Armado muros lineales — parámetros malla pre-etiqueta",
-    )
+    t_pre = None
     try:
-        from armado_muros_txn import attach_rebar_outside_host_swallower
-        attach_rebar_outside_host_swallower(t_pre)
+        from armado_muros_txn import TxnScope
+        t_pre = TxnScope(
+            doc, u"Arainco: Armado muros lineales — parámetros malla pre-etiqueta",
+        )
     except Exception:
-        pass
+        t_pre = None
+    if t_pre is None or not t_pre.HasStarted():
+        return
     try:
-        t_pre.Start()
         _stamp_malla_params_rebars_por_muro(
             doc,
             rebars_lote,
@@ -576,12 +576,15 @@ def aplicar_unobscured_armado_muros_en_vista(
     if not rebars_on and not rebars_malla:
         return vacio
 
-    t = Transaction(doc, u"Arainco: Visibilidad barras Armado Muros en vista")
+    t = None
     n_on = 0
     n_off = 0
     n_vis = 0
     try:
-        t.Start()
+        from armado_muros_txn import TxnScope
+        t = TxnScope(doc, u"Arainco: Visibilidad barras Armado Muros en vista")
+        if not t.HasStarted():
+            raise Exception(u"No se pudo abrir transacción de visibilidad.")
         try:
             from Autodesk.Revit.DB import BuiltInCategory, Category
 
@@ -613,7 +616,7 @@ def aplicar_unobscured_armado_muros_en_vista(
         t.Commit()
     except Exception as ex:
         try:
-            if t.HasStarted() and not t.HasEnded():
+            if t is not None and t.HasStarted():
                 t.RollBack()
         except Exception:
             pass
@@ -650,6 +653,18 @@ MODO_EJECUCION_RAPIDA = True
 MUROS_POR_LOTE_ANIMACION = 1
 
 _ML_PBAR_BASE = u"Arainco: Armado muros lineales"
+# Barra de fases del flujo unificado (Crear). Mientras está activa, se omiten
+# ProgressBar anidadas (cabezal/mallas/etiquetas) para no superponer ventanas.
+_UNIF_PBAR_BASE = u"Arainco: Armado Muros v3"
+_UNIF_PBAR_PHASES = (
+    u"Cover",
+    u"Coronamiento",
+    u"Cabezal",
+    u"Mallas",
+    u"Etiquetas",
+    u"Visibilidad",
+)
+_UNIFICADO_OUTER_PBAR_ACTIVE = False
 
 
 def _tamano_lote_ejecucion(n_items, lote_legacy):
@@ -666,8 +681,56 @@ def _tamano_lote_ejecucion(n_items, lote_legacy):
         return max(1, int(lote_legacy))
     except Exception:
         return 1
-# Un solo paso Deshacer para cabezal + mallas + etiquetas.
-TXN_GROUP_ARMADO_MUROS_UNIFICADO = u"Arainco: Armado Muros v3"
+# Una sola Transaction de documento para cabezal + mallas + etiquetas (Deshacer único).
+# Los pasos internos usan TxnScope → SubTransaction cuando el padre ya está abierto.
+TXN_ARMADO_MUROS_UNIFICADO = u"Arainco: Armado Muros v3"
+# Compat. con imports/tests antiguos.
+TXN_GROUP_ARMADO_MUROS_UNIFICADO = TXN_ARMADO_MUROS_UNIFICADO
+
+
+def _unificado_outer_pbar_set_active(active):
+    """Activa/desactiva el flag que silencia ProgressBar anidadas."""
+    global _UNIFICADO_OUTER_PBAR_ACTIVE
+    _UNIFICADO_OUTER_PBAR_ACTIVE = bool(active)
+
+
+def _unificado_pbar_phase_base(phase_name):
+    return u"{} — {}".format(_UNIF_PBAR_BASE, phase_name)
+
+
+def _unificado_pbar_start(doc, n_phases):
+    """
+    Abre la ProgressBar de fases del flujo unificado.
+
+    No consulta ``_UNIFICADO_OUTER_PBAR_ACTIVE`` (ese flag solo silencia anidadas).
+    Respeta ``pyrevit_progress_bar_enabled`` (Revit 2024 + IronPython 2).
+    """
+    try:
+        if not pyrevit_progress_bar_enabled(doc):
+            return None
+    except Exception:
+        return None
+    if n_phases is None or int(n_phases) < 1:
+        return None
+    title = _ml_pbar_phase_title(
+        _unificado_pbar_phase_base(_UNIF_PBAR_PHASES[0]),
+        n_phases,
+    )
+    try:
+        from pyrevit import forms as _pyrevit_forms
+
+        pb = _pyrevit_forms.ProgressBar(title=title, cancellable=False)
+        try:
+            from System.Windows.Media import Color, SolidColorBrush
+
+            pb.Resources[u"pyRevitAccentBrush"] = SolidColorBrush(
+                Color.FromRgb(91, 192, 222),
+            )
+        except Exception:
+            pass
+        return pb
+    except Exception:
+        return None
 
 
 def _ml_pbar_phase_title(base_title, total):
@@ -680,6 +743,8 @@ def _ml_pbar_phase_title(base_title, total):
 
 
 def _ml_pbar_enabled(doc):
+    if _UNIFICADO_OUTER_PBAR_ACTIVE:
+        return False
     try:
         return bool(pyrevit_progress_bar_enabled(doc))
     except Exception:
@@ -1141,14 +1206,6 @@ def _revit_year(doc):
     if revit_version_year is not None:
         return revit_version_year(doc)
     return 0
-
-
-def _unificado_usa_transaction_group_externo(doc):
-    """
-    Revit 2025+ / CPython 3: el ``TransactionGroup`` padre impide cabezal/mallas.
-    Revit 2024 (IronPython 2) mantiene un solo Deshacer.
-    """
-    return use_transaction_group_armado_muros(doc, within_parent_transaction_group=False)
 
 
 def _is_area_reinforcement_type(elem):
@@ -3281,14 +3338,13 @@ def asignar_rebar_cover_a_muros(doc, walls, errores=None):
     if err:
         return 0
     n_ok = 0
-    trans = Transaction(doc, u"Arainco: Armado muros — Rebar Cover")
+    from armado_muros_txn import TxnScope
+    trans = TxnScope(doc, u"Arainco: Armado muros — Rebar Cover")
+    if not trans.HasStarted():
+        if errores is not None:
+            errores.append(u"Rebar Cover: no se pudo abrir transacción.")
+        return 0
     try:
-        from armado_muros_txn import attach_rebar_outside_host_swallower
-        attach_rebar_outside_host_swallower(trans)
-    except Exception:
-        pass
-    try:
-        trans.Start()
         for wall in walls or []:
             if wall is None:
                 continue
@@ -4459,13 +4515,17 @@ def crear_areas_malla_parametrizada(doc, walls, params_por_muro_id,
                     i0 + 1, i1, n_muros,
                 )
 
-            t = Transaction(doc, txn_name)
+            t = None
             try:
-                from armado_muros_txn import attach_rebar_outside_host_swallower
-                attach_rebar_outside_host_swallower(t)
+                from armado_muros_txn import TxnScope
+                t = TxnScope(doc, txn_name)
             except Exception:
-                pass
-            t.Start()
+                t = None
+            if t is None or not t.HasStarted():
+                errores.append(
+                    u"Lote {}–{}: no se pudo abrir transacción.".format(i0 + 1, i1),
+                )
+                continue
             lote_ok = False
             lote_wids_con_rebars = []
             pending_area_reins = []
@@ -4838,161 +4898,201 @@ def _crear_armado_muros_unificado_impl(
     Cuerpo del flujo unificado (cabezal, mallas, etiquetas).
 
     Si ``within_parent_transaction_group`` es True, el llamador ya abrió
-    ``TransactionGroup`` ``Arainco: Armado Muros`` (Revit 2024).
+    la ``Transaction`` ``Arainco: Armado Muros v3`` (pasos internos = SubTransaction).
+
+    ProgressBar pyRevit (solo Revit 2024 + IronPython 2): una barra con fases
+    Cover → Coronamiento → Cabezal → Mallas → Etiquetas → Visibilidad.
     """
     errores = []
     embed_resumen = None
     walls_ord = ordenar_muros_por_base_asc(walls)
     cab_res = None
+    ok = []
+    cover_n = 0
     params_por_muro_id = _normalize_muro_id_dict(params_por_muro_id)
     cabezal_por_muro_id = _normalize_muro_id_dict(cabezal_por_muro_id)
     malla_activo_por_muro_id = _normalize_muro_id_dict(malla_activo_por_muro_id)
     coronamiento_por_muro_id = _normalize_muro_id_dict(coronamiento_por_muro_id)
 
-    n_cover_inicio = asignar_rebar_cover_a_muros(doc, walls_ord, errores)
-    if n_cover_inicio <= 0 and walls_ord:
-        errores.append(
-            u"No se pudo asignar Rebar Cover al inicio (ext/int {:.0f} mm, otras {:.0f} mm).".format(
-                REBAR_COVER_MM_CARAS_EXT_INT,
-                REBAR_COVER_MM_OTRAS_CARAS,
-            ),
+    n_phases = len(_UNIF_PBAR_PHASES)
+    _unificado_outer_pbar_set_active(False)
+    pb = _unificado_pbar_start(doc, n_phases)
+    pbar_open = _ml_pbar_enter(pb)
+    # Tras abrir la barra externa, silenciar ProgressBar de cabezal/mallas/tags.
+    _unificado_outer_pbar_set_active(True)
+
+    try:
+        # 1/6 Cover
+        _ml_pbar_step(
+            pb, 0, n_phases, _unificado_pbar_phase_base(_UNIF_PBAR_PHASES[0]),
         )
-    embed_resumen = _merge_embed_resumen(embed_resumen, {
-        u"n_rebar_cover_inicio": int(n_cover_inicio),
-    })
-
-    cor_embed, cor_msgs = _aplicar_coronamiento_en_creacion(
-        doc,
-        walls_ord,
-        params_por_muro_id,
-        coronamiento_cfg=coronamiento_cfg,
-        coronamiento_por_muro_id=coronamiento_por_muro_id,
-    )
-    embed_resumen = _merge_embed_resumen(embed_resumen, cor_embed)
-    for m in cor_msgs:
-        if m and int((cor_embed or {}).get(u"n_coronamiento_fail", 0)):
-            errores.append(m)
-
-    if cabezal_por_muro_id:
-        try:
-            import armado_muros_cabezal as _cab_mod
-
-            fallback_bt = _cab_mod.cabezal_resolve_bar_type_fallback(
-                doc, cabezal_por_muro_id, walls_ord,
+        n_cover_inicio = asignar_rebar_cover_a_muros(doc, walls_ord, errores)
+        if n_cover_inicio <= 0 and walls_ord:
+            errores.append(
+                u"No se pudo asignar Rebar Cover al inicio (ext/int {:.0f} mm, otras {:.0f} mm).".format(
+                    REBAR_COVER_MM_CARAS_EXT_INT,
+                    REBAR_COVER_MM_OTRAS_CARAS,
+                ),
             )
-            cab_res = _cab_mod.aplicar_cabezales_muros(
-                doc,
-                walls_ord,
-                cabezal_por_muro_id,
-                bar_type_fallback=fallback_bt,
-                uidoc=uidoc,
-                defer_etiquetado=True,
-                within_parent_transaction_group=within_parent_transaction_group,
-            )
-            embed_resumen = _merge_embed_resumen(embed_resumen, {
-                u"n_cabezal": int(cab_res.get(u"n_created", 0)),
-                u"n_cabezal_fail": int(cab_res.get(u"n_fail", 0)),
-                u"n_bars_total": int(cab_res.get(u"n_bars_total", 0)),
-                u"n_confinement_created": int(cab_res.get(u"n_confinement_created", 0)),
-                u"_cab_res": cab_res,
-            })
-            for m in cab_res.get(u"messages") or []:
-                if m:
-                    errores.append(m)
-        except Exception as ex_cab:
-            errores.append(u"Cabezal (barras): {0}".format(ex_cab))
+        embed_resumen = _merge_embed_resumen(embed_resumen, {
+            u"n_rebar_cover_inicio": int(n_cover_inicio),
+        })
 
-    ok, err, cover_n, embed_malla = crear_areas_malla_parametrizada(
-        doc,
-        walls,
-        params_por_muro_id,
-        area_type_id,
-        aplicar_malla_cb,
-        muro_contencion=False,
-        uidoc=uidoc,
-        cabezal_por_muro_id=cabezal_por_muro_id,
-        defer_etiquetas_malla=True,
-        malla_activo_por_muro_id=malla_activo_por_muro_id,
-        skip_coronamiento=True,
-        skip_cover_assign=True,
-        within_parent_transaction_group=within_parent_transaction_group,
-    )
-    errores.extend(err or [])
-    embed_resumen = _merge_embed_resumen(embed_resumen, embed_malla)
+        # 2/6 Coronamiento
+        _ml_pbar_step(
+            pb, 1, n_phases, _unificado_pbar_phase_base(_UNIF_PBAR_PHASES[1]),
+        )
+        cor_embed, cor_msgs = _aplicar_coronamiento_en_creacion(
+            doc,
+            walls_ord,
+            params_por_muro_id,
+            coronamiento_cfg=coronamiento_cfg,
+            coronamiento_por_muro_id=coronamiento_por_muro_id,
+        )
+        embed_resumen = _merge_embed_resumen(embed_resumen, cor_embed)
+        for m in cor_msgs:
+            if m and int((cor_embed or {}).get(u"n_coronamiento_fail", 0)):
+                errores.append(m)
 
-    rebars_por_muro_id = {}
-    if embed_resumen:
-        rebars_por_muro_id = embed_resumen.get(u"rebars_por_muro_id") or {}
+        # 3/6 Cabezal
+        _ml_pbar_step(
+            pb, 2, n_phases, _unificado_pbar_phase_base(_UNIF_PBAR_PHASES[2]),
+        )
+        if cabezal_por_muro_id:
+            try:
+                import armado_muros_cabezal as _cab_mod
 
-    if cab_res is not None:
-        try:
-            import armado_muros_cabezal as _cab_mod
+                fallback_bt = _cab_mod.cabezal_resolve_bar_type_fallback(
+                    doc, cabezal_por_muro_id, walls_ord,
+                )
+                cab_res = _cab_mod.aplicar_cabezales_muros(
+                    doc,
+                    walls_ord,
+                    cabezal_por_muro_id,
+                    bar_type_fallback=fallback_bt,
+                    uidoc=uidoc,
+                    defer_etiquetado=True,
+                    within_parent_transaction_group=within_parent_transaction_group,
+                )
+                embed_resumen = _merge_embed_resumen(embed_resumen, {
+                    u"n_cabezal": int(cab_res.get(u"n_created", 0)),
+                    u"n_cabezal_fail": int(cab_res.get(u"n_fail", 0)),
+                    u"n_bars_total": int(cab_res.get(u"n_bars_total", 0)),
+                    u"n_confinement_created": int(cab_res.get(u"n_confinement_created", 0)),
+                    u"_cab_res": cab_res,
+                })
+                for m in cab_res.get(u"messages") or []:
+                    if m:
+                        errores.append(m)
+            except Exception as ex_cab:
+                errores.append(u"Cabezal (barras): {0}".format(ex_cab))
 
-            msgs_antes = len(cab_res.get(u"messages") or [])
-            _cab_mod.cabezal_aplicar_etiquetado_longitudinal_pendiente(
-                doc, cab_res, uidoc=uidoc,
-            )
-            _cab_mod.cabezal_aplicar_etiquetado_confinamiento_pendiente(
-                doc, cab_res, uidoc=uidoc,
-            )
-            embed_resumen = _merge_embed_resumen(embed_resumen, {
-                u"n_tags_created": int(cab_res.get(u"n_tags_created", 0)),
-                u"n_tags_fail": int(cab_res.get(u"n_tags_fail", 0)),
-                u"n_conf_tags_created": int(cab_res.get(u"n_conf_tags_created", 0)),
-                u"n_conf_tags_fail": int(cab_res.get(u"n_conf_tags_fail", 0)),
-                u"n_empalme_markers_ok": int(cab_res.get(u"n_empalme_markers_ok", 0)),
-                u"n_empalme_markers_fail": int(cab_res.get(u"n_empalme_markers_fail", 0)),
-            })
-            # Mensajes de etiquetas se añaden tras el merge inicial de cab_res.
-            for m in (cab_res.get(u"messages") or [])[msgs_antes:]:
-                if m:
-                    errores.append(m)
-        except Exception as ex_tag:
-            errores.append(u"Cabezal (etiquetas): {0}".format(ex_tag))
+        # 4/6 Mallas
+        _ml_pbar_step(
+            pb, 3, n_phases, _unificado_pbar_phase_base(_UNIF_PBAR_PHASES[3]),
+        )
+        ok, err, cover_n, embed_malla = crear_areas_malla_parametrizada(
+            doc,
+            walls,
+            params_por_muro_id,
+            area_type_id,
+            aplicar_malla_cb,
+            muro_contencion=False,
+            uidoc=uidoc,
+            cabezal_por_muro_id=cabezal_por_muro_id,
+            defer_etiquetas_malla=True,
+            malla_activo_por_muro_id=malla_activo_por_muro_id,
+            skip_coronamiento=True,
+            skip_cover_assign=True,
+            within_parent_transaction_group=within_parent_transaction_group,
+        )
+        errores.extend(err or [])
+        embed_resumen = _merge_embed_resumen(embed_resumen, embed_malla)
 
-    embed_resumen = _aplicar_etiquetado_coronamiento_todos(
-        doc, uidoc, embed_resumen, errores, aplicar_visibilidad=False,
-    )
+        rebars_por_muro_id = {}
+        if embed_resumen:
+            rebars_por_muro_id = embed_resumen.get(u"rebars_por_muro_id") or {}
 
-    embed_resumen = _aplicar_etiquetas_malla_todos(
-        doc,
-        uidoc,
-        walls_ord,
-        params_por_muro_id,
-        rebars_por_muro_id,
-        errores,
-        embed_resumen,
-        cover_asignados=int(cover_n),
-        muro_contencion=False,
-        stamp_pre_etiqueta=False,
-    )
+        # 5/6 Etiquetas (cabezal + coronamiento + malla)
+        _ml_pbar_step(
+            pb, 4, n_phases, _unificado_pbar_phase_base(_UNIF_PBAR_PHASES[4]),
+        )
+        if cab_res is not None:
+            try:
+                import armado_muros_cabezal as _cab_mod
 
-    vis_res = aplicar_unobscured_armado_muros_en_vista(
-        doc,
-        uidoc,
-        cab_res=cab_res,
-        embed_resumen=embed_resumen,
-        rebars_malla_por_muro_id=rebars_por_muro_id,
-        errores=errores,
-    )
-    if vis_res:
-        extra_vis = {}
-        if int(vis_res.get(u"n_rebars_unobscured_on", 0)):
-            extra_vis[u"n_rebars_unobscured"] = int(
-                vis_res.get(u"n_rebars_unobscured_on", 0),
-            )
-        if int(vis_res.get(u"n_rebars_unobscured_off", 0)):
-            extra_vis[u"n_rebars_malla_unobscured_off"] = int(
-                vis_res.get(u"n_rebars_unobscured_off", 0),
-            )
-        if int(vis_res.get(u"n_rebars_malla_visibles", 0)):
-            extra_vis[u"n_rebars_malla_visibles"] = int(
-                vis_res.get(u"n_rebars_malla_visibles", 0),
-            )
-        if extra_vis:
-            embed_resumen = _merge_embed_resumen(embed_resumen, extra_vis)
+                msgs_antes = len(cab_res.get(u"messages") or [])
+                _cab_mod.cabezal_aplicar_etiquetado_longitudinal_pendiente(
+                    doc, cab_res, uidoc=uidoc,
+                )
+                _cab_mod.cabezal_aplicar_etiquetado_confinamiento_pendiente(
+                    doc, cab_res, uidoc=uidoc,
+                )
+                embed_resumen = _merge_embed_resumen(embed_resumen, {
+                    u"n_tags_created": int(cab_res.get(u"n_tags_created", 0)),
+                    u"n_tags_fail": int(cab_res.get(u"n_tags_fail", 0)),
+                    u"n_conf_tags_created": int(cab_res.get(u"n_conf_tags_created", 0)),
+                    u"n_conf_tags_fail": int(cab_res.get(u"n_conf_tags_fail", 0)),
+                    u"n_empalme_markers_ok": int(cab_res.get(u"n_empalme_markers_ok", 0)),
+                    u"n_empalme_markers_fail": int(cab_res.get(u"n_empalme_markers_fail", 0)),
+                })
+                # Mensajes de etiquetas se añaden tras el merge inicial de cab_res.
+                for m in (cab_res.get(u"messages") or [])[msgs_antes:]:
+                    if m:
+                        errores.append(m)
+            except Exception as ex_tag:
+                errores.append(u"Cabezal (etiquetas): {0}".format(ex_tag))
 
-    return ok, errores, cover_n, embed_resumen
+        embed_resumen = _aplicar_etiquetado_coronamiento_todos(
+            doc, uidoc, embed_resumen, errores, aplicar_visibilidad=False,
+        )
+
+        embed_resumen = _aplicar_etiquetas_malla_todos(
+            doc,
+            uidoc,
+            walls_ord,
+            params_por_muro_id,
+            rebars_por_muro_id,
+            errores,
+            embed_resumen,
+            cover_asignados=int(cover_n),
+            muro_contencion=False,
+            stamp_pre_etiqueta=False,
+        )
+
+        # 6/6 Visibilidad
+        _ml_pbar_step(
+            pb, 5, n_phases, _unificado_pbar_phase_base(_UNIF_PBAR_PHASES[5]),
+        )
+        vis_res = aplicar_unobscured_armado_muros_en_vista(
+            doc,
+            uidoc,
+            cab_res=cab_res,
+            embed_resumen=embed_resumen,
+            rebars_malla_por_muro_id=rebars_por_muro_id,
+            errores=errores,
+        )
+        if vis_res:
+            extra_vis = {}
+            if int(vis_res.get(u"n_rebars_unobscured_on", 0)):
+                extra_vis[u"n_rebars_unobscured"] = int(
+                    vis_res.get(u"n_rebars_unobscured_on", 0),
+                )
+            if int(vis_res.get(u"n_rebars_unobscured_off", 0)):
+                extra_vis[u"n_rebars_malla_unobscured_off"] = int(
+                    vis_res.get(u"n_rebars_unobscured_off", 0),
+                )
+            if int(vis_res.get(u"n_rebars_malla_visibles", 0)):
+                extra_vis[u"n_rebars_malla_visibles"] = int(
+                    vis_res.get(u"n_rebars_malla_visibles", 0),
+                )
+            if extra_vis:
+                embed_resumen = _merge_embed_resumen(embed_resumen, extra_vis)
+
+        return ok, errores, cover_n, embed_resumen
+    finally:
+        _unificado_outer_pbar_set_active(False)
+        _ml_pbar_exit(pb, pbar_open)
 
 
 def crear_armado_muros_unificado(
@@ -5019,9 +5119,12 @@ def crear_armado_muros_unificado(
     8) Visibilidad en vista activa: malla visible + unobscured OFF;
        cabezal/coronamiento con unobscured ON.
 
-    Envuelve todo en ``TransactionGroup`` ``Arainco: Armado Muros`` (un paso Deshacer).
-    Los grupos y transacciones por lote internos (cabezal, lineales, etiquetas, etc.)
-    se conservan sin cambios.
+    Una sola ``Transaction`` ``Arainco: Armado Muros v3`` (un paso Deshacer).
+    Los lotes internos usan ``TxnScope`` → ``SubTransaction`` (rollback local);
+    no se abren ``TransactionGroup`` anidados.
+
+    ProgressBar (Revit 2024 + IronPython 2): fases Cover → Coronamiento →
+    Cabezal → Mallas → Etiquetas → Visibilidad.
     """
     ok = []
     errores = []
@@ -5029,10 +5132,9 @@ def crear_armado_muros_unificado(
     embed_resumen = None
     conjunto_guid = None
 
-    use_outer_tg = _unificado_usa_transaction_group_externo(doc)
-    within_parent = bool(use_outer_tg)
-    tg = None
-    tg_started = False
+    from armado_muros_txn import TxnScope
+
+    outer = None
     flujo_ok = False
 
     try:
@@ -5046,10 +5148,9 @@ def crear_armado_muros_unificado(
             iniciar_armadura_eje_ejecucion(uidoc=uidoc)
         except Exception:
             pass
-        if use_outer_tg:
-            tg = TransactionGroup(doc, TXN_GROUP_ARMADO_MUROS_UNIFICADO)
-            tg.Start()
-            tg_started = True
+        outer = TxnScope(doc, TXN_ARMADO_MUROS_UNIFICADO)
+        if not outer.HasStarted():
+            raise Exception(u"No se pudo abrir la transacción de Armado Muros v3.")
         ok, errores, cover_n, embed_resumen = _crear_armado_muros_unificado_impl(
             doc,
             walls,
@@ -5059,13 +5160,13 @@ def crear_armado_muros_unificado(
             cabezal_por_muro_id,
             uidoc=uidoc,
             malla_activo_por_muro_id=malla_activo_por_muro_id,
-            within_parent_transaction_group=within_parent,
+            within_parent_transaction_group=True,
             coronamiento_cfg=coronamiento_cfg,
             coronamiento_por_muro_id=coronamiento_por_muro_id,
         )
         flujo_ok = True
     except Exception as ex:
-        errores.append(u"Armado Muros (grupo transacciones): {0}".format(ex))
+        errores.append(u"Armado Muros (transacción): {0}".format(ex))
         flujo_ok = False
     finally:
         try:
@@ -5078,14 +5179,23 @@ def crear_armado_muros_unificado(
             finalizar_armadura_eje_ejecucion()
         except Exception:
             pass
-        if tg_started:
+        if outer is not None and outer.HasStarted():
             try:
                 if flujo_ok:
-                    tg.Assimilate()
+                    outer.Commit()
                 else:
-                    tg.RollBack()
-            except Exception:
-                pass
+                    outer.RollBack()
+            except Exception as ex_txn:
+                try:
+                    if outer.HasStarted():
+                        outer.RollBack()
+                except Exception:
+                    pass
+                if flujo_ok:
+                    flujo_ok = False
+                    errores.append(
+                        u"Armado Muros (commit transacción): {0}".format(ex_txn),
+                    )
 
     if flujo_ok and uidoc is not None:
         _refrescar_vista_fin_flujo(doc, uidoc)

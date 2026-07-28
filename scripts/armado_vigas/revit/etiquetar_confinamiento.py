@@ -682,7 +682,6 @@ def _load_cabezal_tags_module():
     ext_root = os.path.dirname(scripts_dir)
     _tags_buttons = (
         "54_ArmadoMurosV3.pushbutton",
-        "47_ArmadoMurosV2.pushbutton",
     )
     candidates = []
     for button_name in _tags_buttons:

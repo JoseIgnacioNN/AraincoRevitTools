@@ -1,10 +1,7 @@
 # -*- coding: utf-8 -*-
-"""
-Arainco: Armado Muros v3 — shell Machones (elevación + rail de cards).
+"""Arainco: Armado Muros v3 — entrada pyRevit fina.
 
-Copia de V2 con UI reorganizada; misma lógica de creación.
-Versión portable: dependencias en ``<pushbutton>/scripts/``.
-Orden: coronamiento, cabezal, mallas; etiquetas long., conf., malla.
+Lógica en ``BIMTools.extension/scripts/`` (armado_muros_run / lineales / preview_ui).
 """
 
 __title__ = "Armado\nMuros v3"
@@ -24,50 +21,75 @@ clr.AddReference("RevitAPIUI")
 from Autodesk.Revit.UI import TaskDialog
 
 _DIALOG_TITLE = u"Arainco: Armado Muros v3"
-_MAIN_FILE = u"armado_muros_lineales.py"
+_MAIN_FILE = u"armado_muros_run.py"
 
 _pushbutton_dir = os.path.dirname(os.path.abspath(__file__))
-_scripts_dir = os.path.join(_pushbutton_dir, u"scripts")
 
-if not os.path.isfile(os.path.join(_scripts_dir, _MAIN_FILE)):
-    TaskDialog.Show(
-        _DIALOG_TITLE,
-        u"No se encontró scripts/{0} en la carpilla del botón.".format(_MAIN_FILE),
-    )
-    raise Exception(u"No se encontró el módulo principal de Armado Muros v3")
 
-if _pushbutton_dir not in sys.path:
-    sys.path.insert(0, _pushbutton_dir)
+def _find_extension_scripts(start_dir):
+    cursor = start_dir
+    for _ in range(24):
+        candidate = os.path.join(cursor, u"scripts", _MAIN_FILE)
+        if os.path.isfile(candidate):
+            return os.path.dirname(candidate)
+        parent = os.path.dirname(cursor)
+        if parent == cursor:
+            break
+        cursor = parent
+    return None
 
-try:
-    from armado_muros_run import (
-        ensure_armado_muros_modules_fresh,
-        setup_armado_muros_paths,
-    )
 
-    setup_armado_muros_paths()
-    ensure_armado_muros_modules_fresh()
+# --- Validación acceso corporativo (RECURSOS COMPARTIDOS) ---
+import os as _os_ac
+import sys as _sys_ac
 
-    from armado_muros_lineales import run_unificado
+_tab_ac = _os_ac.path.dirname(_os_ac.path.abspath(__file__))
+for _iac in range(16):
+    if _os_ac.path.basename(_tab_ac).endswith(u".tab"):
+        break
+    _parent_ac = _os_ac.path.dirname(_tab_ac)
+    if _parent_ac == _tab_ac:
+        _tab_ac = None
+        break
+    _tab_ac = _parent_ac
+if _tab_ac and _tab_ac not in _sys_ac.path:
+    _sys_ac.path.insert(0, _tab_ac)
+import bimtools_access_bootstrap as _bimtools_access
 
-    # Acceso corporativo: ``bimtools_access_bootstrap.py`` en esta carpilla (portable).
-    import bimtools_access_bootstrap as _bimtools_access
-
-    if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
-        setup_armado_muros_paths()
-        ensure_armado_muros_modules_fresh()
-        run_unificado(__revit__)
-except Exception:
-    _err = traceback.format_exc()
-    try:
-        print(_err)
-    except Exception:
-        pass
-    try:
+if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
+    _scripts_dir = _find_extension_scripts(_pushbutton_dir)
+    if not _scripts_dir:
         TaskDialog.Show(
             _DIALOG_TITLE,
-            u"Error al iniciar Armado Muros v3:\n\n{0}".format(_err[-1800:]),
+            u"No se encontró scripts/{0} en la extensión.".format(_MAIN_FILE),
         )
+        raise Exception(u"No se encontró scripts/{0}".format(_MAIN_FILE))
+
+    if _scripts_dir not in sys.path:
+        sys.path.insert(0, _scripts_dir)
+
+    try:
+        import bimtools_paths
+
+        bimtools_paths.set_pushbutton_dir(_pushbutton_dir)
     except Exception:
         pass
-    raise
+
+    try:
+        from armado_muros_run import run_pyrevit
+
+        run_pyrevit(__revit__)
+    except Exception:
+        _err = traceback.format_exc()
+        try:
+            print(_err)
+        except Exception:
+            pass
+        try:
+            TaskDialog.Show(
+                _DIALOG_TITLE,
+                u"Error al iniciar Armado Muros v3:\n\n{0}".format(_err[-1800:]),
+            )
+        except Exception:
+            pass
+        raise

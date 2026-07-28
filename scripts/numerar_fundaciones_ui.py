@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-Numerar fundaciones — interfaz WPF (misma línea visual que armadura BIMTools).
+Numerar fundaciones — interfaz WPF con shell estándar BIMTools.
 
-Tema: ``bimtools_wpf_dark_theme.BIMTOOLS_DARK_STYLES_XML`` (Fundación Aislada / Malla en Losa).
+Cinta blanca Arainco + cuerpo oscuro (``bimtools_wpf_shell`` / tokens / dark theme).
 """
 
-import os
+from __future__ import print_function
+
 import clr
 
 clr.AddReference("PresentationFramework")
@@ -13,6 +14,7 @@ clr.AddReference("PresentationCore")
 clr.AddReference("WindowsBase")
 clr.AddReference("RevitAPI")
 clr.AddReference("RevitAPIUI")
+clr.AddReference("System")
 
 from Autodesk.Revit.DB import (
     BuiltInCategory,
@@ -24,72 +26,142 @@ from Autodesk.Revit.DB import (
 )
 from Autodesk.Revit.UI import TaskDialog
 
-import System
-from System.Windows import WindowState, Visibility, SizeToContent, Size
+from System import AppDomain, EventHandler
+from System.Windows import Visibility, WindowState
+from System.Windows.Input import Key, KeyEventHandler
 from System.Windows.Markup import XamlReader
 from System.Windows.Media import SolidColorBrush, Color
 
+from bimtools_ui_tokens import FG_BODY, FG_MUTED, FONT_SIZE_BODY, FONT_SIZE_HINT
 from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
-from revit_wpf_window_position import position_wpf_window_top_left_at_active_view, revit_main_hwnd
+from bimtools_wpf_shell import build_simple_tool_xaml
+from revit_wpf_window_position import (
+    bind_center_wpf_on_revit_monitor,
+    position_wpf_window_center_on_monitor,
+    revit_main_hwnd,
+)
 
-from bimtools_paths import get_logo_paths
-
-_APPDOMAIN_WINDOW_KEY = "BIMTools.NumerarFundaciones.ActiveWindow"
+_APPDOMAIN_WINDOW_KEY = u"Arainco_NumerarFundaciones_UI"
 _TOOL_DIALOG_TITLE = u"Arainco: Numerar Fundaciones"
 
+_TEXT_INTRO = (
+    u"Agrupa fundaciones aisladas por dimensiones de tipo (L \u00d7 W \u00d7 H) "
+    u"y escribe el par\u00e1metro Numeracion Fundacion solo cuando est\u00e1 vac\u00edo."
+)
+_TEXT_CRITERIO = (
+    u"Solo FamilyInstance (fundaciones aisladas). Se excluyen wall foundations "
+    u"y slab foundations (Floor). No se sobrescribe lo ya numerado."
+)
 
-def _get_active_window():
+_BODY_XAML = u"""
+<StackPanel>
+  <TextBlock TextWrapping="Wrap" Foreground="{fg}" FontSize="{fs}" LineHeight="17"
+             Text="{intro}"/>
+  <TextBlock Margin="0,12,0,0" TextWrapping="Wrap" Foreground="{fg_lo}" FontSize="{fs_lo}"
+             LineHeight="15" Text="{criterio}"/>
+  <Border x:Name="PanelResultado" Margin="0,14,0,0" Visibility="Collapsed"
+          Background="#050E18" BorderBrush="#21465C" BorderThickness="1"
+          CornerRadius="4" Padding="0">
+    <TextBox x:Name="TxtResult" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+             MinHeight="120" MaxHeight="320" VerticalScrollBarVisibility="Auto"
+             Style="{{StaticResource BimToolsTextBoxDark}}" Padding="8,8" Text=""/>
+  </Border>
+</StackPanel>
+""".format(
+    fg=FG_BODY,
+    fs=FONT_SIZE_BODY,
+    fg_lo=FG_MUTED,
+    fs_lo=FONT_SIZE_HINT,
+    intro=_TEXT_INTRO.replace(u'"', u"&quot;"),
+    criterio=_TEXT_CRITERIO.replace(u'"', u"&quot;"),
+)
+
+_FOOTER_ACTIONS_XAML = u"""
+<Button x:Name="BtnClose" Content="Cerrar" Margin="0,0,8,0"
+        Style="{StaticResource BtnSelectOutline}" MinWidth="108"/>
+<Button x:Name="BtnNumerar" Content="Numerar fundaciones"
+        Style="{StaticResource BtnPrimary}" MinWidth="160"/>
+"""
+
+
+def _as_unicode(text):
+    if text is None:
+        return u""
     try:
-        win = System.AppDomain.CurrentDomain.GetData(_APPDOMAIN_WINDOW_KEY)
+        return unicode(text)
+    except NameError:
+        return str(text)
+
+
+def _mostrar_aviso(uiapp, instruction, content=u"", ok_text=u"Entendido"):
+    """Diálogo informativo WPF (estilo BIMTools). Respaldo: TaskDialog."""
+    hwnd = None
+    try:
+        if uiapp is not None:
+            hwnd = revit_main_hwnd(uiapp)
     except Exception:
-        return None
+        pass
+    try:
+        from bimtools_instruction_dialog import show_message_dialog
+
+        show_message_dialog(
+            _TOOL_DIALOG_TITLE,
+            instruction,
+            content=content,
+            ok_text=ok_text,
+            hwnd_revit=hwnd,
+            uiapp=uiapp,
+        )
+        return
+    except Exception:
+        pass
+    try:
+        body = instruction
+        if content:
+            body = instruction + u"\n\n" + content
+        TaskDialog.Show(_TOOL_DIALOG_TITLE, body)
+    except Exception:
+        pass
+
+
+def _attach_revit_owner(win, uiapp):
+    if win is None or uiapp is None:
+        return
+    try:
+        from System.Windows.Interop import WindowInteropHelper
+
+        hwnd = revit_main_hwnd(uiapp)
+        if hwnd is not None:
+            WindowInteropHelper(win).Owner = hwnd
+    except Exception:
+        pass
+
+
+def _prepare_window(win, uiapp):
     if win is None:
-        return None
+        return
     try:
-        _ = win.Title
-    except Exception:
-        _clear_active_window()
-        return None
-    try:
-        if hasattr(win, "IsLoaded") and (not win.IsLoaded):
-            _clear_active_window()
-            return None
+        hwnd = revit_main_hwnd(uiapp)
+        bind_center_wpf_on_revit_monitor(win, hwnd)
+        position_wpf_window_center_on_monitor(win, hwnd)
     except Exception:
         pass
-    return win
+    _attach_revit_owner(win, uiapp)
 
 
-def _set_active_window(win):
-    try:
-        System.AppDomain.CurrentDomain.SetData(_APPDOMAIN_WINDOW_KEY, win)
-    except Exception:
-        pass
+def _build_xaml():
+    return build_simple_tool_xaml(
+        title=_TOOL_DIALOG_TITLE,
+        styles_xml=BIMTOOLS_DARK_STYLES_XML,
+        body_xaml=_BODY_XAML,
+        footer_actions_xaml=_FOOTER_ACTIONS_XAML,
+        width=520,
+        resize_mode=u"NoResize",
+        size_to_content_height=True,
+    )
 
 
-def _clear_active_window():
-    try:
-        System.AppDomain.CurrentDomain.SetData(_APPDOMAIN_WINDOW_KEY, None)
-    except Exception:
-        pass
-
-
-def _task_dialog_show(message, wpf_window=None):
-    if wpf_window is not None:
-        try:
-            wpf_window.Topmost = False
-        except Exception:
-            pass
-    try:
-        TaskDialog.Show(_TOOL_DIALOG_TITLE, message)
-    finally:
-        if wpf_window is not None:
-            try:
-                wpf_window.Topmost = True
-            except Exception:
-                pass
-
-
-# ── Lógica de numeración (antes en script del pushbutton) ────────────────────
+# ── Lógica de numeración ─────────────────────────────────────────────────────
 
 
 def _get_dimensiones_y_volumen(element, doc):
@@ -124,7 +196,12 @@ def _get_dimensiones_y_volumen(element, doc):
 
 def _set_numeracion_fundacion(element, value):
     try:
-        for param_name in ("Numeracion Fundacion", "Numeracion fundacion", "Numeracion", "Foundation Numbering"):
+        for param_name in (
+            "Numeracion Fundacion",
+            "Numeracion fundacion",
+            "Numeracion",
+            "Foundation Numbering",
+        ):
             p = element.LookupParameter(param_name)
             if p is not None and not p.IsReadOnly:
                 p.Set(str(value))
@@ -138,7 +215,12 @@ def _leer_numeracion_fundacion(element):
     if not element:
         return None
     try:
-        for param_name in ("Numeracion Fundacion", "Numeracion fundacion", "Numeracion", "Foundation Numbering"):
+        for param_name in (
+            "Numeracion Fundacion",
+            "Numeracion fundacion",
+            "Numeracion",
+            "Foundation Numbering",
+        ):
             p = element.LookupParameter(param_name)
             if p is not None and p.HasValue:
                 s = p.AsString()
@@ -223,7 +305,9 @@ def execute_numerar_fundaciones(doc):
     grupos_sin_numero.sort(
         key=lambda x: (
             x[0][0] * x[0][1] * x[0][2],
-            x[0][0], x[0][1], x[0][2]
+            x[0][0],
+            x[0][1],
+            x[0][2],
         )
     )
 
@@ -241,7 +325,7 @@ def execute_numerar_fundaciones(doc):
                     numero_por_grupo[dims] = num
                     break
 
-    trans = Transaction(doc, "Arainco: Numerar fundaciones aisladas")
+    trans = Transaction(doc, u"Arainco: Numerar fundaciones aisladas")
     try:
         trans.Start()
         numerados = 0
@@ -270,7 +354,11 @@ def execute_numerar_fundaciones(doc):
                 l_mm / 1000.0, w_mm / 1000.0, h_mm / 1000.0
             )
             cant = len(elementos)
-            cant_str = u"{} unidad".format(cant) if cant == 1 else u"{} unidades".format(cant)
+            cant_str = (
+                u"{} unidad".format(cant)
+                if cant == 1
+                else u"{} unidades".format(cant)
+            )
             lineas_reporte.append((numero, dims_str, cant_str))
 
         def _orden_numero(item):
@@ -278,16 +366,26 @@ def execute_numerar_fundaciones(doc):
                 return int(item[0])
             except (ValueError, TypeError):
                 return 9999
+
         lineas_reporte.sort(key=_orden_numero)
 
         if numerados == 0 and sin_parametro == 0:
-            msg = u"No hay fundaciones sin numerar. Todas tienen valor en 'Numeracion Fundacion'."
+            msg = (
+                u"No hay fundaciones sin numerar. "
+                u"Todas tienen valor en 'Numeracion Fundacion'."
+            )
         else:
             msg = u"Se numeraron {} fundación(es) sin numerar.".format(numerados)
             if numerados > 0:
-                msg += u"\n\nSe agruparon con las ya numeradas que comparten las mismas dimensiones."
+                msg += (
+                    u"\n\nSe agruparon con las ya numeradas que "
+                    u"comparten las mismas dimensiones."
+                )
         if sin_parametro:
-            msg += u"\n\n{} elemento(s) no tienen parámetro 'Numeracion Fundacion' editable.".format(sin_parametro)
+            msg += (
+                u"\n\n{} elemento(s) no tienen parámetro "
+                u"'Numeracion Fundacion' editable."
+            ).format(sin_parametro)
 
         if lineas_reporte:
             msg += u"\n\n--- Listado de fundaciones numeradas ---\n"
@@ -302,135 +400,42 @@ def execute_numerar_fundaciones(doc):
         return {"ok": False, "text": u"Error:\n{0}".format(ex), "is_error": True}
 
 
-# ── XAML (tema oscuro compartido) ─────────────────────────────────────────────
-
-_NUMERAR_FUND_XAML = u"""
-<Window
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Arainco - Numerar Fundaciones"
-    MaxHeight="720"
-    WindowStartupLocation="Manual"
-    Background="Transparent"
-    AllowsTransparency="True"
-    MinHeight="0"
-    FontFamily="Segoe UI"
-    WindowStyle="None"
-    ResizeMode="NoResize"
-    Topmost="True"
-    UseLayoutRounding="True"
-    SizeToContent="Height"
-    Width="440"
-    >
-  <Window.Resources>
-""" + BIMTOOLS_DARK_STYLES_XML + u"""
-    <Style x:Key="TbInforme" TargetType="TextBox" BasedOn="{StaticResource CantSpinnerText}">
-      <Setter Property="HorizontalAlignment" Value="Stretch"/>
-      <Setter Property="FontWeight" Value="Normal"/>
-      <Setter Property="Padding" Value="8,8"/>
-      <Setter Property="Background" Value="#050E18"/>
-      <Setter Property="Foreground" Value="#C8E4EF"/>
-    </Style>
-  </Window.Resources>
-  <!-- Misma idea que Fundación Aislada: solo filas Auto (nada de *), SizeToContent Height en el Window. -->
-  <Border x:Name="NumerarRootChrome" CornerRadius="10" Background="#0A1A2F" Padding="12"
-          BorderBrush="#1A3A4D" BorderThickness="1"
-          HorizontalAlignment="Stretch" VerticalAlignment="Top" ClipToBounds="True">
-    <Border.Effect>
-      <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="0" Opacity="0.35"/>
-    </Border.Effect>
-    <Grid HorizontalAlignment="Stretch">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto"/>
-        <RowDefinition Height="Auto"/>
-        <RowDefinition Height="Auto"/>
-        <RowDefinition Height="Auto"/>
-      </Grid.RowDefinitions>
-
-      <Border x:Name="TitleBar" Grid.Row="0" Background="#0E1B32" CornerRadius="6" Padding="10,8" Margin="0,0,0,10"
-              BorderBrush="#21465C" BorderThickness="1" HorizontalAlignment="Stretch">
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto"/>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="Auto"/>
-          </Grid.ColumnDefinitions>
-          <Image x:Name="ImgLogo" Width="40" Height="40" Grid.Column="0"
-                 Stretch="Uniform" Margin="0,0,10,0" VerticalAlignment="Center"/>
-          <StackPanel Grid.Column="1" VerticalAlignment="Center">
-            <TextBlock Text="Numerar fundaciones" FontSize="15" FontWeight="SemiBold"
-                       Foreground="#E8F4F8"/>
-            <TextBlock Text="Agrupa fundaciones aisladas por dimensiones y escribe Numeracion Fundacion"
-                       FontSize="11" Foreground="#95B8CC" Margin="0,6,0,0" TextWrapping="Wrap"/>
-          </StackPanel>
-          <Button x:Name="BtnClose" Grid.Column="2" Style="{StaticResource BtnCloseX_MinimalNoBg}"
-                  VerticalAlignment="Center" ToolTip="Cerrar"/>
-        </Grid>
-      </Border>
-
-      <GroupBox Grid.Row="1" Style="{StaticResource GbParams}" Margin="0,0,0,10" HorizontalAlignment="Stretch">
-        <GroupBox.Header>
-          <TextBlock Text="Criterio" FontWeight="SemiBold" Foreground="#E8F4F8" FontSize="11"/>
-        </GroupBox.Header>
-        <StackPanel>
-          <TextBlock Style="{StaticResource LabelSmall}" TextWrapping="Wrap" Margin="0,0,0,4"
-                     Text="Solo fundaciones aisladas (FamilyInstance). Se excluyen wall foundations y slab foundations (Floor)."/>
-          <TextBlock Style="{StaticResource LabelSmall}" TextWrapping="Wrap"
-                     Text="Se agrupan por dimensiones de tipo (L × W × H). Solo se rellena el parámetro «Numeracion Fundacion» cuando está vacío; no se sobrescribe lo existente."/>
-        </StackPanel>
-      </GroupBox>
-
-      <Grid x:Name="GridResultadoHost" Grid.Row="2" Margin="0,0,0,10" Visibility="Collapsed">
-        <GroupBox x:Name="GbResultado" Style="{StaticResource GbParams}" Margin="0"
-                  HorizontalAlignment="Stretch">
-          <GroupBox.Header>
-            <TextBlock Text="Resultado" FontWeight="SemiBold" Foreground="#E8F4F8" FontSize="11"/>
-          </GroupBox.Header>
-          <Border Background="#050E18" BorderBrush="#1A3A4D" BorderThickness="1" CornerRadius="4" Padding="0">
-            <TextBox x:Name="TxtResult" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
-                     MinHeight="0" MaxHeight="320" VerticalScrollBarVisibility="Auto"
-                     Style="{StaticResource TbInforme}" Text=""/>
-          </Border>
-        </GroupBox>
-      </Grid>
-
-      <Button x:Name="BtnNumerar" Grid.Row="3" Content="Numerar fundaciones"
-              Style="{StaticResource BtnPrimary}"
-              HorizontalAlignment="Stretch" Margin="0"/>
-    </Grid>
-  </Border>
-</Window>
-"""
+# ── Ventana ──────────────────────────────────────────────────────────────────
 
 
-def _try_load_logo(image_control):
-    if image_control is None:
-        return
-    from System.IO import FileAccess, FileMode, FileStream
-    from System.Windows.Media.Imaging import BitmapCacheOption, BitmapImage
+def _get_active_window():
+    try:
+        win = AppDomain.CurrentDomain.GetData(_APPDOMAIN_WINDOW_KEY)
+    except Exception:
+        return None
+    if win is None:
+        return None
+    try:
+        _ = win.Title
+    except Exception:
+        _clear_active_window()
+        return None
+    try:
+        if hasattr(win, "IsLoaded") and (not win.IsLoaded):
+            _clear_active_window()
+            return None
+    except Exception:
+        pass
+    return win
 
-    for path in get_logo_paths():
-        if not path or not os.path.isfile(path):
-            continue
-        stream = None
-        try:
-            stream = FileStream(path, FileMode.Open, FileAccess.Read)
-            bmp = BitmapImage()
-            bmp.BeginInit()
-            bmp.StreamSource = stream
-            bmp.CacheOption = BitmapCacheOption.OnLoad
-            bmp.EndInit()
-            bmp.Freeze()
-            image_control.Source = bmp
-            return
-        except Exception:
-            continue
-        finally:
-            if stream is not None:
-                try:
-                    stream.Dispose()
-                except Exception:
-                    pass
+
+def _set_active_window(win):
+    try:
+        AppDomain.CurrentDomain.SetData(_APPDOMAIN_WINDOW_KEY, win)
+    except Exception:
+        pass
+
+
+def _clear_active_window():
+    try:
+        AppDomain.CurrentDomain.SetData(_APPDOMAIN_WINDOW_KEY, None)
+    except Exception:
+        pass
 
 
 def _brush_error():
@@ -447,60 +452,6 @@ def _brush_ok():
         return None
 
 
-def _snap_window_height_to_chrome(win):
-    """
-    Iguala el alto del Window al chrome sin hueco bajo el botón.
-
-    ActualHeight del Border puede ser mayor que el contenido si el padre le
-    asigna altura extra; Measure(Width, Infinity) + DesiredSize.Height evita eso.
-    """
-    try:
-        chrome = win.FindName("NumerarRootChrome")
-        if chrome is None:
-            return
-        try:
-            win.UpdateLayout()
-        except Exception:
-            pass
-        try:
-            aw = float(win.Width)
-            if aw < 1.0:
-                aw = float(chrome.ActualWidth)
-            if aw < 1.0:
-                aw = 440.0
-        except Exception:
-            aw = 440.0
-        inf = System.Double.PositiveInfinity
-        try:
-            chrome.InvalidateMeasure()
-        except Exception:
-            pass
-        try:
-            chrome.Measure(Size(aw, inf))
-        except Exception:
-            pass
-        try:
-            ch_desired = float(chrome.DesiredSize.Height)
-            ch_actual = float(chrome.ActualHeight)
-        except Exception:
-            return
-        ch = ch_desired if ch_desired > 1.0 else ch_actual
-        if ch < 1.0:
-            return
-        win.SizeToContent = SizeToContent.Manual
-        try:
-            win.MinHeight = 0
-            win.MaxHeight = 720
-        except Exception:
-            pass
-        try:
-            win.Height = ch
-        except Exception:
-            pass
-    except Exception:
-        pass
-
-
 def run(revit):
     """Punto de entrada pyRevit: muestra la ventana."""
     existing = _get_active_window()
@@ -511,60 +462,66 @@ def run(revit):
         except Exception:
             pass
         try:
-            existing.Show()
-        except Exception:
-            pass
-        try:
             existing.Activate()
             existing.Focus()
         except Exception:
             pass
-        _task_dialog_show(u"La herramienta ya esta en ejecucion.", existing)
+        _mostrar_aviso(revit, u"La herramienta ya esta en ejecucion.")
         return
 
     uidoc = revit.ActiveUIDocument
     if uidoc is None:
-        TaskDialog.Show(_TOOL_DIALOG_TITLE, u"No hay documento activo.")
+        _mostrar_aviso(revit, u"No hay documento activo.")
         return
     doc = uidoc.Document
 
-    win = XamlReader.Parse(_NUMERAR_FUND_XAML)
+    win = XamlReader.Parse(_build_xaml())
+    txt_subtitle = win.FindName(u"TxtSubtitle")
+    txt_status = win.FindName(u"TxtStatus")
+    txt_result = win.FindName(u"TxtResult")
+    panel_resultado = win.FindName(u"PanelResultado")
+    br_err = _brush_error()
+    br_ok = _brush_ok()
 
-    _host_res = win.FindName("GridResultadoHost")
-    if _host_res is not None:
+    if txt_subtitle is not None:
         try:
-            _host_res.Visibility = Visibility.Collapsed
+            txt_subtitle.Text = (
+                u"Agrupa fundaciones aisladas por dimensiones y escribe "
+                u"Numeracion Fundacion."
+            )
         except Exception:
             pass
+
+    if panel_resultado is not None:
+        try:
+            panel_resultado.Visibility = Visibility.Collapsed
+        except Exception:
+            pass
+
+    def _set_status(text):
+        if txt_status is not None:
+            try:
+                txt_status.Text = _as_unicode(text)
+            except Exception:
+                pass
 
     def _on_close(sender, args):
         _clear_active_window()
 
-    win.Closed += _on_close
+    def _on_key_down(sender, args):
+        if args.Key == Key.Escape:
+            win.Close()
 
-    btn_close = win.FindName("BtnClose")
-    if btn_close is not None:
-        btn_close.Click += lambda s, e: win.Close()
-
-    title_bar = win.FindName("TitleBar")
-    if title_bar is not None:
-        def _drag(s, e):
-            try:
-                win.DragMove()
-            except Exception:
-                pass
-        title_bar.MouseLeftButtonDown += _drag
-
-    txt_result = win.FindName("TxtResult")
-    grid_resultado_host = win.FindName("GridResultadoHost")
-    br_err = _brush_error()
-    br_ok = _brush_ok()
+    def _on_btn_close(sender, args):
+        win.Close()
 
     def _on_numerar(sender, args):
+        _set_status(u"Numerando…")
         res = execute_numerar_fundaciones(doc)
+        text = res.get("text") or u""
         if txt_result is not None:
             try:
-                txt_result.Text = res.get("text") or u""
+                txt_result.Text = text
             except Exception:
                 pass
             try:
@@ -574,66 +531,32 @@ def run(revit):
                     txt_result.Foreground = br_ok
             except Exception:
                 pass
-        if txt_result is not None:
+        if panel_resultado is not None:
             try:
-                txt_result.MinHeight = 180
+                panel_resultado.Visibility = Visibility.Visible
             except Exception:
                 pass
-        if grid_resultado_host is not None:
-            try:
-                grid_resultado_host.Visibility = Visibility.Visible
-            except Exception:
-                pass
-        try:
-            win.UpdateLayout()
-        except Exception:
-            pass
-        _snap_window_height_to_chrome(win)
+        if res.get("is_error"):
+            _set_status(u"Error al numerar.")
+        else:
+            first_line = text.split(u"\n")[0] if text else u"Listo."
+            _set_status(first_line)
 
-    btn_num = win.FindName("BtnNumerar")
+    from System.Windows import RoutedEventHandler
+
+    win.Closed += EventHandler(_on_close)
+    win.KeyDown += KeyEventHandler(_on_key_down)
+
+    btn_close = win.FindName(u"BtnClose")
+    if btn_close is not None:
+        btn_close.Click += RoutedEventHandler(_on_btn_close)
+
+    btn_num = win.FindName(u"BtnNumerar")
     if btn_num is not None:
-        btn_num.Click += _on_numerar
+        btn_num.Click += RoutedEventHandler(_on_numerar)
 
-    img = win.FindName("ImgLogo")
-    _try_load_logo(img)
-
-    def _on_loaded(sender, args):
-        try:
-            hwnd = revit_main_hwnd(revit)
-            position_wpf_window_top_left_at_active_view(win, uidoc, hwnd)
-        except Exception:
-            pass
-        h = win.FindName("GridResultadoHost")
-        if h is not None:
-            try:
-                h.Visibility = Visibility.Collapsed
-            except Exception:
-                pass
-
-    win.Loaded += _on_loaded
-
-    def _on_content_rendered(sender, args):
-        try:
-            win.ContentRendered -= _on_content_rendered
-        except Exception:
-            pass
-
-        def _snap_idle():
-            _snap_window_height_to_chrome(win)
-
-        try:
-            from System import Action
-            from System.Windows.Threading import DispatcherPriority
-
-            win.Dispatcher.BeginInvoke(
-                DispatcherPriority.ApplicationIdle,
-                Action(_snap_idle),
-            )
-        except Exception:
-            _snap_idle()
-
-    win.ContentRendered += _on_content_rendered
-
+    _prepare_window(win, revit)
+    _set_status(u"Listo.")
     _set_active_window(win)
     try:
         win.ShowDialog()

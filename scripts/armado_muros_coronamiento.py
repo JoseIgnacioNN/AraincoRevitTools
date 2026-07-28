@@ -35,7 +35,6 @@ from Autodesk.Revit.DB import (
     Curve,
     ElementId,
     Line,
-    Transaction,
     UnitUtils,
     UnitTypeId,
     XYZ,
@@ -1818,9 +1817,12 @@ def aplicar_visibilidad_coronamiento_en_vista(doc, uidoc, cor_res):
     except Exception:
         apply_rebar_unobscured_in_view = None
 
-    t = Transaction(doc, u"Arainco: Visibilidad coronamiento en vista")
+    t = None
     try:
-        t.Start()
+        from armado_muros_txn import TxnScope
+        t = TxnScope(doc, u"Arainco: Visibilidad coronamiento en vista")
+        if not t.HasStarted():
+            return out
         # Categoría Rebar / Structural Rebar visible en la vista.
         try:
             from Autodesk.Revit.DB import BuiltInCategory
@@ -1873,7 +1875,7 @@ def aplicar_visibilidad_coronamiento_en_vista(doc, uidoc, cor_res):
         t.Commit()
     except Exception:
         try:
-            if t.HasStarted() and not t.HasEnded():
+            if t is not None and t.HasStarted():
                 t.RollBack()
         except Exception:
             pass
@@ -2320,15 +2322,13 @@ def aplicar_coronamiento_muros(
         crear_inf = bool(cfg.get(u"crear_inferior", False))
         crear_vol = bool(cfg.get(u"crear_voladizo", False))
 
-        txn = Transaction(doc, u"Arainco: Coronamiento muros")
+        txn = None
         t_started = False
         try:
-            try:
-                from armado_muros_txn import attach_rebar_outside_host_swallower
-                attach_rebar_outside_host_swallower(txn)
-            except Exception:
-                pass
-            txn.Start()
+            from armado_muros_txn import TxnScope
+            txn = TxnScope(doc, u"Arainco: Coronamiento muros")
+            if not txn.HasStarted():
+                raise Exception(u"No se pudo abrir transacción de coronamiento.")
             t_started = True
             if crear_sup:
                 _crear_coronamiento_superior(
@@ -2396,16 +2396,14 @@ def aplicar_coronamiento_muros(
             res[u"messages"].append(u"Coronamiento: {0}".format(ex))
         return res
 
-    txn = Transaction(doc, u"Arainco: Coronamiento muros")
+    txn = None
     t_started = False
     crear_any_type = False
     try:
-        try:
-            from armado_muros_txn import attach_rebar_outside_host_swallower
-            attach_rebar_outside_host_swallower(txn)
-        except Exception:
-            pass
-        txn.Start()
+        from armado_muros_txn import TxnScope
+        txn = TxnScope(doc, u"Arainco: Coronamiento muros")
+        if not txn.HasStarted():
+            raise Exception(u"No se pudo abrir transacción de coronamiento.")
         t_started = True
         for wall in walls_ord:
             if wall is None:

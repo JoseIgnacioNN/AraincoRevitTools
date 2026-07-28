@@ -106,7 +106,6 @@ def find_scripts_dir(pushbutton_dir_path=None):
 
 _ARMADO_MUROS_TAGS_BUTTONS = (
     u"54_ArmadoMurosV3.pushbutton",
-    u"47_ArmadoMurosV2.pushbutton",
 )
 
 

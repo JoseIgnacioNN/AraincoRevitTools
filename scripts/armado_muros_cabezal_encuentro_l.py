@@ -121,8 +121,24 @@ def cabezal_encuentro_l_offset_trans_mm(cover_mm, conf_bar_type, bar_type=None):
     return c + conf_d + 10.0
 
 
+# Radio esquemático fijo del croquis (igual punta / mockup encuentro).
+PREVIEW_BAR_DRAW_R_PX = 3.5
+
+
+def cabezal_encuentro_l_preview_cover_to_center_mm(thickness_mm, span_px):
+    """
+    Cover croquis: cara → tangente = CABEZAL_COVER_MM;
+    centro = cover + radio esquemático (solo preview, no creación).
+    """
+    e = max(float(thickness_mm or 200.0), 50.0)
+    span = max(1.0, float(span_px or 50.0))
+    px_per_mm = span / e
+    return float(CABEZAL_COVER_MM) + float(PREVIEW_BAR_DRAW_R_PX) / max(px_per_mm, 1e-9)
+
+
 def cabezal_encuentro_l_layer_positions_mm(
     espesor_det_mm, n_capas, cover_mm=None, conf_bar_type=None,
+    offset_mm_override=None,
 ):
     """Posiciones de capas (mm desde cara exterior del muro detectado)."""
     e = max(float(espesor_det_mm or 200.0), 50.0)
@@ -130,7 +146,10 @@ def cabezal_encuentro_l_layer_positions_mm(
         n = max(1, int(n_capas))
     except Exception:
         n = ENC_L_MIN_CAPAS
-    off = cabezal_encuentro_l_offset_trans_mm(cover_mm, conf_bar_type)
+    if offset_mm_override is not None:
+        off = max(0.0, float(offset_mm_override))
+    else:
+        off = cabezal_encuentro_l_offset_trans_mm(cover_mm, conf_bar_type)
     usable = max(0.0, e - 2.0 * off)
     if n <= 1:
         return {
@@ -151,6 +170,7 @@ def cabezal_encuentro_l_layer_positions_mm(
 
 def cabezal_encuentro_l_bar_positions_mm(
     espesor_sel_mm, n_bars, cover_mm=None, conf_bar_type=None,
+    offset_mm_override=None,
 ):
     """Posiciones de barras (mm desde cara exterior del muro seleccionado)."""
     e = max(float(espesor_sel_mm or 200.0), 50.0)
@@ -158,7 +178,10 @@ def cabezal_encuentro_l_bar_positions_mm(
         n = max(1, int(n_bars))
     except Exception:
         n = ENC_L_MIN_BARS
-    off = cabezal_encuentro_l_offset_trans_mm(cover_mm, conf_bar_type)
+    if offset_mm_override is not None:
+        off = max(0.0, float(offset_mm_override))
+    else:
+        off = cabezal_encuentro_l_offset_trans_mm(cover_mm, conf_bar_type)
     distrib = max(0.0, e - 2.0 * off)
     if n <= 1:
         ys = [off + distrib * 0.5]
@@ -527,16 +550,18 @@ def cabezal_seccion_preview_layout_encuentro_l(
     post_encuentro_activo=False,
     n_capas_encuentro=None,
     pitch_post_mm=None,
+    preview_schematic_cover=True,
 ):
     """
     Preview 2D encuentro L: eje X = detectado (capas), eje Y = seleccionado (barras).
 
-    Núcleo: pitch equitativo en espesor detectado; ``layers[i]`` → ``xs[i]``
-    (1ªC exterior del encuentro → nªC hacia el interior del host).
-    Post-encuentro: pitch fijo ``pitch_post_mm`` (150 mm) desde la última capa núcleo
-    hacia el fuste del host; solo visual en la zona del croquis.
+    Nucleo: pitch equitativo en espesor detectado.
+    Post-encuentro: pitch fijo hacia el fuste (stub Sel); fx en fraccion del
+    ancho total planta L (zona+stub) para no clampar post en zone_rect.
+    Cover croquis: cara->tangente 25 mm (preview_schematic_cover).
     """
     _ = extremo
+    _ = preview_fill_zone
     cab = _cab()
     layers = list(layers or [])
     e_det = max(float(espesor_det_mm or 200.0), 50.0)
@@ -557,30 +582,29 @@ def cabezal_seccion_preview_layout_encuentro_l(
     n_post = max(0, len(layers) - n_enc) if post_on else 0
     n_capas = n_enc + n_post
 
+    dw = max(40.0, float(draw_w_px or 80.0))
+    dh = max(28.0, float(draw_h_px or 50.0))
+    _ = dw
+    cover_off = None
+    if preview_schematic_cover:
+        cover_off = cabezal_encuentro_l_preview_cover_to_center_mm(e_sel, dh)
+
+    m = cabezal_encuentro_plan_l_metrics_mm(
+        e_det, e_sel, n_post=n_post, pitch_post_mm=pitch_post,
+    )
+    leg_sel = float(m[u"leg_sel"])
+    max_x_mm = leg_sel - 8.0
+
     lp = cabezal_encuentro_l_layer_positions_mm(
-        e_det, n_enc, cover_mm, None,
+        e_det, n_enc, cover_mm, None, offset_mm_override=cover_off,
     )
     dots = []
     layer_bounds = []
-    pitch_dims = []
-    dw = max(40.0, float(draw_w_px or 80.0))
-    dh = max(28.0, float(draw_h_px or 50.0))
-    if preview_fill_zone:
-        pad_x = 0.0
-        pad_y = 0.0
-        inner_w = dw
-        inner_h = dh
-    else:
-        pad_x = 14.0
-        pad_y = 10.0
-        inner_w = max(1.0, dw - 2.0 * pad_x)
-        inner_h = max(1.0, dh - 2.0 * pad_y)
 
     xs_core = lp.get(u"xs") or []
     core_layer_mm = []
     for i in range(n_enc):
-        slot_i = i
-        layer_mm = float(xs_core[slot_i]) if 0 <= slot_i < len(xs_core) else 0.0
+        layer_mm = float(xs_core[i]) if 0 <= i < len(xs_core) else 0.0
         core_layer_mm.append(layer_mm)
 
     last_core_mm = core_layer_mm[-1] if core_layer_mm else 0.0
@@ -601,57 +625,33 @@ def cabezal_seccion_preview_layout_encuentro_l(
             nb = ENC_L_MIN_BARS
         nb = max(ENC_L_MIN_BARS, min(CABEZAL_MAX_BARRAS_POR_CAPA, nb))
         bp = cabezal_encuentro_l_bar_positions_mm(
-            e_sel, nb, cover_mm, None,
+            e_sel, nb, cover_mm, None, offset_mm_override=cover_off,
         )
-        layer_mm = _layer_mm_for_index(i)
-        if preview_fill_zone:
-            fx = (layer_mm / e_det) * dw if e_det > 1e-6 else 0.0
-        else:
-            fx = pad_x + (layer_mm / e_det) * inner_w if e_det > 1e-6 else pad_x
-        fx = max(0.0, min(dw, fx))
+        layer_mm = min(float(_layer_mm_for_index(i)), max_x_mm)
+        fx_frac = (layer_mm / leg_sel) if leg_sel > 1e-6 else 0.0
+        fx_frac = max(0.0, min(1.0, fx_frac))
         fxs = []
         fys = []
         for bi, y_mm in enumerate(bp.get(u"ys") or []):
-            if preview_fill_zone:
-                fy = (float(y_mm) / e_sel) * dh if e_sel > 1e-6 else 0.0
-            else:
-                fy = pad_y + (float(y_mm) / e_sel) * inner_h if e_sel > 1e-6 else pad_y
-            fy = max(0.0, min(dh, fy))
-            fys.append(fy)
-            fxs.append(fx)
+            fy_frac = (float(y_mm) / e_sel) if e_sel > 1e-6 else 0.0
+            fy_frac = max(0.0, min(1.0, fy_frac))
+            fys.append(fy_frac)
+            fxs.append(fx_frac)
             dots.append({
                 u"layer_index": i,
                 u"bar_index": int(bi),
-                u"fx": fx / dw if dw > 1e-6 else 0.0,
-                u"fy": fy / dh if dh > 1e-6 else 0.0,
+                u"fx": fx_frac,
+                u"fy": fy_frac,
                 u"post_encuentro": bool(i >= n_enc),
             })
         if fxs and fys:
             layer_bounds.append({
                 u"layer_index": i,
-                u"fx0": min(fxs) / dw if dw > 1e-6 else 0.0,
-                u"fx1": max(fxs) / dw if dw > 1e-6 else 0.0,
-                u"fy0": min(fys) / dh if dh > 1e-6 else 0.0,
-                u"fy1": max(fys) / dh if dh > 1e-6 else 0.0,
+                u"fx0": min(fxs),
+                u"fx1": max(fxs),
+                u"fy0": min(fys),
+                u"fy1": max(fys),
                 u"post_encuentro": bool(i >= n_enc),
-            })
-
-    if post_on and n_post > 0 and e_det > 1e-6:
-        dim_xs_mm = [last_core_mm] + list(post_layer_mm)
-        for di in range(len(dim_xs_mm) - 1):
-            x_a_mm = dim_xs_mm[di]
-            x_b_mm = dim_xs_mm[di + 1]
-            if preview_fill_zone:
-                fx_a = (x_a_mm / e_det)
-                fx_b = (x_b_mm / e_det)
-            else:
-                fx_a = pad_x / dw + (x_a_mm / e_det) * (inner_w / dw)
-                fx_b = pad_x / dw + (x_b_mm / e_det) * (inner_w / dw)
-            pitch_dims.append({
-                u"fx0": max(0.0, min(1.0, fx_a)),
-                u"fx1": max(0.0, min(1.0, fx_b)),
-                u"fy": 0.06,
-                u"label_mm": int(round(pitch_post)),
             })
 
     stirrup_rect = None
@@ -674,8 +674,8 @@ def cabezal_seccion_preview_layout_encuentro_l(
         pitch_frac = 0.12
         try:
             pitch_eq = float(lp.get(u"pitch_equitativo_mm") or 0.0)
-            if pitch_eq > 1e-6 and e_det > 1e-6:
-                pitch_frac = max(0.04, min(0.45, pitch_eq / e_det))
+            if pitch_eq > 1e-6 and leg_sel > 1e-6:
+                pitch_frac = max(0.04, min(0.45, pitch_eq / leg_sel))
         except Exception:
             pass
         bar_diam_mm = 16.0
@@ -695,17 +695,19 @@ def cabezal_seccion_preview_layout_encuentro_l(
         ):
             try:
                 c_mm = float(
-                    cover_mm if cover_mm is not None else CABEZAL_COVER_MM,
+                    cover_off
+                    if cover_off is not None
+                    else (cover_mm if cover_mm is not None else CABEZAL_COVER_MM)
                 )
             except Exception:
                 c_mm = float(CABEZAL_COVER_MM)
-            fx0 = max(0.0, min(0.49, c_mm / e_det))
+            fx0 = max(0.0, min(0.49, c_mm / leg_sel))
             fy0 = max(0.0, min(0.49, c_mm / e_sel))
             stirrup_pad_mm = float(
                 getattr(cab, u"CABEZAL_CONFINEMENT_STIRRUP_PAD_MM", 10.0) or 10.0,
             )
             if post_on and n_post > 0 and post_layer_mm:
-                last_post_mm = post_layer_mm[-1]
+                last_post_mm = min(post_layer_mm[-1], max_x_mm)
                 last_post_bar_d = bar_diam_mm
                 last_post_li = n_enc + n_post - 1
                 if 0 <= last_post_li < len(layers):
@@ -722,7 +724,7 @@ def cabezal_seccion_preview_layout_encuentro_l(
                 )
                 fx1 = max(
                     fx0 + 0.02,
-                    min(0.98, (last_post_mm + clear_mm) / e_det),
+                    min(0.98, (last_post_mm + clear_mm) / leg_sel),
                 )
                 first_mm = core_layer_mm[0] if core_layer_mm else 0.0
                 first_bar_d = bar_diam_mm
@@ -738,9 +740,9 @@ def cabezal_seccion_preview_layout_encuentro_l(
                     + conf_diam * 0.5
                     + stirrup_pad_mm
                 )
-                fx0 = min(fx0, max(0.0, (first_mm - clear_first_mm) / e_det))
+                fx0 = min(fx0, max(0.0, (first_mm - clear_first_mm) / leg_sel))
             else:
-                fx1 = 1.0 - fx0
+                fx1 = max(fx0 + 0.02, min(0.98, e_det / leg_sel))
             stirrup_rect = {
                 u"fx0": fx0,
                 u"fx1": fx1,
@@ -787,8 +789,6 @@ def cabezal_seccion_preview_layout_encuentro_l(
     return {
         u"dots": dots,
         u"layer_bounds": layer_bounds,
-        u"stirrups": [],
-        u"ties": [],
         u"stirrup_rect": stirrup_rect,
         u"stirrup_segments": stirrup_segments,
         u"stirrup_layer_indices": stirrup_layer_indices,
@@ -798,51 +798,97 @@ def cabezal_seccion_preview_layout_encuentro_l(
         u"cross_tie_previews": cross_tie_previews,
         u"pitch_equitativo_mm": lp.get(u"pitch_equitativo_mm"),
         u"pitch_post_mm": pitch_post if post_on else None,
-        u"pitch_dims": pitch_dims,
         u"n_capas_encuentro": n_enc,
         u"n_capas_post": n_post,
         u"post_encuentro_activo": post_on,
         u"encuentro_l": True,
+        u"coord_space": u"plan_l_full_x",
+        u"leg_sel_mm": leg_sel,
+        u"stub_sel_mm": float(m.get(u"stub_sel") or 0.0),
+        u"cover_offset_mm": float(
+            cover_off if cover_off is not None else (lp.get(u"offset_mm") or 0.0)
+        ),
+        u"preview_schematic_cover": bool(preview_schematic_cover),
+        u"inner_y0": 0.0,
+        u"inner_h": 1.0,
     }
 
 
 CABEZAL_ENC_TIPO_T = u"T"
 
 
-def cabezal_encuentro_stub_len_mm(esp_mm):
+def cabezal_encuentro_stub_len_det_mm(esp_mm):
+    """Stub del muro detectado (ala Det.): corto."""
     esp = max(float(esp_mm or 200.0), 50.0)
-    return max(26.0, min(48.0, esp * 0.42))
+    return max(30.0, min(56.0, esp * 0.42))
 
 
-def cabezal_encuentro_plan_l_metrics_mm(e_det_mm, e_sel_mm):
+def cabezal_encuentro_stub_len_sel_mm(e_det_mm, n_post=0, pitch_post_mm=150.0):
+    """
+    Stub del muro armado (ala Sel.): más largo que Det. para capas post.
+
+    Con post activo crece a n×pitch + margen (mockup encuentro).
+    """
+    e_det = max(float(e_det_mm or 200.0), 50.0)
+    base = max(72.0, min(110.0, e_det * 0.65))
+    try:
+        n = max(0, int(n_post or 0))
+    except Exception:
+        n = 0
+    if n < 1:
+        return base
+    pitch = max(50.0, float(pitch_post_mm or 150.0))
+    need = float(n) * pitch + 48.0
+    return max(base, need)
+
+
+def cabezal_encuentro_stub_len_mm(esp_mm):
+    """Compat.: stub genérico (Det.). Preferir stub_len_det / stub_len_sel."""
+    return cabezal_encuentro_stub_len_det_mm(esp_mm)
+
+
+def cabezal_encuentro_plan_l_metrics_mm(e_det_mm, e_sel_mm, n_post=0, pitch_post_mm=150.0):
     """
     Métricas planta L (mm): zona intersección eDet×eSel + patas stub.
     Compartido por encuentros L y T en preview.
+    ``n_post`` alarga el stub Sel para disponer capas post-encuentro.
     """
     e_det = max(float(e_det_mm or 200.0), 50.0)
     e_sel = max(float(e_sel_mm or 200.0), 50.0)
     zone_w = e_det
     zone_h = e_sel
-    leg_det = zone_h + cabezal_encuentro_stub_len_mm(zone_h)
-    leg_sel = zone_w + cabezal_encuentro_stub_len_mm(zone_w)
+    stub_det = cabezal_encuentro_stub_len_det_mm(zone_h)
+    stub_sel = cabezal_encuentro_stub_len_sel_mm(
+        zone_w, n_post=n_post, pitch_post_mm=pitch_post_mm,
+    )
+    leg_det = zone_h + stub_det
+    leg_sel = zone_w + stub_sel
     return {
         u"e_det": e_det,
         u"e_sel": e_sel,
         u"zone_w": zone_w,
         u"zone_h": zone_h,
+        u"stub_det": stub_det,
+        u"stub_sel": stub_sel,
         u"leg_det": leg_det,
         u"leg_sel": leg_sel,
         u"draw_w": leg_sel,
         u"draw_h": leg_det,
+        u"n_post": int(n_post or 0),
     }
 
 
-def cabezal_encuentro_plan_l_polygon_local_px(draw_w_px, draw_h_px, e_det_mm, e_sel_mm, mirror=False):
+def cabezal_encuentro_plan_l_polygon_local_px(
+    draw_w_px, draw_h_px, e_det_mm, e_sel_mm, mirror=False,
+    n_post=0, pitch_post_mm=150.0,
+):
     """
     Polígono planta L en coords locales (0,0)=esq. sup. izq. del canvas lógico.
-    Retorna (points, zone_rect) con zone_rect = {x,y,w,h} en px locales.
+    Retorna points, zone_rect y métricas; stub Sel crece con ``n_post``.
     """
-    m = cabezal_encuentro_plan_l_metrics_mm(e_det_mm, e_sel_mm)
+    m = cabezal_encuentro_plan_l_metrics_mm(
+        e_det_mm, e_sel_mm, n_post=n_post, pitch_post_mm=pitch_post_mm,
+    )
     zone_w = m[u"zone_w"]
     zone_h = m[u"zone_h"]
     leg_det = m[u"leg_det"]
@@ -893,4 +939,11 @@ def cabezal_encuentro_plan_l_polygon_local_px(draw_w_px, draw_h_px, e_det_mm, e_
         u"zone_rect": zone_rect,
         u"join_line": (join_x0, join_y, join_x1, join_y),
         u"p_join": p_join,
+        u"metrics": m,
+        u"scale": scale,
+        u"off_x": off_x,
+        u"off_y": off_y,
+        u"draw_w_mm": draw_w_mm,
+        u"draw_h_mm": draw_h_mm,
+        u"stub_sel_mm": m[u"stub_sel"],
     }

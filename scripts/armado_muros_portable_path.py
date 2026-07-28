@@ -1,39 +1,40 @@
 # -*- coding: utf-8 -*-
-"""Bootstrap de rutas: pushbutton + ``scripts/`` (54_ArmadoMurosV3 portable)."""
+"""Resolución de rutas para Armado Muros (scripts canónicos de la extensión)."""
 
 from __future__ import print_function
 
 import os
 import sys
 
-_PB_DIR = None
 _SCRIPTS_DIR = None
-
-
-def pushbutton_dir():
-    global _PB_DIR
-    if _PB_DIR is None:
-        try:
-            _PB_DIR = os.path.dirname(os.path.abspath(__file__))
-        except NameError:
-            _PB_DIR = os.getcwd()
-    return _PB_DIR
 
 
 def scripts_dir():
     global _SCRIPTS_DIR
     if _SCRIPTS_DIR is None:
-        _SCRIPTS_DIR = os.path.join(pushbutton_dir(), u"scripts")
+        try:
+            _SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+        except NameError:
+            _SCRIPTS_DIR = os.getcwd()
     return _SCRIPTS_DIR
 
 
+def pushbutton_dir():
+    try:
+        import bimtools_paths
+
+        pb = bimtools_paths.get_pushbutton_dir()
+        if pb and os.path.isdir(pb):
+            return pb
+    except Exception:
+        pass
+    return None
+
+
 def ensure_pushbutton_on_path():
-    """Prioriza ``scripts/`` empaquetado del botón sobre librerías globales."""
+    """Prioriza ``extension/scripts/`` sobre otras entradas de ``sys.path``."""
     sd = scripts_dir()
-    pb = pushbutton_dir()
     if sd and os.path.isdir(sd):
-        if sd not in sys.path:
-            sys.path.insert(0, sd)
         try:
             import bootstrap_paths
 
@@ -47,6 +48,7 @@ def ensure_pushbutton_on_path():
         except Exception:
             pass
         sys.path.insert(0, sd)
+    pb = pushbutton_dir()
     if pb and pb != sd and pb not in sys.path:
         sys.path.insert(1, pb)
     return sd

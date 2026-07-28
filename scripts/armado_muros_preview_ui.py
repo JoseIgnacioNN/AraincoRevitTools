@@ -12,6 +12,7 @@ Ventana WPF previsualización + parámetros malla Armado Muros Lineales (pushbut
 
 from __future__ import print_function
 
+import math
 import os
 import sys
 import weakref
@@ -801,7 +802,7 @@ def _aplicar_remove_verticales_por_cabezal_por_parametro(
                     continue
                 n_remove = n_remove_fin if es_last else n_remove_ini
                 try:
-                    n_max = cabezal.CABEZAL_MAX_CAPAS if cabezal is not None else 6
+                    n_max = cabezal.CABEZAL_MAX_CAPAS if cabezal is not None else 8
                     n_remove = max(1, min(int(n_remove), int(n_max)))
                 except Exception:
                     n_remove = 1
@@ -1529,7 +1530,14 @@ class ArmadoMurosPreviewWindow(object):
     _CABEZAL_PREVIEW_CANVAS_ENC_L_H_PX = 180.0
     _CABEZAL_PREVIEW_CANVAS_HERO_H_PX = 168.0
     _CABEZAL_PREVIEW_BAR_SPAN_PX = 28.0
+    # Fallback px si no hay escala mm; punta libre usa pitch simulado abajo.
     _CABEZAL_PREVIEW_LAYER_PITCH_PX = 22.0
+    # Paso centro–centro entre capas solo en croquis SECCIÓN (no afecta creación).
+    _CABEZAL_PREVIEW_LAYER_PITCH_MM = 80.0
+    # Radio esquemático fijo (Ø real no escala el círculo; solo etiquetas).
+    _CABEZAL_PREVIEW_BAR_DRAW_R_PX = 3.5
+    # Margen estribo/traba: cara exterior ≈ tangente barra + pad (mockup r+4).
+    _CABEZAL_PREVIEW_STIRRUP_MARGIN_PAD_PX = 4.0
     _CABEZAL_ROW_FIXED_PX = 214.0
     _CABEZAL_ROW_MAX_PX = 214.0
     _CABEZAL_ROW_MIN_PX = 192.0
@@ -1622,6 +1630,7 @@ class ArmadoMurosPreviewWindow(object):
             UI_PHASE_MALLAS: True,
         }
         self._suppress_phase_enabled_chk = False
+        self._phase_card_toggle_ui = {}
         self._unificado_phase_col_layout = {}
         self._bulk_mesh_panel_host = None
         self._bulk_cor_panel_host = None
@@ -2706,17 +2715,20 @@ class ArmadoMurosPreviewWindow(object):
                 pass
             finally:
                 self._suppress_phase_enabled_chk = False
-        self._sync_phase_tab_checkboxes()
+        self._sync_phase_tab_checkboxes(
+            animate_phase=phase if animate else None,
+        )
         self._refresh_phase_stepper_buttons()
         try:
             self._refresh_machones_card_focus_chrome()
         except Exception:
             pass
 
-    def _sync_phase_tab_checkboxes(self):
+    def _sync_phase_tab_checkboxes(self, animate_phase=None):
         """Alinea checkboxes de cards/pestañas con ``_phase_enabled``."""
         chrome = getattr(self, u"_phase_stepper_chrome", None) or {}
         card_chks = getattr(self, u"_phase_card_chks", None) or {}
+        toggle_uis = getattr(self, u"_phase_card_toggle_ui", None) or {}
         self._suppress_phase_enabled_chk = True
         try:
             for phase in UI_PHASES_UNIFICADO:
@@ -2727,10 +2739,21 @@ class ArmadoMurosPreviewWindow(object):
                     chk = card_chks.get(phase)
                 if chk is None:
                     continue
+                on = self._phase_is_enabled(phase)
                 try:
-                    chk.IsChecked = self._phase_is_enabled(phase)
+                    chk.IsChecked = on
                 except Exception:
                     pass
+                ui = toggle_uis.get(phase)
+                if ui is not None:
+                    try:
+                        self._apply_toggle_mini_visual(
+                            ui,
+                            on,
+                            animate=(animate_phase is not None and phase == animate_phase),
+                        )
+                    except Exception:
+                        pass
         finally:
             self._suppress_phase_enabled_chk = False
 
@@ -2918,6 +2941,36 @@ class ArmadoMurosPreviewWindow(object):
             UI_PHASE_MALLAS: (u"BrdCardMallas", u"ChkPhaseMallas", (0x5B, 0xC0, 0xDE)),
         }
 
+    def _style_phase_enable_toggle(self, chk, phase, accent_rgb):
+        """CheckBox nativo → BimToolsToggleMini (track + accent de fase)."""
+        if chk is None:
+            return None
+        from System.Windows import Thickness, VerticalAlignment
+        from System import Double
+
+        ui = {
+            u"toggle_accent_rgb": tuple(accent_rgb),
+            u"toggle_mini_parts_key": u"phase_enable_toggle_parts",
+            u"toggle_mini_label": u"",
+            u"phase_enable_chk": chk,
+        }
+        try:
+            chk.Padding = Thickness(0)
+            chk.Margin = Thickness(8, 0, 0, 0)
+            chk.VerticalAlignment = VerticalAlignment.Center
+            chk.Width = Double.NaN
+            chk.Height = Double.NaN
+        except Exception:
+            pass
+        self._apply_bimtools_toggle_mini(chk)
+        self._build_toggle_mini_content(chk, ui)
+        try:
+            on = self._phase_is_enabled(phase)
+        except Exception:
+            on = True
+        self._apply_toggle_mini_visual(ui, on, animate=False)
+        return ui
+
     def _wire_machones_phase_cards(self):
         """Click en card -> foco de fase; checkbox -> activar/desactivar fase."""
         if self._win is None or not self._is_unificado_mode():
@@ -2934,10 +2987,11 @@ class ArmadoMurosPreviewWindow(object):
 
         self._phase_card_borders = {}
         self._phase_card_chks = {}
+        self._phase_card_toggle_ui = {}
         self._phase_stepper_chrome = {}
         self._phase_stepper_btns = {}
 
-        for phase, (brd_name, chk_name, _rgb) in self._machones_phase_card_map().items():
+        for phase, (brd_name, chk_name, rgb) in self._machones_phase_card_map().items():
             brd = self._win.FindName(brd_name)
             chk = self._win.FindName(chk_name)
             self._phase_card_borders[phase] = brd
@@ -2949,6 +3003,13 @@ class ArmadoMurosPreviewWindow(object):
                 u"chk": chk,
                 u"shell": brd,
             }
+            if chk is not None:
+                try:
+                    ui = self._style_phase_enable_toggle(chk, phase, rgb)
+                    if ui is not None:
+                        self._phase_card_toggle_ui[phase] = ui
+                except Exception:
+                    pass
             if brd is not None:
                 def _mk_click(ph):
                     def _on_click(s, e):
@@ -4050,6 +4111,10 @@ class ArmadoMurosPreviewWindow(object):
             chk = ui.get(u"armado_activo_chk")
         elif pk == u"malla_activo_toggle_parts":
             chk = ui.get(u"malla_activo_chk")
+        elif pk == u"phase_enable_toggle_parts":
+            chk = ui.get(u"phase_enable_chk")
+        elif pk == u"post_encuentro_toggle_parts":
+            chk = ui.get(u"post_encuentro_chk")
         else:
             chk = ui.get(u"troceo_por_muro_chk")
         if chk is None:
@@ -4057,6 +4122,8 @@ class ArmadoMurosPreviewWindow(object):
                 ui.get(u"malla_activo_chk")
                 or ui.get(u"troceo_por_muro_chk")
                 or ui.get(u"armado_activo_chk")
+                or ui.get(u"phase_enable_chk")
+                or ui.get(u"post_encuentro_chk")
             )
         if chk is not None and not ui.get(pk):
             try:
@@ -7063,7 +7130,10 @@ class ArmadoMurosPreviewWindow(object):
             if self._cabezal_post_encuentro_activo_from_ui(wid, ex):
                 n = cabezal.cabezal_n_capas_encuentro(ex_cfg)
             else:
-                n = max(1, min(cabezal.CABEZAL_MAX_CAPAS, n))
+                n = max(
+                    1,
+                    min(self._cabezal_max_capas_for_wall_extremo(wid, ex), n),
+                )
             ui[u"layer_steppers"] = []
             self._suppress_cabezal_stepper = True
             try:
@@ -7150,9 +7220,9 @@ class ArmadoMurosPreviewWindow(object):
                     cb.ToolTip = None
                 else:
                     cb.ToolTip = (
-                        u"Tipo 1, Tipo 2 y Tipo 3 solo aplican con 2 a 6 capas "
+                        u"Tipo 1, Tipo 2 y Tipo 3 solo aplican con 2 a {0} capas "
                         u"(escenario actual)."
-                    )
+                    ).format(cabezal.CABEZAL_MAX_CAPAS)
             except Exception:
                 pass
         finally:
@@ -7388,62 +7458,236 @@ class ArmadoMurosPreviewWindow(object):
         """Alias: tipo de confinamiento activo para el canvas."""
         return self._cabezal_effective_confinement_type_for_preview(wid, extremo)
 
-    def _draw_cabezal_post_pitch_dims_preview(
-        self, canv, layout, _px, enc_ctx=None,
-    ):
-        """Cotas pitch post desde última capa núcleo (encuentro L)."""
-        if canv is None or not layout or not enc_ctx:
-            return
-        if not layout.get(u"post_encuentro_activo"):
-            return
-        dims = layout.get(u"pitch_dims") or []
-        if not dims:
-            return
-        from System.Windows.Controls import Canvas as _Cn, TextBlock
-        from System.Windows.Shapes import Line
-        from System.Windows import FontWeights
-        from System.Windows.Media import SolidColorBrush, Color
+    def _cabezal_preview_bar_draw_r_px(self):
+        return float(getattr(self, u"_CABEZAL_PREVIEW_BAR_DRAW_R_PX", 3.5))
 
-        br_dim = SolidColorBrush(Color.FromRgb(148, 163, 184))
-        br_lbl = SolidColorBrush(Color.FromRgb(100, 116, 139))
-        for dim in dims:
-            try:
-                fx0 = float(dim.get(u"fx0", 0.0))
-                fx1 = float(dim.get(u"fx1", 0.0))
-                fy = float(dim.get(u"fy", 0.06))
-                lbl = int(dim.get(u"label_mm", 150))
-            except Exception:
+    def _cabezal_preview_stirrup_margin_px(self):
+        """Offset cara exterior estribo/traba respecto al centro de barra (px)."""
+        r = self._cabezal_preview_bar_draw_r_px()
+        pad = float(getattr(self, u"_CABEZAL_PREVIEW_STIRRUP_MARGIN_PAD_PX", 4.0))
+        return r + pad
+
+    def _cabezal_preview_polar_px(self, cx, cy, deg, rad):
+        """Punto polar: 0=E, 90=S, 180=O, 270=N (y pantalla ↓)."""
+        a = float(deg) * math.pi / 180.0
+        return (
+            float(cx) + float(rad) * math.cos(a),
+            float(cy) + float(rad) * math.sin(a),
+        )
+
+    def _cabezal_preview_add_stroke_path(
+        self, canv, start, ops, brush, thick, z_index, round_caps=True,
+    ):
+        """
+        Path abierto: ``ops`` = lista ``('L', x, y)`` o ``('A', r, sweep_cw, x, y)``.
+        ``sweep_cw`` True = horario (SVG sweep=1).
+        """
+        from System.Windows import Point as WpfPoint, Size as WpfSize
+        from System.Windows.Shapes import Path as WpfPath
+        from System.Windows.Media import (
+            PathGeometry,
+            PathFigure,
+            LineSegment,
+            ArcSegment,
+            SweepDirection,
+            PenLineCap,
+            PenLineJoin,
+        )
+
+        if canv is None or not ops:
+            return
+        fig = PathFigure()
+        fig.IsClosed = False
+        fig.StartPoint = WpfPoint(float(start[0]), float(start[1]))
+        for op in ops:
+            if not op:
                 continue
-            x_a, y_a = _px(fx0, fy)
-            x_b, y_b = _px(fx1, fy)
-            ln = Line()
-            ln.X1 = x_a
-            ln.Y1 = y_a
-            ln.X2 = x_b
-            ln.Y2 = y_b
-            ln.Stroke = br_dim
-            ln.StrokeThickness = 1.0
-            self._canvas_set_zindex(ln, 11)
-            canv.Children.Add(ln)
-            tb = TextBlock()
-            tb.Text = str(lbl)
-            tb.Foreground = br_lbl
-            tb.FontSize = 8.0
-            tb.FontWeight = FontWeights.SemiBold
-            _Cn.SetLeft(tb, (x_a + x_b) * 0.5 - 8.0)
-            _Cn.SetTop(tb, y_a - 12.0)
-            self._canvas_set_zindex(tb, 12)
-            canv.Children.Add(tb)
+            kind = op[0]
+            if kind == u"L" or kind == "L":
+                seg = LineSegment()
+                seg.Point = WpfPoint(float(op[1]), float(op[2]))
+                fig.Segments.Add(seg)
+            elif kind == u"A" or kind == "A":
+                r = max(0.5, float(op[1]))
+                sweep_cw = bool(op[2])
+                arc = ArcSegment()
+                arc.Point = WpfPoint(float(op[3]), float(op[4]))
+                arc.Size = WpfSize(r, r)
+                arc.RotationAngle = 0.0
+                arc.IsLargeArc = False
+                arc.SweepDirection = (
+                    SweepDirection.Clockwise
+                    if sweep_cw
+                    else SweepDirection.Counterclockwise
+                )
+                fig.Segments.Add(arc)
+        geo = PathGeometry()
+        geo.Figures.Add(fig)
+        path = WpfPath()
+        path.Data = geo
+        path.Stroke = brush
+        path.StrokeThickness = float(thick)
+        try:
+            path.Fill = None
+        except Exception:
+            pass
+        if round_caps:
+            try:
+                path.StrokeStartLineCap = PenLineCap.Round
+                path.StrokeEndLineCap = PenLineCap.Round
+                path.StrokeLineJoin = PenLineJoin.Round
+            except Exception:
+                pass
+        self._canvas_set_zindex(path, z_index)
+        canv.Children.Add(path)
+
+    def _draw_cabezal_stirrup_135_path(
+        self, canv, left, top, right, bot, bar_cx, bar_cy, wrap_r,
+        brush, thick, tip_left, z_index=21,
+    ):
+        """
+        Estribo con esquinas redondeadas y cierre gancho 135° (mockup Stirrup135Path).
+        Centro de arco = longitudinal de la esquina del gancho; wrap_r = margen.
+        """
+        R = max(3.0, float(wrap_r))
+        cr = min(
+            R,
+            (float(right) - float(left)) * 0.5 - 0.5,
+            (float(bot) - float(top)) * 0.5 - 0.5,
+        )
+        cr = max(1.0, cr)
+        tail_len = max(16.0, float(thick) * 7.0)
+        sqrt_half = math.sqrt(0.5)
+        tx = (-sqrt_half) if tip_left else sqrt_half
+        ty = sqrt_half
+        l, t, rgt, b = float(left), float(top), float(right), float(bot)
+        bc_x, bc_y = float(bar_cx), float(bar_cy)
+
+        def _pol(deg, rad=None):
+            return self._cabezal_preview_polar_px(
+                bc_x, bc_y, deg, R if rad is None else rad,
+            )
+
+        north = _pol(270)
+        east = _pol(0)
+        west = _pol(180)
+        exit_a = _pol(45) if tip_left else _pol(135)
+        exit_b = _pol(225) if tip_left else _pol(315)
+
+        if tip_left:
+            # Gancho TR: cuerpo N→TL→BL→BR→E
+            body_ops = [
+                (u"L", l + cr, t),
+                (u"A", cr, False, l, t + cr),
+                (u"L", l, b - cr),
+                (u"A", cr, False, l + cr, b),
+                (u"L", rgt - cr, b),
+                (u"A", cr, False, rgt, b - cr),
+                (u"L", east[0], east[1]),
+            ]
+            hook_top_ops = [
+                (u"A", R, True, exit_a[0], exit_a[1]),
+                (u"L", exit_a[0] + tx * tail_len, exit_a[1] + ty * tail_len),
+            ]
+            hook_side_ops = [
+                (u"A", R, False, exit_b[0], exit_b[1]),
+                (u"L", exit_b[0] + tx * tail_len, exit_b[1] + ty * tail_len),
+            ]
+            side_start = east
+        else:
+            # Gancho TL: cuerpo N→TR→BR→BL→O
+            body_ops = [
+                (u"L", rgt - cr, t),
+                (u"A", cr, True, rgt, t + cr),
+                (u"L", rgt, b - cr),
+                (u"A", cr, True, rgt - cr, b),
+                (u"L", l + cr, b),
+                (u"A", cr, True, l, b - cr),
+                (u"L", west[0], west[1]),
+            ]
+            hook_top_ops = [
+                (u"A", R, False, exit_a[0], exit_a[1]),
+                (u"L", exit_a[0] + tx * tail_len, exit_a[1] + ty * tail_len),
+            ]
+            hook_side_ops = [
+                (u"A", R, True, exit_b[0], exit_b[1]),
+                (u"L", exit_b[0] + tx * tail_len, exit_b[1] + ty * tail_len),
+            ]
+            side_start = west
+
+        self._cabezal_preview_add_stroke_path(
+            canv, north, body_ops, brush, thick, z_index,
+        )
+        self._cabezal_preview_add_stroke_path(
+            canv, north, hook_top_ops, brush, thick, z_index,
+        )
+        self._cabezal_preview_add_stroke_path(
+            canv, side_start, hook_side_ops, brush, thick, z_index,
+        )
+
+    def _draw_cabezal_hook_135_traba_end(
+        self, canv, bar_cx, bar_cy, wrap_r, tip_left, end,
+        brush, thick, z_index=22,
+    ):
+        """
+        Un gancho 135° que abraza una longitudinal (mockup Hook135TrabaEnd).
+        ``end``: top/bottom (traba ⊥) o left/right (traba long.).
+
+        En left/right el envolvente es siempre el exterior de la jaula en
+        pantalla (O/E), independiente de ``tip_left``/mirror — si no, en
+        término el arco pasa por el núcleo y se ve como «C» interior.
+        """
+        R = max(3.0, float(wrap_r))
+        tail_len = max(18.0, float(thick) * 8.0)
+        sqrt_half = math.sqrt(0.5)
+        bc_x, bc_y = float(bar_cx), float(bar_cy)
+
+        def _pol(deg):
+            return self._cabezal_preview_polar_px(bc_x, bc_y, deg, R)
+
+        end_key = unicode(end or u"top")
+        if end_key == u"top":
+            start = _pol(0) if tip_left else _pol(180)
+            exit_pt = _pol(225) if tip_left else _pol(315)
+            tx = (-sqrt_half) if tip_left else sqrt_half
+            ty = sqrt_half
+            sweep_cw = (not tip_left)
+        elif end_key == u"bottom":
+            start = _pol(0) if tip_left else _pol(180)
+            exit_pt = _pol(135) if tip_left else _pol(45)
+            tx = (-sqrt_half) if tip_left else sqrt_half
+            ty = -sqrt_half
+            sweep_cw = bool(tip_left)
+        elif end_key == u"left":
+            # Exterior Oeste: S → O → SO (135°); cola al núcleo (+x, −y).
+            start = _pol(90)
+            exit_pt = _pol(225)
+            tx = sqrt_half
+            ty = -sqrt_half
+            sweep_cw = True
+        else:
+            # right — exterior Este: S → E → NE (135°); cola al núcleo (−x, −y).
+            start = _pol(90)
+            exit_pt = _pol(315)
+            tx = -sqrt_half
+            ty = -sqrt_half
+            sweep_cw = False
+
+        ops = [
+            (u"A", R, sweep_cw, exit_pt[0], exit_pt[1]),
+            (u"L", exit_pt[0] + tx * tail_len, exit_pt[1] + ty * tail_len),
+        ]
+        self._cabezal_preview_add_stroke_path(
+            canv, start, ops, brush, thick, z_index,
+        )
 
     def _draw_cabezal_stirrup_overlay_preview(
         self, canv, layout, wid, extremo, _px, conf_type=None,
-        bulk_preview=False,
+        bulk_preview=False, mirror=False,
     ):
         """
-        Estribo perimetral capas 0–1 — ``Rectangle`` verde (estilo Armado Columnas).
+        Estribo perimetral — esquinas r + ganchos 135° (mockup improved).
         """
-        from System.Windows.Controls import Canvas
-        from System.Windows.Shapes import Rectangle
         from System.Windows.Media import SolidColorBrush, Color
 
         if canv is None or cabezal is None:
@@ -7480,10 +7724,9 @@ class ArmadoMurosPreviewWindow(object):
         if len(subset) < 2:
             return
 
-        bar_r = 3.5
         stir_thick = 2.2
-        # Envolvente en px: tangente exterior de las barras + mitad del trazo del estribo.
-        margin_px = bar_r + stir_thick * 0.5 + 1.5
+        margin_px = self._cabezal_preview_stirrup_margin_px()
+        tip_left = not bool(mirror)
 
         cxs = []
         cys = []
@@ -7498,173 +7741,199 @@ class ArmadoMurosPreviewWindow(object):
             return
 
         left = min(cxs) - margin_px
+        right = max(cxs) + margin_px
         top = min(cys) - margin_px
-        rw = max(6.0, max(cxs) - min(cxs) + 2.0 * margin_px)
-        rh = max(6.0, max(cys) - min(cys) + 2.0 * margin_px)
+        bot = max(cys) + margin_px
+        # Longitudinal en esquina del gancho (interior = opuesto a la punta).
+        bar_cx = max(cxs) if tip_left else min(cxs)
+        bar_cy = min(cys)
 
         br_green = SolidColorBrush(Color.FromRgb(0, 180, 80))
-
-        r_el = Rectangle()
-        r_el.Width = rw
-        r_el.Height = rh
-        r_el.Stroke = br_green
-        r_el.StrokeThickness = stir_thick
-        try:
-            r_el.Fill = None
-        except Exception:
-            pass
-        Canvas.SetLeft(r_el, left)
-        Canvas.SetTop(r_el, top)
-        self._canvas_set_zindex(r_el, 21)
-        canv.Children.Add(r_el)
+        self._draw_cabezal_stirrup_135_path(
+            canv, left, top, right, bot, bar_cx, bar_cy, margin_px,
+            br_green, stir_thick, tip_left, z_index=21,
+        )
 
     def _draw_cabezal_tie_overlay_preview(
         self, canv, layout, wid, extremo, _px, conf_type=None,
-        bulk_preview=False,
+        bulk_preview=False, mirror=False,
     ):
-        """Trabas — líneas naranjas (tang. interior + empalmes por barra)."""
-        from System.Windows.Controls import Canvas
+        """
+        Trabas ⊥ y long. Tipo 3 — offset = margen estribo; un gancho 135°/extremo.
+        """
         from System.Windows.Shapes import Line
-        from System.Windows.Media import SolidColorBrush, Color
+        from System.Windows.Media import SolidColorBrush, Color, PenLineCap
 
         if canv is None or cabezal is None:
             return
 
-        ties = list(layout.get(u"tie_previews") or [])
-        if not ties:
-            one = layout.get(u"tie_preview")
-            if one:
-                ties = [one]
-        if not ties:
-            if conf_type is None:
-                conf_type = self._cabezal_effective_confinement_type_for_preview(
-                    wid, extremo,
-                )
-            show_tie = False
-            try:
-                show_tie = (
-                    cabezal.cabezal_confinement_is_tie_layer_1(conf_type)
-                    or cabezal.cabezal_confinement_is_enc_fiber_perp(conf_type)
-                    or cabezal.cabezal_confinement_is_enc_fiber_cross(conf_type)
-                )
-            except Exception:
-                show_tie = conf_type == cabezal.CABEZAL_CONFINEMENT_TIE_LAYER_1
-            if not show_tie and not bulk_preview:
-                show_tie = self._cabezal_combo_shows_tie_layer_1(wid, extremo)
-            if not show_tie:
-                return
-            dots = layout.get(u"dots") or []
-            if not dots:
-                return
-            tie_layers = layout.get(u"tie_layer_indices") or []
-            if tie_layers:
-                ties = []
-                for tli in tie_layers:
-                    try:
-                        tie = cabezal.cabezal_tie_preview_geometry(
-                            dots,
-                            layer_index=int(tli),
-                            inner_y0=layout.get(u"inner_y0"),
-                            inner_h=layout.get(u"inner_h"),
-                        )
-                    except Exception:
-                        tie = None
-                    if tie:
-                        ties.append(tie)
-            else:
-                tie_li = cabezal.CABEZAL_TIE_LAYER_INDEX
-                if bulk_preview:
-                    return
-                try:
-                    tie = cabezal.cabezal_tie_preview_geometry(
-                        dots,
-                        layer_index=tie_li,
-                        inner_y0=layout.get(u"inner_y0"),
-                        inner_h=layout.get(u"inner_h"),
-                    )
-                except Exception:
-                    tie = None
-                if tie:
-                    ties = [tie]
-        if not ties:
-            return
-
-        br_orange = SolidColorBrush(Color.FromRgb(240, 120, 40))
-        tie_thick = 1.9
-
-        def _add_seg(seg):
-            if not seg or len(seg) < 2:
-                return
-            (fx0, fy0), (fx1, fy1) = seg[0], seg[1]
-            x0, y0 = _px(float(fx0), float(fy0))
-            x1, y1 = _px(float(fx1), float(fy1))
-            ln = Line()
-            ln.X1 = x0
-            ln.Y1 = y0
-            ln.X2 = x1
-            ln.Y2 = y1
-            ln.Stroke = br_orange
-            ln.StrokeThickness = tie_thick
-            self._canvas_set_zindex(ln, 22)
-            canv.Children.Add(ln)
-
-        for tie in ties:
-            for seg in tie.get(u"segments") or []:
-                _add_seg(seg)
-            if not tie.get(u"segments"):
-                for key in (u"leg", u"top_hook", u"bottom_hook"):
-                    _add_seg(tie.get(key))
-                for seg in tie.get(u"bar_grips") or []:
-                    _add_seg(seg)
-
-        # Tipo 3: trabas longitudinales (índices interiores, dirección capas).
-        cross_ties = list(layout.get(u"cross_tie_previews") or [])
-        if not cross_ties and conf_type is None:
+        if conf_type is None:
             conf_type = self._cabezal_effective_confinement_type_for_preview(
                 wid, extremo,
             )
-        if not cross_ties:
-            try:
-                if cabezal.cabezal_confinement_is_perimeter_cross(conf_type):
-                    cross_ties = []  # layout debería traerlas; no inventar aquí
-            except Exception:
-                pass
-        if cross_ties:
-            br_cross = SolidColorBrush(Color.FromRgb(64, 160, 220))
-            cross_thick = 2.0
 
-            def _add_cross_seg(seg):
-                if not seg or len(seg) < 2:
-                    return
-                (fx0, fy0), (fx1, fy1) = seg[0], seg[1]
-                x0, y0 = _px(float(fx0), float(fy0))
-                x1, y1 = _px(float(fx1), float(fy1))
-                ln = Line()
-                ln.X1 = x0
-                ln.Y1 = y0
-                ln.X2 = x1
-                ln.Y2 = y1
-                ln.Stroke = br_cross
-                ln.StrokeThickness = cross_thick
+        dots = layout.get(u"dots") or []
+        tip_left = not bool(mirror)
+        margin_px = self._cabezal_preview_stirrup_margin_px()
+        tie_side = 1.0 if tip_left else -1.0
+        br_orange = SolidColorBrush(Color.FromRgb(245, 158, 11))
+        tie_thick = 1.6
+        br_cross = SolidColorBrush(Color.FromRgb(56, 189, 248))
+        cross_thick = 1.7
+
+        show_tie = False
+        try:
+            show_tie = (
+                cabezal.cabezal_confinement_is_tie_layer_1(conf_type)
+                or cabezal.cabezal_confinement_is_enc_fiber_perp(conf_type)
+                or cabezal.cabezal_confinement_is_enc_fiber_cross(conf_type)
+                or bool(layout.get(u"tie_layer_indices"))
+                or bool(layout.get(u"tie_previews"))
+            )
+        except Exception:
+            show_tie = conf_type == cabezal.CABEZAL_CONFINEMENT_TIE_LAYER_1
+        if not show_tie and not bulk_preview:
+            show_tie = self._cabezal_combo_shows_tie_layer_1(wid, extremo)
+
+        tie_layers = list(layout.get(u"tie_layer_indices") or [])
+        if not tie_layers and show_tie:
+            for tp in (layout.get(u"tie_previews") or []):
                 try:
-                    from System.Windows.Media import DoubleCollection
-                    dashes = DoubleCollection()
-                    dashes.Add(4.0)
-                    dashes.Add(2.5)
-                    ln.StrokeDashArray = dashes
+                    tie_layers.append(int(tp.get(u"layer_index")))
                 except Exception:
                     pass
-                self._canvas_set_zindex(ln, 23)
+
+        if show_tie and dots and tie_layers:
+            for tli in tie_layers:
+                subset = [
+                    d for d in dots
+                    if int(d.get(u"layer_index", -1)) == int(tli)
+                ]
+                if not subset:
+                    continue
+                pts = []
+                for d in subset:
+                    try:
+                        pts.append(_px(float(d[u"fx"]), float(d[u"fy"])))
+                    except Exception:
+                        continue
+                if len(pts) < 1:
+                    continue
+                cx = sum(p[0] for p in pts) / float(len(pts))
+                cys = [p[1] for p in pts]
+                y_min = min(cys)
+                y_max = max(cys)
+                x_tie = cx + tie_side * margin_px
+
+                ln = Line()
+                ln.X1 = x_tie
+                ln.Y1 = y_min
+                ln.X2 = x_tie
+                ln.Y2 = y_max
+                ln.Stroke = br_orange
+                ln.StrokeThickness = tie_thick
+                try:
+                    ln.StrokeStartLineCap = PenLineCap.Flat
+                    ln.StrokeEndLineCap = PenLineCap.Flat
+                except Exception:
+                    pass
+                self._canvas_set_zindex(ln, 22)
                 canv.Children.Add(ln)
 
-            for ctie in cross_ties:
-                for seg in ctie.get(u"segments") or []:
-                    _add_cross_seg(seg)
-                if not ctie.get(u"segments"):
-                    for key in (u"leg", u"left_hook", u"right_hook"):
-                        _add_cross_seg(ctie.get(key))
-                    for seg in ctie.get(u"bar_grips") or []:
-                        _add_cross_seg(seg)
+                self._draw_cabezal_hook_135_traba_end(
+                    canv, cx, y_min, margin_px, tip_left, u"top",
+                    br_orange, tie_thick, z_index=22,
+                )
+                self._draw_cabezal_hook_135_traba_end(
+                    canv, cx, y_max, margin_px, tip_left, u"bottom",
+                    br_orange, tie_thick, z_index=22,
+                )
+
+        # Tipo 3: trabas longitudinales (índices interiores).
+        show_cross = False
+        try:
+            show_cross = cabezal.cabezal_confinement_is_perimeter_cross(conf_type)
+        except Exception:
+            show_cross = False
+        if not show_cross and layout.get(u"cross_tie_previews"):
+            show_cross = True
+        if not show_cross or not dots:
+            return
+
+        # Capas extremas + índices de barra interiores.
+        layer_idxs = []
+        for d in dots:
+            try:
+                li = int(d.get(u"layer_index", -1))
+            except Exception:
+                continue
+            if li >= 0 and li not in layer_idxs:
+                layer_idxs.append(li)
+        layer_idxs = sorted(layer_idxs)
+        if len(layer_idxs) < 2:
+            return
+        end_layers = set([layer_idxs[0], layer_idxs[-1]])
+
+        n_bars = 0
+        for d in dots:
+            try:
+                n_bars = max(n_bars, int(d.get(u"bar_index", -1)) + 1)
+            except Exception:
+                pass
+        try:
+            bar_indices = list(
+                cabezal.cabezal_confinement_cross_tie_bar_indices(n_bars),
+            )
+        except Exception:
+            bar_indices = list(range(1, max(0, n_bars - 1)))
+        if not bar_indices:
+            return
+
+        for bi in bar_indices:
+            # Centros exactos de la barra ``bi`` en capas extremas (izq/der pantalla).
+            end_pts = []
+            for d in dots:
+                try:
+                    if int(d.get(u"bar_index", -1)) != int(bi):
+                        continue
+                    if int(d.get(u"layer_index", -1)) not in end_layers:
+                        continue
+                    end_pts.append(
+                        _px(float(d[u"fx"]), float(d[u"fy"])),
+                    )
+                except Exception:
+                    continue
+            if len(end_pts) < 2:
+                continue
+            end_pts_sorted = sorted(end_pts, key=lambda p: p[0])
+            x_left_bar, cy_l = end_pts_sorted[0]
+            x_right_bar, cy_r = end_pts_sorted[-1]
+            cy = 0.5 * (float(cy_l) + float(cy_r))
+            y_tie = cy + margin_px
+
+            ln = Line()
+            ln.X1 = x_left_bar
+            ln.Y1 = y_tie
+            ln.X2 = x_right_bar
+            ln.Y2 = y_tie
+            ln.Stroke = br_cross
+            ln.StrokeThickness = cross_thick
+            try:
+                ln.StrokeStartLineCap = PenLineCap.Flat
+                ln.StrokeEndLineCap = PenLineCap.Flat
+            except Exception:
+                pass
+            self._canvas_set_zindex(ln, 23)
+            canv.Children.Add(ln)
+
+            self._draw_cabezal_hook_135_traba_end(
+                canv, x_left_bar, cy, margin_px, tip_left, u"left",
+                br_cross, cross_thick, z_index=23,
+            )
+            self._draw_cabezal_hook_135_traba_end(
+                canv, x_right_bar, cy, margin_px, tip_left, u"right",
+                br_cross, cross_thick, z_index=23,
+            )
 
     def _set_cabezal_confinement_combo_value(self, cb, wid, extremo, conf_type):
         if cb is None or cabezal is None:
@@ -7996,14 +8265,14 @@ class ArmadoMurosPreviewWindow(object):
 
     def _cabezal_max_capas_for_wall_extremo(self, wid, extremo):
         if cabezal is None:
-            return 6
+            return 8
         if (
             self._cabezal_extremo_es_encuentro_l(wid, extremo)
             and self._cabezal_post_encuentro_activo_from_ui(wid, extremo)
         ):
             return cabezal.CABEZAL_MAX_CAPAS_TOTAL
         if self._cabezal_extremo_es_encuentro_l(wid, extremo):
-            return cabezal.CABEZAL_MAX_CAPAS
+            return cabezal.CABEZAL_MAX_CAPAS_ENCUENTRO
         return cabezal.CABEZAL_MAX_CAPAS
 
     def _cabezal_post_encuentro_activo_from_ui(self, wid, extremo):
@@ -8013,7 +8282,7 @@ class ArmadoMurosPreviewWindow(object):
             return False
         ui = self._cabezal_ui_ext(wid, extremo)
         chk = ui.get(u"post_encuentro_chk")
-        if chk is not None:
+        if chk is not None and not getattr(self, u"_suppress_post_encuentro_chk", False):
             try:
                 return bool(chk.IsChecked)
             except Exception:
@@ -8037,7 +8306,7 @@ class ArmadoMurosPreviewWindow(object):
                     n_step = int(cap_step[u"get_value"]())
                     n_step = max(
                         min_cap,
-                        min(cabezal.CABEZAL_MAX_CAPAS, n_step),
+                        min(cabezal.CABEZAL_MAX_CAPAS_ENCUENTRO, n_step),
                     )
                     n_post = self._cabezal_n_capas_post_from_ui(wid, extremo)
                     # Capas stepper = core; ignore value leaked from total sync.
@@ -8051,7 +8320,7 @@ class ArmadoMurosPreviewWindow(object):
                 n_step = int(cap_step[u"get_value"]())
                 return max(
                     min_cap,
-                    min(cabezal.CABEZAL_MAX_CAPAS, n_step),
+                    min(cabezal.CABEZAL_MAX_CAPAS_ENCUENTRO, n_step),
                 )
             except Exception:
                 pass
@@ -8059,7 +8328,7 @@ class ArmadoMurosPreviewWindow(object):
             return max(
                 min_cap,
                 min(
-                    cabezal.CABEZAL_MAX_CAPAS,
+                    cabezal.CABEZAL_MAX_CAPAS_ENCUENTRO,
                     int(ex_cfg.get(u"n_capas", min_cap)),
                 ),
             )
@@ -9939,26 +10208,45 @@ class ArmadoMurosPreviewWindow(object):
         if chips is not None:
             chips_host.Children.Add(chips)
 
-    def _fill_cabezal_capas_beside_seccion(self, ui, palette):
-        """Monta etiqueta Capas + control (combo o stepper) junto a ARMADO."""
-        from System.Windows.Controls import TextBlock, StackPanel, Orientation
-        from System.Windows import (
-            FontWeights,
-            VerticalAlignment,
-            HorizontalAlignment,
-            Thickness,
-            Visibility,
-        )
+    def _mesh_stacked_label_combo_col(self, label, combo, pal=None):
+        """Columna etiqueta arriba + combo stretch (Capas en Encuentro / Post)."""
+        from System.Windows.Controls import StackPanel, TextBlock, Orientation
+        from System.Windows import Thickness, HorizontalAlignment, VerticalAlignment
 
-        host = ui.get(u"capas_row_host")
-        cap_step = ui.get(u"capas_stepper")
-        if host is None or cap_step is None:
-            return
-        panel = cap_step.get(u"panel")
+        if pal is None:
+            pal = self._mesh_ui_palette(u"bulk")
+        col = StackPanel()
+        col.Orientation = Orientation.Vertical
+        col.HorizontalAlignment = HorizontalAlignment.Stretch
+        tb = TextBlock()
+        tb.Text = label
+        tb.Foreground = pal[u"text_caption"]
+        tb.FontSize = 11.0
+        tb.Margin = Thickness(0, 0, 0, 4)
+        tb.HorizontalAlignment = HorizontalAlignment.Left
+        col.Children.Add(tb)
+        try:
+            from System.Windows import FrameworkElement
+            combo.ClearValue(FrameworkElement.WidthProperty)
+            combo.ClearValue(FrameworkElement.MinWidthProperty)
+            combo.ClearValue(FrameworkElement.MaxWidthProperty)
+            combo.ClearValue(FrameworkElement.HeightProperty)
+        except Exception:
+            pass
+        try:
+            self._apply_flat_combo(combo, stretch=True)
+            combo.Margin = Thickness(0)
+            combo.HorizontalAlignment = HorizontalAlignment.Stretch
+            combo.VerticalAlignment = VerticalAlignment.Center
+        except Exception:
+            pass
+        col.Children.Add(combo)
+        return col
+
+    def _detach_wpf_panel_from_parent(self, panel):
+        """Quita ``panel`` de su Parent.Children (reuso entre hosts)."""
         if panel is None:
             return
-
-        # Detach agresivo del panel (evita Add fallido por Parent residual).
         try:
             parent = panel.Parent
             while parent is not None and hasattr(parent, u"Children"):
@@ -9969,6 +10257,41 @@ class ArmadoMurosPreviewWindow(object):
                 parent = panel.Parent
         except Exception:
             pass
+
+    def _fill_cabezal_capas_beside_seccion(self, ui, palette):
+        """Monta Capas (punta) o Capas en Encuentro | Capas Post Encuentro (misma fila)."""
+        from System.Windows.Controls import (
+            TextBlock,
+            StackPanel,
+            Orientation,
+            Grid,
+            ColumnDefinition,
+        )
+        from System.Windows import (
+            FontWeights,
+            VerticalAlignment,
+            HorizontalAlignment,
+            Thickness,
+            Visibility,
+            GridLength,
+            GridUnitType,
+        )
+
+        host = ui.get(u"capas_row_host")
+        cap_step = ui.get(u"capas_stepper")
+        if host is None or cap_step is None:
+            return
+        panel = cap_step.get(u"panel")
+        if panel is None:
+            return
+
+        post_step = ui.get(u"post_capas_stepper")
+        post_panel = None
+        if post_step is not None:
+            post_panel = post_step.get(u"combo") or post_step.get(u"panel")
+
+        self._detach_wpf_panel_from_parent(panel)
+        self._detach_wpf_panel_from_parent(post_panel)
 
         try:
             host.Children.Clear()
@@ -9984,7 +10307,31 @@ class ArmadoMurosPreviewWindow(object):
         except Exception:
             pass
 
-        # Combo (stacked_b): misma fila etiqueta+combo que n / Ø.
+        extremo = ui.get(u"extremo")
+        try:
+            owner_wid = int(ui.get(u"owner_wid"))
+        except Exception:
+            owner_wid = None
+        is_enc = False
+        post_on = False
+        if owner_wid is not None and extremo is not None:
+            try:
+                is_enc = bool(
+                    self._cabezal_extremo_es_encuentro_l(owner_wid, extremo)
+                )
+            except Exception:
+                is_enc = False
+            if is_enc:
+                try:
+                    post_on = bool(
+                        self._cabezal_post_encuentro_activo_from_ui(
+                            owner_wid, extremo,
+                        )
+                    )
+                except Exception:
+                    post_on = False
+
+        # Combo stacked: punta = «Capas»; encuentro = dual label-arriba.
         if cap_step.get(u"kind") == u"combo":
             try:
                 from System.Windows import FrameworkElement
@@ -10000,13 +10347,63 @@ class ArmadoMurosPreviewWindow(object):
                 self._apply_flat_combo(panel, stretch=True)
             except Exception:
                 pass
-            try:
-                row = self._mesh_label_combo_row(
-                    u"Capas", panel, label_w=52.0, pal=palette,
+
+            if is_enc:
+                grid = Grid()
+                grid.HorizontalAlignment = HorizontalAlignment.Stretch
+                cd0 = ColumnDefinition()
+                cd0.Width = GridLength(1.0, GridUnitType.Star)
+                grid.ColumnDefinitions.Add(cd0)
+                col0 = self._mesh_stacked_label_combo_col(
+                    u"Capas en Encuentro", panel, pal=palette,
                 )
-                host.Children.Add(row)
-            except Exception:
-                pass
+                try:
+                    panel.ToolTip = (
+                        u"Capas del n\u00facleo del encuentro (pitch equitativo)"
+                        if post_on
+                        else u"Cantidad de capas del n\u00facleo del encuentro"
+                    )
+                except Exception:
+                    pass
+                Grid.SetColumn(col0, 0)
+                grid.Children.Add(col0)
+
+                if post_on and post_panel is not None:
+                    cdg = ColumnDefinition()
+                    cdg.Width = GridLength(12.0, GridUnitType.Pixel)
+                    cd1 = ColumnDefinition()
+                    cd1.Width = GridLength(1.0, GridUnitType.Star)
+                    grid.ColumnDefinitions.Add(cdg)
+                    grid.ColumnDefinitions.Add(cd1)
+                    try:
+                        self._apply_flat_combo(post_panel, stretch=True)
+                        post_panel.ToolTip = (
+                            u"N\u00famero de capas post-encuentro (1\u2013{0})"
+                        ).format(
+                            int(cabezal.CABEZAL_MAX_POST_CAPAS)
+                            if cabezal is not None
+                            else 4
+                        )
+                    except Exception:
+                        pass
+                    col1 = self._mesh_stacked_label_combo_col(
+                        u"Capas Post Encuentro", post_panel, pal=palette,
+                    )
+                    Grid.SetColumn(col1, 2)
+                    grid.Children.Add(col1)
+
+                try:
+                    host.Children.Add(grid)
+                except Exception:
+                    pass
+            else:
+                try:
+                    row = self._mesh_label_combo_row(
+                        u"Capas", panel, label_w=52.0, pal=palette,
+                    )
+                    host.Children.Add(row)
+                except Exception:
+                    pass
             try:
                 host.Visibility = Visibility.Visible
             except Exception:
@@ -10019,7 +10416,7 @@ class ArmadoMurosPreviewWindow(object):
         row.VerticalAlignment = VerticalAlignment.Center
 
         lbl = TextBlock()
-        lbl.Text = u"Capas"
+        lbl.Text = u"Capas en Encuentro" if is_enc else u"Capas"
         fg = palette.get(u"text_caption") or palette.get(u"text_control")
         if fg is not None:
             lbl.Foreground = fg
@@ -10039,19 +10436,9 @@ class ArmadoMurosPreviewWindow(object):
         except Exception:
             pass
 
+        row.Children.Add(panel)
         try:
-            row.Children.Add(panel)
-        except Exception:
-            try:
-                parent = panel.Parent
-                if parent is not None and hasattr(parent, u"Children"):
-                    parent.Children.Remove(panel)
-                row.Children.Add(panel)
-            except Exception:
-                pass
-
-        host.Children.Add(row)
-        try:
+            host.Children.Add(row)
             host.Visibility = Visibility.Visible
         except Exception:
             pass
@@ -11025,21 +11412,37 @@ class ArmadoMurosPreviewWindow(object):
         br_stroke,
         enc_geom=None,
     ):
-        """Contorno planta L + zona intersección + unión discontinua (sin texto ni P_join)."""
-        from System.Windows.Controls import Canvas as _Cn
-        from System.Windows.Shapes import Path, Line, Rectangle
+        """Contorno planta L del encuentro (sin marco ni línea de zona)."""
+        from System.Windows.Shapes import Path
         from System.Windows import Point as WpfPoint
-        from System.Windows.Media import PathGeometry, PathFigure, PolyLineSegment, SolidColorBrush, Color
+        from System.Windows.Media import PathGeometry, PathFigure, PolyLineSegment
 
         if _cab_enc_l is None or not enc_ctx:
             return None
         if enc_geom is None:
+            n_post_draw = 0
+            try:
+                n_post_draw = int(
+                    enc_ctx.get(u"n_post_preview")
+                    or enc_ctx.get(u"n_post")
+                    or 0
+                )
+            except Exception:
+                n_post_draw = 0
+            try:
+                pitch_post_draw = float(
+                    (enc_ctx.get(u"pitch_post_mm") if enc_ctx else None) or 150.0
+                )
+            except Exception:
+                pitch_post_draw = 150.0
             enc_geom = _cab_enc_l.cabezal_encuentro_plan_l_polygon_local_px(
                 draw_w,
                 draw_h,
                 enc_ctx.get(u"e_det"),
                 enc_ctx.get(u"e_sel"),
                 mirror=bool(mirror),
+                n_post=n_post_draw,
+                pitch_post_mm=pitch_post_draw,
             )
         geom = enc_geom
         points = geom.get(u"points") or []
@@ -11065,39 +11468,6 @@ class ArmadoMurosPreviewWindow(object):
         path.StrokeThickness = 1.4
         self._canvas_set_zindex(path, 1)
         canv.Children.Add(path)
-
-        zr = geom.get(u"zone_rect") or {}
-        if zr:
-            wing = Rectangle()
-            wing.Width = float(zr.get(u"w", 1.0))
-            wing.Height = float(zr.get(u"h", 1.0))
-            wing.Fill = SolidColorBrush(Color.FromArgb(26, 56, 189, 248))
-            wing.Stroke = SolidColorBrush(Color.FromRgb(56, 189, 248))
-            wing.StrokeThickness = 0.9
-            try:
-                wing.StrokeDashArray = self._wpf_double_collection(4.0, 3.0)
-            except Exception:
-                pass
-            _Cn.SetLeft(wing, float(x0) + float(zr.get(u"x", 0.0)))
-            _Cn.SetTop(wing, float(y0) + float(zr.get(u"y", 0.0)))
-            self._canvas_set_zindex(wing, 2)
-            canv.Children.Add(wing)
-
-        jl = geom.get(u"join_line")
-        if jl and len(jl) == 4:
-            ln = Line()
-            ln.X1 = float(x0) + float(jl[0])
-            ln.Y1 = float(y0) + float(jl[1])
-            ln.X2 = float(x0) + float(jl[2])
-            ln.Y2 = float(y0) + float(jl[3])
-            ln.Stroke = SolidColorBrush(Color.FromRgb(203, 213, 225))
-            ln.StrokeThickness = 1.2
-            try:
-                ln.StrokeDashArray = self._wpf_double_collection(5.0, 3.0)
-            except Exception:
-                pass
-            self._canvas_set_zindex(ln, 3)
-            canv.Children.Add(ln)
 
         return geom
 
@@ -11182,7 +11552,15 @@ class ArmadoMurosPreviewWindow(object):
         except Exception:
             e_mm = 200.0
 
-        cov_px = 10.0
+        bar_r_px = self._cabezal_preview_bar_draw_r_px()
+        # Escala px/mm por espesor (eje Y del croquis = espesor del muro).
+        px_per_mm = float(draw_h_est) / max(float(e_mm), 1.0)
+        try:
+            cover_mm = float(cabezal.CABEZAL_COVER_MM)
+        except Exception:
+            cover_mm = 25.0
+        # Cover cara→tangente: centro = cover + radio esquemático.
+        cov_px = cover_mm * px_per_mm + bar_r_px
         if bulk_preview or layers_override is not None:
             n_capas_preview = max(
                 len(preview_layers),
@@ -11243,14 +11621,33 @@ class ArmadoMurosPreviewWindow(object):
         enc_geom = None
         zone_layout_w = draw_w
         zone_layout_h = draw_h
+        n_post_preview = 0
         if enc_ctx and _cab_enc_l is not None:
+            try:
+                if cabezal.cabezal_post_encuentro_activo(cfg_ex):
+                    n_total_ly = max(1, len(preview_layers))
+                    n_enc_ly = int(cabezal.cabezal_n_capas_encuentro(cfg_ex))
+                    n_post_preview = max(0, n_total_ly - n_enc_ly)
+            except Exception:
+                n_post_preview = 0
+            try:
+                pitch_post_mm = float(cabezal.CABEZAL_LAYER_PITCH_MM)
+            except Exception:
+                pitch_post_mm = 150.0
             enc_geom = _cab_enc_l.cabezal_encuentro_plan_l_polygon_local_px(
                 draw_w,
                 draw_h,
                 enc_ctx.get(u"e_det"),
                 enc_ctx.get(u"e_sel"),
                 mirror=bool(mirror),
+                n_post=n_post_preview,
+                pitch_post_mm=pitch_post_mm,
             )
+            try:
+                enc_ctx[u"n_post_preview"] = int(n_post_preview)
+                enc_ctx[u"pitch_post_mm"] = float(pitch_post_mm)
+            except Exception:
+                pass
             zr_pre = (enc_geom or {}).get(u"zone_rect") or {}
             if zr_pre:
                 zone_layout_w = max(1.0, float(zr_pre.get(u"w", draw_w)))
@@ -11285,6 +11682,7 @@ class ArmadoMurosPreviewWindow(object):
                     else None
                 ),
                 pitch_post_mm=cabezal.CABEZAL_LAYER_PITCH_MM,
+                preview_schematic_cover=True,
             )
             try:
                 pitch_mm = float(layout.get(u"pitch_equitativo_mm") or 0.0)
@@ -11292,21 +11690,23 @@ class ArmadoMurosPreviewWindow(object):
             except Exception:
                 pass
         else:
-            # Punta de muro (no encuentro): paso fijo entre capas en el preview.
-            # Solo visual — no altera creacion de barras ni layout de encuentro L/T.
-            side_pad = max(float(cov_px), 8.0 if stacked_b else 12.0)
-            layer_pitch_px = float(
-                getattr(self, u"_CABEZAL_PREVIEW_LAYER_PITCH_PX", 22.0),
+            # Punta de muro (no encuentro): cover 25 mm cara→tangente y paso
+            # simulado c/c (solo canvas) a la misma escala que el espesor.
+            try:
+                pitch_mm = float(
+                    getattr(self, u"_CABEZAL_PREVIEW_LAYER_PITCH_MM", 80.0),
+                )
+            except Exception:
+                pitch_mm = 80.0
+            layer_pitch_px = max(8.0, pitch_mm * px_per_mm)
+            # Limitar pitch si N capas no caben en el ancho dibujado.
+            max_pitch = max(
+                8.0,
+                (float(draw_w) - 2.0 * float(cov_px) - 4.0)
+                / float(max(n_capas_preview - 1, 1)),
             )
-            bar_span_base = float(
-                getattr(self, "_CABEZAL_PREVIEW_BAR_SPAN_PX", 28.0),
-            )
-            # Escala vertical con la altura del canvas (hero B usa más span).
-            span_frac = 0.58 if stacked_b else 0.42
-            bar_span_px = min(
-                max(bar_span_base, draw_h * span_frac),
-                max(22.0, float(draw_h) - 2.0 * side_pad - 6.0),
-            )
+            if n_capas_preview > 1 and layer_pitch_px > max_pitch:
+                layer_pitch_px = max_pitch
             layout = cabezal.cabezal_seccion_preview_layout(
                 e_mm,
                 preview_layers,
@@ -11315,8 +11715,6 @@ class ArmadoMurosPreviewWindow(object):
                 row_inset_frac_y=cov_px / draw_h_est,
                 draw_w_px=draw_w,
                 layer_pitch_px=layer_pitch_px,
-                draw_h_px=draw_h,
-                bar_span_px=bar_span_px,
                 confinement_type=conf_type,
                 confinement_stirrup_diam_mm=stirrup_diam_preview,
             )
@@ -11330,7 +11728,9 @@ class ArmadoMurosPreviewWindow(object):
 
         br_fill = _brush_hex(stk, aa=200)
         br_stroke = _brush_hex(stk, aa=220)
+        # Núcleo encuentro vs capas post (mismo canvas, lectura inmediata).
         br_bar_cn = SolidColorBrush(Color.FromRgb(34, 211, 238))
+        br_bar_post = SolidColorBrush(Color.FromRgb(251, 191, 36))
         br_edge = SolidColorBrush(Color.FromRgb(20, 20, 20))
 
         x1 = x0 + draw_w
@@ -11340,17 +11740,57 @@ class ArmadoMurosPreviewWindow(object):
             return (1.0 - f) if mirror else f
 
         zr = (enc_geom or {}).get(u"zone_rect") if enc_ctx else None
+        coord_full_x = bool(
+            layout.get(u"coord_space") == u"plan_l_full_x"
+        ) if layout else False
         if zr:
             zone_x = float(x0) + float(zr.get(u"x", 0.0))
             zone_y = float(y0) + float(zr.get(u"y", 0.0))
             zone_w = max(1.0, float(zr.get(u"w", draw_w)))
             zone_h = max(1.0, float(zr.get(u"h", draw_h)))
 
-            def _px(fx, fy):
-                return (
-                    zone_x + _norm_fx(fx) * zone_w,
-                    zone_y + float(fy) * zone_h,
-                )
+            if coord_full_x and enc_geom is not None:
+                # Misma escala/off_x que el polígono L (evita barras fuera
+                # del croquis cuando hay letterbox y n_post=0).
+                try:
+                    _pl_scale = float(enc_geom.get(u"scale") or 0.0)
+                except Exception:
+                    _pl_scale = 0.0
+                try:
+                    _pl_off_x = float(enc_geom.get(u"off_x") or 0.0)
+                except Exception:
+                    _pl_off_x = 0.0
+                try:
+                    _pl_w_mm = float(
+                        enc_geom.get(u"draw_w_mm")
+                        or layout.get(u"leg_sel_mm")
+                        or 1.0
+                    )
+                except Exception:
+                    _pl_w_mm = 1.0
+                if _pl_scale <= 1e-12:
+                    _pl_scale = float(draw_w) / max(_pl_w_mm, 1.0)
+
+                def _px(fx, fy):
+                    # fx = layer_mm / leg_sel (fracción del ancho planta L).
+                    x_mm = float(fx) * _pl_w_mm
+                    if mirror:
+                        x_mm = _pl_w_mm - x_mm
+                    cx = float(x0) + _pl_off_x + x_mm * _pl_scale
+                    cy = zone_y + float(fy) * zone_h
+                    return cx, cy
+            elif coord_full_x:
+                def _px(fx, fy):
+                    return (
+                        float(x0) + _norm_fx(fx) * float(draw_w),
+                        zone_y + float(fy) * zone_h,
+                    )
+            else:
+                def _px(fx, fy):
+                    return (
+                        zone_x + _norm_fx(fx) * zone_w,
+                        zone_y + float(fy) * zone_h,
+                    )
         else:
 
             def _px(fx, fy):
@@ -11381,13 +11821,14 @@ class ArmadoMurosPreviewWindow(object):
             self._canvas_set_zindex(outer, 1)
             canv.Children.Add(outer)
 
-        bar_r = 3.5
+        bar_r = self._cabezal_preview_bar_draw_r_px()
         for dot in layout.get(u"dots") or []:
             cx, cy = _px(dot[u"fx"], dot[u"fy"])
             el = Ellipse()
             el.Width = bar_r * 2.0
             el.Height = bar_r * 2.0
-            el.Fill = br_bar_cn
+            is_post = bool(dot.get(u"post_encuentro"))
+            el.Fill = br_bar_post if is_post else br_bar_cn
             el.Stroke = br_edge
             el.StrokeThickness = 0.6
             _Cn.SetLeft(el, cx - bar_r)
@@ -11397,14 +11838,11 @@ class ArmadoMurosPreviewWindow(object):
 
         self._draw_cabezal_stirrup_overlay_preview(
             canv, layout, wid, extremo, _px, conf_type=conf_type,
-            bulk_preview=bulk_preview,
+            bulk_preview=bulk_preview, mirror=mirror,
         )
         self._draw_cabezal_tie_overlay_preview(
             canv, layout, wid, extremo, _px, conf_type=conf_type,
-            bulk_preview=bulk_preview,
-        )
-        self._draw_cabezal_post_pitch_dims_preview(
-            canv, layout, _px, enc_ctx=enc_ctx,
+            bulk_preview=bulk_preview, mirror=mirror,
         )
 
         if not enc_ctx:
@@ -11770,7 +12208,10 @@ class ArmadoMurosPreviewWindow(object):
             n_post0 = cabezal.cabezal_n_capas_post(ex_cfg) or 2
         else:
             n_post0 = 2
-        n0 = max(min_cap0, min(cabezal.CABEZAL_MAX_CAPAS, n0))
+        n0 = max(
+            min_cap0,
+            min(self._cabezal_max_capas_for_wall_extremo(wid, extremo), n0),
+        )
 
         cap_w = float(self._cabezal_cap_col_px())
         left_w, right_w, preview_w, content_w, split_gap = (
@@ -12095,14 +12536,12 @@ class ArmadoMurosPreviewWindow(object):
         post_enc_row.HorizontalAlignment = HorizontalAlignment.Stretch
         post_enc_row.Margin = Thickness(0, 0, 0, 8)
         from System.Windows.Controls import CheckBox
+        from System import Double
 
         post_enc_toggle_row = StackPanel()
         post_enc_toggle_row.Orientation = Orientation.Horizontal
         post_enc_toggle_row.HorizontalAlignment = HorizontalAlignment.Stretch
         post_enc_chk = CheckBox()
-        post_enc_chk.Content = u"Capas post-encuentro"
-        post_enc_chk.Foreground = pal[u"text_caption"]
-        post_enc_chk.FontSize = 11.0
         post_enc_chk.IsChecked = bool(post_on0)
         post_enc_chk.ToolTip = (
             u"Capas adicionales en el muro armado (host), pitch "
@@ -12110,33 +12549,72 @@ class ArmadoMurosPreviewWindow(object):
                 cabezal.CABEZAL_LAYER_PITCH_MM,
             )
         )
+        try:
+            post_enc_chk.Padding = Thickness(0)
+            post_enc_chk.Margin = Thickness(0)
+            post_enc_chk.VerticalAlignment = VerticalAlignment.Center
+            post_enc_chk.Width = Double.NaN
+            post_enc_chk.Height = Double.NaN
+        except Exception:
+            pass
+        # Stub temporal; se fusiona en ``ui`` al registrar controles.
+        post_toggle_ui = {
+            u"toggle_accent_rgb": tuple(
+                pal.get(u"bar_accent_rgb") or (91, 192, 222)
+            ),
+            u"toggle_mini_parts_key": u"post_encuentro_toggle_parts",
+            u"toggle_mini_label": u"Capas post-encuentro",
+            u"toggle_mini_label_fg": pal[u"text_caption"],
+            u"post_encuentro_chk": post_enc_chk,
+        }
+        try:
+            self._apply_bimtools_toggle_mini(post_enc_chk)
+            self._build_toggle_mini_content(post_enc_chk, post_toggle_ui)
+            self._apply_toggle_mini_visual(
+                post_toggle_ui, bool(post_on0), animate=False,
+            )
+        except Exception:
+            post_enc_chk.Content = u"Capas post-encuentro"
+            try:
+                post_enc_chk.Foreground = pal[u"text_caption"]
+                post_enc_chk.FontSize = 11.0
+            except Exception:
+                pass
         post_enc_toggle_row.Children.Add(post_enc_chk)
         post_enc_row.Children.Add(post_enc_toggle_row)
 
         post_capas_host = StackPanel()
-        post_capas_host.Orientation = Orientation.Horizontal
-        post_capas_host.HorizontalAlignment = HorizontalAlignment.Left
+        post_capas_host.Orientation = Orientation.Vertical
+        post_capas_host.HorizontalAlignment = HorizontalAlignment.Stretch
         post_capas_host.Margin = Thickness(0, 4, 0, 0)
-        post_capas_lbl = TextBlock()
-        post_capas_lbl.Text = u"Post"
-        post_capas_lbl.Foreground = pal[u"text_caption"]
-        post_capas_lbl.FontSize = 11.0
-        post_capas_lbl.FontWeight = FontWeights.SemiBold
-        post_capas_lbl.VerticalAlignment = VerticalAlignment.Center
-        post_capas_lbl.Margin = Thickness(0, 0, 10, 0)
-        post_capas_host.Children.Add(post_capas_lbl)
-        post_enc_row.Children.Add(post_capas_host)
 
         post_enc_hint = TextBlock()
         post_enc_hint.Foreground = pal[u"text_caption"]
         post_enc_hint.FontSize = 9.0
         post_enc_hint.TextWrapping = TextWrapping.Wrap
-        post_enc_hint.Margin = Thickness(0, 4, 0, 0)
+        post_enc_hint.Margin = Thickness(0, 4, 0, 8)
         post_enc_hint.Text = (
             u"N\u00facleo equitativo \u00b7 post @{0:.0f} mm en host "
             u"(continuaci\u00f3n N+1\u00aaC)".format(cabezal.CABEZAL_LAYER_PITCH_MM)
         )
-        post_enc_row.Children.Add(post_enc_hint)
+        # Rail stacked: toggle solo en post_enc_row; Capas|Post en capas_row_host;
+        # hint va tras Capas. Legacy split: toggle + Post + hint juntos.
+        if not stacked_b:
+            post_enc_row.Children.Add(post_capas_host)
+            post_enc_row.Children.Add(post_enc_hint)
+        else:
+            try:
+                from System.Windows import Visibility as _Vis0
+                post_capas_host.Visibility = _Vis0.Collapsed
+                _is_enc0 = self._cabezal_extremo_es_encuentro_l(wid, extremo)
+                post_enc_row.Visibility = (
+                    _Vis0.Visible if _is_enc0 else _Vis0.Collapsed
+                )
+                post_enc_hint.Visibility = (
+                    _Vis0.Visible if (_is_enc0 and post_on0) else _Vis0.Collapsed
+                )
+            except Exception:
+                pass
 
         seccion_hdr_row = None
         if stacked_b:
@@ -12335,8 +12813,10 @@ class ArmadoMurosPreviewWindow(object):
             content.Children.Add(conf_block)
             content.Children.Add(self._cabezal_style_divider(mesh_pal))
             content.Children.Add(armado_hdr_row)
-            content.Children.Add(capas_row_host)
+            # Toggle post → Capas|Post (misma fila) → hint → cards
             content.Children.Add(post_enc_row)
+            content.Children.Add(capas_row_host)
+            content.Children.Add(post_enc_hint)
             content.Children.Add(layers_cards_host)
             content.Children.Add(apply_row)
         else:
@@ -12366,16 +12846,24 @@ class ArmadoMurosPreviewWindow(object):
                 pass
 
         def _on_post_encuentro_toggle(sender, args, w=wid, ex=extremo):
+            if getattr(self, u"_suppress_post_encuentro_chk", False):
+                return
             try:
-                self._apply_cabezal_post_encuentro_toggle(w, ex)
+                self._apply_cabezal_post_encuentro_toggle(w, ex, animate=True)
             except Exception:
                 pass
 
         if stacked_b:
             # Capas = combo junto a ARMADO (misma API get_value/set_value que stepper).
+            # Combo: punta ≤8; núcleo encuentro ≤6 (post usa combo aparte).
+            _cap_hi = (
+                cabezal.CABEZAL_MAX_CAPAS_ENCUENTRO
+                if self._cabezal_extremo_es_encuentro_l(wid, extremo)
+                else cabezal.CABEZAL_MAX_CAPAS
+            )
             cap_step = self._create_cabezal_n_bars_combo(
                 self._cabezal_min_capas_for_wall_extremo(wid, extremo),
-                cabezal.CABEZAL_MAX_CAPAS,
+                _cap_hi,
                 n0,
                 on_change=_on_capas_change,
             )
@@ -12386,9 +12874,14 @@ class ArmadoMurosPreviewWindow(object):
             except Exception:
                 pass
         else:
+            _cap_hi = (
+                cabezal.CABEZAL_MAX_CAPAS_ENCUENTRO
+                if self._cabezal_extremo_es_encuentro_l(wid, extremo)
+                else cabezal.CABEZAL_MAX_CAPAS
+            )
             cap_step = self._create_cabezal_stepper(
                 self._cabezal_min_capas_for_wall_extremo(wid, extremo),
-                cabezal.CABEZAL_MAX_CAPAS,
+                _cap_hi,
                 n0,
                 on_change=_on_capas_change,
                 palette=pal,
@@ -12397,18 +12890,44 @@ class ArmadoMurosPreviewWindow(object):
                 toolbar_grid, cap_step[u"panel"], pal, tramo_toolbar_text,
             )
 
-        post_cap_step = self._create_cabezal_stepper(
+        post_cap_step = self._create_cabezal_n_bars_combo(
             1,
             cabezal.CABEZAL_MAX_POST_CAPAS,
             max(1, int(n_post0)),
             on_change=_on_post_capas_change,
-            palette=pal,
         )
         try:
-            post_cap_step[u"panel"].VerticalAlignment = VerticalAlignment.Center
-            post_capas_host.Children.Add(post_cap_step[u"panel"])
+            post_cb = post_cap_step.get(u"combo") or post_cap_step.get(u"panel")
+            if post_cb is not None:
+                try:
+                    from System.Windows import FrameworkElement
+                    post_cb.ClearValue(FrameworkElement.WidthProperty)
+                    post_cb.ClearValue(FrameworkElement.MinWidthProperty)
+                    post_cb.ClearValue(FrameworkElement.MaxWidthProperty)
+                    post_cb.ClearValue(FrameworkElement.HeightProperty)
+                except Exception:
+                    pass
+                self._apply_flat_combo(post_cb, stretch=True)
+                post_cb.ToolTip = (
+                    u"N\u00famero de capas post-encuentro (1\u2013{0})"
+                ).format(int(cabezal.CABEZAL_MAX_POST_CAPAS))
+                if not stacked_b:
+                    # Legacy split: Post en su host bajo el toggle.
+                    post_row = self._mesh_label_combo_row(
+                        u"Capas Post Encuentro", post_cb, label_w=118.0, pal=pal,
+                    )
+                    try:
+                        post_capas_host.Children.Clear()
+                    except Exception:
+                        pass
+                    post_capas_host.Children.Add(post_row)
+                # stacked_b: montaje en capas_row_host vía _fill_cabezal_capas_beside_seccion
         except Exception:
-            pass
+            if not stacked_b:
+                try:
+                    post_capas_host.Children.Add(post_cap_step[u"panel"])
+                except Exception:
+                    pass
         try:
             from System.Windows import RoutedEventHandler as _REH2
             post_enc_chk.Checked += _REH2(_on_post_encuentro_toggle)
@@ -12417,6 +12936,11 @@ class ArmadoMurosPreviewWindow(object):
             pass
 
         ui = self._cabezal_ui_ext(wid, extremo)
+        try:
+            ui.update(post_toggle_ui)
+        except Exception:
+            for _k, _v in (post_toggle_ui or {}).items():
+                ui[_k] = _v
         ui[u"layout_stacked_b"] = bool(stacked_b)
         ui[u"tramo_toolbar_text"] = tramo_toolbar_text
         ui[u"tramo_toolbar_text_base"] = tramo_toolbar_text
@@ -12454,6 +12978,8 @@ class ArmadoMurosPreviewWindow(object):
         ui[u"armado_hdr_tb"] = armado_hdr if stacked_b else None
         ui[u"armado_count_tb"] = armado_count_tb if stacked_b else None
         ui[u"apply_row"] = apply_row if stacked_b else None
+        ui[u"owner_wid"] = int(wid)
+        ui[u"extremo"] = extremo
 
         if stacked_b:
             try:
@@ -12472,7 +12998,6 @@ class ArmadoMurosPreviewWindow(object):
         except Exception:
             seg_key = 0
         self._cabezal_ui_by_segment.setdefault(extremo, {})[seg_key] = ui
-        ui[u"owner_wid"] = int(wid)
         ui[u"segment_id"] = seg_key
 
         try:
@@ -13063,9 +13588,9 @@ class ArmadoMurosPreviewWindow(object):
                 cb.ToolTip = None
             else:
                 cb.ToolTip = (
-                    u"Tipo 1, Tipo 2 y Tipo 3 solo aplican con 2 a 6 capas "
+                    u"Tipo 1, Tipo 2 y Tipo 3 solo aplican con 2 a {0} capas "
                     u"(escenario actual)."
-                )
+                ).format(cabezal.CABEZAL_MAX_CAPAS)
         except Exception:
             pass
 
@@ -13203,7 +13728,7 @@ class ArmadoMurosPreviewWindow(object):
             cabezal.CABEZAL_MAX_CAPAS_TOTAL
             if post_on
             else (
-                cabezal.CABEZAL_MAX_CAPAS
+                cabezal.CABEZAL_MAX_CAPAS_ENCUENTRO
                 if is_enc
                 else cabezal.CABEZAL_MAX_CAPAS
             )
@@ -13309,7 +13834,7 @@ class ArmadoMurosPreviewWindow(object):
         self._refresh_cabezal_encuentro_ui_state(wid, extremo)
         self._request_cabezal_preview_refresh(wid, extremo)
 
-    def _apply_cabezal_post_encuentro_toggle(self, wid, extremo):
+    def _apply_cabezal_post_encuentro_toggle(self, wid, extremo, animate=False):
         """Activa/desactiva capas post-encuentro (solo host / encuentro L)."""
         if cabezal is None:
             return
@@ -13351,7 +13876,9 @@ class ArmadoMurosPreviewWindow(object):
         self._cabezal_refresh_encuentro_pitch(wid, extremo)
         self._rebuild_cabezal_layer_sliders(wid, extremo, redistribute=False)
         self._refresh_cabezal_confinement_combo(wid, extremo)
-        self._refresh_cabezal_post_encuentro_ui(wid, extremo)
+        self._refresh_cabezal_post_encuentro_ui(
+            wid, extremo, animate_toggle=bool(animate),
+        )
         self._refresh_cabezal_encuentro_ui_state(wid, extremo)
         try:
             self._cabezal_propagate_to_multi_selected(extremo, wid)
@@ -13359,14 +13886,26 @@ class ArmadoMurosPreviewWindow(object):
             pass
         self._request_cabezal_preview_refresh(wid, extremo)
 
-    def _refresh_cabezal_post_encuentro_ui(self, wid, extremo):
+    def _refresh_cabezal_post_encuentro_ui(
+        self, wid, extremo, animate_toggle=False,
+    ):
         """Visibilidad controles post-encuentro (solo encuentro L)."""
         from System.Windows import Visibility
 
         ui = self._cabezal_ui_ext(wid, extremo)
         row = ui.get(u"post_encuentro_row")
         is_enc = self._cabezal_extremo_es_encuentro_l(wid, extremo)
-        post_on = self._cabezal_post_encuentro_activo_from_ui(wid, extremo)
+        cfg = self._cabezal_by_wall_id.get(wid) or {}
+        ex_cfg = cfg.get(extremo) or {}
+        stacked_b = bool(ui.get(u"layout_stacked_b"))
+        try:
+            post_on = bool(
+                cabezal.cabezal_post_encuentro_activo(ex_cfg)
+                if cabezal is not None
+                else False
+            )
+        except Exception:
+            post_on = False
         if row is not None:
             try:
                 row.Visibility = (
@@ -13376,15 +13915,68 @@ class ArmadoMurosPreviewWindow(object):
                 pass
         host = ui.get(u"post_capas_host")
         hint = ui.get(u"post_enc_hint_lbl")
+        # Legacy split: Post vive en post_capas_host. Rail: Post en capas_row_host.
         vis_post = Visibility.Visible if (is_enc and post_on) else Visibility.Collapsed
-        for el in (host, hint):
-            if el is not None:
+        if not stacked_b and host is not None:
+            try:
+                host.Visibility = vis_post
+            except Exception:
+                pass
+        if hint is not None:
+            try:
+                hint.Visibility = vis_post
+            except Exception:
+                pass
+        chk = ui.get(u"post_encuentro_chk")
+        if chk is not None and is_enc:
+            try:
+                if bool(chk.IsChecked) != bool(post_on):
+                    prev = getattr(self, u"_suppress_post_encuentro_chk", False)
+                    self._suppress_post_encuentro_chk = True
+                    try:
+                        chk.IsChecked = bool(post_on)
+                    finally:
+                        self._suppress_post_encuentro_chk = prev
+            except Exception:
+                pass
+            if ui.get(u"post_encuentro_toggle_parts"):
                 try:
-                    el.Visibility = vis_post
+                    self._apply_toggle_mini_visual(
+                        ui, bool(post_on), animate=bool(animate_toggle),
+                    )
                 except Exception:
                     pass
-        cap_lbl = ui.get(u"capas_row_host")
-        if cap_lbl is not None and is_enc and post_on:
+        elif chk is not None and ui.get(u"post_encuentro_toggle_parts"):
+            try:
+                self._apply_toggle_mini_visual(
+                    ui, bool(post_on), animate=False,
+                )
+            except Exception:
+                pass
+        # Sync combo post si aplica.
+        if is_enc and post_on:
+            post_step = ui.get(u"post_capas_stepper")
+            if post_step is not None and callable(post_step.get(u"set_value")):
+                try:
+                    n_post = (
+                        cabezal.cabezal_n_capas_post(ex_cfg)
+                        if cabezal is not None
+                        else 1
+                    ) or 1
+                    post_step[u"set_value"](int(n_post))
+                except Exception:
+                    pass
+        # Remontar Capas / Capas|Post tras cambio de toggle o contexto.
+        if stacked_b:
+            try:
+                pal = self._cabezal_ui_palette(extremo, u"unit")
+            except Exception:
+                pal = self._mesh_ui_palette(u"bulk")
+            try:
+                self._fill_cabezal_capas_beside_seccion(ui, pal)
+            except Exception:
+                pass
+        elif is_enc and post_on:
             try:
                 cap_step = ui.get(u"capas_stepper")
                 if cap_step is not None and cap_step.get(u"panel") is not None:
@@ -17273,20 +17865,36 @@ class ArmadoMurosPreviewWindow(object):
 
         self._redraw_machones_elevation()
 
-    def _draw_machones_extremo_marks(self, canv, wi, x_off, draw_w, y, row_h):
-        """Chevrones Inicio/Término sobre el fuste Machones."""
-        if not self._uses_cabezal_panels() or cabezal is None:
-            return
+    def _draw_machones_extremo_marks(
+        self, canv, wi, x_off, draw_w, y, row_h, wall=None,
+    ):
+        """Overlays de fuste Machones: encuentro en proyección (V2) + chevrones."""
         walls = getattr(self, u"walls_ordered", None) or []
-        if wi < 0 or wi >= len(walls):
-            return
-        wall = walls[wi]
+        if wall is None:
+            if wi < 0 or wi >= len(walls):
+                return
+            wall = walls[wi]
         # display row index (cima=0): walls_ordered es base->cima.
         od = getattr(self, u"_walls_display_order", None) or []
         try:
             row_index = list(od).index(wall)
         except Exception:
-            row_index = max(0, len(walls) - 1 - wi)
+            try:
+                row_index = list(walls).index(wall)
+                row_index = max(0, len(walls) - 1 - int(row_index))
+            except Exception:
+                row_index = max(0, len(walls) - 1 - int(wi or 0))
+
+        # Misma proyección de muro vecino L/T que Armado Muros V2.
+        try:
+            self._draw_elevation_vecino_encuentros(
+                canv, wall, row_index, x_off, draw_w, y, row_h,
+            )
+        except Exception:
+            pass
+
+        if not self._uses_cabezal_panels() or cabezal is None:
+            return
         try:
             self._draw_cabezal_extremo_marks_elevation(
                 canv, wall, row_index, x_off, draw_w, y, row_h,
@@ -17810,45 +18418,13 @@ class ArmadoMurosPreviewWindow(object):
             u"label": self._elevation_vecino_short_label(neighbor),
         }
 
-    def _elevation_vecino_lado_cara(self, wall, neighbor, ex_izq, ex_der):
-        """Lado izq./der. del canvas según posición del vecino respecto al eje."""
-        if _vec_ext is None or wall is None or neighbor is None:
-            return None
-        wns = _vec_ext._load_wall_node_section()
-        if wns is None:
-            return None
-        try:
-            wall_line, _co = wns._location_as_line(wall)
-        except Exception:
-            return None
-        if wall_line is None:
-            return None
-        try:
-            e0 = wall_line.GetEndPoint(0)
-            e1 = wall_line.GetEndPoint(1)
-            ol = neighbor.Location
-            from Autodesk.Revit.DB import LocationCurve
-            if not isinstance(ol, LocationCurve):
-                return None
-            oc = ol.Curve
-            if oc is None:
-                return None
-            nm = wns._midpoint_curve(oc)
-            if nm is None:
-                return None
-            sx = float(e1.X - e0.X)
-            sy = float(e1.Y - e0.Y)
-            wx = float(nm.X - e0.X)
-            wy = float(nm.Y - e0.Y)
-            cross = sx * wy - sy * wx
-            extremo = u"inicio" if cross >= 0.0 else u"fin"
-        except Exception:
-            return None
-        return self._extremo_to_elevation_lado(extremo, ex_izq, ex_der)
-
     def _collect_elevation_vecino_encuentros(self, wall, row_index):
         """
-        Encuentros L/T detectados para el canvas de elevación de una fila.
+        Encuentros L/T en extremos (inicio/fin) para el canvas de elevación.
+
+        Solo dibuja representación gráfica cuando hay unión con otro muro en
+        la punta del host. Encuentros a mitad de tramo (T / cara lateral) no
+        se proyectan a los extremos del canvas.
 
         Cada item: ``lado`` (izq|der), ``tipo`` (L|T), ``label`` (texto tooltip).
         """
@@ -17862,7 +18438,6 @@ class ArmadoMurosPreviewWindow(object):
 
         out = []
         seen_lados = set()
-        doc = self.doc
 
         for extremo in (ex_izq, ex_der):
             enc = self._elevation_encuentro_vecino_at_extremo(wall, extremo)
@@ -17874,22 +18449,6 @@ class ArmadoMurosPreviewWindow(object):
             seen_lados.add(lado)
             enc[u"lado"] = lado
             out.append(enc)
-
-        try:
-            laterales = _vec_ext.vecinos_cara_lateral_o_t(doc, wall)
-        except Exception:
-            laterales = []
-        for nb in laterales or []:
-            lado = self._elevation_vecino_lado_cara(wall, nb, ex_izq, ex_der)
-            if lado is None or lado in seen_lados:
-                continue
-            seen_lados.add(lado)
-            out.append({
-                u"lado": lado,
-                u"tipo": u"T",
-                u"vecino": nb,
-                u"label": self._elevation_vecino_short_label(nb),
-            })
 
         return out
 
@@ -18938,19 +19497,22 @@ class ArmadoMurosPreviewWindow(object):
         wall_draw_h = max(10.0, float(box_h) - float(foot_h)) if foot_h > 0.0 else float(box_h)
 
         fill_br = _brush_hex(stk, aa=34)
-        stroke_br = _brush_hex(stk, aa=170)
+        stroke_br = _brush_hex(stk, aa=100)
         br_lvl = self._level_theme_brushes()
+        stroke_px = 0.7
 
         if self._uses_cabezal_panels():
-            band_border = Thickness(1.0)
+            band_border = Thickness(stroke_px)
         elif is_first_row and is_last_row:
-            band_border = Thickness(1.0)
+            band_border = Thickness(stroke_px)
         elif is_first_row:
-            band_border = Thickness(1.0, 1.0, 1.0, 0.0)
+            band_border = Thickness(stroke_px, stroke_px, stroke_px, 0.0)
         elif is_last_row:
-            band_border = Thickness(1.0, 0.0, 1.0, 0.0 if foot_h > 0.0 else 1.0)
+            band_border = Thickness(
+                stroke_px, 0.0, stroke_px, 0.0 if foot_h > 0.0 else stroke_px,
+            )
         else:
-            band_border = Thickness(1.0, 0.0, 1.0, 0.0)
+            band_border = Thickness(stroke_px, 0.0, stroke_px, 0.0)
 
         if not self._uses_cabezal_panels():
             self._add_level_zone_delimiter(
@@ -18967,11 +19529,18 @@ class ArmadoMurosPreviewWindow(object):
         band.Background = fill_br
         band.BorderBrush = stroke_br
         band.BorderThickness = band_border
+        try:
+            from System.Windows import CornerRadius as _Cr
+
+            band.CornerRadius = _Cr(2.0)
+        except Exception:
+            pass
         _Cn.SetLeft(band, x_off)
         _Cn.SetTop(band, y0)
         self._canvas_set_zindex(band, 1)
         try:
-            band.SnapsToDevicePixels = True
+            band.SnapsToDevicePixels = False
+            band.UseLayoutRounding = False
         except Exception:
             pass
         if self._uses_cabezal_panels() and wall is not None:

@@ -42,7 +42,6 @@ from Autodesk.Revit.DB import (
     TagMode,
     TagOrientation,
     SubTransaction,
-    Transaction,
     UnitTypeId,
     UnitUtils,
     View3D,
@@ -2114,13 +2113,20 @@ def etiquetar_cabezal_longitudinales_en_vista_animado(
             txn_name = u"Arainco: Cabezal muros — etiquetas {0}–{1} de {2}".format(
                 i0 + 1, i1, len(ids),
             )
-        t = Transaction(document, txn_name)
+        t = None
         try:
-            from armado_muros_txn import attach_rebar_outside_host_swallower
-            attach_rebar_outside_host_swallower(t)
+            from armado_muros_txn import TxnScope
+            t = TxnScope(document, txn_name)
         except Exception:
-            pass
-        t.Start()
+            t = None
+        if t is None or not t.HasStarted():
+            result[u"messages"].append(
+                u"Etiquetado lote {0}–{1}: no se pudo abrir transacción.".format(
+                    i0 + 1, i1,
+                ),
+            )
+            result[u"n_fail"] += len(lote)
+            continue
         lote_ok = False
         try:
             _etiquetar_cabezal_rebar_ids_lote(document, view, lote, ctx, result)
@@ -2189,13 +2195,16 @@ def etiquetar_cabezal_longitudinales_en_vista(
         result[u"n_fail"] = len(ids)
         return result
 
-    t = Transaction(document, u"Arainco: Cabezal muros — etiquetas longitudinales")
+    t = None
     try:
-        from armado_muros_txn import attach_rebar_outside_host_swallower
-        attach_rebar_outside_host_swallower(t)
+        from armado_muros_txn import TxnScope
+        t = TxnScope(document, u"Arainco: Cabezal muros — etiquetas longitudinales")
     except Exception:
-        pass
-    t.Start()
+        t = None
+    if t is None or not t.HasStarted():
+        result[u"messages"].append(u"Etiquetado: no se pudo abrir transacción.")
+        result[u"n_fail"] = len(ids)
+        return result
     try:
         _etiquetar_cabezal_rebar_ids_lote(document, view, ids, ctx, result)
         t.Commit()
@@ -3247,13 +3256,18 @@ def etiquetar_cabezal_confinamiento_multihost_animado(
                 u"Arainco: Cabezal muros — etiquetas multihost confinamiento "
                 u"{0}–{1}".format(lote_idx + 1, lote_idx + len(lote_keys))
             )
-        t = Transaction(document, txn_name)
+        t = None
         try:
-            from armado_muros_txn import attach_rebar_outside_host_swallower
-            attach_rebar_outside_host_swallower(t)
+            from armado_muros_txn import TxnScope
+            t = TxnScope(document, txn_name)
         except Exception:
-            pass
-        t.Start()
+            t = None
+        if t is None or not t.HasStarted():
+            n_fail += len(lote_keys)
+            msgs = res.get(u"messages")
+            if msgs is not None and len(msgs) < 24:
+                msgs.append(u"Multihost confinamiento lote: no se pudo abrir transacción.")
+            continue
         lote_ok = False
         try:
             mh_regen_once = {u"pending": True}

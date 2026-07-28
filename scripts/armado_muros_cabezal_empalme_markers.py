@@ -22,7 +22,6 @@ clr.AddReference("RevitAPI")
 from Autodesk.Revit.DB import (
     ElementId,
     FamilySymbol,
-    Transaction,
     UnitTypeId,
     UnitUtils,
     Wall,
@@ -450,8 +449,16 @@ def colocar_marcadores_empalme_cabezal(document, view, seg_jobs):
         result[u"n_fail"] = len(pairs)
         return result
 
-    t = Transaction(document, u"Arainco: Cabezal muros — marcadores empalme")
-    t.Start()
+    t = None
+    try:
+        from armado_muros_txn import TxnScope
+        t = TxnScope(document, u"Arainco: Cabezal muros — marcadores empalme")
+    except Exception:
+        t = None
+    if t is None or not t.HasStarted():
+        result[u"messages"].append(u"Empalme: no se pudo abrir transacción.")
+        result[u"n_fail"] = len(pairs)
+        return result
     try:
         for spec in pairs:
             ra = spec[u"ra"]

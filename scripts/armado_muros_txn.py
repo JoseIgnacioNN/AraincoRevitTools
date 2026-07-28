@@ -253,10 +253,22 @@ def run_in_transaction(doc, name, fn):
 
 
 class TxnScope(object):
-    """Ámbito Transaction/SubTransaction con commit/rollback explícitos."""
+    """
+    Ámbito Transaction/SubTransaction con commit/rollback explícitos.
+
+    Si el documento ya es modificable (txn padre abierta), abre SubTransaction;
+    si no, abre Transaction de documento. Compatible con el patrón API
+    ``Commit`` / ``RollBack`` / ``HasStarted`` de ``Transaction``.
+    """
 
     def __init__(self, doc, name):
         self.handle = start_transaction(doc, name)
+
+    def has_started(self):
+        return self.handle is not None
+
+    def has_ended(self):
+        return self.handle is None
 
     def commit(self):
         commit_transaction(self.handle)
@@ -265,3 +277,25 @@ class TxnScope(object):
     def rollback(self):
         rollback_transaction(self.handle)
         self.handle = None
+
+    # Alias estilo Autodesk.Revit.DB.Transaction (drop-in en call sites).
+    def HasStarted(self):
+        return self.has_started()
+
+    def HasEnded(self):
+        return self.has_ended()
+
+    def Commit(self):
+        return self.commit()
+
+    def RollBack(self):
+        return self.rollback()
+
+
+def open_txn(doc, name):
+    """
+    Abre Transaction o SubTransaction (ya iniciada).
+
+    Sustituto de ``Transaction(doc, name)`` + ``Start()`` + swallower.
+    """
+    return TxnScope(doc, name)
