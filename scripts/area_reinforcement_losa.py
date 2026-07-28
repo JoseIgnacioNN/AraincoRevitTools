@@ -130,7 +130,7 @@ except Exception:
 from Autodesk.Revit.UI import TaskDialog, ExternalEvent, IExternalEventHandler
 from Autodesk.Revit.UI.Selection import ObjectType
 
-# Misma línea de diseño que Armado Muros (34_ArmadoMuros).
+# Misma línea de diseño que Armado Muros v3 (54_ArmadoMurosV3).
 _APPDOMAIN_WINDOW_KEY = "BIMTools.AreaReinforcementLosa.ActiveWindow"
 _APPDOMAIN_SESSION_KEY = "BIMTools.AreaReinforcementLosa.ActiveSession"
 _TOOL_TASK_DIALOG_TITLE = u"Arainco: Malla en Losa"

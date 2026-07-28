@@ -104,8 +104,14 @@ def find_scripts_dir(pushbutton_dir_path=None):
     return None
 
 
+_ARMADO_MUROS_TAGS_BUTTONS = (
+    u"54_ArmadoMurosV3.pushbutton",
+    u"47_ArmadoMurosV2.pushbutton",
+)
+
+
 def find_armado_muros_scripts_dir(pushbutton_dir_path=None):
-    """Scripts con ``armado_muros_cabezal_tags.py`` (portable, flat o 34_ArmadoMuros)."""
+    """Scripts con ``armado_muros_cabezal_tags.py`` (portable, flat o Armado Muros v3/v2)."""
     pb = pushbutton_dir_path or pushbutton_dir()
     if pb:
         local_scripts = os.path.join(pb, u"scripts")
@@ -134,19 +140,20 @@ def find_armado_muros_scripts_dir(pushbutton_dir_path=None):
     for root in roots:
         if not root:
             continue
-        candidate = os.path.join(
-            root,
-            u"BIMTools.tab",
-            u"Armadura.panel",
-            u"34_ArmadoMuros.pushbutton",
-            u"scripts",
-        )
-        candidate = os.path.abspath(candidate)
-        if candidate in seen:
-            continue
-        seen.add(candidate)
-        if os.path.isfile(os.path.join(candidate, u"armado_muros_cabezal_tags.py")):
-            return candidate
+        for button_name in _ARMADO_MUROS_TAGS_BUTTONS:
+            candidate = os.path.join(
+                root,
+                u"BIMTools.tab",
+                u"Armadura.panel",
+                button_name,
+                u"scripts",
+            )
+            candidate = os.path.abspath(candidate)
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            if os.path.isfile(os.path.join(candidate, u"armado_muros_cabezal_tags.py")):
+                return candidate
     return None
 
 

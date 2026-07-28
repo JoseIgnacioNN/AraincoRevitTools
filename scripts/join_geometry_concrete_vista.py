@@ -2,7 +2,8 @@
 """
 Unir geometría entre elementos de **material estructural hormigón** (Concrete) en la **vista activa**.
 
-Paquete portable: vive en ``<pushbutton>/scripts/`` (sin depender de scripts/ de la extensión).
+Módulo canónico en ``BIMTools.extension/scripts/``. El pushbutton
+``11_UnirGeometriaHormigonVista`` solo dispara ``run(__revit__)``.
 
 - Alcance: ejemplares a unir = **hormigón** de ``FilteredElementCollector(document, view.Id)``.
 - Candidatos por **solape de cajas** (``BoundingBoxIntersectsFilter`` + contorno inflado); la API
@@ -23,9 +24,11 @@ Paquete portable: vive en ``<pushbutton>/scripts/`` (sin depender de scripts/ de
 - Durante lectura / candidatos / unión: se deshabilita la ventana principal de Revit
   (``user32.EnableWindow``) para que no se lancen otros comandos; la barra de pyRevit
   es otra ventana de nivel superior y sigue mostrando el progreso.
+- Tras un commit con cambios en modelo workshared: ``SynchronizeWithCentral`` +
+  ``RelinquishOptions(True)`` (Relinquish All Mine) para liberar los elementos
+  modificados; ``RelinquishOwnership`` solo no basta con cambios locales pendientes.
 
-Copia portable: ``BIMTools.tab/Modelado.panel/11_UnirGeometriaHormigonVista.pushbutton/scripts/``.
-Tras editar aquí, sincronice con esa carpeta (ver ``ESTRUCTURA_PORTABLE.txt``).
+Para desplegar en producción: copiar el pushbutton y la carpeta ``scripts/`` de la extensión.
 """
 
 from __future__ import print_function
@@ -50,7 +53,10 @@ from Autodesk.Revit.DB import (
     JoinGeometryUtils,
     LogicalOrFilter,
     Outline,
+    RelinquishOptions,
+    SynchronizeWithCentralOptions,
     Transaction,
+    TransactWithCentralOptions,
     UnitUtils,
     UnitTypeId,
     View,
@@ -699,6 +705,65 @@ def _switch_forjado_recortado_por_otro(doc, a, b, err_switch):
         return False
 
 
+def _doc_is_workshared(doc):
+    if doc is None:
+        return False
+    try:
+        return bool(doc.IsWorkshared)
+    except Exception:
+        return False
+
+
+def _sincronizar_y_liberar_propiedad(doc):
+    """
+    Sincroniza con el central y libera toda la propiedad del usuario actual
+    (``RelinquishOptions(True)`` / Relinquish All Mine).
+
+    La API no permite liberar solo ElementIds concretos ni liberar elementos
+    modificados sin sincronizar: el sync envía todos los cambios locales
+    pendientes del usuario.
+
+    Devuelve ``(ok, mensaje_error)``. Si el documento no es workshared:
+    ``(False, u"")`` (sin error; no aplica).
+    """
+    if not _doc_is_workshared(doc):
+        return False, u""
+    try:
+        sync_opts = SynchronizeWithCentralOptions()
+        sync_opts.SetRelinquishOptions(RelinquishOptions(True))
+        try:
+            sync_opts.Comment = u"Arainco: Unir geometría hormigón (vista)"
+        except Exception:
+            pass
+        try:
+            sync_opts.SaveLocalFile = True
+        except Exception:
+            pass
+        twc = TransactWithCentralOptions()
+        doc.SynchronizeWithCentral(twc, sync_opts)
+        return True, u""
+    except Exception as ex:
+        return False, _exc_text(ex)
+
+
+def _detalle_con_liberacion(detalle, sync_ok, sync_err):
+    """Añade al detalle del aviso el resultado del sync + relinquish."""
+    base = detalle or u""
+    if sync_ok:
+        extra = (
+            u" Elementos liberados (sincronizado con central + "
+            u"Relinquish All Mine)."
+        )
+        return (base + extra).strip()
+    if sync_err:
+        extra = (
+            u" No se pudieron liberar elementos automáticamente: {0}. "
+            u"Sincronice y use Relinquish All Mine manualmente."
+        ).format(sync_err)
+        return (base + extra).strip()
+    return base
+
+
 def run(revit):
     from join_geometry_instruction_dialog import (
         mostrar_aviso,
@@ -830,11 +895,18 @@ def run(revit):
         finally:
             _pbar_exit(_pb, _pbar_open)
 
+        # Elementos modificados solo se liberan tras sync + relinquish.
+        sync_ok = False
+        sync_err = u""
+        if (nuevos > 0 or inversiones > 0) and _doc_is_workshared(doc):
+            sync_ok, sync_err = _sincronizar_y_liberar_propiedad(doc)
+
     view_name = getattr(view, u"Name", u"?") or u"?"
     if nuevos > 0 or inversiones > 0:
         detalle = u"Vista: {0}. Nuevas uniones: {1}.".format(view_name, nuevos)
         if inversiones > 0:
             detalle += u" Órdenes de corte ajustados: {0}.".format(inversiones)
+        detalle = _detalle_con_liberacion(detalle, sync_ok, sync_err)
         mostrar_aviso(revit, u"Proceso completado correctamente.", detalle)
     elif ya_unidos > 0 and fallos == 0:
         mostrar_aviso(

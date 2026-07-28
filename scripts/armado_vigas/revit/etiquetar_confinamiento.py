@@ -680,26 +680,33 @@ def _load_cabezal_tags_module():
     here = os.path.dirname(os.path.abspath(__file__))
     scripts_dir = os.path.dirname(os.path.dirname(here))
     ext_root = os.path.dirname(scripts_dir)
-    candidates = [
-        os.path.join(
-            ext_root,
-            "BIMTools.tab",
-            "Armadura.panel",
-            "34_ArmadoMuros.pushbutton",
-            "scripts",
-        ),
-    ]
-    cursor = ext_root
-    for _ in range(8):
+    _tags_buttons = (
+        "54_ArmadoMurosV3.pushbutton",
+        "47_ArmadoMurosV2.pushbutton",
+    )
+    candidates = []
+    for button_name in _tags_buttons:
         candidates.append(
             os.path.join(
-                cursor,
+                ext_root,
                 "BIMTools.tab",
                 "Armadura.panel",
-                "34_ArmadoMuros.pushbutton",
+                button_name,
                 "scripts",
             )
         )
+    cursor = ext_root
+    for _ in range(8):
+        for button_name in _tags_buttons:
+            candidates.append(
+                os.path.join(
+                    cursor,
+                    "BIMTools.tab",
+                    "Armadura.panel",
+                    button_name,
+                    "scripts",
+                )
+            )
         parent = os.path.dirname(cursor)
         if parent == cursor:
             break
