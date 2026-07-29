@@ -1,0 +1,271 @@
+# -*- coding: utf-8 -*-
+"""
+Geometría pura — Coronamiento muros (sin Revit).
+
+Cotas ↑10 mm, plan de capas, alternancia A-B-A de empalmes,
+mapeo de escenarios de traslape (conjunto global).
+"""
+
+from __future__ import print_function
+
+import math
+
+MAX_BARRA_COMERCIAL_MM = 12000.0
+COVER_SUPERIOR_MM = 25.0
+PATA_RESTA_MM = 50.0
+PATA_MIN_MM = 100.0
+CUT_HIT_MM = 180.0
+STAGGER_MARGIN_MM = 300.0
+LAYER_CLEAR_MM = 20.0  # separación libre entre ejes de capas sucesivas
+
+DIAMS_MM = (8, 10, 12, 16, 18, 20, 22, 25)
+N_BARS_OPTS = (2, 3, 4)
+CAPAS_OPTS = (1, 2, 3)
+
+# Alias UI → dividir_barra_traslape_punto (symmetric|forward|backward)
+LAP_MODE_SYMMETRIC = u"symmetric"
+LAP_MODE_ENDPOINT_PREV = u"endpoint_prev"  # → forward
+LAP_MODE_ENDPOINT_NEXT = u"endpoint_next"  # → backward
+
+LAP_MODE_LABELS = (
+    (LAP_MODE_SYMMETRIC, u"Simétrico ±L/2"),
+    (LAP_MODE_ENDPOINT_PREV, u"Endpoint anterior (+L)"),
+    (LAP_MODE_ENDPOINT_NEXT, u"Endpoint siguiente (−L)"),
+)
+
+# Traslape base BIMTools (mm) — espejo bimtools_rebar_hook_lengths
+_TRASLAPE_BY_DIAM = {
+    8: 570.0,
+    10: 710.0,
+    12: 860.0,
+    16: 1140.0,
+    18: 1290.0,
+    20: 1430.0,
+    22: 1960.0,
+    25: 2230.0,
+}
+
+
+def ceil10_mm(mm):
+    try:
+        v = float(mm)
+    except Exception:
+        return 0.0
+    if v <= 1e-9:
+        return 0.0
+    return float(int(math.ceil(v / 10.0) * 10))
+
+
+def clamp_n_bars(n):
+    try:
+        v = int(round(float(n)))
+    except Exception:
+        v = 2
+    return max(2, min(4, v))
+
+
+def clamp_diam_mm(d):
+    try:
+        v = int(round(float(d)))
+    except Exception:
+        v = 16
+    if v in DIAMS_MM:
+        return v
+    return 16
+
+
+def clamp_n_capas(n):
+    try:
+        v = int(round(float(n)))
+    except Exception:
+        v = 1
+    return max(1, min(3, v))
+
+
+def traslape_mm_from_diam(diam_mm):
+    d = clamp_diam_mm(diam_mm)
+    if d in _TRASLAPE_BY_DIAM:
+        return float(_TRASLAPE_BY_DIAM[d])
+    try:
+        from bimtools_rebar_hook_lengths import traslape_mm_from_nominal_diameter_mm
+
+        t = traslape_mm_from_nominal_diameter_mm(d)
+        if t is not None and float(t) > 0:
+            return float(t)
+    except Exception:
+        pass
+    return 1140.0
+
+
+def pata_mm_from_espesor(espesor_mm):
+    e = ceil10_mm(espesor_mm)
+    return max(PATA_MIN_MM, e - PATA_RESTA_MM)
+
+
+def estimate_bar_lengths_mm(largo_muro_mm, espesor_mm):
+    """
+    Largo vano principal y desarrollado estimado (U).
+
+    Returns:
+        dict: main_mm, pata_mm, developed_mm, exceeds_12m
+    """
+    main_mm = ceil10_mm(largo_muro_mm)
+    pata = pata_mm_from_espesor(espesor_mm)
+    developed = main_mm + 2.0 * pata
+    return {
+        u"main_mm": main_mm,
+        u"pata_mm": pata,
+        u"developed_mm": developed,
+        u"exceeds_12m": developed > MAX_BARRA_COMERCIAL_MM,
+    }
+
+
+def normalize_lap_mode_ui(mode):
+    try:
+        key = u"{0}".format(mode or u"").strip().lower()
+    except Exception:
+        key = u""
+    aliases = {
+        u"symmetric": LAP_MODE_SYMMETRIC,
+        u"simetrico": LAP_MODE_SYMMETRIC,
+        u"simétrico": LAP_MODE_SYMMETRIC,
+        u"endpoint_prev": LAP_MODE_ENDPOINT_PREV,
+        u"prev": LAP_MODE_ENDPOINT_PREV,
+        u"anterior": LAP_MODE_ENDPOINT_PREV,
+        u"forward": LAP_MODE_ENDPOINT_PREV,
+        u"endpoint_next": LAP_MODE_ENDPOINT_NEXT,
+        u"next": LAP_MODE_ENDPOINT_NEXT,
+        u"siguiente": LAP_MODE_ENDPOINT_NEXT,
+        u"backward": LAP_MODE_ENDPOINT_NEXT,
+    }
+    return aliases.get(key, LAP_MODE_SYMMETRIC)
+
+
+def to_dividir_splice_mode(lap_mode_ui):
+    """UI lap mode → symmetric|forward|backward de dividir_barra_traslape_punto."""
+    m = normalize_lap_mode_ui(lap_mode_ui)
+    if m == LAP_MODE_ENDPOINT_PREV:
+        return u"forward"
+    if m == LAP_MODE_ENDPOINT_NEXT:
+        return u"backward"
+    return u"symmetric"
+
+
+def sync_layers(prev_layers, n_capas):
+    """Conserva configs; rellena 2Ø16 en capas nuevas."""
+    n = clamp_n_capas(n_capas)
+    out = []
+    prev = list(prev_layers or [])
+    for i in range(n):
+        if i < len(prev) and isinstance(prev[i], dict):
+            out.append(
+                {
+                    u"n_bars": clamp_n_bars(prev[i].get(u"n_bars", 2)),
+                    u"diam_mm": clamp_diam_mm(prev[i].get(u"diam_mm", 16)),
+                }
+            )
+        else:
+            out.append({u"n_bars": 2, u"diam_mm": 16})
+    return out
+
+
+def cover_axis_offset_mm_for_layer(layers, layer_index):
+    """
+    Offset desde cara superior hasta el eje de la capa ``layer_index``.
+
+    Capa 0: cover + Ø0/2.
+    Capa k: cover + Ø0/2 + Σ(Ø_i + clear) + Øk/2 … equivalente acumulando
+    centros: c0 = cover+d0/2; c_k = c_{k-1} + d_{k-1}/2 + clear + d_k/2.
+    """
+    if not layers:
+        return COVER_SUPERIOR_MM + 8.0
+    li = max(0, min(int(layer_index), len(layers) - 1))
+    d0 = float(clamp_diam_mm(layers[0].get(u"diam_mm", 16)))
+    z = COVER_SUPERIOR_MM + 0.5 * d0
+    for i in range(1, li + 1):
+        d_prev = float(clamp_diam_mm(layers[i - 1].get(u"diam_mm", 16)))
+        d_cur = float(clamp_diam_mm(layers[i].get(u"diam_mm", 16)))
+        z += 0.5 * d_prev + LAYER_CLEAR_MM + 0.5 * d_cur
+    return float(z)
+
+
+def stagger_cuts_for_layer(cuts_ref_mm, layer_index, main_mm, lap_mm):
+    """
+    Alternancia A-B-A de estación de empalme.
+
+    Capa 0 y 2: mismos cortes (referencia).
+    Capa 1: espejo L−c; si queda demasiado cerca, desfasa ±(lap+margen).
+    """
+    cuts = []
+    for c in cuts_ref_mm or []:
+        try:
+            cuts.append(float(c))
+        except Exception:
+            continue
+    cuts = sorted(set(cuts))
+    if not cuts:
+        return []
+    if int(layer_index) % 2 == 0:
+        return list(cuts)
+
+    L = float(main_mm)
+    lap = float(lap_mm or 0.0)
+    min_sep = lap + STAGGER_MARGIN_MM
+    out = []
+    for c in cuts:
+        mirrored = L - c
+        too_close = False
+        for ref in cuts:
+            if abs(mirrored - ref) < min_sep:
+                too_close = True
+                break
+        if too_close:
+            cand_a = mirrored + min_sep
+            cand_b = mirrored - min_sep
+            # preferir el que quede dentro (0, L)
+            for cand in (cand_a, cand_b, mirrored):
+                if cand > lap * 0.5 and cand < L - lap * 0.5:
+                    mirrored = cand
+                    break
+        mirrored = max(1.0, min(L - 1.0, mirrored))
+        out.append(ceil10_mm(mirrored))
+    return sorted(set(out))
+
+
+def toggle_cut_at_mm(cuts_mm, click_mm, main_mm):
+    """
+    Clic cerca de un corte → lo quita; si no, añade (↑10 mm).
+
+    Returns:
+        nueva lista de cortes
+    """
+    try:
+        x = float(click_mm)
+        L = float(main_mm)
+    except Exception:
+        return list(cuts_mm or [])
+    if L <= 1.0:
+        return list(cuts_mm or [])
+    x = max(1.0, min(L - 1.0, x))
+    cuts = []
+    for c in cuts_mm or []:
+        try:
+            cuts.append(float(c))
+        except Exception:
+            continue
+    for i, c in enumerate(cuts):
+        if abs(c - x) <= CUT_HIT_MM:
+            return [cuts[j] for j in range(len(cuts)) if j != i]
+    cuts.append(ceil10_mm(x))
+    return sorted(set(cuts))
+
+
+def format_mm_es(mm):
+    try:
+        v = int(round(float(mm)))
+    except Exception:
+        v = 0
+    try:
+        return u"{0:,}".format(v).replace(u",", u".")
+    except Exception:
+        return u"{0}".format(v)

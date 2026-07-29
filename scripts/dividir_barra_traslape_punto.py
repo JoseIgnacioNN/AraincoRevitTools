@@ -1043,6 +1043,16 @@ def normalize_splice_mode(mode):
         key = unicode(mode or u"").strip().lower()
     except NameError:
         key = str(mode or u"").strip().lower()
+    aliases = {
+        u"endpoint_prev": SPLICE_FORWARD,
+        u"prev": SPLICE_FORWARD,
+        u"anterior": SPLICE_FORWARD,
+        u"endpoint_next": SPLICE_BACKWARD,
+        u"next": SPLICE_BACKWARD,
+        u"siguiente": SPLICE_BACKWARD,
+    }
+    if key in aliases:
+        return aliases[key]
     if key in SPLICE_MODES:
         return key
     return SPLICE_SYMMETRIC

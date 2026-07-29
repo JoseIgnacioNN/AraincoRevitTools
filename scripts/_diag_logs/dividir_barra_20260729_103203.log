@@ -1,0 +1,98 @@
+[10:32:03] === Dividir barra traslape — sesión de diagnóstico ===
+[10:32:03] --- Entrada ---
+[10:32:03] Rebar Id=2219204 n_pos=2 cortes_vano=[3100] solape=symmetric
+[10:32:03] Cadena 'centerline/idx0': 5 tramo(s), L_total=8842.5 mm
+[10:32:03]   [0] Line L=294.0 mm gap_prev=0.00 mm
+[10:32:03]   [1] Arc L=28.3 mm gap_prev=0.00 mm
+[10:32:03]   [2] Line L=8198.0 mm gap_prev=0.00 mm
+[10:32:03]   [3] Arc L=28.3 mm gap_prev=0.00 mm
+[10:32:03]   [4] Line L=294.0 mm gap_prev=0.00 mm
+[10:32:03] Segmento mayor: idx=2 L=8198.0 mm (pref=322.3 suf=322.3)
+[10:32:03] --- Tramos recortados ---
+[10:32:03] traslape=1140 mm Ø=16 mm modo=symmetric
+[10:32:03] Cadena 'T1': 3 tramo(s), L_total=3992.3 mm
+[10:32:03]   [0] Line L=294.0 mm gap_prev=0.00 mm
+[10:32:03]   [1] Arc L=28.3 mm gap_prev=0.00 mm
+[10:32:03]   [2] Line L=3670.0 mm gap_prev=0.00 mm
+[10:32:03] Cadena 'T2': 3 tramo(s), L_total=5990.3 mm
+[10:32:03]   [0] Line L=5668.0 mm gap_prev=0.00 mm
+[10:32:03]   [1] Arc L=28.3 mm gap_prev=0.00 mm
+[10:32:03]   [2] Line L=294.0 mm gap_prev=0.00 mm
+[10:32:03] Normal origen Rebar=(1.0000,0.0000,0.0000)
+[10:32:03] DrivingVsVisual bar0: d=0.00 mm drive0=(287776.5,-41904.7,66225.0) vis0=(287776.5,-41904.7,66225.0)
+[10:32:03] MovedBar[orig] idx=0: identity=True origin=(0.0,0.0,0.0)
+[10:32:03] MovedBar[orig] idx=1: identity=True origin=(0.0,0.0,0.0)
+[10:32:03] Patas L en centerline: sin RebarShape ni ganchos Revit en tramos.
+[10:32:04] --- Transacción — crear T1 ---
+[10:32:04] Cadena 'T1/prep': 3 tramo(s), L_total=3992.3 mm
+[10:32:04]   [0] Line L=294.0 mm gap_prev=0.00 mm
+[10:32:04]   [1] Arc L=28.3 mm gap_prev=0.00 mm
+[10:32:04]   [2] Line L=3670.0 mm gap_prev=0.00 mm
+[10:32:04]   arco[1] L=28.3 mm
+[10:32:07] CreateFromCurves FAIL [T1] via=curves/array flags=False/True: An internal error has occurred.
+[10:32:07] CreateFromCurves FAIL [T1] via=curves/list flags=False/True: An internal error has occurred.
+[10:32:07] CreateFromCurves OK [T1] via=curves/array n=3 flags=True/False normal=(1.0000,0.0000,0.0000)
+[10:32:07] PoseCompare[pre-layout]: This rebar element represents a single bar (the layout rule is Single).
+[10:32:07] Layout copiado: 2 pos., regla FixedNumber
+[10:32:07] Alineado transform idx=0: d=0.00 mm before=(0.0,0.0,0.0) target=(0.0,0.0,0.0)
+[10:32:07] Alineado cadena: mean_delta=0.00 mm
+[10:32:07] Alineado cadena: mean_delta=0.00 mm
+[10:32:07] Pose[post-align] normal_orig=(1.0000,0.0000,0.0000) normal_new=(1.0000,0.0000,0.0000) dot=1.0
+[10:32:07] Pose[post-align] BarsOnNormalSide orig=False new=False
+[10:32:07] Pose[post-align] bar0 T_rel_orig=(0.0,0.0,0.0) T_rel_new=(0.0,0.0,0.0) d_rel=0.0 mm
+[10:32:07] Pose[post-align] bar0 mid_orig=(287776.5,-46021.7,66537.0) mid_new=(287776.5,-43596.6,66537.0) d_mid=2425.13716694 mm
+[10:32:07] Pose[post-align] bar1 T_rel_orig=(-134.0,0.0,0.0) T_rel_new=(-134.0,0.0,0.0) d_rel=0.0 mm
+[10:32:07] Pose[post-align] bar1 mid_orig=(287642.5,-46021.7,66537.0) mid_new=(287642.5,-43596.6,66537.0) d_mid=2425.13716694 mm
+[10:32:07] Pose[post-align] cadena_visual: mean_delta=5.19776222063e-12 mm rms_post=0.00 mm exp0=(287776.5,-41904.7,66225.0) act0=(287776.5,-41904.7,66225.0)
+[10:32:07] Alineado cadena: mean_delta=4312.40 mm
+[10:32:08] Alineado inicio/cadena 4312.40 mm (cadena esperada vs creada)
+[10:32:08] Cadena 'T1/creado': 3 tramo(s), L_total=8546.3 mm
+[10:32:08]   [0] Line L=8224.0 mm gap_prev=0.00 mm
+[10:32:08]   [1] Arc L=28.3 mm gap_prev=0.00 mm
+[10:32:08]   [2] Line L=294.0 mm gap_prev=0.00 mm
+[10:32:08] Pose[T1/final] normal_orig=(1.0000,0.0000,0.0000) normal_new=(1.0000,0.0000,0.0000) dot=1.0
+[10:32:08] Pose[T1/final] BarsOnNormalSide orig=False new=False
+[10:32:08] Pose[T1/final] bar0 T_rel_orig=(0.0,0.0,0.0) T_rel_new=(0.0,0.0,0.0) d_rel=0.0 mm
+[10:32:08] Pose[T1/final] bar0 mid_orig=(287776.5,-46021.7,66537.0) mid_new=(287776.5,-43595.0,66535.5) d_mid=2426.68279208 mm
+[10:32:08] Pose[T1/final] bar1 T_rel_orig=(-134.0,0.0,0.0) T_rel_new=(-134.0,0.0,0.0) d_rel=0.0 mm
+[10:32:08] Pose[T1/final] bar1 mid_orig=(287642.5,-46021.7,66537.0) mid_new=(287642.5,-43595.0,66535.5) d_mid=2426.68279208 mm
+[10:32:08] Pose[T1/final] cadena_visual: mean_delta=3.46517481375e-12 mm rms_post=3106.87 mm exp0=(287776.5,-41904.7,66225.0) act0=(287776.5,-43595.0,62262.3)
+[10:32:08] Creado T1 Id=2219207
+[10:32:08] --- Transacción — crear T2 ---
+[10:32:08] Cadena 'T2/prep': 3 tramo(s), L_total=5990.3 mm
+[10:32:08]   [0] Line L=5668.0 mm gap_prev=0.00 mm
+[10:32:08]   [1] Arc L=28.3 mm gap_prev=0.00 mm
+[10:32:08]   [2] Line L=294.0 mm gap_prev=0.00 mm
+[10:32:08]   arco[1] L=28.3 mm
+[10:32:08] CreateFromCurves FAIL [T2] via=curves/array flags=False/True: An internal error has occurred.
+[10:32:08] CreateFromCurves FAIL [T2] via=curves/list flags=False/True: An internal error has occurred.
+[10:32:08] CreateFromCurves OK [T2] via=curves/array n=3 flags=True/False normal=(1.0000,0.0000,0.0000)
+[10:32:08] PoseCompare[pre-layout]: This rebar element represents a single bar (the layout rule is Single).
+[10:32:08] Layout copiado: 2 pos., regla FixedNumber
+[10:32:08] Alineado transform idx=0: d=0.00 mm before=(0.0,0.0,0.0) target=(0.0,0.0,0.0)
+[10:32:08] Alineado cadena: mean_delta=0.00 mm
+[10:32:08] Alineado cadena: mean_delta=0.00 mm
+[10:32:08] Pose[post-align] normal_orig=(1.0000,0.0000,0.0000) normal_new=(1.0000,0.0000,0.0000) dot=1.0
+[10:32:08] Pose[post-align] BarsOnNormalSide orig=False new=False
+[10:32:08] Pose[post-align] bar0 T_rel_orig=(0.0,0.0,0.0) T_rel_new=(0.0,0.0,0.0) d_rel=0.0 mm
+[10:32:08] Pose[post-align] bar0 mid_orig=(287776.5,-46021.7,66537.0) mid_new=(287776.5,-47447.9,66537.0) d_mid=1426.13716694 mm
+[10:32:08] Pose[post-align] bar1 T_rel_orig=(-134.0,0.0,0.0) T_rel_new=(-134.0,0.0,0.0) d_rel=0.0 mm
+[10:32:08] Pose[post-align] bar1 mid_orig=(287642.5,-46021.7,66537.0) mid_new=(287642.5,-47447.9,66537.0) d_mid=1426.13716694 mm
+[10:32:08] Pose[post-align] cadena_visual: mean_delta=8.66293703439e-12 mm rms_post=0.00 mm exp0=(287776.5,-44452.7,66537.0) act0=(287776.5,-44452.7,66537.0)
+[10:32:08] Alineado cadena: mean_delta=1278.00 mm
+[10:32:08] Alineado inicio/cadena 1278.00 mm (cadena esperada vs creada)
+[10:32:08] Cadena 'T2/creado': 3 tramo(s), L_total=8546.3 mm
+[10:32:08]   [0] Line L=8224.0 mm gap_prev=0.00 mm
+[10:32:08]   [1] Arc L=28.3 mm gap_prev=0.00 mm
+[10:32:08]   [2] Line L=294.0 mm gap_prev=0.00 mm
+[10:32:08] Pose[T2/final] normal_orig=(1.0000,0.0000,0.0000) normal_new=(1.0000,0.0000,0.0000) dot=1.0
+[10:32:08] Pose[T2/final] BarsOnNormalSide orig=False new=False
+[10:32:08] Pose[T2/final] bar0 T_rel_orig=(0.0,0.0,0.0) T_rel_new=(0.0,0.0,0.0) d_rel=0.0 mm
+[10:32:08] Pose[T2/final] bar0 mid_orig=(287776.5,-46021.7,66537.0) mid_new=(287776.5,-47447.9,66537.0) d_mid=1426.13716694 mm
+[10:32:08] Pose[T2/final] bar1 T_rel_orig=(-134.0,0.0,0.0) T_rel_new=(-134.0,0.0,0.0) d_rel=0.0 mm
+[10:32:08] Pose[T2/final] bar1 mid_orig=(287642.5,-46021.7,66537.0) mid_new=(287642.5,-47447.9,66537.0) d_mid=1426.13716694 mm
+[10:32:08] Pose[T2/final] cadena_visual: mean_delta=0.0 mm rms_post=903.68 mm exp0=(287776.5,-44452.7,66537.0) act0=(287776.5,-43174.7,66537.0)
+[10:32:08] Creado T2 Id=2219211
+[10:32:08] --- Eliminar barra original ---
+[10:32:08] --- Commit ---
+[10:32:10] --- OK ---

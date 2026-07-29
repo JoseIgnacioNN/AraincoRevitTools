@@ -15,6 +15,9 @@ carpetas `*.tab`.
   (`lap_detail_link_vigas_schema.py`) y geometría opcional `compute_lap_segment_endpoints_vigas`.
 - DMU marcadores de cota confinamiento (columnas): `ENABLE_CONFINEMENT_DIM_LINK_DMU` y
   `scripts/confinement_dim_updater_dmu.py`.
+- DMU color rojo barras >12 m (vista activa, no 3D):
+  `ENABLE_REBAR_LARGO_EXCESO_COLOR_DMU` y
+  `scripts/rebar_largo_exceso_color_updater_dmu.py`.
 - Interceptar «Duplicate as a Dependent»: hook
   `hooks/command-before-exec[ID_CREATE_DEPENDENT_VIEW].py` +
   `scripts/dependent_view_duplicate_intercept.py`
@@ -38,6 +41,9 @@ ENABLE_LAP_DETAIL_LINK_DMU = True
 
 # Borrar DetailCurve marcadores al eliminar cotas de confinamiento (columnas).
 ENABLE_CONFINEMENT_DIM_LINK_DMU = True
+
+# Color rojo automático en vista activa si Rebar > 12 m (excluye vistas 3D).
+ENABLE_REBAR_LARGO_EXCESO_COLOR_DMU = True
 
 # Binding manual de respaldo (el camino principal es el hook en hooks/).
 # Dejar en False si el hook está activo, para no duplicar suscripciones.
@@ -80,6 +86,22 @@ def _register():
         from confinement_dim_updater_dmu import register_confinement_dim_link_updater
 
         register_confinement_dim_link_updater(addin_id, doc=None)
+
+    if ENABLE_REBAR_LARGO_EXCESO_COLOR_DMU:
+        from rebar_largo_exceso_color_updater_dmu import (
+            register_rebar_largo_exceso_color_updater,
+        )
+
+        register_rebar_largo_exceso_color_updater(addin_id, doc=None)
+    else:
+        from rebar_largo_exceso_color_updater_dmu import (
+            unregister_rebar_largo_exceso_color_updater,
+        )
+
+        try:
+            unregister_rebar_largo_exceso_color_updater(addin_id)
+        except Exception:
+            pass
 
     if ENABLE_DEPENDENT_VIEW_DUPLICATE_INTERCEPT:
         from dependent_view_duplicate_intercept import (

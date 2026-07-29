@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Arainco: Armado Muros v3 — entrada pyRevit fina.
+"""Arainco: Coronamiento muros — entrada pyRevit fina.
 
-Lógica en ``BIMTools.extension/scripts/`` (armado_muros_run / lineales / preview_ui).
+Lógica en ``BIMTools.extension/scripts/`` (coronamiento_muros_run / ui / place).
 """
 
-__title__ = "Armado\nMuros v3"
+__title__ = "Coronamiento\nmuros"
 __author__ = "BIMTools"
 __doc__ = (
-    "Armado Muros v3: UI estilo Machones (Inicio, Término, Mallas). "
-    "Misma lógica que v2. Solo muro tradicional."
+    "Armadura de coronamiento en la cabeza del muro: elevación, capas n/Ø, "
+    "empalme por pick y traslape global (3 escenarios)."
 )
 
 import os
@@ -20,8 +20,8 @@ import clr
 clr.AddReference("RevitAPIUI")
 from Autodesk.Revit.UI import TaskDialog
 
-_DIALOG_TITLE = u"Arainco: Armado Muros v3"
-_MAIN_FILE = u"armado_muros_run.py"
+_DIALOG_TITLE = u"Arainco: Coronamiento muros"
+_MAIN_FILE = u"coronamiento_muros_run.py"
 
 _pushbutton_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -39,7 +39,6 @@ def _find_extension_scripts(start_dir):
     return None
 
 
-# --- Validación acceso corporativo (RECURSOS COMPARTIDOS) ---
 import os as _os_ac
 import sys as _sys_ac
 
@@ -76,14 +75,7 @@ if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
         pass
 
     try:
-        # Forzar recarga del bootstrap: si queda en sys.modules, el fingerprint
-        # viejo no ve cambios en scripts/ y el post-malla corre código obsoleto.
-        if u"armado_muros_run" in sys.modules:
-            try:
-                del sys.modules[u"armado_muros_run"]
-            except Exception:
-                pass
-        from armado_muros_run import run_pyrevit
+        from coronamiento_muros_run import run_pyrevit
 
         run_pyrevit(__revit__)
     except Exception:
@@ -95,7 +87,7 @@ if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
         try:
             TaskDialog.Show(
                 _DIALOG_TITLE,
-                u"Error al iniciar Armado Muros v3:\n\n{0}".format(_err[-1800:]),
+                u"Error al iniciar Coronamiento muros:\n\n{0}".format(_err[-1800:]),
             )
         except Exception:
             pass

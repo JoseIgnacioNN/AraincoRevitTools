@@ -4857,6 +4857,7 @@ def crear_areas_malla_parametrizada(doc, walls, params_por_muro_id,
                                     },
                                 )
 
+
                 t.Commit()
                 lote_ok = True
             except Exception as ex_lote:

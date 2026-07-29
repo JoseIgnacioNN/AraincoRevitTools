@@ -190,12 +190,12 @@ UI_MODE_UNIFICADO = u"unificado"
 # Fases de presentación (solo UI unificada): mismo estado/config/creación.
 UI_PHASE_EXTREMO_INICIO = u"extremo_inicio"
 UI_PHASE_EXTREMO_FIN = u"extremo_fin"
+# Conservado por compatibilidad; ya no forma parte del rail ni de la creación V3.
 UI_PHASE_CORONAMIENTO = u"coronamiento"
 UI_PHASE_MALLAS = u"mallas"
 UI_PHASES_UNIFICADO = (
     UI_PHASE_EXTREMO_INICIO,
     UI_PHASE_EXTREMO_FIN,
-    UI_PHASE_CORONAMIENTO,
     UI_PHASE_MALLAS,
 )
 
@@ -224,7 +224,7 @@ def _register_preview_singleton(win, mode):
         pass
 
 
-# Shell estilo Machones: elevación (*) + rail fijo de cards (Inicio/Término/Cor/Mallas).
+# Shell estilo Machones: elevación (*) + rail fijo de cards (Inicio/Término/Mallas).
 SECTION_RAIL_WIDTH_PX = 380.0
 
 XAML_PREVIEW = u"""<Window
@@ -256,7 +256,7 @@ __BIMTOOLS_DARK_STYLES__
         <TextBlock x:Name="TxtTitle" Text="Arainco: Armado Muros v3"
                    Foreground="#E8F4F8" FontSize="18" FontWeight="Bold"/>
         <TextBlock x:Name="TxtSubtitle" Margin="0,6,0,0" Foreground="#95B8CC" TextWrapping="Wrap"
-                   Text="Elevación + rail de fases (Inicio · Término · Coronamiento · Mallas). Shell estilo Machones."/>
+                   Text="Elevación + rail de fases (Inicio · Término · Mallas). Shell estilo Machones."/>
         <StackPanel x:Name="PnlPhaseStepper" Orientation="Vertical" Margin="0,0,0,0"
                     Visibility="Collapsed"/>
         <StackPanel x:Name="PnlModoMuro" Orientation="Horizontal" Margin="0,8,0,0" Visibility="Collapsed">
@@ -370,30 +370,6 @@ __BIMTOOLS_DARK_STYLES__
                 </StackPanel>
               </Border>
 
-              <Border x:Name="BrdCardCor" Background="#0a1620" BorderBrush="#21465C"
-                      BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,0,0,10"
-                      Cursor="Hand" Opacity="0.88">
-                <StackPanel>
-                  <DockPanel Margin="0,0,0,6" LastChildFill="True">
-                    <CheckBox x:Name="ChkPhaseCor" DockPanel.Dock="Right"
-                              ToolTip="Activar o desactivar la fase Coronamiento"
-                              VerticalAlignment="Center" Margin="8,0,0,0"/>
-                    <Border x:Name="PillCor" DockPanel.Dock="Right" Background="#0E1B32"
-                            BorderBrush="#fbbf24" BorderThickness="1" CornerRadius="3"
-                            Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center">
-                      <TextBlock Text="CORONAMIENTO" Foreground="#fbbf24" FontSize="10" FontWeight="SemiBold"/>
-                    </Border>
-                    <TextBlock Text="Configuracion Coronamiento" Foreground="#E8F4F8"
-                               FontSize="12" FontWeight="SemiBold"
-                               VerticalAlignment="Center" TextWrapping="NoWrap"/>
-                  </DockPanel>
-                  <TextBlock Foreground="#64748b" FontSize="10" Margin="0,0,0,8"
-                             TextWrapping="Wrap"
-                             Text="Barras de coronamiento superior / inferior / voladizo"/>
-                  <StackPanel x:Name="PnlCardCorCtrls"/>
-                </StackPanel>
-              </Border>
-
               <Border x:Name="BrdCardMallas" Background="#0a1620" BorderBrush="#21465C"
                       BorderThickness="1" CornerRadius="4" Padding="10"
                       Cursor="Hand" Opacity="0.88">
@@ -431,7 +407,7 @@ __BIMTOOLS_DARK_STYLES__
         <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
           <TextBlock x:Name="TxtEstado" Foreground="#64748b" FontSize="10" TextWrapping="Wrap"/>
           <TextBlock x:Name="TxtFooterHint" Foreground="#64748b" FontSize="10" TextWrapping="Wrap" Margin="0,4,0,0"
-                     Text="Creación: coronamiento → cabezal → mallas AR. Orden inferior→superior."/>
+                     Text="Creación: cabezal → mallas AR. Orden inferior→superior."/>
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
           <Button x:Name="BtnCancelar" Content="Cancelar"
@@ -1049,22 +1025,33 @@ class _CrearCabezalEjecutarHandler(IExternalEventHandler):
         )
 
         try:
-            import armado_muros_coronamiento as _cor_mod
-
-            cor_res = _cor_mod.aplicar_coronamiento_muros(
-                doc, self.walls, bar_type_fallback=fallback_bt,
-            )
-            cor_res = _cor_mod.aplicar_etiquetado_coronamiento(
-                doc, cor_res, uidoc=uidoc, aplicar_visibilidad=False,
-            )
-            if int(cor_res.get(u"n_fail", 0)):
-                pass  # mensaje al final vía cab_res / TaskDialog extendido
-            self._coronamiento_res = cor_res
-        except Exception as ex_cor:
+            # Coronamiento fuera de V3 (herramienta dedicada); no generar aquí.
             self._coronamiento_res = {
-                u"n_fail": 1,
+                u"skipped": True,
+                u"n_created": 0,
+                u"n_fail": 0,
+                u"n_bars": 0,
+                u"n_inferior_created": 0,
+                u"n_inferior_fail": 0,
+                u"n_inferior_bars": 0,
+                u"n_inferior_pie_created": 0,
+                u"n_inferior_pie_fail": 0,
+                u"n_inferior_pie_bars": 0,
+                u"n_voladizo_created": 0,
+                u"n_voladizo_fail": 0,
+                u"n_voladizo_bars": 0,
+                u"n_cor_tags_created": 0,
+                u"n_cor_tags_fail": 0,
+                u"messages": [],
+            }
+            cor_res = self._coronamiento_res
+        except Exception as ex_cor:
+            cor_res = {
+                u"n_fail": 0,
+                u"skipped": True,
                 u"messages": [unicode(ex_cor)],
             }
+            self._coronamiento_res = cor_res
 
         ref_walls_troceo = getattr(self, u"ref_walls_troceo", None)
 
@@ -1357,8 +1344,8 @@ class _CrearUnificadoEjecutarHandler(IExternalEventHandler):
         self.cabezal_por_muro_id = {}
         self.area_reinforcement_type_id = ElementId.InvalidElementId
         self.malla_activo_por_muro_id = {}
-        self.coronamiento_cfg = None
-        self.coronamiento_por_muro_id = {}
+        self.coronamiento_cfg = {u"activo": False}
+        self.coronamiento_por_muro_id = None
 
     def Execute(self, uiapp):
         from Autodesk.Revit.UI import TaskDialog
@@ -1626,7 +1613,7 @@ class ArmadoMurosPreviewWindow(object):
         self._phase_enabled = {
             UI_PHASE_EXTREMO_INICIO: True,
             UI_PHASE_EXTREMO_FIN: True,
-            UI_PHASE_CORONAMIENTO: True,
+            UI_PHASE_CORONAMIENTO: False,
             UI_PHASE_MALLAS: True,
         }
         self._suppress_phase_enabled_chk = False
@@ -2459,9 +2446,7 @@ class ArmadoMurosPreviewWindow(object):
                 self._cabezal_cap_col_px_cached = self._compute_cabezal_cap_col_width_px()
                 self._preview_col_px = float(self._effective_preview_col_px())
                 self._refresh_wall_thickness_color_map()
-                if self._is_unificado_mode():
-                    self._init_coronamiento_cfg()
-                    self._init_coronamiento_por_muro_id()
+                # Coronamiento: no se configura ni genera en V3.
             if self._is_mallas_mode() and not self._is_unificado_mode():
                 self._sync_modo_from_checkboxes()
             self._set_estado(u"Construyendo paneles…")
@@ -2481,7 +2466,7 @@ class ArmadoMurosPreviewWindow(object):
                 self._wire_machones_phase_cards()
                 self._apply_ui_phase_visibility()
                 self._refresh_machones_card_focus_chrome()
-                estado = u"Configura Inicio en el rail; luego Término, Coronamiento y Mallas."
+                estado = u"Configura Inicio en el rail; luego Término y Mallas."
             elif self._is_cabezal_mode():
                 estado = u"Configura cabezales y pulsa Crear cabezales."
             else:
@@ -2545,10 +2530,8 @@ class ArmadoMurosPreviewWindow(object):
             return u"1 · Inicio"
         if phase == UI_PHASE_EXTREMO_FIN:
             return u"2 · Final"
-        if phase == UI_PHASE_CORONAMIENTO:
-            return u"3 · Coronamiento"
         if phase == UI_PHASE_MALLAS:
-            return u"4 · Mallas"
+            return u"3 · Mallas"
         return u""
 
     def _set_ui_phase(self, phase):
@@ -2567,9 +2550,8 @@ class ArmadoMurosPreviewWindow(object):
             self._last_cabezal_extremo = CABEZAL_EXTREMO_FIN
         elif phase == UI_PHASE_EXTREMO_INICIO:
             self._last_cabezal_extremo = CABEZAL_EXTREMO_INICIO
-        # Mallas/Coronamiento: multi-fuste. Al salir a Inicio/Término → selección simple.
-        # Conservar multi al cambiar entre Mallas ↔ Coronamiento.
-        _multi = (UI_PHASE_MALLAS, UI_PHASE_CORONAMIENTO)
+        # Mallas: multi-fuste. Al salir a Inicio/Término → selección simple.
+        _multi = (UI_PHASE_MALLAS,)
         if prev in _multi and phase not in _multi:
             pri = int(getattr(self, u"_machones_selected_wall", 0) or 0)
             self._set_machones_wall_selection(pri, [pri], reset_anchor=True)
@@ -2580,20 +2562,6 @@ class ArmadoMurosPreviewWindow(object):
                 pass
             try:
                 self._refresh_mallas_selection_chip()
-            except Exception:
-                pass
-        elif phase == UI_PHASE_CORONAMIENTO:
-            try:
-                self._sync_bulk_cor_from_primary_wall()
-            except Exception:
-                pass
-            try:
-                self._refresh_cor_selection_chip()
-            except Exception:
-                pass
-            try:
-                on = self._phase_is_enabled(UI_PHASE_CORONAMIENTO)
-                self._set_coronamiento_fields_enabled(on)
             except Exception:
                 pass
         self._apply_ui_phase_visibility()
@@ -2707,8 +2675,6 @@ class ArmadoMurosPreviewWindow(object):
                     self._set_cabezal_armado_extremo(
                         CABEZAL_EXTREMO_FIN, on, animate=animate,
                     )
-                elif phase == UI_PHASE_CORONAMIENTO:
-                    self._set_coronamiento_phase_enabled(on)
                 elif phase == UI_PHASE_MALLAS:
                     self._set_malla_activo_all(on, animate=animate)
             except Exception:
@@ -2779,10 +2745,10 @@ class ArmadoMurosPreviewWindow(object):
         self._phase_enabled[UI_PHASE_EXTREMO_INICIO] = bool(on_ini)
         self._phase_enabled[UI_PHASE_EXTREMO_FIN] = bool(on_fin)
         try:
-            # Fase disponible para configurar; barras solo en muros con Aplicar.
-            self._phase_enabled[UI_PHASE_CORONAMIENTO] = True
+            # Coronamiento gestionado en herramienta aparte; fase retirada de V3.
+            self._phase_enabled[UI_PHASE_CORONAMIENTO] = False
         except Exception:
-            self._phase_enabled[UI_PHASE_CORONAMIENTO] = True
+            self._phase_enabled[UI_PHASE_CORONAMIENTO] = False
         try:
             # Mallas: True solo si todos los muros tienen malla activa.
             walls = getattr(self, u"walls_ordered", None) or []
@@ -2937,7 +2903,6 @@ class ArmadoMurosPreviewWindow(object):
         return {
             UI_PHASE_EXTREMO_INICIO: (u"BrdCardInicio", u"ChkPhaseInicio", (0x5B, 0xC0, 0xDE)),
             UI_PHASE_EXTREMO_FIN: (u"BrdCardFin", u"ChkPhaseFin", (0x4A, 0xDE, 0x80)),
-            UI_PHASE_CORONAMIENTO: (u"BrdCardCor", u"ChkPhaseCor", (0xFB, 0xBF, 0x24)),
             UI_PHASE_MALLAS: (u"BrdCardMallas", u"ChkPhaseMallas", (0x5B, 0xC0, 0xDE)),
         }
 
@@ -3295,10 +3260,6 @@ class ArmadoMurosPreviewWindow(object):
                     sub_tb.Text = u"Fase {0}/{1} — Extremo Final.".format(
                         idx, n_phases,
                     )
-                elif phase == UI_PHASE_CORONAMIENTO:
-                    sub_tb.Text = u"Fase {0}/{1} — Coronamiento.".format(
-                        idx, n_phases,
-                    )
                 else:
                     sub_tb.Text = u"Fase {0}/{1} — Mallas.".format(
                         idx, n_phases,
@@ -3311,7 +3272,7 @@ class ArmadoMurosPreviewWindow(object):
             try:
                 foot_tb.Visibility = Visibility.Visible
                 foot_tb.Text = (
-                    u"Creación: coronamiento → longitudinales → confinamiento → mallas."
+                    u"Creación: longitudinales → confinamiento → mallas."
                 )
             except Exception:
                 pass
@@ -3342,8 +3303,6 @@ class ArmadoMurosPreviewWindow(object):
             if tb_elev is not None:
                 if phase == UI_PHASE_MALLAS:
                     tb_elev.Text = u"ELEVACIÓN · MALLA EXT.+INT."
-                elif phase == UI_PHASE_CORONAMIENTO:
-                    tb_elev.Text = u"ELEVACIÓN · CORONAMIENTO"
                 else:
                     tb_elev.Text = u"ELEVACIÓN MUROS"
         except Exception:
@@ -3351,11 +3310,6 @@ class ArmadoMurosPreviewWindow(object):
 
         if phase == UI_PHASE_MALLAS:
             estado = u"Fase Mallas: selecciona muros en elevación; configura AR; Crear armadura."
-        elif phase == UI_PHASE_CORONAMIENTO:
-            estado = (
-                u"Fase Coronamiento: por defecto sin barras. Selecciona muros "
-                u"y marca un tipo (Superior/Inferior/Voladizo) para configurar."
-            )
         elif phase == UI_PHASE_EXTREMO_FIN:
             estado = u"Fase Término: configura cabezal final en el rail."
         else:
@@ -3374,7 +3328,7 @@ class ArmadoMurosPreviewWindow(object):
     def _apply_machones_card_body_visibility(self):
         """Minimiza cuerpos de cards inactivas; solo la fase activa queda maximizada.
 
-        Al abrir (fase Inicio): Cor/Mallas/Término quedan solo cabecera.
+        Al abrir (fase Inicio): Mallas/Término quedan solo cabecera.
         """
         if self._win is None or not getattr(self, u"_machones_rail_cards", False):
             return
@@ -3756,7 +3710,7 @@ class ArmadoMurosPreviewWindow(object):
                 if uni:
                     sub_tb.Visibility = Visibility.Visible
                     # Texto definitivo en `_apply_ui_phase_chrome` tras montar paneles.
-                    sub_tb.Text = u"Configuración por fases: Inicio → Final → Coronamiento → Mallas."
+                    sub_tb.Text = u"Configuración por fases: Inicio → Final → Mallas."
                 elif cab:
                     sub_tb.Text = u""
                     sub_tb.Visibility = Visibility.Collapsed
@@ -3775,7 +3729,7 @@ class ArmadoMurosPreviewWindow(object):
                 if uni:
                     foot_tb.Visibility = Visibility.Visible
                     foot_tb.Text = (
-                        u"Creación: coronamiento → longitudinales → confinamiento → mallas."
+                        u"Creación: longitudinales → confinamiento → mallas."
                     )
                 elif cab:
                     foot_tb.Text = u""
@@ -15977,9 +15931,7 @@ class ArmadoMurosPreviewWindow(object):
                 self._sync_bulk_malla_activo_toggle(on_m, animate=False)
                 self._set_bulk_mesh_panel_enabled(on_m)
             center_host.Children.Add(mesh_bulk)
-            cor_bulk = self._build_unificado_bulk_coronamiento_panel()
-            self._bulk_cor_panel_host = cor_bulk
-            center_host.Children.Add(cor_bulk)
+            self._bulk_cor_panel_host = None
             Grid.SetColumn(center_host, 0)
             outer.Children.Add(center_host)
             root.Children.Add(outer)
@@ -19974,14 +19926,9 @@ class ArmadoMurosPreviewWindow(object):
         self._crear_handler.malla_activo_por_muro_id = (
             self._malla_activo_por_muro_id_dict()
         )
-        if self._phase_is_enabled(UI_PHASE_CORONAMIENTO):
-            self._crear_handler.coronamiento_cfg = self._coronamiento_cfg_snapshot()
-            self._crear_handler.coronamiento_por_muro_id = (
-                self._coronamiento_por_muro_id_dict()
-            )
-        else:
-            self._crear_handler.coronamiento_cfg = {u"activo": False}
-            self._crear_handler.coronamiento_por_muro_id = None
+        # Coronamiento fuera de V3 (herramienta dedicada).
+        self._crear_handler.coronamiento_cfg = {u"activo": False}
+        self._crear_handler.coronamiento_por_muro_id = None
         self._schedule_crear_and_close()
 
     def _on_crear_cabezal_clicked(self):
