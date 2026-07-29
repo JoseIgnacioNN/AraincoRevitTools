@@ -4,13 +4,19 @@ Colocación Revit — Coronamiento muros (superior, capas, split con traslape).
 
 Revit 2024+ | IronPython / pyRevit
 
-Helpers internos (crear capa, stamp post-split, ``dividir_rebar_en_cortes``,
-etiquetas/visibilidad) abren sus propias Transaction / TxnScope. El flujo
-``place_coronamiento_wall`` las agrupa en un ``TransactionGroup`` con
-``Assimilate`` para que Undo muestre un solo paso.
+Traslapos: misma geometría/API que ``56_DividirRebarPuntoTraslape``
+(``divide_rebar_at_cuts``). Los cortes de la UI son estaciones sobre el vano
+horizontal; se convierten a distancia sobre centerline (pata L + vano).
+
+Helpers internos (crear capa, stamp post-split, divide, etiquetas/visibilidad)
+abren sus propias Transaction / TxnScope. El flujo ``place_coronamiento_wall``
+las agrupa en un ``TransactionGroup`` con ``Assimilate`` para un solo Undo.
 """
 
 from __future__ import print_function
+
+import os
+import sys
 
 import clr
 
@@ -47,15 +53,17 @@ from coronamiento_muros_geom import (
     cover_axis_offset_mm_for_layer,
     estimate_bar_lengths_mm,
     stagger_cuts_for_layer,
-    to_dividir_splice_mode,
+    to_dividir_lap_mode,
     traslape_mm_from_diam,
 )
-from dividir_barra_traslape_punto import dividir_rebar_en_cortes
 
 _TXN_GROUP = u"Arainco: Coronamiento muros"
 _TXN_CREATE = u"Arainco: Coronamiento muros (capa)"
 _TXN_STAMP = u"Arainco: Coronamiento muros (capa stamp)"
 _TAG_EXTREMO = cor.CORONAMIENTO_TAG_EXTREMO_SUP
+
+_DIVIDIR56_SCRIPTS = None
+_DIVIDIR56_LOAD_ERROR = None
 
 
 def _as_unicode(text):
@@ -65,6 +73,120 @@ def _as_unicode(text):
         return unicode(text)
     except NameError:
         return str(text)
+
+
+def _find_dividir_rebar_punto_scripts_dir():
+    """Localiza ``56_DividirRebarPuntoTraslape.pushbutton/scripts`` bajo la extensión."""
+    global _DIVIDIR56_SCRIPTS, _DIVIDIR56_LOAD_ERROR
+    if _DIVIDIR56_SCRIPTS:
+        return _DIVIDIR56_SCRIPTS
+    here = os.path.dirname(os.path.abspath(__file__))
+    ext_root = os.path.dirname(here)
+    needle = u"56_DividirRebarPuntoTraslape.pushbutton"
+    try:
+        for dirpath, dirnames, _filenames in os.walk(ext_root):
+            base = os.path.basename(dirpath)
+            if base == needle or base.endswith(needle):
+                cand = os.path.join(dirpath, u"scripts")
+                core = os.path.join(cand, u"dividir_rebar_punto_core.py")
+                if os.path.isfile(core):
+                    _DIVIDIR56_SCRIPTS = cand
+                    return cand
+            for skip in (u".git", u"__pycache__", u"node_modules"):
+                if skip in dirnames:
+                    dirnames.remove(skip)
+    except Exception as ex:
+        _DIVIDIR56_LOAD_ERROR = _as_unicode(ex)
+        return None
+    _DIVIDIR56_LOAD_ERROR = u"No se encontró {0}/scripts".format(needle)
+    return None
+
+
+def _ensure_dividir_rebar_punto():
+    """
+    Antepone scripts de la herramienta 56 e importa ``divide_rebar_at_cuts``.
+
+    Returns:
+        (ok, err_msg, divide_fn_or_None)
+    """
+    global _DIVIDIR56_LOAD_ERROR
+    scripts_dir = _find_dividir_rebar_punto_scripts_dir()
+    if not scripts_dir:
+        return False, _DIVIDIR56_LOAD_ERROR or u"Scripts 56 no encontrados.", None
+    try:
+        if scripts_dir in sys.path:
+            sys.path.remove(scripts_dir)
+        sys.path.insert(0, scripts_dir)
+    except Exception:
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+    try:
+        from dividir_rebar_punto_core import divide_rebar_at_cuts
+
+        return True, u"", divide_rebar_at_cuts
+    except Exception as ex:
+        _DIVIDIR56_LOAD_ERROR = _as_unicode(ex)
+        return False, u"Import 56: {0}".format(_DIVIDIR56_LOAD_ERROR), None
+
+
+def _cuts_main_to_centerline_mm(rebar, cuts_main_mm):
+    """
+    Cortes UI (mm sobre el vano horizontal) → mm desde el inicio de la centerline.
+
+    Misma convención que 56: distancia acumulada sobre la polilínea (pata + vano + pata).
+    """
+    cuts = []
+    for c in cuts_main_mm or []:
+        try:
+            cuts.append(float(c))
+        except Exception:
+            continue
+    if not cuts:
+        return []
+    try:
+        from dividir_rebar_punto_core import (
+            _centerline_curves,
+            _curve_length,
+            internal_to_mm,
+        )
+    except Exception:
+        return cuts
+    curves = _centerline_curves(rebar, 0, True, True)
+    if not curves:
+        curves = _centerline_curves(rebar, 0, True, False)
+    if not curves:
+        return cuts
+    lengths = []
+    for crv in curves:
+        try:
+            lengths.append(float(_curve_length(crv)))
+        except Exception:
+            lengths.append(0.0)
+    if not lengths:
+        return cuts
+    i_main = 0
+    best = -1.0
+    for i, leng in enumerate(lengths):
+        if leng > best:
+            best = leng
+            i_main = i
+    offset_ft = 0.0
+    for i in range(i_main):
+        offset_ft += lengths[i]
+    try:
+        offset_mm = float(internal_to_mm(offset_ft))
+    except Exception:
+        offset_mm = offset_ft * 304.8
+    return [offset_mm + c for c in cuts]
+
+
+def _active_view(uidoc):
+    if uidoc is None:
+        return None
+    try:
+        return uidoc.ActiveView
+    except Exception:
+        return None
 
 
 def wall_largo_mm(wall):
@@ -99,6 +221,60 @@ def wall_espesor_mm(wall):
 
 def wall_length_estimate(wall):
     return estimate_bar_lengths_mm(wall_largo_mm(wall), wall_espesor_mm(wall))
+
+
+def wall_elev_canvas_flip_for_view(wall, view):
+    """
+    ¿Invertir el canvas de elevación para coincidir con la vista activa?
+
+    Misma idea que ``compute_stacked_wall_layout(..., view_right_xy)`` /
+    ``cabezal_extremos_en_lados_*``: proyectar extremos de LocationCurve
+    sobre ``view.RightDirection``.
+
+    Fórmula (cuando la vista es útil):
+        rd = normalize(RightDirection)
+        u0 = P0 · rd,  u1 = P1 · rd
+        flip = (u0 > u1)   # P0 (inicio U / mm=0) queda a la derecha en pantalla
+
+    Convención de cortes (no se invierte el origen mm):
+        mm=0 → inicio del vano principal = extremo LocationCurve P0
+               (inicio de la cadena U: pata → vano → pata).
+        Solo se espeja el mapeo píxel↔mm del dibujo/clic.
+
+    Respaldo ``False`` (canvas izq = P0 = mm 0) si no hay vista/curva,
+    |u1−u0| es despreciable frente al largo (muro de canto / eje ≈ ViewDirection),
+    o falla la proyección.
+    """
+    if wall is None or view is None:
+        return False
+    lc = location_curve_wall(wall) if location_curve_wall else None
+    if lc is None:
+        return False
+    try:
+        rd = view.RightDirection
+        rx = float(rd.X)
+        ry = float(rd.Y)
+        rz = float(rd.Z)
+    except Exception:
+        return False
+    rl = (rx * rx + ry * ry + rz * rz) ** 0.5
+    if rl < 1e-9:
+        return False
+    rx, ry, rz = rx / rl, ry / rl, rz / rl
+    try:
+        p0 = lc.GetEndPoint(0)
+        p1 = lc.GetEndPoint(1)
+        u0 = float(p0.X) * rx + float(p0.Y) * ry + float(p0.Z) * rz
+        u1 = float(p1.X) * rx + float(p1.Y) * ry + float(p1.Z) * rz
+        length_ft = float(lc.Length)
+    except Exception:
+        return False
+    du = u1 - u0
+    # Proyección útil: al menos ~15 % del largo (evita muro casi de canto).
+    min_span = max(1e-3, 0.15 * max(abs(length_ft), 1e-6))
+    if abs(du) < min_span:
+        return False
+    return bool(u0 > u1)
 
 
 def _mm_to_internal(mm):
@@ -177,31 +353,32 @@ def _stamp_ids(doc, id_list, layer_index):
             pass
 
 
-def _register_tag_meta(cor_res, doc, id_ints, wall, z_bar_ft, layer_index):
-    """Registra ids + meta para ``aplicar_etiquetado_coronamiento``."""
-    if cor_res is None or not id_ints:
-        return
-    try:
-        wid = int(wall.Id.IntegerValue)
-    except Exception:
-        wid = None
-    for iv in id_ints:
+def _register_tag_meta(cor_res, doc, final_ids, wall, z_bar_ft, layer_index):
+    for iv in final_ids or []:
         try:
             eid = ElementId(int(iv))
+            el = doc.GetElement(eid) if doc is not None else None
         except Exception:
             continue
-        cor_res.setdefault(u"rebars_coronamiento_ids", []).append(eid)
-        cor_res.setdefault(u"rebars_coronamiento_id_ints", []).append(int(iv))
-        cor_res.setdefault(u"rebars_coronamiento_tag_meta", []).append(
-            {
-                u"rebar_id": eid,
-                u"layer_index": int(layer_index),
-                u"wid": wid,
-                u"extremo": _TAG_EXTREMO,
-                u"zs": float(z_bar_ft),
-                u"span_seg": 0.01,
-            }
-        )
+        if el is None:
+            continue
+        try:
+            cor._registrar_coronamiento_rebar_tag(
+                cor_res, el, wall, z_bar_ft, _TAG_EXTREMO, layer_index=layer_index
+            )
+        except Exception:
+            cor_res.setdefault(u"rebars_coronamiento_ids", []).append(eid)
+            cor_res.setdefault(u"rebars_coronamiento_id_ints", []).append(int(iv))
+            cor_res.setdefault(u"rebars_coronamiento_tag_meta", []).append(
+                {
+                    u"rebar_id": eid,
+                    u"layer_index": int(layer_index),
+                    u"wid": int(wall.Id.IntegerValue) if wall is not None else None,
+                    u"extremo": _TAG_EXTREMO,
+                    u"zs": float(z_bar_ft),
+                    u"span_seg": 0.01,
+                }
+            )
 
 
 def place_coronamiento_wall(
@@ -214,7 +391,7 @@ def place_coronamiento_wall(
 ):
     """
     Crea coronamiento superior por capa; opcionalmente divide con traslape
-    y etiqueta en la vista activa (``EST_A_STRUCTURAL REBAR TAG_WALL_HORIZONTAL``).
+    (API 56) y etiqueta en la vista activa (``EST_A_STRUCTURAL REBAR TAG_WALL_HORIZONTAL``).
 
     Returns:
         dict: ok, messages, rebar_ids, n_layers, exceeds_12m, developed_mm, main_mm,
@@ -246,7 +423,16 @@ def place_coronamiento_wall(
     result[u"exceeds_12m"] = bool(est[u"exceeds_12m"])
     main_mm = float(est[u"main_mm"])
     cuts_ref = list(cuts_ref_mm or [])
-    splice_mode = to_dividir_splice_mode(lap_mode_ui)
+    lap_mode = to_dividir_lap_mode(lap_mode_ui)
+
+    divide_fn = None
+    if cuts_ref:
+        ok_imp, err_imp, divide_fn = _ensure_dividir_rebar_punto()
+        if not ok_imp or divide_fn is None:
+            result[u"messages"].append(
+                u"Traslape (56) no disponible: {0}".format(err_imp or u"import")
+            )
+            cuts_ref = []
 
     cor_res = {
         u"messages": [],
@@ -260,6 +446,7 @@ def place_coronamiento_wall(
     tg = None
     tg_started = False
     place_finished = False
+    view = _active_view(uidoc)
     try:
         try:
             iniciar_armadura_eje_ejecucion(uidoc=uidoc)
@@ -322,16 +509,22 @@ def place_coronamiento_wall(
                 continue
 
             lap_mm = traslape_mm_from_diam(diam_mm)
-            layer_cuts = stagger_cuts_for_layer(cuts_ref, li, main_mm, lap_mm)
+            layer_cuts_main = stagger_cuts_for_layer(cuts_ref, li, main_mm, lap_mm)
             final_ids = []
 
-            if layer_cuts:
-                ok_div, msg_div, ids_new = dividir_rebar_en_cortes(
+            if layer_cuts_main and divide_fn is not None:
+                cuts_cl = _cuts_main_to_centerline_mm(rb, layer_cuts_main)
+                # Cotas de traslape solo 1ª y 2ª capa; siempre sobre las barras.
+                place_dims = int(li) in (0, 1)
+                ok_div, msg_div, ids_new, _meta = divide_fn(
                     doc,
                     rb,
-                    layer_cuts,
-                    lap_mm=lap_mm,
-                    splice_mode=splice_mode,
+                    cuts_cl,
+                    concrete_grade=None,
+                    view=view,
+                    lap_mode=lap_mode,
+                    place_lap_dims=place_dims,
+                    lap_dim_prefer_above=True,
                 )
                 if ok_div and ids_new:
                     for eid in ids_new:
@@ -376,7 +569,6 @@ def place_coronamiento_wall(
                 ),
             )
 
-        # Etiquetas en vista activa (familia WALL_HORIZONTAL)
         if created:
             try:
                 cor_res = cor.aplicar_etiquetado_coronamiento(
@@ -392,7 +584,6 @@ def place_coronamiento_wall(
                     )
                 for m in cor_res.get(u"messages") or []:
                     if m and m not in result[u"messages"]:
-                        # Evitar duplicar mensajes de creación; solo tags/visibilidad
                         if u"Etiqueta" in m or u"visible" in m or u"Unobscured" in m:
                             result[u"messages"].append(m)
             except Exception as ex_tag:

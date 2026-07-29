@@ -15,22 +15,23 @@ COVER_SUPERIOR_MM = 25.0
 PATA_RESTA_MM = 50.0
 PATA_MIN_MM = 100.0
 CUT_HIT_MM = 180.0
-STAGGER_MARGIN_MM = 300.0
+STAGGER_MARGIN_MM = 300.0  # margen extremo al clampar cortes desfasados
+# Desfase A-B (capas impares): delta = L_traslape (solo traslape; no espejo L−c)
 LAYER_CLEAR_MM = 20.0  # separación libre entre ejes de capas sucesivas
 
 DIAMS_MM = (8, 10, 12, 16, 18, 20, 22, 25)
 N_BARS_OPTS = (2, 3, 4)
 CAPAS_OPTS = (1, 2, 3)
 
-# Alias UI → dividir_barra_traslape_punto (symmetric|forward|backward)
+# Misma clave que 56_DividirRebarPuntoTraslape (dividir_rebar_punto_geom)
 LAP_MODE_SYMMETRIC = u"symmetric"
-LAP_MODE_ENDPOINT_PREV = u"endpoint_prev"  # → forward
-LAP_MODE_ENDPOINT_NEXT = u"endpoint_next"  # → backward
+LAP_MODE_ENDPOINT_PREV = u"endpoint_prev"
+LAP_MODE_ENDPOINT_NEXT = u"endpoint_next"
 
 LAP_MODE_LABELS = (
-    (LAP_MODE_SYMMETRIC, u"Simétrico ±L/2"),
-    (LAP_MODE_ENDPOINT_PREV, u"Endpoint anterior (+L)"),
-    (LAP_MODE_ENDPOINT_NEXT, u"Endpoint siguiente (−L)"),
+    (LAP_MODE_SYMMETRIC, u"Simétrico ± L/2"),
+    (LAP_MODE_ENDPOINT_PREV, u"Endpoint · estira tramo anterior (+L)"),
+    (LAP_MODE_ENDPOINT_NEXT, u"Endpoint · estira tramo siguiente (−L)"),
 )
 
 # Traslape base BIMTools (mm) — espejo bimtools_rebar_hook_lengths
@@ -141,8 +142,17 @@ def normalize_lap_mode_ui(mode):
     return aliases.get(key, LAP_MODE_SYMMETRIC)
 
 
+def to_dividir_lap_mode(lap_mode_ui):
+    """UI lap mode → symmetric|endpoint_prev|endpoint_next (API 56)."""
+    return normalize_lap_mode_ui(lap_mode_ui)
+
+
 def to_dividir_splice_mode(lap_mode_ui):
-    """UI lap mode → symmetric|forward|backward de dividir_barra_traslape_punto."""
+    """
+    Compat: UI → symmetric|forward|backward (dividir_barra_traslape_punto).
+
+    Preferir ``to_dividir_lap_mode`` para Dividir Rebar Punto (56).
+    """
     m = normalize_lap_mode_ui(lap_mode_ui)
     if m == LAP_MODE_ENDPOINT_PREV:
         return u"forward"
@@ -193,8 +203,9 @@ def stagger_cuts_for_layer(cuts_ref_mm, layer_index, main_mm, lap_mm):
     """
     Alternancia A-B-A de estación de empalme.
 
-    Capa 0 y 2: mismos cortes (referencia).
-    Capa 1: espejo L−c; si queda demasiado cerca, desfasa ±(lap+margen).
+    Capas pares (0, 2, …): mismos cortes que la referencia.
+    Capas impares (1, 3, …): cada corte se desplaza delta = L_traslape
+    hacia el centro del muro si cabe; no espejo L−c.
     """
     cuts = []
     for c in cuts_ref_mm or []:
@@ -209,26 +220,24 @@ def stagger_cuts_for_layer(cuts_ref_mm, layer_index, main_mm, lap_mm):
         return list(cuts)
 
     L = float(main_mm)
+    if L <= 2.0:
+        return list(cuts)
     lap = float(lap_mm or 0.0)
-    min_sep = lap + STAGGER_MARGIN_MM
+    delta = float(lap)
+    if delta < 1.0:
+        delta = STAGGER_MARGIN_MM
+    lo = max(1.0, float(STAGGER_MARGIN_MM))
+    hi = max(lo, L - lo)
+    mid = 0.5 * L
     out = []
     for c in cuts:
-        mirrored = L - c
-        too_close = False
-        for ref in cuts:
-            if abs(mirrored - ref) < min_sep:
-                too_close = True
-                break
-        if too_close:
-            cand_a = mirrored + min_sep
-            cand_b = mirrored - min_sep
-            # preferir el que quede dentro (0, L)
-            for cand in (cand_a, cand_b, mirrored):
-                if cand > lap * 0.5 and cand < L - lap * 0.5:
-                    mirrored = cand
-                    break
-        mirrored = max(1.0, min(L - 1.0, mirrored))
-        out.append(ceil10_mm(mirrored))
+        # Mismo |delta| en todos los cortes; sentido hacia midspan (o el opuesto si sale).
+        sign = 1.0 if c < mid else -1.0
+        cand = c + sign * delta
+        if cand < lo or cand > hi:
+            cand = c - sign * delta
+        cand = max(lo, min(hi, cand))
+        out.append(ceil10_mm(cand))
     return sorted(set(out))
 
 

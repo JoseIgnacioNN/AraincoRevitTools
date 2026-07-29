@@ -3,10 +3,10 @@
 UI WPF — Arainco: Coronamiento muros.
 
 Elevación + stack lateral (capas n/Ø estilo V3), pick de empalme en canvas,
-escenario de traslape global, aviso >12 m (no bloquea).
+escenario de traslape global (mismos modos que 56_DividirRebarPuntoTraslape),
+aviso >12 m (no bloquea).
 
-Traslapes temporalmente desactivados vía ``ENABLE_TRASLAPOS`` (poner True para
-volver a habilitar).
+Flag ``ENABLE_TRASLAPOS``: poner False para ocultar empalme sin quitar el código.
 """
 
 from __future__ import print_function
@@ -63,11 +63,15 @@ from coronamiento_muros_geom import (
     toggle_cut_at_mm,
     traslape_mm_from_diam,
 )
-from coronamiento_muros_place import place_coronamiento_wall, wall_length_estimate
+from coronamiento_muros_place import (
+    place_coronamiento_wall,
+    wall_elev_canvas_flip_for_view,
+    wall_length_estimate,
+)
 from revit_wpf_window_position import revit_main_hwnd
 
-# Temporarily disabled: set True to re-enable empalme cuts / traslapos.
-ENABLE_TRASLAPOS = False
+# Poner False para ocultar empalme / no dividir al colocar.
+ENABLE_TRASLAPOS = True
 
 _DIALOG_TITLE = u"Arainco: Coronamiento muros"
 _SINGLETON_KEY = u"Arainco.CoronamientoMuros.ActiveWindow"
@@ -76,6 +80,28 @@ _CUT = u"#f87171"
 _WALL = u"#2a4a58"
 _WALL_STROKE = u"#5a8a9a"
 _LAYER_COLORS = (u"#fbbf24", u"#38bdf8", u"#a78bfa")
+
+# Ancho fijo; altura por SizeToContent (crece al añadir capas).
+_UI_WIDTH = 960
+_UI_MIN_WIDTH = 920
+_UI_SIDE_W = 320
+_UI_CANVAS_H = 340
+# Grosor trazo elevación (barras finas; muro/cortes un poco más visibles).
+_STROKE_BAR = 1.25
+_STROKE_WALL = 1.5
+_STROKE_CUT = 1.4
+
+
+def _ui_min_window_height():
+    """Piso de MinHeight (~1 capa); la altura real la mide SizeToContent."""
+    # Cinta SO ~32; pad 18×2; título ~40; panel pad 12×2; hint ~28; footer ~52
+    chrome = 200
+    stack = 28 + 40 + 22 + 54 + 82 + 24
+    if ENABLE_TRASLAPOS:
+        stack += 118
+    body = max(_UI_CANVAS_H + 34, stack) + 8
+    return int(chrome + body)
+
 
 
 def _brush(hex_color, alpha=255):
@@ -201,26 +227,21 @@ class CoronamientoMurosWindow(object):
             u'Style="{StaticResource BtnPrimary}" MinWidth="160"/>'
         )
         if ENABLE_TRASLAPOS:
-            hint = (
-                u'<TextBlock Text="Pick empalme en elevación · 12 m solo aviso · traslape global" '
-                u'Foreground="#64748b" FontSize="10" TextWrapping="Wrap"/>'
-            )
+            hint = u"Pick empalme en elevación · 12 m solo aviso · traslape global"
         else:
-            hint = (
-                u'<TextBlock Text="Capas n/Ø · 12 m solo aviso" '
-                u'Foreground="#64748b" FontSize="10" TextWrapping="Wrap"/>'
-            )
+            hint = u"Capas n/Ø · 12 m solo aviso"
+        min_h = _ui_min_window_height()
         xaml = build_simple_tool_xaml(
             title=_DIALOG_TITLE,
             styles_xml=BIMTOOLS_DARK_STYLES_XML,
             body_xaml=body,
             footer_actions_xaml=footer,
             footer_hint_xaml=hint,
-            width=920,
-            min_width=760,
-            height=560,
-            min_height=480,
+            width=_UI_WIDTH,
+            min_width=_UI_MIN_WIDTH,
+            min_height=min_h,
             resize_mode=u"CanResizeWithGrip",
+            size_to_content_height=True,
         )
         self._win = XamlReader.Parse(xaml)
         try:
@@ -232,11 +253,21 @@ class CoronamientoMurosWindow(object):
         except Exception:
             pass
         self._win.WindowStartupLocation = WindowStartupLocation.CenterScreen
+        try:
+            self._win.Width = float(_UI_WIDTH)
+            self._win.MinWidth = float(_UI_MIN_WIDTH)
+            self._win.MinHeight = float(min_h)
+        except Exception:
+            pass
         self._wire()
         self._rebuild_layer_cards()
         self._redraw()
         self._refresh_warn()
         self._set_status(self._status_line())
+        try:
+            self._win.Loaded += RoutedEventHandler(self._on_loaded_fit)
+        except Exception:
+            pass
 
         def _on_closed(sender, args):
             self._closed = True
@@ -266,7 +297,8 @@ class CoronamientoMurosWindow(object):
         <Border Height="1" Background="#21465C" Margin="0,8,0,8"/>
         <TextBlock Text="EMPALME (conjunto)" Foreground="#64748b" FontSize="10"
                    FontWeight="SemiBold" Margin="0,0,0,4"/>
-        <ComboBox x:Name="CmbLap" Style="{StaticResource Combo}" Margin="0,0,0,6"/>
+        <ComboBox x:Name="CmbLap" Style="{StaticResource ComboStretch}"
+                  HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
         <TextBlock x:Name="TxtCutsHint" Foreground="#64748b" FontSize="9"
                    TextWrapping="Wrap" Margin="0,0,0,6"
                    Text="Clic en elevación: añade corte · clic cerca: quita"/>
@@ -274,19 +306,18 @@ class CoronamientoMurosWindow(object):
         else:
             stack_hint = u"Capas con n y Ø"
             empalme_xaml = u""
-        return (
-            u"""
-<Grid>
+        xaml = u"""
+<Grid MinHeight="__CANVAS_H__">
   <Grid.ColumnDefinitions>
     <ColumnDefinition Width="*"/>
-    <ColumnDefinition Width="300"/>
+    <ColumnDefinition Width="__SIDE_W__"/>
   </Grid.ColumnDefinitions>
   <Border Grid.Column="0" Background="#050E18" BorderBrush="#21465C" BorderThickness="1"
-          CornerRadius="4" Margin="0,0,10,0">
+          CornerRadius="4" Margin="0,0,10,0" MinHeight="__CANVAS_H__">
     <Grid>
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/>
-        <RowDefinition Height="*"/>
+        <RowDefinition Height="__CANVAS_H__"/>
       </Grid.RowDefinitions>
       <DockPanel Grid.Row="0" Margin="8,6">
         <TextBlock x:Name="TxtElevHdr" DockPanel.Dock="Left" Text="Elevación"
@@ -297,13 +328,12 @@ class CoronamientoMurosWindow(object):
         </Border>
       </DockPanel>
       <Canvas x:Name="CnvElev" Grid.Row="1" Background="#050E18" ClipToBounds="True"
-              Cursor="%s"/>
+              Height="__CANVAS_H__" MinHeight="__CANVAS_H__" Cursor="__CURSOR__"/>
     </Grid>
   </Border>
   <Border Grid.Column="1" Background="#0a1620" BorderBrush="#fbbf24" BorderThickness="1.5"
-          CornerRadius="4" Padding="10">
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-      <StackPanel>
+          CornerRadius="4" Padding="10" VerticalAlignment="Top">
+    <StackPanel>
         <DockPanel Margin="0,0,0,6">
           <TextBlock Text="Stack coronamiento" Foreground="#E8F4F8" FontSize="12"
                      FontWeight="SemiBold" VerticalAlignment="Center"/>
@@ -312,27 +342,62 @@ class CoronamientoMurosWindow(object):
             <TextBlock Text="COR" Foreground="#fbbf24" FontSize="10" FontWeight="SemiBold"/>
           </Border>
         </DockPanel>
-        <TextBlock Text="%s"
+        <TextBlock Text="__HINT__"
                    Foreground="#64748b" FontSize="10" TextWrapping="Wrap" Margin="0,0,0,8"/>
         <TextBlock x:Name="TxtWallChip" Foreground="#95B8CC" FontSize="10"
                    Margin="0,0,0,8"/>
         <TextBlock Text="CAPAS" Foreground="#64748b" FontSize="10" FontWeight="SemiBold"
                    Margin="0,0,0,4"/>
-        <ComboBox x:Name="CmbCapas" Style="{StaticResource Combo}" Margin="0,0,0,8"/>
+        <ComboBox x:Name="CmbCapas" Style="{StaticResource ComboStretch}"
+                  HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
         <StackPanel x:Name="PanelLayers"/>
-%s
+__EMPALME__
         <Border x:Name="WarnBorder" Background="#0E1B32" BorderBrush="#d97706"
                 BorderThickness="1" CornerRadius="4" Padding="6" Margin="0,4,0,0"
                 Visibility="Collapsed">
           <TextBlock x:Name="TxtWarn" Foreground="#fcd34d" FontSize="9" TextWrapping="Wrap"/>
         </Border>
-      </StackPanel>
-    </ScrollViewer>
+    </StackPanel>
   </Border>
 </Grid>
 """
-            % (canvas_cursor, stack_hint, empalme_xaml)
-        ).strip()
+        xaml = xaml.replace(u"__CANVAS_H__", u"{0}".format(int(_UI_CANVAS_H)))
+        xaml = xaml.replace(u"__SIDE_W__", u"{0}".format(int(_UI_SIDE_W)))
+        xaml = xaml.replace(u"__CURSOR__", canvas_cursor)
+        xaml = xaml.replace(u"__HINT__", stack_hint)
+        xaml = xaml.replace(u"__EMPALME__", empalme_xaml)
+        return xaml.strip()
+
+    def _fit_height_to_content(self):
+        """SizeToContent=Height → medir → Manual con Height real (sin forzar 3 capas)."""
+        try:
+            win = self._win
+            if win is None:
+                return
+            from System.Windows import SizeToContent
+
+            floor = float(_ui_min_window_height())
+            win.MinHeight = floor
+            win.SizeToContent = SizeToContent.Height
+            win.UpdateLayout()
+            h = float(win.ActualHeight or 0)
+            if h < 80.0:
+                return
+            if h < floor:
+                h = floor
+            win.SizeToContent = SizeToContent.Manual
+            win.Height = h
+            win.Width = float(_UI_WIDTH)
+        except Exception:
+            pass
+
+    def _on_loaded_fit(self, sender, args):
+        """Tras el primer layout, fija altura al contenido real (sin aire extra)."""
+        try:
+            self._fit_height_to_content()
+            self._redraw()
+        except Exception:
+            pass
 
     def _wire(self):
         w = self._win
@@ -376,6 +441,7 @@ class CoronamientoMurosWindow(object):
             self._rebuild_layer_cards()
             self._redraw()
             self._set_status(self._status_line())
+            self._fit_height_to_content()
 
         def on_lap(sender, args):
             it = self._cmb_lap.SelectedItem
@@ -669,7 +735,9 @@ class CoronamientoMurosWindow(object):
         wy0, wy1 = pad_t, h - pad_b
         wall_w = wx1 - wx0
         wall_h = wy1 - wy0
-        self._add_rect(wx0, wy0, wall_w, wall_h, _brush(_WALL), _WALL_STROKE, 1.5)
+        self._add_rect(
+            wx0, wy0, wall_w, wall_h, _brush(_WALL), _WALL_STROKE, _STROKE_WALL
+        )
 
         n_capas = len(self._layers)
         gap = 10.0
@@ -677,6 +745,8 @@ class CoronamientoMurosWindow(object):
         bar_x0 = wx0 + 18.0
         bar_x1 = wx1 - 18.0
         span = max(1.0, bar_x1 - bar_x0)
+        thick = float(_STROKE_BAR)
+        leg = max(1.0, thick * 0.9)
 
         def x_at(mm):
             return bar_x0 + (float(mm) / max(1.0, main)) * span
@@ -685,7 +755,6 @@ class CoronamientoMurosWindow(object):
             y = wy0 + cover + li * gap
             color = _LAYER_COLORS[li % len(_LAYER_COLORS)]
             diam = float(ly.get(u"diam_mm", 16))
-            thick = max(2.0, min(5.0, diam / 4.0))
             lap = traslape_mm_from_diam(diam)
             cuts = (
                 stagger_cuts_for_layer(self._cuts_mm, li, main, lap)
@@ -711,11 +780,11 @@ class CoronamientoMurosWindow(object):
                 )
             self._add_line(bar_x0, y, bar_x1, y, color, thick)
             # patas
-            self._add_line(bar_x0, y, bar_x0, y + 18, color, thick * 0.85)
-            self._add_line(bar_x1, y, bar_x1, y + 18, color, thick * 0.85)
+            self._add_line(bar_x0, y, bar_x0, y + 18, color, leg)
+            self._add_line(bar_x1, y, bar_x1, y + 18, color, leg)
             for ci, c in enumerate(cuts):
                 self._add_line(
-                    x_at(c), wy0 - 2, x_at(c), y + 14, _CUT, 1.2, (3, 2)
+                    x_at(c), wy0 - 2, x_at(c), y + 14, _CUT, _STROKE_CUT, (3, 2)
                 )
                 if li == 0:
                     self._add_text(x_at(c) - 8, wy0 - 16, u"C{0}".format(ci + 1), _CUT, 9)

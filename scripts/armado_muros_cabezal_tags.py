@@ -822,7 +822,15 @@ def _calcular_cabeza_tag_coronamiento(rebar, view, meta, offset_mm):
 
 
 def _precompute_coronamiento_tag_layout(document, view, tag_meta, offset_mm, layer_step_mm):
-    """Cabezas desplazadas en vertical de vista (alzado), no en espesor del muro."""
+    """
+    Etiquetas en una sola fila horizontal sobre/bajo las barras (Up de la vista).
+
+    - Todas las capas (1ªC, 2ªC, …) y tramos del mismo muro/extremo comparten
+      la misma cota Up → cabezas alineadas horizontalmente.
+    - Offset respecto a la barra más extrema del grupo (sobre = max Up; bajo = min).
+    - Posición lateral = centro del tramo horizontal de cada rebar.
+    - ``layer_step_mm`` se acepta por compatibilidad de firma; no apila capas.
+    """
     groups = {}
     for m in tag_meta or []:
         ak = _align_key_tag_meta(m)
@@ -832,10 +840,16 @@ def _precompute_coronamiento_tag_layout(document, view, tag_meta, offset_mm, lay
 
     tag_heads = {}
     offset_ft = _mm_to_internal(offset_mm)
+    up = _unit_vector(view.UpDirection)
+    if up is None:
+        up = XYZ(0.0, 0.0, 1.0)
+
     for _ak, items in groups.items():
-        ordered = sorted(items, key=_tag_vertical_sort_key)
-        group_heads = {}
-        for m in ordered:
+        if not items:
+            continue
+        sign = _coronamiento_tag_offset_sign(items[0].get(u"extremo"))
+        anchors = []
+        for m in items:
             rid_key = _rebar_id_int(m.get(u"rebar_id"))
             if rid_key is None:
                 continue
@@ -846,24 +860,30 @@ def _precompute_coronamiento_tag_layout(document, view, tag_meta, offset_mm, lay
             anchor_v = _proyectar_punto_vista(anchor_raw, view)
             if anchor_v is None:
                 continue
-            sign = _coronamiento_tag_offset_sign(m.get(u"extremo"))
-            d = _unit_vector(view.UpDirection)
-            if d is None:
-                d = XYZ(0.0, 0.0, 1.0)
-            if sign < 0:
-                try:
-                    d = d.Negate()
-                except Exception:
-                    d = XYZ(0.0, 0.0, -1.0)
+            anchors.append((rid_key, anchor_v))
+        if not anchors:
+            continue
+
+        ups = []
+        for _rid, av in anchors:
             try:
-                head = anchor_v + d.Multiply(offset_ft)
+                ups.append(float(av.DotProduct(up)))
             except Exception:
                 continue
-            group_heads[rid_key] = head
-        group_heads = _spread_heads_vertical_no_overlap(
-            group_heads, view, layer_step_mm,
-        )
-        tag_heads.update(group_heads)
+        if not ups:
+            continue
+
+        if sign >= 0:
+            # Sobre las barras: una fila por encima del tramo más alto del grupo.
+            target_up = max(ups) + offset_ft
+        else:
+            # Bajo las barras (inf/pie): una fila por debajo del tramo más bajo.
+            target_up = min(ups) - offset_ft
+
+        for rid_key, anchor_v in anchors:
+            head = _head_on_horizontal_up_row(anchor_v, view, target_up)
+            if head is not None:
+                tag_heads[rid_key] = head
     return tag_heads
 
 
@@ -1569,6 +1589,36 @@ def _head_on_outward_column(anchor_v, outward_u, column_scalar):
         return perp + outward_u.Multiply(float(column_scalar))
     except Exception:
         return None
+
+
+def _head_on_horizontal_up_row(anchor_v, view, target_up):
+    """
+    Misma cota en ``view.UpDirection`` (fila horizontal); conserva la posición
+    lateral del ancla (sobre cada tramo de barra).
+    """
+    if anchor_v is None or view is None or target_up is None:
+        return None
+    up = _unit_vector(view.UpDirection)
+    if up is None:
+        return anchor_v
+    try:
+        cu = float(anchor_v.DotProduct(up))
+    except Exception:
+        return anchor_v
+    try:
+        delta = float(target_up) - cu
+    except Exception:
+        return anchor_v
+    if abs(delta) < 1e-12:
+        return anchor_v
+    try:
+        return anchor_v + up.Multiply(delta)
+    except Exception:
+        return XYZ(
+            float(anchor_v.X) + float(up.X) * delta,
+            float(anchor_v.Y) + float(up.Y) * delta,
+            float(anchor_v.Z) + float(up.Z) * delta,
+        )
 
 
 def _move_along_view_down(head, view, distance_ft):
