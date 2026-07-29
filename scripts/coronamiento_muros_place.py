@@ -6,7 +6,9 @@ Revit 2024+ | IronPython / pyRevit
 
 Traslapos: misma geometría/API que ``56_DividirRebarPuntoTraslape``
 (``divide_rebar_at_cuts``). Los cortes de la UI son estaciones sobre el vano
-horizontal; se convierten a distancia sobre centerline (pata L + vano).
+horizontal desde el inicio U (LocationCurve P0); se convierten a distancia
+sobre centerline (pata L + vano). El canvas puede espejar izq./der. según
+la vista; el origen mm de corte no se invierte.
 
 Helpers internos (crear capa, stamp post-split, divide, etiquetas/visibilidad)
 abren sus propias Transaction / TxnScope. El flujo ``place_coronamiento_wall``

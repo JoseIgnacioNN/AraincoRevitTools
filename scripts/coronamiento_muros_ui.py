@@ -6,6 +6,9 @@ Elevación + stack lateral (capas n/Ø estilo V3), pick de empalme en canvas,
 escenario de traslape global (mismos modos que 56_DividirRebarPuntoTraslape),
 aviso >12 m (no bloquea).
 
+El canvas alinea izq./der. con ``ActiveView.RightDirection`` (mismo criterio
+que armado muros); mm de corte siguen midiendo desde el inicio U (P0).
+
 Flag ``ENABLE_TRASLAPOS``: poner False para ocultar empalme sin quitar el código.
 """
 
@@ -655,6 +658,20 @@ __EMPALME__
                     format_mm_es(est[u"developed_mm"])
                 )
 
+    def _active_view(self):
+        try:
+            if self._uidoc is not None:
+                return self._uidoc.ActiveView
+        except Exception:
+            pass
+        return None
+
+    def _canvas_flip(self):
+        """True si izq. del canvas = extremo P1 en pantalla (mm=main a la izq.)."""
+        return bool(
+            wall_elev_canvas_flip_for_view(self._wall, self._active_view())
+        )
+
     def _on_canvas_click(self, sender, args):
         if not ENABLE_TRASLAPOS:
             return
@@ -676,7 +693,12 @@ __EMPALME__
         x = float(pt.X)
         if x < bar_x0 or x > bar_x1:
             return
-        mm = (x - bar_x0) / span * main
+        # mm siempre desde inicio U (P0); solo el mapeo X se espeja con la vista.
+        t = (x - bar_x0) / span
+        if self._canvas_flip():
+            mm = (1.0 - t) * main
+        else:
+            mm = t * main
         self._cuts_mm = toggle_cut_at_mm(self._cuts_mm, mm, main)
         self._redraw()
         self._set_status(self._status_line())
@@ -747,9 +769,14 @@ __EMPALME__
         span = max(1.0, bar_x1 - bar_x0)
         thick = float(_STROKE_BAR)
         leg = max(1.0, thick * 0.9)
+        flip = self._canvas_flip()
 
         def x_at(mm):
-            return bar_x0 + (float(mm) / max(1.0, main)) * span
+            # mm desde P0/inicio U; flip alinea izq. canvas con izq. en ActiveView.
+            t = float(mm) / max(1.0, main)
+            if flip:
+                t = 1.0 - t
+            return bar_x0 + t * span
 
         for li, ly in enumerate(self._layers):
             y = wy0 + cover + li * gap
@@ -761,7 +788,7 @@ __EMPALME__
                 if ENABLE_TRASLAPOS
                 else []
             )
-            # zona lap
+            # zona lap (orden a→b en mm; ancho en pantalla usa abs)
             for c in cuts:
                 if self._lap_mode == u"endpoint_prev":
                     a, b = c, c + lap
@@ -771,10 +798,12 @@ __EMPALME__
                     a, b = c - lap * 0.5, c + lap * 0.5
                 a = max(0.0, a)
                 b = min(main, b)
+                xa, xb = x_at(a), x_at(b)
+                x_lap = min(xa, xb)
                 self._add_rect(
-                    x_at(a),
+                    x_lap,
                     y - 4,
-                    max(2.0, x_at(b) - x_at(a)),
+                    max(2.0, abs(xb - xa)),
                     thick + 8,
                     _brush(color, 60),
                 )
