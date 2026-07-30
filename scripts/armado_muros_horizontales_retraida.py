@@ -144,13 +144,13 @@ def _host_para_recrear(doc, rebar, wall_fallback=None):
     except Exception:
         pass
     if wall_fallback is not None:
-        return wall_fallback
-    if doc is None or rebar is None:
-        return None
-    try:
-        return doc.GetElement(rebar.GetHostId())
-    except Exception:
-        return None
+        try:
+            from Autodesk.Revit.DB import Wall as _Wall
+            if isinstance(wall_fallback, _Wall):
+                return wall_fallback
+        except Exception:
+            return wall_fallback
+    return None
 
 
 def _retract_mm_extremo_inicial(d_mm):

@@ -1855,4 +1855,26 @@ def main():
         print(u"  {}. {}".format(i, nm))
 
 
-main()
+def draw_single_shape_schematic(document, view, shape, caption_text=None):
+    """
+    Dibuja una sola forma en la vista de dibujo (celda centrada).
+    caption_text: título fijo de celda; si es None usa CAPTION_TEXT_TEMPLATE.
+    Devuelve (drawn_count, skipped_list, warn_labels).
+    """
+    global CAPTION_TEXT_TEMPLATE
+    old_template = CAPTION_TEXT_TEMPLATE
+    try:
+        if caption_text:
+            try:
+                txt = unicode(caption_text)
+            except NameError:
+                txt = str(caption_text)
+            # .format(idx+1) en la grilla: escapar llaves para título literal.
+            CAPTION_TEXT_TEMPLATE = txt.replace(u"{", u"{{").replace(u"}", u"}}")
+        return _draw_shapes_table_grid(document, view, [shape])
+    finally:
+        CAPTION_TEXT_TEMPLATE = old_template
+
+
+if __name__ == "__main__":
+    main()

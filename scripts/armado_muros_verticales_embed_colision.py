@@ -274,13 +274,14 @@ def _host_para_recrear(doc, rebar, wall_fallback=None):
     except Exception:
         pass
     if wall_fallback is not None:
-        return wall_fallback
-    if doc is None or rebar is None:
-        return None
-    try:
-        return doc.GetElement(rebar.GetHostId())
-    except Exception:
-        return None
+        try:
+            from Autodesk.Revit.DB import Wall as _Wall
+            if isinstance(wall_fallback, _Wall):
+                return wall_fallback
+        except Exception:
+            return wall_fallback
+    # Nunca devolver host Floor / losa desde GetHostId
+    return None
 
 
 def _geometry_options():
@@ -906,6 +907,57 @@ def _es_fundacion_unida_para_preview(doc, element):
     return _es_losa_cimentacion_por_tipo(doc, element)
 
 
+def _fundacion_contacta_pie_muro(wall, fund, tol_z_ft=None):
+    """
+    True si ``fund`` contacta la **cara inferior** del muro (pie / zapata).
+
+    Exige solape XY y banda Z en el pie. Evita usar forjados/losas unidos
+    en cabeza u otras caras como «fundación de pie».
+    """
+    if wall is None or fund is None:
+        return False
+    try:
+        hbb = wall.get_BoundingBox(None)
+        fbb = fund.get_BoundingBox(None)
+    except Exception:
+        return False
+    if hbb is None or fbb is None:
+        return False
+    if tol_z_ft is None:
+        try:
+            tol_z_ft = UnitUtils.ConvertToInternalUnits(50.0, UnitTypeId.Millimeters)
+        except Exception:
+            tol_z_ft = 0.15
+    try:
+        band = max(float(tol_z_ft), 1e-4)
+    except Exception:
+        band = 0.15
+    # Solape en planta (XY)
+    try:
+        if fbb.Max.X < hbb.Min.X - band or fbb.Min.X > hbb.Max.X + band:
+            return False
+        if fbb.Max.Y < hbb.Min.Y - band or fbb.Min.Y > hbb.Max.Y + band:
+            return False
+    except Exception:
+        return False
+    # Contacto en pie: cara superior de fund ≈ cara inferior de muro
+    try:
+        z_wall_bot = float(hbb.Min.Z)
+        z_fund_top = float(fbb.Max.Z)
+        z_fund_bot = float(fbb.Min.Z)
+    except Exception:
+        return False
+    # Fundación bajo / en el pie (no encima del muro)
+    if z_fund_bot > z_wall_bot + band:
+        return False
+    if abs(z_fund_top - z_wall_bot) <= band * 3.0:
+        return True
+    # Solape vertical en la banda del pie
+    if z_fund_top >= z_wall_bot - band and z_fund_bot <= z_wall_bot + band:
+        return True
+    return False
+
+
 def _ids_elementos_unidos(doc, element):
     try:
         from bimtools_joined_geometry import get_joined_element_ids
@@ -1002,14 +1054,35 @@ def _ancho_bbox_elemento_mm(elem):
 
 
 def _fundaciones_estructurales_unidas_muro(doc, wall):
-    """Fundaciones estructurales y Foundation Slabs unidos al muro (Join Geometry)."""
+    """
+    Fundaciones en el **pie** del muro (Join Geometry + contacto cara inferior).
+
+    - ``OST_StructuralFoundation`` unidos que contactan el pie.
+    - ``Floor`` solo si ``IsFoundationSlab`` **y** contacta la cara inferior.
+    - Nunca forjados normales ni losas unidas solo en cabeza.
+    """
     if doc is None or wall is None:
         return []
     out = []
+    seen = set()
     for eid in _ids_elementos_unidos(doc, wall):
         el = doc.GetElement(eid)
-        if _es_fundacion_unida_para_preview(doc, el):
-            out.append(el)
+        if el is None:
+            continue
+        if not _es_fundacion_unida_para_preview(doc, el):
+            continue
+        # Solo fundación en pie (zapata / Foundation Slab bajo el muro).
+        if not _fundacion_contacta_pie_muro(wall, el):
+            continue
+        try:
+            fid = _element_id_int(el.Id)
+        except Exception:
+            fid = None
+        if fid is not None and fid in seen:
+            continue
+        if fid is not None:
+            seen.add(fid)
+        out.append(el)
     return out
 
 
@@ -2192,6 +2265,44 @@ def _rebar_es_vertical_cara_ext_o_int(rebar, host_wall):
     return False
 
 
+def _normalize_terminacion_cabeza(raw):
+    """
+    Modo de extremo superior verticales (malla).
+
+    Retorna ``empotramiento`` | ``pata_l`` | ``recto`` | ``None`` (auto / apilado).
+    """
+    if raw is None:
+        return None
+    try:
+        s = unicode(raw).strip().lower()
+    except Exception:
+        try:
+            s = str(raw).strip().lower()
+        except Exception:
+            return None
+    if not s or s in (u"auto", u"apilado", u"default"):
+        return None
+    if s in (u"empotramiento", u"emp", u"embed", u"estirar", u"extension"):
+        return u"empotramiento"
+    if s in (u"pata_l", u"pata-l", u"pata l", u"patal", u"pata"):
+        return u"pata_l"
+    if s in (
+        u"recto", u"retract", u"retraida", u"retraída",
+        u"sin_pata", u"sin pata", u"corte",
+    ):
+        return u"recto"
+    return None
+
+
+def _terminacion_cabeza_desde_params(params_dict):
+    if not params_dict:
+        return None
+    for key in (u"terminacion_cabeza", u"modo_terminacion_cabeza"):
+        if key in params_dict:
+            return _normalize_terminacion_cabeza(params_dict.get(key))
+    return None
+
+
 def _procesar_rebar_vertical_cabeza_colision(
     doc,
     rebar,
@@ -2208,8 +2319,10 @@ def _procesar_rebar_vertical_cabeza_colision(
     bbox_z_cache=None,
 ):
     """
-    Cabeza: empotrar solo si hay muro apilado encima en la selección;
-    si no, retraer ``25+Ø/2`` + pata L.
+    Cabeza: si ``params_dict['terminacion_cabeza']`` está definido
+    (``empotramiento`` / ``pata_l`` / ``recto``), aplica ese modo a int.+ext.
+    Si no (auto), empotrar solo con muro apilado encima; si no, retraer
+    ``25+Ø/2`` + pata L.
     """
     if not _rebar_es_vertical_cara_ext_o_int(rebar, host):
         res[u"n_skip"] += 1
@@ -2227,7 +2340,13 @@ def _procesar_rebar_vertical_cabeza_colision(
         res[u"n_skip"] += 1
         return rebar
 
-    if _host_tiene_apilado_sobre(host, ids_con_apilado_sobre):
+    modo = _terminacion_cabeza_desde_params(params_dict)
+    force_emp = modo == u"empotramiento"
+    force_recto = modo == u"recto"
+    if modo is None:
+        force_emp = _host_tiene_apilado_sobre(host, ids_con_apilado_sobre)
+
+    if force_emp:
         ok_eval, msg_eval, rebar_eval = _extender_vertical_cabeza_tabla_empotramiento(
             doc, rebar, 0, concrete_grade, host_wall=host,
         )
@@ -2235,7 +2354,7 @@ def _procesar_rebar_vertical_cabeza_colision(
             res[u"n_fail"] += 1
             rid = _element_id_int(getattr(rebar, "Id", None))
             res[u"messages"].append(
-                u"Rebar {0} (empotramiento por apilado): {1}".format(
+                u"Rebar {0} (empotramiento cabeza): {1}".format(
                     rid, msg_eval or u"error al estirar",
                 ),
             )
@@ -2243,6 +2362,7 @@ def _procesar_rebar_vertical_cabeza_colision(
         res[u"n_extended"] += 1
         return rebar_eval if rebar_eval is not None else rebar
 
+    # pata_l / recto / auto-sin-apilado → retraer en cabeza
     retract_mm = _retract_mm_sin_colision(d_mm)
     ok, msg, rebar_final = _acortar_vertical_cabeza_mm(
         doc, rebar, retract_mm, 0, host_wall=host,
@@ -2250,6 +2370,8 @@ def _procesar_rebar_vertical_cabeza_colision(
     if ok:
         res[u"n_retracted"] += 1
         rebar_out = rebar_final if rebar_final is not None else rebar
+        if force_recto:
+            return rebar_out
         if rebar_out is not None:
             ok_l, msg_l, rb_l = _agregar_pata_l_cabeza_vertical_sketch(
                 doc,
@@ -2278,7 +2400,7 @@ def _procesar_rebar_vertical_cabeza_colision(
     res[u"n_fail"] += 1
     rid = _element_id_int(getattr(rebar, "Id", None))
     res[u"messages"].append(
-        u"Rebar {0} (sin apilado en cabeza): {1}".format(
+        u"Rebar {0} (cabeza): {1}".format(
             rid, msg or u"error al retraer",
         ),
     )
@@ -2304,6 +2426,9 @@ def aplicar_empotramiento_verticales_cara_por_colision(
     ``rebars_por_muro_id``: ``{ wall_id_int: [ElementId, ...], ... }``
     ``evaluar_colision_cabeza``: si ``False`` (herramienta Cabezal muros), no ejecuta
     estiramiento/retraída por apilamiento en cabeza.
+    Cabeza con ``params_dict['terminacion_cabeza']`` (empotramiento/pata_l/recto)
+    fuerza ese modo (Mallas en muros); sin clave → auto por apilado.
+    Pie con fundación unida: lógica actual de sondeo (sin cambio).
     ``regenerate_fund_geom``: si ``False``, no regenera antes de sólidos de fundación
     (caller ya regeneró, p. ej. malla lote).
     ``fund_solids_cache``: dict opcional ``{fund_id_int: solids}`` reutilizable.

@@ -94,7 +94,10 @@ def _wall_row_height_mm(m):
     return _wall_height_mm(m) + _wall_fund_height_mm(m)
 
 
-def _compute_elev_layout(meta, viewport_w, viewport_h, legend_h, g_min, span_u):
+def _compute_elev_layout(
+    meta, viewport_w, viewport_h, legend_h, g_min, span_u,
+    show_tramo_bands=True, show_pie_controls=True,
+):
     """Escala uniforme px/mm; bloque elevación+Auto/Tn centrado en el viewport.
 
     Orden horizontal (espejo V2 por extremo):
@@ -105,6 +108,9 @@ def _compute_elev_layout(meta, viewport_w, viewport_h, legend_h, g_min, span_u):
     (fustes + gutter de niveles) y el bloque completo se traslada en X para
     quedar centrado en ``vw`` (sobrante negro repartido a ambos lados).
     Si el viewport es más alto que el contenido, el stack se alinea al fondo.
+
+    ``show_tramo_bands`` / ``show_pie_controls``: si False (p. ej. Mallas en
+    muros), no se reserva ancho de columnas Tn / Auto.
     """
     items = list(meta or [])
     n = len(items)
@@ -121,9 +127,17 @@ def _compute_elev_layout(meta, viewport_w, viewport_h, legend_h, g_min, span_u):
     except Exception:
         vh = 0.0
 
+    show_bands = bool(show_tramo_bands)
+    show_pies = bool(show_pie_controls)
+    band_col = BAND_W + BAND_GAP if show_bands else 0.0
+    pie_col = CTRL_COL_W + BAND_GAP if show_pies else 0.0
     # Tn+Auto a ambos lados del stack (Inicio izq. / Término der.).
-    left_cols_w = BAND_W + BAND_GAP + CTRL_COL_W + BAND_GAP
-    right_cols_w = CTRL_COL_W + BAND_GAP + BAND_W + PAD
+    left_cols_w = band_col + pie_col
+    if left_cols_w < 1.0:
+        left_cols_w = PAD
+    right_cols_w = pie_col + band_col
+    if right_cols_w < 1.0:
+        right_cols_w = PAD
     # Ancho provisional a pantalla completa solo para calcular escala (fit).
     elev_x_fit = PAD + left_cols_w
     if vw > 40.0:
@@ -179,11 +193,25 @@ def _compute_elev_layout(meta, viewport_w, viewport_h, legend_h, g_min, span_u):
         block_x = PAD
         canvas_w = block_x + block_w
 
+    # Posiciones de columnas (aunque no se dibujen, para callers legacy).
     band_x_left = block_x
-    ctrl_x_left = band_x_left + BAND_W + BAND_GAP
-    elev_x = ctrl_x_left + CTRL_COL_W + BAND_GAP
+    if show_bands:
+        ctrl_x_left = band_x_left + BAND_W + BAND_GAP
+    else:
+        ctrl_x_left = band_x_left
+    if show_pies:
+        elev_x = ctrl_x_left + CTRL_COL_W + BAND_GAP
+    else:
+        elev_x = ctrl_x_left + (BAND_GAP if show_bands else 0.0)
+        if elev_x < block_x + PAD:
+            elev_x = block_x + PAD
     ctrl_x_right = elev_x + elev_col_w + 8.0
-    band_x_right = elev_x + elev_col_w + CTRL_COL_W + BAND_GAP
+    if show_pies and show_bands:
+        band_x_right = elev_x + elev_col_w + CTRL_COL_W + BAND_GAP
+    elif show_bands:
+        band_x_right = elev_x + elev_col_w + BAND_GAP
+    else:
+        band_x_right = elev_x + elev_col_w + 8.0
     canvas_h = max(content_h, vh) if vh > content_h else content_h
     y0 = PAD + float(legend_h or 0.0)
     # Alinear stack al fondo: el sobrante vertical va arriba del stack
@@ -210,6 +238,8 @@ def _compute_elev_layout(meta, viewport_w, viewport_h, legend_h, g_min, span_u):
         u"span_u": float(span_u or 1.0),
         u"usable_w": usable_w,
         u"max_len_mm": max_len_mm,
+        u"show_tramo_bands": show_bands,
+        u"show_pie_controls": show_pies,
     }
 
 _THICKNESS_UI_PALETTE = (
@@ -537,6 +567,21 @@ def _fill_wall_fuste_label(
         vh.Children.Add(t_h)
         row.Children.Add(vh)
         sp.Children.Add(row)
+        try:
+            cab_short = mesh.get(u"terminacion_cabeza_short") or u""
+        except Exception:
+            cab_short = u""
+        if cab_short:
+            t_cab = TextBlock()
+            t_cab.Text = u"↑{0}".format(cab_short)
+            t_cab.Foreground = br_muted
+            t_cab.FontSize = 8.0
+            t_cab.FontWeight = FontWeights.SemiBold
+            t_cab.TextAlignment = TextAlignment.Center
+            t_cab.HorizontalAlignment = HorizontalAlignment.Center
+            t_cab.Margin = Thickness(0, 1, 0, 0)
+            t_cab.Opacity = 0.9
+            sp.Children.Add(t_cab)
         return tipo
 
     # Legacy: tipo / e= / Ø@ confinamiento.
@@ -1011,6 +1056,8 @@ def redraw_elevation(
     selected_segments=None,
     selected_segments_inicio=None,
     selected_segments_fin=None,
+    show_tramo_bands=True,
+    show_pie_controls=True,
 ):
     """
     ``wall_meta``: lista ordenada base→cima con keys
@@ -1031,6 +1078,9 @@ def redraw_elevation(
     ``activo``, ``doble``, ``v_diam_mm``, ``v_spacing_mm``, ``h_diam_mm``,
     ``h_spacing_mm``. Con ``show_mesh_labels=True`` el fuste muestra
     ``M.H.A. e=…`` + bloque ``D.M. / V.=ø… / H.=ø…`` (o «sin malla»).
+
+    ``show_tramo_bands`` / ``show_pie_controls``: False en Mallas en muros
+    (solo elevación de fustes + etiquetas malla; sin bandas Tn ni Auto).
     """
     if canvas is None:
         return
@@ -1118,6 +1168,8 @@ def redraw_elevation(
             u"v_spacing_mm": 200.0,
             u"h_diam_mm": 10.0,
             u"h_spacing_mm": 200.0,
+            u"terminacion_cabeza": u"",
+            u"terminacion_cabeza_short": u"",
         })
     show_mesh = bool(show_mesh_labels)
 
@@ -1254,7 +1306,11 @@ def redraw_elevation(
     if len(uniq_th) > 1:
         legend_h = 18.0
 
-    lay = _compute_elev_layout(meta, viewport_w, viewport_h, legend_h, g_min, span)
+    lay = _compute_elev_layout(
+        meta, viewport_w, viewport_h, legend_h, g_min, span,
+        show_tramo_bands=bool(show_tramo_bands),
+        show_pie_controls=bool(show_pie_controls),
+    )
     elev_x = float(lay[u"elev_x"])
     elev_col_w = float(lay[u"elev_col_w"])
 
@@ -1351,68 +1407,69 @@ def redraw_elevation(
         return None
 
     # --- Bandas Tn: dual (Inicio izq + Término der) o legacy (solo der) ---
-    _band_kw = dict(
-        display=display,
-        y_at_di=y_at_di,
-        row_heights=row_heights,
-        y0=y0,
-        focus=focus,
-        dim_opacity=dim_op,
-        br_elev=br_elev,
-        br_border=br_border,
-        br_sel=br_sel,
-        br_title=br_title,
-        br_muted=br_muted,
-        Border=Border,
-        StackPanel=StackPanel,
-        TextBlock=TextBlock,
-        ToolTip=ToolTip,
-        Thickness=Thickness,
-        FontWeights=FontWeights,
-        HorizontalAlignment=HorizontalAlignment,
-        VerticalAlignment=VerticalAlignment,
-        TextAlignment=TextAlignment,
-        MouseButtonEventHandler=MouseButtonEventHandler,
-        Canvas=Canvas,
-    )
-    if dual_bands:
-        _draw_tramo_band_column(
-            canvas,
-            band_x_left,
-            segments=side_left[u"segs"],
-            selected_segment=side_left[u"sel"],
-            selected_segments=side_left[u"sels"],
-            cfgs=side_left[u"cfgs"],
-            band_active=(act == ex_left),
-            on_select_segment=side_left[u"on_sel"],
-            extremo_label=_extremo_side_label(ex_left),
-            **_band_kw
+    if show_tramo_bands:
+        _band_kw = dict(
+            display=display,
+            y_at_di=y_at_di,
+            row_heights=row_heights,
+            y0=y0,
+            focus=focus,
+            dim_opacity=dim_op,
+            br_elev=br_elev,
+            br_border=br_border,
+            br_sel=br_sel,
+            br_title=br_title,
+            br_muted=br_muted,
+            Border=Border,
+            StackPanel=StackPanel,
+            TextBlock=TextBlock,
+            ToolTip=ToolTip,
+            Thickness=Thickness,
+            FontWeights=FontWeights,
+            HorizontalAlignment=HorizontalAlignment,
+            VerticalAlignment=VerticalAlignment,
+            TextAlignment=TextAlignment,
+            MouseButtonEventHandler=MouseButtonEventHandler,
+            Canvas=Canvas,
         )
-        _draw_tramo_band_column(
-            canvas,
-            band_x_right,
-            segments=side_right[u"segs"],
-            selected_segment=side_right[u"sel"],
-            selected_segments=side_right[u"sels"],
-            cfgs=side_right[u"cfgs"],
-            band_active=(act == ex_right),
-            on_select_segment=side_right[u"on_sel"],
-            extremo_label=_extremo_side_label(ex_right),
-            **_band_kw
-        )
-    else:
-        _draw_tramo_band_column(
-            canvas,
-            band_x_right,
-            segments=segments,
-            selected_segment=selected_segment,
-            selected_segments=selected_set,
-            cfgs=cfgs,
-            band_active=True,
-            on_select_segment=on_select_segment,
-            extremo_label=u"Tramo",
-            **_band_kw
-        )
+        if dual_bands:
+            _draw_tramo_band_column(
+                canvas,
+                band_x_left,
+                segments=side_left[u"segs"],
+                selected_segment=side_left[u"sel"],
+                selected_segments=side_left[u"sels"],
+                cfgs=side_left[u"cfgs"],
+                band_active=(act == ex_left),
+                on_select_segment=side_left[u"on_sel"],
+                extremo_label=_extremo_side_label(ex_left),
+                **_band_kw
+            )
+            _draw_tramo_band_column(
+                canvas,
+                band_x_right,
+                segments=side_right[u"segs"],
+                selected_segment=side_right[u"sel"],
+                selected_segments=side_right[u"sels"],
+                cfgs=side_right[u"cfgs"],
+                band_active=(act == ex_right),
+                on_select_segment=side_right[u"on_sel"],
+                extremo_label=_extremo_side_label(ex_right),
+                **_band_kw
+            )
+        else:
+            _draw_tramo_band_column(
+                canvas,
+                band_x_right,
+                segments=segments,
+                selected_segment=selected_segment,
+                selected_segments=selected_set,
+                cfgs=cfgs,
+                band_active=True,
+                on_select_segment=on_select_segment,
+                extremo_label=u"Tramo",
+                **_band_kw
+            )
 
     y_bottom_of_wall = {}
     band_geom = {}
@@ -1560,9 +1617,17 @@ def redraw_elevation(
             except Exception:
                 mesh_on = True
             if mesh_on:
+                cab_s = u""
+                try:
+                    cab_s = mesh.get(u"terminacion_cabeza_short") or u""
+                except Exception:
+                    cab_s = u""
+                cab_line = (
+                    u"\n↑ extremo superior: {0}".format(cab_s) if cab_s else u""
+                )
                 tip.Content = (
                     u"{0} · {1} · e={2} · L={3}\n"
-                    u"D.M.  V.={4}  H.={5}\n"
+                    u"D.M.  V.={4}  H.={5}{6}\n"
                     u"Clic = seleccionar · Ctrl+clic = multi · Mayús+clic = rango"
                 ).format(
                     m.get(u"name") or u"W{0}".format(wi),
@@ -1575,6 +1640,7 @@ def redraw_elevation(
                     _mesh_bar_spec_txt(
                         mesh.get(u"h_diam_mm"), mesh.get(u"h_spacing_mm"),
                     ),
+                    cab_line,
                 )
             else:
                 tip.Content = (
@@ -1729,22 +1795,23 @@ def redraw_elevation(
                 btn.Click += _mk_cycle(wi, on_cycle)
             canvas.Children.Add(btn)
 
-        if dual_bands:
-            _draw_pie_ctrl(
-                ctrl_x_left, side_left[u"modes"], side_left[u"cycle"],
-                act == ex_left, _extremo_side_label(ex_left),
-            )
-            _draw_pie_ctrl(
-                ctrl_x_right, side_right[u"modes"], side_right[u"cycle"],
-                act == ex_right, _extremo_side_label(ex_right),
-            )
-        else:
-            _draw_pie_ctrl(
-                ctrl_x_right, modes, on_cycle_wall,
-                True, u"Tramo",
-            )
+        if show_pie_controls:
+            if dual_bands:
+                _draw_pie_ctrl(
+                    ctrl_x_left, side_left[u"modes"], side_left[u"cycle"],
+                    act == ex_left, _extremo_side_label(ex_left),
+                )
+                _draw_pie_ctrl(
+                    ctrl_x_right, side_right[u"modes"], side_right[u"cycle"],
+                    act == ex_right, _extremo_side_label(ex_right),
+                )
+            else:
+                _draw_pie_ctrl(
+                    ctrl_x_right, modes, on_cycle_wall,
+                    True, u"Tramo",
+                )
 
-        if emp:
+        if show_tramo_bands and emp:
             tick = Rectangle()
             tick.Width = 12.0
             tick.Height = 3.0
@@ -1753,39 +1820,40 @@ def redraw_elevation(
             Canvas.SetTop(tick, stem_foot_y - 2.0)
             canvas.Children.Add(tick)
 
-    lap_mm = lap_mm_from_long_diam(long_diam_mm)
-    lap_px = max(8.0, float(lap_mm) * scale_px)
-    for wi in empalme_indices_from_modes(modes, autos, base_index=base_i):
-        geom = band_geom.get(wi)
-        y_foot = y_bottom_of_wall.get(wi)
-        if geom is None or y_foot is None:
-            continue
-        bx, bw, _yt = geom
-        ln_a = Line()
-        ln_a.X1 = bx
-        ln_a.X2 = bx + bw
-        ln_a.Y1 = y_foot
-        ln_a.Y2 = y_foot
-        ln_a.Stroke = br_a
-        ln_a.StrokeThickness = 2.0
-        canvas.Children.Add(ln_a)
-        ln_b = Line()
-        ln_b.X1 = bx
-        ln_b.X2 = bx + bw
-        ln_b.Y1 = y_foot - lap_px
-        ln_b.Y2 = y_foot - lap_px
-        ln_b.Stroke = br_b
-        ln_b.StrokeThickness = 2.0
-        try:
-            from System.Windows.Media import DoubleCollection
+    if show_tramo_bands:
+        lap_mm = lap_mm_from_long_diam(long_diam_mm)
+        lap_px = max(8.0, float(lap_mm) * scale_px)
+        for wi in empalme_indices_from_modes(modes, autos, base_index=base_i):
+            geom = band_geom.get(wi)
+            y_foot = y_bottom_of_wall.get(wi)
+            if geom is None or y_foot is None:
+                continue
+            bx, bw, _yt = geom
+            ln_a = Line()
+            ln_a.X1 = bx
+            ln_a.X2 = bx + bw
+            ln_a.Y1 = y_foot
+            ln_a.Y2 = y_foot
+            ln_a.Stroke = br_a
+            ln_a.StrokeThickness = 2.0
+            canvas.Children.Add(ln_a)
+            ln_b = Line()
+            ln_b.X1 = bx
+            ln_b.X2 = bx + bw
+            ln_b.Y1 = y_foot - lap_px
+            ln_b.Y2 = y_foot - lap_px
+            ln_b.Stroke = br_b
+            ln_b.StrokeThickness = 2.0
+            try:
+                from System.Windows.Media import DoubleCollection
 
-            dc = DoubleCollection()
-            dc.Add(4.0)
-            dc.Add(3.0)
-            ln_b.StrokeDashArray = dc
-        except Exception:
-            pass
-        canvas.Children.Add(ln_b)
+                dc = DoubleCollection()
+                dc.Add(4.0)
+                dc.Add(3.0)
+                ln_b.StrokeDashArray = dc
+            except Exception:
+                pass
+            canvas.Children.Add(ln_b)
 
     # Cotas de nivel encima de bg/empalme para que no las tape la fila inferior.
     for foot_y, lbl in level_marks:

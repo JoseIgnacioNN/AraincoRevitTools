@@ -2,7 +2,7 @@
 """
 Entrada — Arainco: Coronamiento muros.
 
-Pick muro → UI (elevación + stack) → Colocar → re-pick sin cerrar.
+Multi-pick (máx. 2) → modo U libre / Empotrado → UI → Colocar.
 """
 
 from __future__ import print_function
@@ -18,6 +18,7 @@ from Autodesk.Revit.UI.Selection import ISelectionFilter, ObjectType
 from Autodesk.Revit.Exceptions import OperationCanceledException
 
 _DIALOG_TITLE = u"Arainco: Coronamiento muros"
+_MAX_WALLS = 2
 
 
 class _WallSelectionFilter(ISelectionFilter):
@@ -53,30 +54,64 @@ def _mostrar(uiapp, instruction, content=u""):
         pass
 
 
-def pick_wall(uidoc, allow_cancel=False):
-    """PickObject de un muro. Si allow_cancel y el usuario cancela → None."""
+def pick_walls_max2(uidoc):
+    """
+    Multi-select de muros, máximo 2.
+
+    Returns:
+        list[Wall]: 0–2 muros. Cancelar / 0 → lista vacía.
+        Si el usuario elige más de 2, se muestra aviso y se devuelve None
+        (no abrir UI).
+    """
     if uidoc is None:
-        return None
+        return []
     try:
-        ref = uidoc.Selection.PickObject(
+        refs = uidoc.Selection.PickObjects(
             ObjectType.Element,
             _WallSelectionFilter(),
-            u"Seleccione un muro para coronamiento",
+            u"Seleccione 1 o 2 muros (máximo 2). Finish confirma; Esc cancela.",
         )
     except OperationCanceledException:
-        if allow_cancel:
-            return None
-        raise
+        return []
     except Exception:
-        if allow_cancel:
-            return None
-        raise
-    if ref is None:
+        return []
+    if not refs:
+        return []
+    doc = uidoc.Document
+    walls = []
+    seen = set()
+    for ref in refs:
+        if ref is None:
+            continue
+        try:
+            el = doc.GetElement(ref)
+        except Exception:
+            el = None
+        if not isinstance(el, Wall):
+            continue
+        try:
+            wid = int(el.Id.IntegerValue)
+        except Exception:
+            continue
+        if wid in seen:
+            continue
+        seen.add(wid)
+        walls.append(el)
+    if len(walls) > _MAX_WALLS:
         return None
-    el = uidoc.Document.GetElement(ref)
-    if isinstance(el, Wall):
-        return el
-    return None
+    return walls
+
+
+def resolve_pick_mode(walls):
+    """
+    Deriva modo geométrico del multi-pick.
+
+    Returns:
+        dict: ok, geom_mode, host, upper, walls_ord, voladizo_specs, message
+    """
+    from coronamiento_muros_place import resolve_coronamiento_pick
+
+    return resolve_coronamiento_pick(walls)
 
 
 def run(uiapp):
@@ -93,7 +128,7 @@ def run(uiapp):
         return
 
     try:
-        wall = pick_wall(uidoc, allow_cancel=False)
+        walls = pick_walls_max2(uidoc)
     except OperationCanceledException:
         return
     except Exception as ex:
@@ -103,13 +138,42 @@ def run(uiapp):
             msg = str(ex)
         _mostrar(uiapp, u"No se pudo seleccionar el muro.", msg)
         return
-    if wall is None:
-        _mostrar(uiapp, u"Seleccione un muro válido.")
+
+    if walls is None:
+        _mostrar(
+            uiapp,
+            u"Máximo 2 muros.",
+            u"Seleccione 1 muro (U libre) o 2 muros apilados (Empotrado).",
+        )
+        return
+    if not walls:
+        # 0 / cancel → salir sin UI
+        return
+
+    ctx = resolve_pick_mode(walls)
+    if not ctx.get(u"ok"):
+        _mostrar(
+            uiapp,
+            ctx.get(u"message")
+            or u"Los muros seleccionados no están apilados (sin contacto en Z).",
+            u"Seleccione 1 muro (U libre) o 2 muros apilados (Empotrado).",
+        )
         return
 
     from coronamiento_muros_ui import show_coronamiento_window
 
-    show_coronamiento_window(uiapp, uidoc, doc, wall)
+    show_coronamiento_window(
+        uiapp,
+        uidoc,
+        doc,
+        ctx.get(u"host"),
+        geom_mode=ctx.get(u"geom_mode") or u"u_libre",
+        upper_wall=ctx.get(u"upper"),
+        walls_ord=ctx.get(u"walls_ord"),
+        voladizo_specs=ctx.get(u"voladizo_specs"),
+        overhang_mm=ctx.get(u"overhang_mm"),
+        embed_side=ctx.get(u"embed_side"),
+    )
 
 
 def run_pyrevit(revit_app):

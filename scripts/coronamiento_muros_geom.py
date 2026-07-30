@@ -105,10 +105,10 @@ def pata_mm_from_espesor(espesor_mm):
 
 def estimate_bar_lengths_mm(largo_muro_mm, espesor_mm):
     """
-    Largo vano principal y desarrollado estimado (U).
+    Largo vano principal y desarrollado estimado (U libre: 2 patas).
 
     Returns:
-        dict: main_mm, pata_mm, developed_mm, exceeds_12m
+        dict: main_mm, pata_mm, developed_mm, exceeds_12m, embed_mm, geom_mode
     """
     main_mm = ceil10_mm(largo_muro_mm)
     pata = pata_mm_from_espesor(espesor_mm)
@@ -118,6 +118,38 @@ def estimate_bar_lengths_mm(largo_muro_mm, espesor_mm):
         u"pata_mm": pata,
         u"developed_mm": developed,
         u"exceeds_12m": developed > MAX_BARRA_COMERCIAL_MM,
+        u"embed_mm": 0.0,
+        u"overhang_mm": 0.0,
+        u"geom_mode": u"u_libre",
+    }
+
+
+def empotramiento_mm_from_diam(diam_mm):
+    """Empotramiento voladizo V3 ≈ tabla de traslape por Ø."""
+    return traslape_mm_from_diam(diam_mm)
+
+
+def estimate_empotrado_bar_lengths_mm(overhang_mm, espesor_mm, diam_mm=16):
+    """
+    Desarrollado Empotrado (V3 voladizo): empotro(Ø) + voladizo libre + 1 pata L.
+
+    Returns:
+        dict: main_mm (horiz), pata_mm, developed_mm, exceeds_12m,
+              embed_mm, overhang_mm, geom_mode
+    """
+    overhang = ceil10_mm(overhang_mm)
+    embed = ceil10_mm(empotramiento_mm_from_diam(diam_mm))
+    pata = pata_mm_from_espesor(espesor_mm)
+    main_mm = overhang + embed
+    developed = main_mm + pata
+    return {
+        u"main_mm": main_mm,
+        u"pata_mm": pata,
+        u"developed_mm": developed,
+        u"exceeds_12m": developed > MAX_BARRA_COMERCIAL_MM,
+        u"embed_mm": embed,
+        u"overhang_mm": overhang,
+        u"geom_mode": u"empotrado",
     }
 
 

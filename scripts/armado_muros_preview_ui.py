@@ -187,16 +187,28 @@ UI_MODE_CABEZAL = u"cabezal"
 UI_MODE_MALLAS = u"mallas"
 UI_MODE_UNIFICADO = u"unificado"
 
+# Extremo superior verticales malla (int.+ext.): por muro, sin sondeo.
+TERMINACION_CABEZA_EMPOTRAMIENTO = u"empotramiento"
+TERMINACION_CABEZA_PATA_L = u"pata_l"
+TERMINACION_CABEZA_RECTO = u"recto"
+TERMINACION_CABEZA_DEFAULT = TERMINACION_CABEZA_PATA_L
+TERMINACION_CABEZA_OPTS = (
+    (TERMINACION_CABEZA_EMPOTRAMIENTO, u"Empotramiento", u"Emp."),
+    (TERMINACION_CABEZA_PATA_L, u"Pata L", u"Pata L"),
+    (TERMINACION_CABEZA_RECTO, u"Recto", u"Recto"),
+)
+
 # Fases de presentación (solo UI unificada): mismo estado/config/creación.
 UI_PHASE_EXTREMO_INICIO = u"extremo_inicio"
 UI_PHASE_EXTREMO_FIN = u"extremo_fin"
 # Conservado por compatibilidad; ya no forma parte del rail ni de la creación V3.
 UI_PHASE_CORONAMIENTO = u"coronamiento"
+# Conservado por compatibilidad / modo mallas dedicado; fuera del rail V3 unificado
+# (herramienta «Mallas en muros»).
 UI_PHASE_MALLAS = u"mallas"
 UI_PHASES_UNIFICADO = (
     UI_PHASE_EXTREMO_INICIO,
     UI_PHASE_EXTREMO_FIN,
-    UI_PHASE_MALLAS,
 )
 
 _PREVIEW_APPDOMAIN_KEYS = {
@@ -224,7 +236,8 @@ def _register_preview_singleton(win, mode):
         pass
 
 
-# Shell estilo Machones: elevación (*) + rail fijo de cards (Inicio/Término/Mallas).
+# Shell estilo Machones: elevación (*) + rail fijo de cards (Inicio/Término).
+# Card Mallas permanece en XAML para el modo dedicado (59_MallasEnMuros).
 SECTION_RAIL_WIDTH_PX = 380.0
 
 XAML_PREVIEW = u"""<Window
@@ -256,7 +269,7 @@ __BIMTOOLS_DARK_STYLES__
         <TextBlock x:Name="TxtTitle" Text="Arainco: Armado Muros v3"
                    Foreground="#E8F4F8" FontSize="18" FontWeight="Bold"/>
         <TextBlock x:Name="TxtSubtitle" Margin="0,6,0,0" Foreground="#95B8CC" TextWrapping="Wrap"
-                   Text="Elevación + rail de fases (Inicio · Término · Mallas). Shell estilo Machones."/>
+                   Text="Elevación + rail de fases (Inicio · Término). Shell estilo Machones."/>
         <StackPanel x:Name="PnlPhaseStepper" Orientation="Vertical" Margin="0,0,0,0"
                     Visibility="Collapsed"/>
         <StackPanel x:Name="PnlModoMuro" Orientation="Horizontal" Margin="0,8,0,0" Visibility="Collapsed">
@@ -407,7 +420,7 @@ __BIMTOOLS_DARK_STYLES__
         <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
           <TextBlock x:Name="TxtEstado" Foreground="#64748b" FontSize="10" TextWrapping="Wrap"/>
           <TextBlock x:Name="TxtFooterHint" Foreground="#64748b" FontSize="10" TextWrapping="Wrap" Margin="0,4,0,0"
-                     Text="Creación: cabezal → mallas AR. Orden inferior→superior."/>
+                     Text="Creación: longitudinales → confinamiento. Orden inferior→superior."/>
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
           <Button x:Name="BtnCancelar" Content="Cancelar"
@@ -993,6 +1006,16 @@ def _append_linea_etiquetas_malla_resumen(msg_ok, embed_res, n_muros=0):
                 u"\n  Con doble malla se esperan hasta {0} etiquetas "
                 u"({1} muro(s) × vertical + horizontal).".format(esperadas, n_m)
             )
+    n_wr = int(embed_res.get(u"n_wall_tags_rebase", 0) or 0)
+    n_wd = int(embed_res.get(u"n_wall_tags_rebase_deleted", 0) or 0)
+    n_wm = int(embed_res.get(u"n_wall_tags_rebase_skip_multihost", 0) or 0)
+    n_wf = int(embed_res.get(u"n_wall_tags_rebase_fail", 0) or 0)
+    if n_wr or n_wd or n_wm or n_wf:
+        msg_ok += (
+            u"\nEtiquetas espesor muro (EST_A_WALL TAG_ELEVACION_MHA / Espesor Muro): "
+            u"{0} ok, {1} previas eliminadas, {2} multi-host omitidas, {3} fallo."
+            .format(n_wr, n_wd, n_wm, n_wf)
+        )
     return msg_ok
 
 
@@ -1204,9 +1227,11 @@ class _CrearMallasEjecutarHandler(IExternalEventHandler):
         self.cabezal_por_muro_id = {}
         self.area_reinforcement_type_id = ElementId.InvalidElementId
         self.muro_contencion = False
+        self.malla_activo_por_muro_id = {}
 
     def Execute(self, uiapp):
         from Autodesk.Revit.UI import TaskDialog
+        from armado_muros_txn import TxnScope
 
         wrap = None
         try:
@@ -1216,37 +1241,164 @@ class _CrearMallasEjecutarHandler(IExternalEventHandler):
 
         uidoc = uiapp.ActiveUIDocument
         if uidoc is None:
-            TaskDialog.Show("Armado muros", u"No hay documento activo.")
+            TaskDialog.Show(u"Arainco: Mallas en muros", u"No hay documento activo.")
             return
 
         doc = uidoc.Document
         n_muros = len(getattr(self, "walls", None) or [])
+        muro_cont = bool(getattr(self, "muro_contencion", False))
+        err = []
+        ok = []
+        cover_n = 0
+        embed_res = None
+        rebars_por_muro_id = {}
+        outer = None
+        flujo_ok = False
 
-        ok, err, cover_n, embed_res = geo.crear_areas_malla_parametrizada(
-            doc,
-            self.walls,
-            self.params_por_muro_id,
-            self.area_reinforcement_type_id,
-            _aplicar_parametros_malla,
-            muro_contencion=bool(getattr(self, "muro_contencion", False)),
-            uidoc=uidoc,
-            cabezal_por_muro_id=getattr(self, "cabezal_por_muro_id", None),
-            malla_activo_por_muro_id=getattr(
-                self, u"malla_activo_por_muro_id", None,
-            ),
-        )
+        # Una sola Transaction (un paso Deshacer), como Armado Muros v3.
+        # Lotes internos → SubTransaction vía TxnScope; sin TransactionGroup anidado.
         try:
-            geo.aplicar_unobscured_armado_muros_en_vista(
+            try:
+                from armado_muros_rebar_params import (
+                    iniciar_armadura_conjunto_guid_ejecucion,
+                )
+                iniciar_armadura_conjunto_guid_ejecucion()
+            except Exception:
+                pass
+            try:
+                from armado_muros_rebar_params import iniciar_armadura_eje_ejecucion
+                iniciar_armadura_eje_ejecucion(uidoc=uidoc)
+            except Exception:
+                pass
+
+            outer = TxnScope(doc, geo.TXN_MALLAS_EN_MUROS)
+            if not outer.HasStarted():
+                raise Exception(u"No se pudo abrir la transacción de Mallas en muros.")
+
+            ok, err, cover_n, embed_res = geo.crear_areas_malla_parametrizada(
                 doc,
-                uidoc,
-                embed_resumen=embed_res,
-                rebars_malla_por_muro_id=(
-                    (embed_res or {}).get(u"rebars_por_muro_id")
+                self.walls,
+                self.params_por_muro_id,
+                self.area_reinforcement_type_id,
+                _aplicar_parametros_malla,
+                muro_contencion=muro_cont,
+                uidoc=uidoc,
+                cabezal_por_muro_id=getattr(self, "cabezal_por_muro_id", None),
+                defer_etiquetas_malla=True,
+                malla_activo_por_muro_id=getattr(
+                    self, u"malla_activo_por_muro_id", None,
                 ),
-                errores=err,
+                skip_coronamiento=True,
+                within_parent_transaction_group=True,
             )
-        except Exception:
-            pass
+            err = list(err or [])
+
+            if embed_res:
+                rebars_por_muro_id = embed_res.get(u"rebars_por_muro_id") or {}
+            try:
+                walls_ord = geo.ordenar_muros_por_base_asc(self.walls)
+            except Exception:
+                walls_ord = list(self.walls or [])
+
+            if rebars_por_muro_id:
+                try:
+                    # Post-lote ya stampó Orientacion/spacing.
+                    embed_res = geo._aplicar_etiquetas_malla_todos(
+                        doc,
+                        uidoc,
+                        walls_ord,
+                        self.params_por_muro_id,
+                        rebars_por_muro_id,
+                        err,
+                        embed_res,
+                        cover_asignados=int(cover_n or 0),
+                        muro_contencion=muro_cont,
+                        stamp_pre_etiqueta=False,
+                    )
+                except Exception as ex_tag:
+                    err.append(u"Etiquetas malla: {0}".format(ex_tag))
+
+                try:
+                    from armado_muros_wall_tags_rebase import (
+                        rebase_wall_tags_above_mesh,
+                        resumen_para_embed as _wall_tag_resumen,
+                    )
+                    wall_tag_res = rebase_wall_tags_above_mesh(
+                        doc,
+                        uidoc,
+                        walls_ord,
+                        rebars_por_muro_id=rebars_por_muro_id,
+                        errores=err,
+                    )
+                    if embed_res is None:
+                        embed_res = {}
+                    wr = _wall_tag_resumen(wall_tag_res)
+                    for _wk in (
+                        u"n_wall_tags_rebase",
+                        u"n_wall_tags_rebase_deleted",
+                        u"n_wall_tags_rebase_skip_multihost",
+                        u"n_wall_tags_rebase_fail",
+                    ):
+                        embed_res[_wk] = int(wr.get(_wk, 0) or 0)
+                    for _wm in wr.get(u"messages") or []:
+                        embed_res.setdefault(u"messages", []).append(_wm)
+                except Exception as ex_wt:
+                    err.append(u"Etiquetas muro (rebase): {0}".format(ex_wt))
+
+                try:
+                    geo.aplicar_unobscured_armado_muros_en_vista(
+                        doc,
+                        uidoc,
+                        embed_resumen=embed_res,
+                        rebars_malla_por_muro_id=rebars_por_muro_id,
+                        errores=err,
+                    )
+                except Exception:
+                    pass
+
+            flujo_ok = True
+        except Exception as ex:
+            err = list(err or [])
+            err.append(u"Creación mallas: {0}".format(ex))
+            ok = ok or []
+            flujo_ok = False
+        finally:
+            try:
+                from armado_muros_rebar_params import (
+                    finalizar_armadura_conjunto_guid_ejecucion,
+                )
+                finalizar_armadura_conjunto_guid_ejecucion()
+            except Exception:
+                pass
+            try:
+                from armado_muros_rebar_params import finalizar_armadura_eje_ejecucion
+                finalizar_armadura_eje_ejecucion()
+            except Exception:
+                pass
+            if outer is not None and outer.HasStarted():
+                try:
+                    if flujo_ok:
+                        outer.Commit()
+                    else:
+                        outer.RollBack()
+                except Exception as ex_txn:
+                    try:
+                        if outer.HasStarted():
+                            outer.RollBack()
+                    except Exception:
+                        pass
+                    if flujo_ok:
+                        flujo_ok = False
+                        err.append(
+                            u"Mallas en muros (commit): {0}".format(ex_txn),
+                        )
+
+        if flujo_ok and uidoc is not None:
+            try:
+                geo._refrescar_vista_fin_flujo(doc, uidoc)
+            except Exception:
+                pass
+
         msg_ok = u"Rebar Cover ext/int {:.0f} mm, otras {:.0f} mm: {} muro(s).\nRebars creados: {} (IDs: {}).".format(
             geo.REBAR_COVER_MM_CARAS_EXT_INT,
             geo.REBAR_COVER_MM_OTRAS_CARAS,
@@ -1256,7 +1408,7 @@ class _CrearMallasEjecutarHandler(IExternalEventHandler):
         )
         msg_ok = _append_linea_etiquetas_malla_resumen(msg_ok, embed_res, n_muros)
         if embed_res:
-            msg_ok += u"\n\nVerticales ext/int (cabeza L=tabla; fund. pie: colisión→estira, no colisión→25+Ø/2):\n"
+            msg_ok += u"\n\nVerticales ext/int (cabeza: Emp./Pata L/Recto por muro; fund. pie: colisión→estira, no colisión→25+Ø/2):\n"
             msg_ok += u"  Estiradas={0}, retraídas={1}, pata L ext.={2}, fund. pie={3}, fund. retraídas={4}, pata L fund.={5}, omitidas={6}, error={7}.".format(
                 int(embed_res.get(u"n_extended", 0)),
                 int(embed_res.get(u"n_retracted", 0)),
@@ -1381,14 +1533,13 @@ class _CrearUnificadoEjecutarHandler(IExternalEventHandler):
             ),
         )
         msg_ok = (
-            u"Armado Muros — orden: longitudinales, confinamiento, mallas; "
-            u"luego etiquetas (long., conf., malla).\n"
-            u"Rebar Cover: {0} muro(s). Rebars AR: {1}.".format(
+            u"Armado Muros — orden: longitudinales, confinamiento; "
+            u"luego etiquetas (long., conf.).\n"
+            u"Rebar Cover: {0} muro(s). Rebars: {1}.".format(
                 int(cover_n),
                 len(ok),
             )
         )
-        msg_ok = _append_linea_etiquetas_malla_resumen(msg_ok, embed_res, n_muros)
         if embed_res:
             if int(embed_res.get(u"n_coronamiento", 0)) or int(embed_res.get(u"n_coronamiento_fail", 0)):
                 msg_ok += u"\nCoronamiento sup. (tope stack): sets={0}, barras={1}, error={2}.".format(
@@ -1588,6 +1739,21 @@ class ArmadoMurosPreviewWindow(object):
             self._machones_wall_sel_anchor = 0
             self._machones_elev_canvas = None
             self._suppress_bulk_mesh = False
+        elif self._is_mallas_mode():
+            # Shell V3 (elevación + rail): solo card Mallas, sin Inicio/Término.
+            self._modo_tradicional = True
+            self._ui_phase = UI_PHASE_MALLAS
+            self._last_cabezal_extremo = CABEZAL_EXTREMO_INICIO
+            self._machones_rail_cards = True
+            self._machones_troceo_modes = []
+            self._machones_selected_wall = 0
+            self._machones_selected_walls = [0]
+            self._machones_wall_sel_anchor = 0
+            self._machones_elev_canvas = None
+            self._suppress_bulk_mesh = False
+            self._terminacion_cabeza_by_wall_id = {}
+            self._bulk_terminacion_cabeza_btns = {}
+            self._bulk_terminacion_cabeza_hint = None
         else:
             self._ui_phase = None
             self._last_cabezal_extremo = CABEZAL_EXTREMO_INICIO
@@ -1614,8 +1780,16 @@ class ArmadoMurosPreviewWindow(object):
             UI_PHASE_EXTREMO_INICIO: True,
             UI_PHASE_EXTREMO_FIN: True,
             UI_PHASE_CORONAMIENTO: False,
-            UI_PHASE_MALLAS: True,
+            # Mallas fuera de V3 unificado (herramienta dedicada).
+            UI_PHASE_MALLAS: False,
         }
+        if self._is_mallas_mode() and not self._is_unificado_mode():
+            self._phase_enabled = {
+                UI_PHASE_EXTREMO_INICIO: False,
+                UI_PHASE_EXTREMO_FIN: False,
+                UI_PHASE_CORONAMIENTO: False,
+                UI_PHASE_MALLAS: True,
+            }
         self._suppress_phase_enabled_chk = False
         self._phase_card_toggle_ui = {}
         self._unificado_phase_col_layout = {}
@@ -2409,7 +2583,7 @@ class ArmadoMurosPreviewWindow(object):
             self._set_estado(u"Cargando plantillas…")
             self._pump_dispatcher()
             self._prepare_ui_templates()
-            if self._uses_cabezal_panels():
+            if self._uses_cabezal_panels() or self._uses_mallas_machones_shell():
                 view_right_xy = None
                 try:
                     rd = self.doc.ActiveView.RightDirection
@@ -2425,6 +2599,8 @@ class ArmadoMurosPreviewWindow(object):
                     )
                 except Exception:
                     self._stacked_layout = None
+                self._refresh_wall_thickness_color_map()
+            if self._uses_cabezal_panels():
                 if cabezal is not None:
                     legacy_ids = _pop_legacy_extremo_marker_ids()
                     if legacy_ids:
@@ -2445,7 +2621,6 @@ class ArmadoMurosPreviewWindow(object):
                 self._sync_all_cabezal_troceo_auto()
                 self._cabezal_cap_col_px_cached = self._compute_cabezal_cap_col_width_px()
                 self._preview_col_px = float(self._effective_preview_col_px())
-                self._refresh_wall_thickness_color_map()
                 # Coronamiento: no se configura ni genera en V3.
             if self._is_mallas_mode() and not self._is_unificado_mode():
                 self._sync_modo_from_checkboxes()
@@ -2466,9 +2641,15 @@ class ArmadoMurosPreviewWindow(object):
                 self._wire_machones_phase_cards()
                 self._apply_ui_phase_visibility()
                 self._refresh_machones_card_focus_chrome()
-                estado = u"Configura Inicio en el rail; luego Término y Mallas."
+                estado = u"Configura Inicio en el rail; luego Término."
             elif self._is_cabezal_mode():
                 estado = u"Configura cabezales y pulsa Crear cabezales."
+            elif self._uses_mallas_machones_shell():
+                try:
+                    self._finalize_mallas_machones_shell()
+                except Exception:
+                    pass
+                estado = u"Configura mallas y pulsa Crear mallas."
             else:
                 estado = u"Configura mallas y pulsa Crear Area Reinf."
             self._set_estado(estado)
@@ -2509,7 +2690,17 @@ class ArmadoMurosPreviewWindow(object):
     def _is_mallas_mode(self):
         return getattr(self, "_ui_mode", UI_MODE_MALLAS) == UI_MODE_MALLAS
 
+    def _uses_mallas_machones_shell(self):
+        """Modo mallas dedicado: elevación V3 + rail solo card Mallas."""
+        return (
+            self._is_mallas_mode()
+            and not self._is_unificado_mode()
+            and bool(getattr(self, u"_machones_rail_cards", False))
+        )
+
     def _ui_phase_is(self, phase):
+        if self._uses_mallas_machones_shell():
+            return phase == UI_PHASE_MALLAS
         return (
             self._is_unificado_mode()
             and getattr(self, u"_ui_phase", None) == phase
@@ -2750,19 +2941,10 @@ class ArmadoMurosPreviewWindow(object):
         except Exception:
             self._phase_enabled[UI_PHASE_CORONAMIENTO] = False
         try:
-            # Mallas: True solo si todos los muros tienen malla activa.
-            walls = getattr(self, u"walls_ordered", None) or []
-            if walls:
-                all_on = True
-                for w in walls:
-                    if not self._malla_activo_cfg(_wall_id_int(w)):
-                        all_on = False
-                        break
-                self._phase_enabled[UI_PHASE_MALLAS] = bool(all_on)
-            else:
-                self._phase_enabled[UI_PHASE_MALLAS] = True
+            # Mallas gestionadas en herramienta dedicada; fase retirada de V3.
+            self._phase_enabled[UI_PHASE_MALLAS] = False
         except Exception:
-            self._phase_enabled[UI_PHASE_MALLAS] = True
+            self._phase_enabled[UI_PHASE_MALLAS] = False
         self._sync_phase_tab_checkboxes()
         self._refresh_phase_stepper_buttons()
 
@@ -2899,11 +3081,13 @@ class ArmadoMurosPreviewWindow(object):
         return shell, path, label, chk
 
     def _machones_phase_card_map(self):
-        """phase -> (border name, checkbox name, accent RGB)."""
+        """phase -> (border name, checkbox name, accent RGB).
+
+        Solo Inicio/Término: Mallas vive en la herramienta dedicada.
+        """
         return {
             UI_PHASE_EXTREMO_INICIO: (u"BrdCardInicio", u"ChkPhaseInicio", (0x5B, 0xC0, 0xDE)),
             UI_PHASE_EXTREMO_FIN: (u"BrdCardFin", u"ChkPhaseFin", (0x4A, 0xDE, 0x80)),
-            UI_PHASE_MALLAS: (u"BrdCardMallas", u"ChkPhaseMallas", (0x5B, 0xC0, 0xDE)),
         }
 
     def _style_phase_enable_toggle(self, chk, phase, accent_rgb):
@@ -3261,9 +3445,7 @@ class ArmadoMurosPreviewWindow(object):
                         idx, n_phases,
                     )
                 else:
-                    sub_tb.Text = u"Fase {0}/{1} — Mallas.".format(
-                        idx, n_phases,
-                    )
+                    sub_tb.Text = u"Fase {0}/{1}.".format(idx, n_phases)
             except Exception:
                 pass
 
@@ -3272,7 +3454,7 @@ class ArmadoMurosPreviewWindow(object):
             try:
                 foot_tb.Visibility = Visibility.Visible
                 foot_tb.Text = (
-                    u"Creación: longitudinales → confinamiento → mallas."
+                    u"Creación: longitudinales → confinamiento."
                 )
             except Exception:
                 pass
@@ -3301,16 +3483,11 @@ class ArmadoMurosPreviewWindow(object):
                     else Visibility.Collapsed
                 )
             if tb_elev is not None:
-                if phase == UI_PHASE_MALLAS:
-                    tb_elev.Text = u"ELEVACIÓN · MALLA EXT.+INT."
-                else:
-                    tb_elev.Text = u"ELEVACIÓN MUROS"
+                tb_elev.Text = u"ELEVACIÓN MUROS"
         except Exception:
             pass
 
-        if phase == UI_PHASE_MALLAS:
-            estado = u"Fase Mallas: selecciona muros en elevación; configura AR; Crear armadura."
-        elif phase == UI_PHASE_EXTREMO_FIN:
+        if phase == UI_PHASE_EXTREMO_FIN:
             estado = u"Fase Término: configura cabezal final en el rail."
         else:
             estado = u"Fase Inicio: configura cabezal inicio en el rail."
@@ -3328,7 +3505,7 @@ class ArmadoMurosPreviewWindow(object):
     def _apply_machones_card_body_visibility(self):
         """Minimiza cuerpos de cards inactivas; solo la fase activa queda maximizada.
 
-        Al abrir (fase Inicio): Mallas/Término quedan solo cabecera.
+        Al abrir (fase Inicio): Término queda solo cabecera.
         """
         if self._win is None or not getattr(self, u"_machones_rail_cards", False):
             return
@@ -3689,16 +3866,20 @@ class ArmadoMurosPreviewWindow(object):
         if self._win is None:
             return
         try:
-            from System.Windows import Visibility
+            from System.Windows import Visibility, Thickness
 
             uni = self._is_unificado_mode()
             cab = self._is_cabezal_mode()
+            mal_shell = self._uses_mallas_machones_shell()
             if uni:
                 self._win.Title = u"Arainco"
                 body_title = u"Arainco: Armado Muros v3"
             elif cab:
                 self._win.Title = u"Arainco"
                 body_title = u"Arainco: Cabezal muros v2"
+            elif mal_shell:
+                self._win.Title = u"Arainco"
+                body_title = u"Arainco: Mallas en muros"
             else:
                 self._win.Title = u"Arainco"
                 body_title = u"Arainco: Mallas muros v2"
@@ -3710,10 +3891,16 @@ class ArmadoMurosPreviewWindow(object):
                 if uni:
                     sub_tb.Visibility = Visibility.Visible
                     # Texto definitivo en `_apply_ui_phase_chrome` tras montar paneles.
-                    sub_tb.Text = u"Configuración por fases: Inicio → Final → Mallas."
+                    sub_tb.Text = u"Configuración por fases: Inicio → Final."
                 elif cab:
                     sub_tb.Text = u""
                     sub_tb.Visibility = Visibility.Collapsed
+                elif mal_shell:
+                    sub_tb.Visibility = Visibility.Visible
+                    sub_tb.Text = (
+                        u"Elevación apilada · Area Reinforcement ext.+int. "
+                        u"(sin Inicio/Término)."
+                    )
                 else:
                     sub_tb.Visibility = Visibility.Visible
                     sub_tb.Text = (
@@ -3729,11 +3916,17 @@ class ArmadoMurosPreviewWindow(object):
                 if uni:
                     foot_tb.Visibility = Visibility.Visible
                     foot_tb.Text = (
-                        u"Creación: longitudinales → confinamiento → mallas."
+                        u"Creación: longitudinales → confinamiento."
                     )
                 elif cab:
                     foot_tb.Text = u""
                     foot_tb.Visibility = Visibility.Collapsed
+                elif mal_shell:
+                    foot_tb.Visibility = Visibility.Visible
+                    foot_tb.Text = (
+                        u"Creación: AR + Remove System + post-proceso + etiquetas "
+                        u"rebar malla (V./H.). Orden inferior→superior."
+                    )
                 else:
                     foot_tb.Visibility = Visibility.Visible
                     foot_tb.Text = (
@@ -3742,11 +3935,41 @@ class ArmadoMurosPreviewWindow(object):
                     )
             pnl_modo = self._win.FindName(u"PnlModoMuro")
             if pnl_modo is not None:
+                # Shell mallas V3: solo tradicional (como Armado Muros v3 unificado).
                 pnl_modo.Visibility = (
                     Visibility.Visible
-                    if self._is_mallas_mode() and not uni
+                    if self._is_mallas_mode() and not uni and not mal_shell
                     else Visibility.Collapsed
                 )
+            # Unificado: ocultar card Mallas (herramienta dedicada).
+            if uni:
+                brd_mal = self._win.FindName(u"BrdCardMallas")
+                if brd_mal is not None:
+                    try:
+                        brd_mal.Visibility = Visibility.Collapsed
+                    except Exception:
+                        pass
+            # Solo-mallas shell: ocultar cards Inicio/Término.
+            if mal_shell:
+                for brd_name in (u"BrdCardInicio", u"BrdCardFin"):
+                    brd = self._win.FindName(brd_name)
+                    if brd is not None:
+                        try:
+                            brd.Visibility = Visibility.Collapsed
+                        except Exception:
+                            pass
+                brd_mal = self._win.FindName(u"BrdCardMallas")
+                if brd_mal is not None:
+                    try:
+                        brd_mal.Visibility = Visibility.Visible
+                        brd_mal.Opacity = 1.0
+                        brd_mal.BorderThickness = Thickness(1.5)
+                        from System.Windows.Media import SolidColorBrush, Color
+                        brd_mal.BorderBrush = SolidColorBrush(
+                            Color.FromRgb(0x5B, 0xC0, 0xDE),
+                        )
+                    except Exception:
+                        pass
             self._ensure_header_malla_activo_toggle()
             btn_crear = self._win.FindName(u"BtnCrear")
             if btn_crear is not None:
@@ -3754,6 +3977,8 @@ class ArmadoMurosPreviewWindow(object):
                     btn_crear.Content = u"Crear armado completo"
                 elif cab:
                     btn_crear.Content = u"Crear cabezales"
+                elif mal_shell:
+                    btn_crear.Content = u"Crear mallas"
                 else:
                     btn_crear.Content = u"Crear Area Reinf."
             bdr_bulk = self._win.FindName(u"BdrCabezalBulkActions")
@@ -3793,6 +4018,276 @@ class ArmadoMurosPreviewWindow(object):
             _unregister_preview_singleton(self._ui_mode)
         except Exception:
             pass
+
+    def _terminacion_cabeza_cfg(self, wid):
+        """Modo extremo superior verticales para un muro (int.+ext.)."""
+        store = getattr(self, u"_terminacion_cabeza_by_wall_id", None)
+        if store is None:
+            self._terminacion_cabeza_by_wall_id = {}
+            store = self._terminacion_cabeza_by_wall_id
+        try:
+            key = int(wid)
+        except Exception:
+            key = wid
+        mode = store.get(key)
+        if mode not in (
+            TERMINACION_CABEZA_EMPOTRAMIENTO,
+            TERMINACION_CABEZA_PATA_L,
+            TERMINACION_CABEZA_RECTO,
+        ):
+            mode = TERMINACION_CABEZA_DEFAULT
+            store[key] = mode
+        return mode
+
+    def _terminacion_cabeza_short(self, mode):
+        for mid, _lab, short in TERMINACION_CABEZA_OPTS:
+            if mid == mode:
+                return short
+        return u"Pata L"
+
+    def _terminacion_cabeza_hint(self, mode):
+        if mode == TERMINACION_CABEZA_EMPOTRAMIENTO:
+            return (
+                u"Estira / empotra en cabeza (sin sondear colisión). "
+                u"Aplica a verticales int. + ext."
+            )
+        if mode == TERMINACION_CABEZA_RECTO:
+            return (
+                u"Sin empotrar ni pata — retraída en cabeza. "
+                u"Aplica a verticales int. + ext."
+            )
+        return (
+            u"Cierra en pata L en el extremo superior (int. + ext.). "
+            u"Pie con fundación unida: lógica actual (sin UI)."
+        )
+
+    def _set_terminacion_cabeza_for_wall_ids(self, wall_ids, mode, redraw=True):
+        if mode not in (
+            TERMINACION_CABEZA_EMPOTRAMIENTO,
+            TERMINACION_CABEZA_PATA_L,
+            TERMINACION_CABEZA_RECTO,
+        ):
+            mode = TERMINACION_CABEZA_DEFAULT
+        store = getattr(self, u"_terminacion_cabeza_by_wall_id", None)
+        if store is None:
+            self._terminacion_cabeza_by_wall_id = {}
+            store = self._terminacion_cabeza_by_wall_id
+        for wid in wall_ids or []:
+            try:
+                store[int(wid)] = mode
+            except Exception:
+                store[wid] = mode
+        try:
+            self._refresh_bulk_terminacion_cabeza_ui()
+        except Exception:
+            pass
+        if redraw:
+            try:
+                self._redraw_machones_elevation()
+            except Exception:
+                pass
+
+    def _ensure_terminacion_cabeza_seeded(self):
+        """Semilla por muro al montar paneles (solo mallas dedicada)."""
+        if not self._uses_mallas_machones_shell():
+            return
+        store = getattr(self, u"_terminacion_cabeza_by_wall_id", None)
+        if store is None:
+            self._terminacion_cabeza_by_wall_id = {}
+            store = self._terminacion_cabeza_by_wall_id
+        for wall in getattr(self, u"walls_ordered", None) or []:
+            try:
+                wid = int(_wall_id_int(wall))
+            except Exception:
+                continue
+            if wid not in store:
+                store[wid] = TERMINACION_CABEZA_DEFAULT
+
+    def _build_terminacion_cabeza_bulk_block(self, pal):
+        """Chips Empotramiento / Pata L / Recto bajo VERTICAL (solo mallas)."""
+        from System.Windows.Controls import StackPanel, Border, TextBlock, Orientation
+        from System.Windows import (
+            Thickness,
+            FontWeights,
+            HorizontalAlignment,
+            VerticalAlignment,
+            CornerRadius,
+            TextWrapping,
+        )
+        from System.Windows.Input import MouseButtonEventHandler
+        from System.Windows.Media import SolidColorBrush, Color
+
+        block = StackPanel()
+        block.Orientation = Orientation.Vertical
+        block.Margin = Thickness(0, 0, 0, 10)
+        try:
+            block.Background = pal[u"bg_elevated"]
+        except Exception:
+            pass
+
+        wrap = Border()
+        wrap.Background = pal[u"bg_elevated"]
+        wrap.BorderBrush = pal[u"sep"]
+        wrap.BorderThickness = Thickness(1)
+        wrap.Padding = Thickness(8, 8, 8, 8)
+        wrap.Margin = Thickness(0, 2, 0, 0)
+        try:
+            wrap.CornerRadius = CornerRadius(4.0)
+        except Exception:
+            pass
+
+        inner = StackPanel()
+        inner.Orientation = Orientation.Vertical
+
+        hdr = TextBlock()
+        hdr.Text = u"EXTREMO SUPERIOR (INT. + EXT.)"
+        hdr.Foreground = pal[u"text_section"]
+        hdr.FontSize = 10.0
+        hdr.FontWeight = FontWeights.SemiBold
+        hdr.Margin = Thickness(0, 0, 0, 6)
+        inner.Children.Add(hdr)
+
+        row = StackPanel()
+        row.Orientation = Orientation.Horizontal
+        row.HorizontalAlignment = HorizontalAlignment.Left
+
+        btns = {}
+        accent = SolidColorBrush(Color.FromRgb(91, 192, 222))
+        idle_bg = pal[u"bg_elevated"]
+        idle_stroke = pal[u"sep"]
+        fg_active = accent
+        fg_idle = pal[u"text_muted"]
+
+        def _mk_chip(mode_id, label):
+            chip = Border()
+            chip.BorderThickness = Thickness(1)
+            chip.Padding = Thickness(10, 5, 10, 5)
+            chip.Margin = Thickness(0, 0, 6, 0)
+            chip.Cursor = None
+            try:
+                chip.CornerRadius = CornerRadius(4.0)
+            except Exception:
+                pass
+            tb = TextBlock()
+            tb.Text = label
+            tb.FontSize = 11.0
+            tb.VerticalAlignment = VerticalAlignment.Center
+            chip.Child = tb
+            btns[mode_id] = (chip, tb)
+
+            def _on_click(sender, args, mid=mode_id):
+                if getattr(self, u"_suppress_bulk_mesh", False):
+                    return
+                if not self._phase_is_enabled(UI_PHASE_MALLAS):
+                    return
+                _pri, sel = self._normalize_machones_wall_selection()
+                walls = getattr(self, u"walls_ordered", None) or []
+                wids = []
+                for wi in sel or []:
+                    try:
+                        wids.append(_wall_id_int(walls[int(wi)]))
+                    except Exception:
+                        continue
+                if not wids and walls:
+                    try:
+                        wids = [_wall_id_int(walls[int(_pri)])]
+                    except Exception:
+                        pass
+                self._set_terminacion_cabeza_for_wall_ids(wids, mid, redraw=True)
+                try:
+                    self._set_estado(
+                        u"Extremo superior → {0} · {1} muro(s).".format(
+                            self._terminacion_cabeza_short(mid),
+                            len(wids),
+                        ),
+                    )
+                except Exception:
+                    pass
+
+            try:
+                chip.MouseLeftButtonDown += MouseButtonEventHandler(_on_click)
+            except Exception:
+                chip.MouseLeftButtonDown += _on_click
+            row.Children.Add(chip)
+
+        for mid, lab, _short in TERMINACION_CABEZA_OPTS:
+            _mk_chip(mid, lab)
+        inner.Children.Add(row)
+
+        hint = TextBlock()
+        hint.Text = self._terminacion_cabeza_hint(TERMINACION_CABEZA_DEFAULT)
+        hint.Foreground = pal[u"text_caption"]
+        hint.FontSize = 10.0
+        hint.TextWrapping = TextWrapping.Wrap
+        hint.Margin = Thickness(0, 8, 0, 0)
+        inner.Children.Add(hint)
+
+        foot = TextBlock()
+        foot.Text = (
+            u"Pie inferior: si el muro tiene fundación unida, se mantiene el "
+            u"comportamiento actual (sondeo / estira / retraída / pata L pie)."
+        )
+        foot.Foreground = pal[u"text_muted"]
+        foot.FontSize = 10.0
+        foot.TextWrapping = TextWrapping.Wrap
+        foot.Margin = Thickness(0, 8, 0, 0)
+        inner.Children.Add(foot)
+
+        wrap.Child = inner
+        block.Children.Add(wrap)
+
+        self._bulk_terminacion_cabeza_btns = btns
+        self._bulk_terminacion_cabeza_hint = hint
+        self._bulk_terminacion_cabeza_palette = {
+            u"accent": accent,
+            u"idle_bg": idle_bg,
+            u"idle_stroke": idle_stroke,
+            u"fg_active": fg_active,
+            u"fg_idle": fg_idle,
+            u"active_bg": SolidColorBrush(Color.FromArgb(46, 91, 192, 222)),
+        }
+        self._refresh_bulk_terminacion_cabeza_ui()
+        return block
+
+    def _refresh_bulk_terminacion_cabeza_ui(self):
+        from System.Windows import FontWeights
+
+        btns = getattr(self, u"_bulk_terminacion_cabeza_btns", None) or {}
+        if not btns:
+            return
+        walls = getattr(self, u"walls_ordered", None) or []
+        pri, _sel = self._normalize_machones_wall_selection()
+        mode = TERMINACION_CABEZA_DEFAULT
+        if 0 <= pri < len(walls):
+            try:
+                mode = self._terminacion_cabeza_cfg(_wall_id_int(walls[pri]))
+            except Exception:
+                mode = TERMINACION_CABEZA_DEFAULT
+        pal = getattr(self, u"_bulk_terminacion_cabeza_palette", None) or {}
+        for mid, pair in btns.items():
+            chip, tb = pair
+            active = mid == mode
+            try:
+                chip.BorderBrush = (
+                    pal.get(u"accent") or pal.get(u"idle_stroke")
+                ) if active else pal.get(u"idle_stroke")
+                chip.Background = (
+                    pal.get(u"active_bg") or pal.get(u"idle_bg")
+                ) if active else pal.get(u"idle_bg")
+                tb.Foreground = (
+                    pal.get(u"fg_active") if active else pal.get(u"fg_idle")
+                )
+                tb.FontWeight = (
+                    FontWeights.SemiBold if active else FontWeights.Normal
+                )
+            except Exception:
+                pass
+        hint = getattr(self, u"_bulk_terminacion_cabeza_hint", None)
+        if hint is not None:
+            try:
+                hint.Text = self._terminacion_cabeza_hint(mode)
+            except Exception:
+                pass
 
     def _mesh_modo_tradicional(self):
         return bool(getattr(self, "_modo_tradicional", True))
@@ -14769,10 +15264,17 @@ class ArmadoMurosPreviewWindow(object):
 
     def _apply_bulk_mesh_to_all_walls(self):
         """Copia el configurador global de mallas a todos los tramos."""
-        self._apply_bulk_mesh_to_wall_indices(None)
+        self._apply_bulk_mesh_to_wall_indices(None, copy_terminacion=True)
 
-    def _apply_bulk_mesh_to_wall_indices(self, wall_indices, set_status=True):
-        """Copia bulk mesh a índices dados; ``None`` = todos los muros del stack."""
+    def _apply_bulk_mesh_to_wall_indices(
+        self, wall_indices, set_status=True, copy_terminacion=False,
+    ):
+        """Copia bulk mesh (Ø/@) a índices dados; ``None`` = todos los muros del stack.
+
+        ``copy_terminacion=True``: también pega la terminación de cabeza del muro
+        primario (solo botones Aplicar). Live-edit y Crear dejan la terminación
+        en ``_terminacion_cabeza_by_wall_id`` por muro / chips.
+        """
         src_ctr = getattr(self, u"_bulk_mesh_ctr", None) or {}
         if not src_ctr:
             if set_status:
@@ -14795,6 +15297,17 @@ class ArmadoMurosPreviewWindow(object):
                     indices.append(ix)
         keys = self._mesh_control_keys()
         n = 0
+        mode_src = None
+        if copy_terminacion and self._uses_mallas_machones_shell():
+            try:
+                pri, _sel = self._normalize_machones_wall_selection()
+                walls_ord = getattr(self, u"walls_ordered", None) or []
+                if 0 <= pri < len(walls_ord):
+                    mode_src = self._terminacion_cabeza_cfg(
+                        _wall_id_int(walls_ord[pri]),
+                    )
+            except Exception:
+                mode_src = TERMINACION_CABEZA_DEFAULT
         for wi in indices:
             try:
                 wid = _wall_id_int(walls[wi])
@@ -14805,6 +15318,13 @@ class ArmadoMurosPreviewWindow(object):
                 continue
             for k in keys:
                 self._copy_combo_like(src_ctr.get(k), dst_ctr.get(k))
+            if mode_src is not None:
+                try:
+                    self._set_terminacion_cabeza_for_wall_ids(
+                        [wid], mode_src, redraw=False,
+                    )
+                except Exception:
+                    pass
             n += 1
             try:
                 self._sync_cabezal_confinement_from_malla_wall(
@@ -14847,17 +15367,24 @@ class ArmadoMurosPreviewWindow(object):
         try:
             for k in self._mesh_control_keys():
                 self._copy_combo_like(src_ctr.get(k), bulk_ctr.get(k))
+            if self._uses_mallas_machones_shell():
+                try:
+                    self._refresh_bulk_terminacion_cabeza_ui()
+                except Exception:
+                    pass
         finally:
             self._suppress_bulk_mesh = False
 
     def _on_bulk_mesh_params_changed(self, sender=None, e=None):
-        """Live-edit estilo Machones: params bulk → muros multi-seleccionados."""
+        """Live-edit: Ø/@ del bulk → solo muros multi-seleccionados (sin terminación)."""
         if getattr(self, u"_suppress_bulk_mesh", False):
             return
         if not self._mallas_wall_multiselect_active():
             return
         _pri, sel = self._normalize_machones_wall_selection()
-        self._apply_bulk_mesh_to_wall_indices(sel, set_status=False)
+        self._apply_bulk_mesh_to_wall_indices(
+            sel, set_status=False, copy_terminacion=False,
+        )
 
     def _on_bulk_mesh_apply_all_clicked(self, sender=None, e=None):
         """Botón «Aplicar a todos los muros» del card Mallas."""
@@ -14878,7 +15405,7 @@ class ArmadoMurosPreviewWindow(object):
             except Exception:
                 pass
             return
-        self._apply_bulk_mesh_to_wall_indices(sel)
+        self._apply_bulk_mesh_to_wall_indices(sel, copy_terminacion=True)
 
     def _init_coronamiento_cfg(self):
         """Semilla tipico S.I.C. (n/Ø); activo=False hasta Aplicar a muros."""
@@ -15648,6 +16175,12 @@ class ArmadoMurosPreviewWindow(object):
 
         root.Children.Add(_section(u"VERTICAL", md_key, ms_key))
 
+        if self._uses_mallas_machones_shell():
+            try:
+                root.Children.Add(self._build_terminacion_cabeza_bulk_block(pal))
+            except Exception:
+                pass
+
         sep = Border()
         sep.Height = 1.0
         sep.Background = pal[u"sep"]
@@ -15736,7 +16269,8 @@ class ArmadoMurosPreviewWindow(object):
             click_handler=self._on_bulk_mesh_apply_all_clicked,
         )
         btn_all.ToolTip = (
-            u"Copia Vertical/Horizontal (\u00d8 + Esp.) a todos los muros del stack."
+            u"Copia Vertical/Horizontal (\u00d8 + Esp.) y extremo superior "
+            u"a todos los muros del stack."
         )
         btn_all.Margin = Thickness(0, 0, 0, 6)
         btn_sel = self._build_mesh_apply_button(
@@ -15744,8 +16278,8 @@ class ArmadoMurosPreviewWindow(object):
             click_handler=self._on_bulk_mesh_apply_selection_clicked,
         )
         btn_sel.ToolTip = (
-            u"Copia Vertical/Horizontal (\u00d8 + Esp.) solo a los muros "
-            u"seleccionados en la elevaci\u00f3n."
+            u"Copia Vertical/Horizontal (\u00d8 + Esp.) y extremo superior "
+            u"solo a los muros seleccionados en la elevaci\u00f3n."
         )
         btn_row.Children.Add(btn_all)
         btn_row.Children.Add(btn_sel)
@@ -15906,6 +16440,7 @@ class ArmadoMurosPreviewWindow(object):
 
         # Unificado: sin controlador global de tramos (Desde/Cada N).
         # Activar/desactivar Inicio/Final queda en checkboxes de pestaña.
+        # Mallas fuera de V3 (herramienta dedicada «Mallas en muros»).
         if uni:
             cd_el = ColumnDefinition()
             cd_el.Width = GridLength(1.0, GridUnitType.Star)
@@ -15917,23 +16452,15 @@ class ArmadoMurosPreviewWindow(object):
             layout[u"ex_right"] = ex_right
             self._unificado_phase_col_layout = layout
 
-            fg_hi = SolidColorBrush(Color.FromRgb(232, 244, 248))
-            fg_lo = SolidColorBrush(Color.FromRgb(149, 184, 204))
-            center_host = Grid()
-            center_host.HorizontalAlignment = HorizontalAlignment.Stretch
             self._bulk_mesh_ctr = {}
-            mesh_bulk = self._build_unificado_bulk_mesh_panel(
-                self._bulk_mesh_ctr, fg_hi, fg_lo,
-            )
-            self._bulk_mesh_panel_host = mesh_bulk
-            if od:
-                on_m = self._malla_activo_cfg(_wall_id_int(od[0]))
-                self._sync_bulk_malla_activo_toggle(on_m, animate=False)
-                self._set_bulk_mesh_panel_enabled(on_m)
-            center_host.Children.Add(mesh_bulk)
+            self._bulk_mesh_panel_host = None
             self._bulk_cor_panel_host = None
-            Grid.SetColumn(center_host, 0)
-            outer.Children.Add(center_host)
+            try:
+                brd_mal = self._win.FindName(u"BrdCardMallas")
+                if brd_mal is not None:
+                    brd_mal.Visibility = Visibility.Collapsed
+            except Exception:
+                pass
             root.Children.Add(outer)
             try:
                 root.ClearValue(FrameworkElement.WidthProperty)
@@ -15944,10 +16471,6 @@ class ArmadoMurosPreviewWindow(object):
                 pass
             try:
                 self._update_unificado_bulk_strip_visibility()
-            except Exception:
-                pass
-            try:
-                self._rehost_bulk_panels_to_machones_cards()
             except Exception:
                 pass
             try:
@@ -15994,7 +16517,225 @@ class ArmadoMurosPreviewWindow(object):
         except Exception:
             pass
 
+    def _finalize_mallas_machones_shell(self):
+        """Chrome post-montaje: card Mallas activa, Inicio/Término ocultos."""
+        from System.Windows import Visibility, Thickness
+        from System.Windows.Media import SolidColorBrush, Color
+
+        if self._win is None:
+            return
+        for brd_name in (u"BrdCardInicio", u"BrdCardFin"):
+            brd = self._win.FindName(brd_name)
+            if brd is not None:
+                try:
+                    brd.Visibility = Visibility.Collapsed
+                except Exception:
+                    pass
+        brd_mal = self._win.FindName(u"BrdCardMallas")
+        if brd_mal is not None:
+            try:
+                brd_mal.Visibility = Visibility.Visible
+                brd_mal.Opacity = 1.0
+                brd_mal.BorderThickness = Thickness(1.5)
+                brd_mal.BorderBrush = SolidColorBrush(
+                    Color.FromRgb(0x5B, 0xC0, 0xDE),
+                )
+            except Exception:
+                pass
+        try:
+            self._apply_machones_card_body_visibility()
+        except Exception:
+            pass
+        try:
+            host = self._win.FindName(u"PnlCardMallasCtrls")
+            if host is not None:
+                host.Visibility = Visibility.Visible
+        except Exception:
+            pass
+        try:
+            self._wire_mallas_only_phase_card()
+        except Exception:
+            pass
+        try:
+            self._refresh_mallas_selection_chip()
+        except Exception:
+            pass
+        try:
+            self._ensure_machones_elevation_host()
+            self._redraw_machones_elevation()
+        except Exception:
+            pass
+
+    def _wire_mallas_only_phase_card(self):
+        """Checkbox de fase Mallas (on/off) sin stepper de Inicio/Término."""
+        if self._win is None or not self._uses_mallas_machones_shell():
+            return
+        if getattr(self, u"_mallas_only_card_wired", False):
+            return
+        try:
+            from System.Windows import RoutedEventHandler as _REH
+        except Exception:
+            return
+        chk = self._win.FindName(u"ChkPhaseMallas")
+        if chk is None:
+            return
+
+        def _on_chk(s, e):
+            if getattr(self, u"_suppress_phase_enabled_chk", False):
+                return
+            try:
+                on = bool(s.IsChecked)
+            except Exception:
+                on = True
+            self._set_phase_enabled(
+                UI_PHASE_MALLAS, on, sync_domain=True, animate=True,
+            )
+            try:
+                self._set_bulk_mesh_panel_enabled(on)
+            except Exception:
+                pass
+            try:
+                self._redraw_machones_elevation()
+            except Exception:
+                pass
+
+        try:
+            chk.Checked += _REH(_on_chk)
+            chk.Unchecked += _REH(_on_chk)
+        except Exception:
+            pass
+        self._suppress_phase_enabled_chk = True
+        try:
+            chk.IsChecked = self._phase_is_enabled(UI_PHASE_MALLAS)
+        except Exception:
+            pass
+        finally:
+            self._suppress_phase_enabled_chk = False
+        self._mallas_only_card_wired = True
+
+    def _build_mallas_machones_panels(self, defer_draw=False):
+        """Monta controles malla ocultos + rail + elevación Machones (solo mallas)."""
+        from System.Windows.Controls import StackPanel, Orientation
+        from System.Windows import Visibility, HorizontalAlignment
+        from System.Windows.Media import SolidColorBrush, Color
+
+        try:
+            self._ensure_terminacion_cabeza_seeded()
+        except Exception:
+            pass
+
+        root = self._win.FindName(u"GrdListaMuros")
+        if root is None:
+            return
+
+        try:
+            root.Children.Clear()
+            root.RowDefinitions.Clear()
+            root.ColumnDefinitions.Clear()
+        except Exception:
+            pass
+        self._machones_elev_canvas = None
+        self._controls_by_wall_id = {}
+        self._malla_ui_by_wall_id = {}
+        self._canvas_by_wall_id = {}
+        self._right_by_wall_id = {}
+        self._prev_wrap_by_wall_id = {}
+        self._row_grid_by_wall_id = {}
+        self._row_definitions = []
+        self._master_grid = root
+        self._cabezal_stack_grid = None
+
+        # Controles por muro fuera del canvas (Clear de elevación no los borra).
+        hidden_host = getattr(self, u"_mallas_hidden_ctrls_host", None)
+        if hidden_host is None:
+            hidden_host = StackPanel()
+            hidden_host.Orientation = Orientation.Vertical
+            hidden_host.Visibility = Visibility.Collapsed
+            self._mallas_hidden_ctrls_host = hidden_host
+            rail = self._win.FindName(u"PnlSectionRail")
+            if rail is not None:
+                try:
+                    rail.Children.Add(hidden_host)
+                except Exception:
+                    pass
+        try:
+            hidden_host.Children.Clear()
+        except Exception:
+            pass
+
+        od = getattr(self, u"_walls_display_order", None) or []
+        for wall in od:
+            try:
+                wid = _wall_id_int(wall)
+            except Exception:
+                continue
+            ctr = {}
+            block = self._build_machones_style_mesh_params(
+                ctr, u"ct_md", u"ct_ms", u"ct_id", u"ct_is",
+            )
+            try:
+                hidden_host.Children.Add(block)
+            except Exception:
+                pass
+            self._controls_by_wall_id[wid] = ctr
+            try:
+                self._apply_malla_sic_defaults_for_wall(wall, ctr)
+            except Exception:
+                pass
+
+        # Bulk en card Mallas (live-edit + aplicar a todos).
+        fg_hi = SolidColorBrush(Color.FromRgb(232, 244, 248))
+        fg_lo = SolidColorBrush(Color.FromRgb(149, 184, 204))
+        self._bulk_mesh_ctr = {}
+        mesh_bulk = self._build_unificado_bulk_mesh_panel(
+            self._bulk_mesh_ctr, fg_hi, fg_lo,
+        )
+        self._bulk_mesh_panel_host = mesh_bulk
+        host_mal = self._win.FindName(u"PnlCardMallasCtrls")
+        if host_mal is not None:
+            try:
+                host_mal.Children.Clear()
+            except Exception:
+                pass
+            try:
+                host_mal.Children.Add(mesh_bulk)
+                host_mal.Visibility = Visibility.Visible
+            except Exception:
+                pass
+
+        if od:
+            try:
+                on_m = self._malla_activo_cfg(_wall_id_int(od[0]))
+                self._sync_bulk_malla_activo_toggle(on_m, animate=False)
+                self._set_bulk_mesh_panel_enabled(on_m)
+            except Exception:
+                pass
+            try:
+                walls = getattr(self, u"walls_ordered", None) or []
+                if walls:
+                    self._set_machones_wall_selection(0, [0], reset_anchor=True)
+                    self._sync_bulk_mesh_from_primary_wall()
+            except Exception:
+                pass
+
+        try:
+            bdr_hdr = self._win.FindName(u"BdrColumnHeaders")
+            if bdr_hdr is not None:
+                bdr_hdr.Visibility = Visibility.Collapsed
+        except Exception:
+            pass
+
+        try:
+            self._ensure_machones_elevation_host()
+            if not defer_draw:
+                self._redraw_machones_elevation()
+        except Exception:
+            pass
+
     def _build_wall_parameter_panels(self, defer_draw=False):
+        if self._uses_mallas_machones_shell():
+            self._build_mallas_machones_panels(defer_draw=defer_draw)
+            return
         from System.Windows.Controls import (
             Border,
             StackPanel,
@@ -16269,20 +17010,7 @@ class ArmadoMurosPreviewWindow(object):
                     elev_host.VerticalAlignment = VerticalAlignment.Stretch
                     elev_host.HorizontalAlignment = HorizontalAlignment.Stretch
 
-                    mesh_overlay = self._wrap_mesh_settings_card(
-                        _mesh_params_block(
-                            u"", u"Vertical", u"Horizontal",
-                            u"ct_md", u"ct_ms", u"ct_id", u"ct_is",
-                            ctr, wall_id=wid,
-                        ),
-                        title=u"Malla ext. + int.",
-                        compact=True,
-                    )
-
                     elev_host.Children.Add(cv)
-                    elev_host.Children.Add(mesh_overlay)
-                    wall_ui[u"mesh_overlay"] = mesh_overlay
-                    self._register_malla_ui_targets(wid, [mesh_overlay])
                     chev_cv = Canvas()
                     # Sin Background el canvas no bloquea clics en zonas vacías;
                     # chevrones y selectores pie (hijos con Fill) siguen interactivos.
@@ -16578,7 +17306,13 @@ class ArmadoMurosPreviewWindow(object):
         except Exception:
             n_fund = 0
         fund_note = u" Fundación: {}.".format(n_fund) if n_fund else u""
-        tb.Text = u"{0} muro(s). Ids: {1}.{2}".format(n, ids + suf, fund_note)
+        if self._uses_mallas_machones_shell():
+            tb.Text = (
+                u"{0} muro(s). Ids: {1}.{2} "
+                u"Clic / Ctrl+clic / Shift+clic en elevación para seleccionar."
+            ).format(n, ids + suf, fund_note)
+        else:
+            tb.Text = u"{0} muro(s). Ids: {1}.{2}".format(n, ids + suf, fund_note)
 
     def _apply_cabezal_stepper_enabled(self, step, enabled):
         if step is None:
@@ -17899,6 +18633,8 @@ class ArmadoMurosPreviewWindow(object):
             u"v_spacing_mm": 200.0,
             u"h_diam_mm": 10.0,
             u"h_spacing_mm": 200.0,
+            u"terminacion_cabeza": u"",
+            u"terminacion_cabeza_short": u"",
         }
         ctr = self._controls_by_wall_id.get(wid)
         if not ctr:
@@ -17913,6 +18649,13 @@ class ArmadoMurosPreviewWindow(object):
             cfg[u"h_spacing_mm"] = float(hs)
         except Exception:
             pass
+        if self._uses_mallas_machones_shell():
+            try:
+                mode = self._terminacion_cabeza_cfg(wid)
+                cfg[u"terminacion_cabeza"] = mode
+                cfg[u"terminacion_cabeza_short"] = self._terminacion_cabeza_short(mode)
+            except Exception:
+                pass
         return cfg
 
     def _build_mesh_by_wall_for_elevation(self):
@@ -17931,6 +18674,8 @@ class ArmadoMurosPreviewWindow(object):
                     u"v_spacing_mm": 200.0,
                     u"h_diam_mm": 10.0,
                     u"h_spacing_mm": 200.0,
+                    u"terminacion_cabeza": u"",
+                    u"terminacion_cabeza_short": u"",
                 })
                 continue
             out.append(self._gather_mesh_elev_cfg_for_wall_id(wid))
@@ -18072,7 +18817,10 @@ class ArmadoMurosPreviewWindow(object):
                 cfg_by_segment=None,
                 viewport_w=vw,
                 viewport_h=vh,
-                on_draw_extremo_marks=self._draw_machones_extremo_marks,
+                on_draw_extremo_marks=(
+                    None if self._uses_mallas_machones_shell()
+                    else self._draw_machones_extremo_marks
+                ),
                 segments_inicio=segs_ini,
                 selected_segment_inicio=sel_ini,
                 on_select_segment_inicio=self._on_machones_select_segment_inicio,
@@ -18081,8 +18829,14 @@ class ArmadoMurosPreviewWindow(object):
                 on_select_segment_fin=self._on_machones_select_segment_fin,
                 troceo_modes_inicio=modes_ini,
                 troceo_modes_fin=modes_fin,
-                on_cycle_wall_inicio=self._on_machones_cycle_wall_inicio,
-                on_cycle_wall_fin=self._on_machones_cycle_wall_fin,
+                on_cycle_wall_inicio=(
+                    None if self._uses_mallas_machones_shell()
+                    else self._on_machones_cycle_wall_inicio
+                ),
+                on_cycle_wall_fin=(
+                    None if self._uses_mallas_machones_shell()
+                    else self._on_machones_cycle_wall_fin
+                ),
                 active_extremo=active_ex,
                 extremo_left=ex_left,
                 extremo_right=ex_right,
@@ -18091,6 +18845,8 @@ class ArmadoMurosPreviewWindow(object):
                 selected_segments=list(sel_segs),
                 selected_segments_inicio=list(sels_ini),
                 selected_segments_fin=list(sels_fin),
+                show_tramo_bands=not self._uses_mallas_machones_shell(),
+                show_pie_controls=not self._uses_mallas_machones_shell(),
             )
         except Exception:
             # Un reintento tras recrear host (p. ej. canvas huérfano post-Clear).
@@ -18128,6 +18884,8 @@ class ArmadoMurosPreviewWindow(object):
             params_dict["interior_minor"] = params_dict["exterior_minor"]
             layer_active_dict["interior_major"] = True
             layer_active_dict["interior_minor"] = True
+            if self._uses_mallas_machones_shell():
+                params_dict[u"terminacion_cabeza"] = self._terminacion_cabeza_cfg(wid)
             return params_dict, layer_active_dict
 
         # Contención (major = vertical): Vertical→major, Horizontal→minor.
@@ -18142,6 +18900,8 @@ class ArmadoMurosPreviewWindow(object):
             params_dict[lk] = (bid, esp_txt)
             layer_active_dict[lk] = True
 
+        if self._uses_mallas_machones_shell():
+            params_dict[u"terminacion_cabeza"] = self._terminacion_cabeza_cfg(wid)
         return params_dict, layer_active_dict
 
     def _redistribute_row_heights_and_redraw(self):
@@ -18149,7 +18909,9 @@ class ArmadoMurosPreviewWindow(object):
 
         if self._win is None:
             return
-        if getattr(self, u"_machones_rail_cards", False) and self._is_unificado_mode():
+        if getattr(self, u"_machones_rail_cards", False) and (
+            self._is_unificado_mode() or self._uses_mallas_machones_shell()
+        ):
             try:
                 self._ensure_machones_elevation_host()
                 self._redraw_machones_elevation()
@@ -19794,7 +20556,7 @@ class ArmadoMurosPreviewWindow(object):
                 elif self._is_cabezal_mode():
                     titulo = u"Armado muros cabezal — Error"
                 else:
-                    titulo = u"Armado muros mallas — Error"
+                    titulo = u"Arainco: Mallas en muros — Error"
                 TaskDialog.Show(titulo, unicode(ex_ra))
             except Exception:
                 try:
@@ -19831,7 +20593,7 @@ class ArmadoMurosPreviewWindow(object):
         if not self._any_phase_enabled():
             TaskDialog.Show(
                 u"Arainco: Armado Muros v3",
-                u"Activa al menos una fase (Inicio, Final, Coronamiento o Mallas).",
+                u"Activa al menos una fase (Inicio o Final).",
             )
             self._set_estado(u"Ninguna fase activa.")
             return
@@ -19884,48 +20646,19 @@ class ArmadoMurosPreviewWindow(object):
                 return
             cabezal_por[wid] = cabezal.cabezal_copy_muro_config(cfg_c)
 
+        # Mallas fuera de V3 (herramienta dedicada «Mallas en muros»).
         params_por = {}
+        malla_activo = {}
         for wall in self.walls_ordered:
             wid = _wall_id_int(wall)
-            ctr = self._controls_by_wall_id.get(wid)
-            if not ctr:
-                TaskDialog.Show(
-                    u"Arainco: Armado Muros v3",
-                    u"Panel interno incompleto (muro {}).".format(wid),
-                )
-                return
-            pd, ld = self._gather_params_for_wall_id(wid)
-            if self._malla_activo_cfg(wid):
-                for lk in (
-                    u"exterior_major", u"exterior_minor",
-                    u"interior_major", u"interior_minor",
-                ):
-                    bid = pd.get(lk, (ElementId.InvalidElementId, u""))[0]
-                    if bid is None or bid == ElementId.InvalidElementId:
-                        TaskDialog.Show(
-                            u"Arainco: Armado Muros v3",
-                            u"Muro {}: elige barra en malla ({}).".format(wid, lk),
-                        )
-                        self._set_estado(u"Falta diámetro malla en muro {}.".format(wid))
-                        return
-            params_por[wid] = (pd, ld)
-
-        tid = geo._get_default_area_reinforcement_type_id(self.doc)
-        if not tid or tid == ElementId.InvalidElementId:
-            TaskDialog.Show(
-                u"Arainco: Armado Muros v3",
-                u"No hay Area Reinforcement Type en el proyecto.",
-            )
-            self._set_estado(u"Sin tipo AR.")
-            return
+            params_por[wid] = ({}, {})
+            malla_activo[wid] = False
 
         self._crear_handler.walls = list(self.walls_ordered)
         self._crear_handler.params_por_muro_id = params_por
         self._crear_handler.cabezal_por_muro_id = cabezal_por
-        self._crear_handler.area_reinforcement_type_id = tid
-        self._crear_handler.malla_activo_por_muro_id = (
-            self._malla_activo_por_muro_id_dict()
-        )
+        self._crear_handler.area_reinforcement_type_id = ElementId.InvalidElementId
+        self._crear_handler.malla_activo_por_muro_id = malla_activo
         # Coronamiento fuera de V3 (herramienta dedicada).
         self._crear_handler.coronamiento_cfg = {u"activo": False}
         self._crear_handler.coronamiento_por_muro_id = None
@@ -20043,9 +20776,20 @@ class ArmadoMurosPreviewWindow(object):
 
     def _on_crear_mallas_clicked(self):
         if not self.walls_ordered:
-            TaskDialog.Show("Armado muros", u"No hay muros.")
+            TaskDialog.Show(u"Arainco: Mallas en muros", u"No hay muros.")
             self._set_estado(u"No hay muros cargados.")
             return
+
+        # Solo volcar el bulk a la selección actual (edits sin sincronizar).
+        # No aplicar a todos: cada muro conserva su Ø/@ y terminación de cabeza.
+        try:
+            _pri, sel = self._normalize_machones_wall_selection()
+            if sel:
+                self._apply_bulk_mesh_to_wall_indices(
+                    sel, set_status=False, copy_terminacion=False,
+                )
+        except Exception:
+            pass
 
         params_por = {}
 
@@ -20053,7 +20797,10 @@ class ArmadoMurosPreviewWindow(object):
             wid = _wall_id_int(wall)
             ctr = self._controls_by_wall_id.get(wid)
             if not ctr:
-                TaskDialog.Show("Armado muros", u"Panel interno incompleto (muro {}).".format(wid))
+                TaskDialog.Show(
+                    u"Arainco: Mallas en muros",
+                    u"Panel interno incompleto (muro {}).".format(wid),
+                )
                 return
 
             pd, ld = self._gather_params_for_wall_id(wid)
@@ -20064,12 +20811,18 @@ class ArmadoMurosPreviewWindow(object):
                 ]
                 bad = []
                 for lk in need:
-                    bid = pd.get(lk, (ElementId.InvalidElementId, ""))[0]
+                    pair = pd.get(lk)
+                    bid = None
+                    try:
+                        if isinstance(pair, (tuple, list)) and len(pair) >= 1:
+                            bid = pair[0]
+                    except Exception:
+                        bid = None
                     if bid is None or bid == ElementId.InvalidElementId:
                         bad.append(lk)
                 if bad:
                     TaskDialog.Show(
-                        "Armado muros",
+                        u"Arainco: Mallas en muros",
                         u"Muro {}: elige barra en capas activas.".format(wid),
                     )
                     self._set_estado(u"Falta diámetro en muro {}.".format(wid))
@@ -20092,7 +20845,7 @@ class ArmadoMurosPreviewWindow(object):
 
         if not tid or tid == ElementId.InvalidElementId:
             TaskDialog.Show(
-                "Armado muros",
+                u"Arainco: Mallas en muros",
                 u"No hay Area Reinforcement Type en el proyecto.",
             )
             self._set_estado(u"Sin tipo AR.")
@@ -20164,8 +20917,8 @@ class ArmadoMurosPreviewWindow(object):
             pass
 
         try:
-            if self._is_unificado_mode():
-                # V3 unificado: owner + siempre maximizado (camino Machones; no snap 1 monitor).
+            if self._is_unificado_mode() or self._uses_mallas_machones_shell():
+                # Elevación V3: owner + maximizado (como Machones).
                 self._attach_revit_owner()
                 self._maximize_window_like_machones()
             else:
@@ -20228,13 +20981,13 @@ def _show_armado_muros_preview_impl(revit, uidoc, walls_list, mode):
             try:
                 from System.Windows import WindowState as _WS
 
-                if mode == UI_MODE_UNIFICADO:
+                if mode == UI_MODE_UNIFICADO or mode == UI_MODE_MALLAS:
                     w.WindowState = _WS.Maximized
                 elif w.WindowState == _WS.Minimized:
                     w.WindowState = _WS.Normal
             except Exception:
                 pass
-            if mode != UI_MODE_UNIFICADO:
+            if mode not in (UI_MODE_UNIFICADO, UI_MODE_MALLAS):
                 try:
                     _position_preview_window(
                         w,
@@ -20249,7 +21002,7 @@ def _show_armado_muros_preview_impl(revit, uidoc, walls_list, mode):
             elif mode == UI_MODE_UNIFICADO:
                 titulo = u"Arainco: Armado Muros v3"
             else:
-                titulo = u"Armado muros mallas"
+                titulo = u"Arainco: Mallas en muros"
             TaskDialog.Show(
                 titulo,
                 u"La herramienta ya está en ejecución.",

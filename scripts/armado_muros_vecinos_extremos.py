@@ -3,7 +3,9 @@
 Muros vecinos en extremos — criterio Armado muros nodo (``wall_node_section``).
 
 Expone detección de muros laterales en inicio/fin de ``LocationCurve`` para el boceto
-de Area Reinforcement en Mallas muros lineales. No incluye suelos ni lógica de barras.
+de Area Reinforcement en Mallas muros lineales.
+
+Solo ``Wall`` (joins / intersección / bbox). No barre ``Floor`` ni forjados.
 """
 
 from __future__ import print_function
@@ -100,8 +102,9 @@ def muros_vecinos_en_extremos(doc, host):
     """
     Muros en encuentro en los extremos del ``host`` (L, T, esquina, join).
 
-    Mismo criterio que ``_elementos_para_union`` en Armado muros nodo, filtrado a
-    ``Wall`` (sin forjados ni fundaciones).
+    Solo categoría ``Wall``: joins + intersección + bbox. **No** consulta
+    ``Floor`` / forjados (evita tocar losas fuera de la selección). La fundación
+    de pie se resuelve aparte en embed vertical.
 
     :returns: lista de instancias ``Wall`` (puede estar vacía).
     """
@@ -125,40 +128,94 @@ def muros_vecinos_en_extremos(doc, host):
         return []
 
     try:
-        elementos, _tol = wns._elementos_para_union(
-            doc, host, wall_line, section_plane=None,
+        from Autodesk.Revit.DB import (
+            BoundingBoxIntersectsFilter,
+            ElementId,
+            ElementIntersectsElementFilter,
+            FilteredElementCollector,
+            UnitTypeId,
+            UnitUtils,
         )
     except Exception:
         return []
 
-    host_i = None
     try:
-        host_i = wns._element_id_to_int(host.Id)
+        tol_end = UnitUtils.ConvertToInternalUnits(80.0, UnitTypeId.Millimeters)
+        tol_z = UnitUtils.ConvertToInternalUnits(40.0, UnitTypeId.Millimeters)
+        pad_bb = UnitUtils.ConvertToInternalUnits(1.8, UnitTypeId.Meters)
     except Exception:
-        pass
+        tol_end = 0.25
+        tol_z = 0.12
+        pad_bb = 6.0
 
     out = []
     seen = set()
-    id_list = []
-    for el in elementos or []:
-        if el is None or not isinstance(el, Wall):
-            continue
+    host_i = hid
+
+    def _try_add(w2):
+        if w2 is None or not isinstance(w2, Wall):
+            return
         try:
-            eid = wns._element_id_to_int(el.Id)
+            eid = wns._element_id_to_int(w2.Id)
         except Exception:
             eid = None
         if eid is not None and host_i is not None and eid == host_i:
-            continue
+            return
+        if eid is not None and eid in seen:
+            return
+        if not wns._es_muro_lateral_en_extremos(doc, host, wall_line, w2, tol_end):
+            return
+        if wns._muro_apilado_bajo_muro_principal(host, w2, tol_z):
+            return
+        if wns._muro_apilado_sobre_muro_principal(host, w2, tol_z):
+            return
         if eid is not None:
-            if eid in seen:
-                continue
             seen.add(eid)
-        out.append(el)
+        out.append(w2)
+
+    # 1) Solo muros unidos por Join Geometry (sin barrer Floor)
+    try:
+        for jid in wns._coleccion_ids_unidas(doc, host):
+            el = doc.GetElement(jid)
+            if el is not None and isinstance(el, Wall):
+                _try_add(el)
+    except Exception:
+        pass
+
+    # 2) Muros que intersectan el host
+    try:
+        xf = ElementIntersectsElementFilter(host)
+        for eid in (
+            FilteredElementCollector(doc)
+            .OfClass(Wall)
+            .WherePasses(xf)
+            .ToElementIds()
+        ):
+            _try_add(doc.GetElement(eid))
+    except Exception:
+        pass
+
+    # 3) Muros cercanos por bbox inflado
+    try:
+        olh = wns._outline_host_inflado(host, pad_bb)
+        if olh is not None:
+            bf = BoundingBoxIntersectsFilter(olh)
+            for eid in (
+                FilteredElementCollector(doc)
+                .OfClass(Wall)
+                .WherePasses(bf)
+                .ToElementIds()
+            ):
+                _try_add(doc.GetElement(eid))
+    except Exception:
+        pass
+
+    id_list = []
+    for w in out:
         try:
-            id_list.append(el.Id)
+            id_list.append(w.Id)
         except Exception:
             pass
-
     if hid is not None:
         _MUROS_VECINOS_CACHE[cache_key] = id_list
     return out

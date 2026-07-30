@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Arainco: Armado Muros v3 — entrada pyRevit fina.
+"""Arainco: Mallas en muros — entrada pyRevit fina.
 
-Lógica en ``BIMTools.extension/scripts/`` (armado_muros_run / lineales / preview_ui).
+Lógica en ``BIMTools.extension/scripts/`` (mallas_en_muros_run).
+Motor de creación: ``armado_muros_lineales`` / preview_ui modo mallas (V3).
 """
 
-__title__ = "Armado\nMuros v3"
+__title__ = "Mallas\nen muros"
 __author__ = "BIMTools"
 __doc__ = (
-    "Armado Muros v3: UI estilo Machones (Inicio, Término). "
-    "Misma lógica que v2. Solo muro tradicional. "
-    "Mallas: herramienta dedicada «Mallas en muros»."
+    "Area Reinforcement ext.+int. en muros seleccionados. "
+    "Elevación apilada estilo Armado Muros v3; sin fases Inicio/Término."
 )
 
 import os
@@ -21,8 +21,8 @@ import clr
 clr.AddReference("RevitAPIUI")
 from Autodesk.Revit.UI import TaskDialog
 
-_DIALOG_TITLE = u"Arainco: Armado Muros v3"
-_MAIN_FILE = u"armado_muros_run.py"
+_DIALOG_TITLE = u"Arainco: Mallas en muros"
+_MAIN_FILE = u"mallas_en_muros_run.py"
 
 _pushbutton_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -40,7 +40,6 @@ def _find_extension_scripts(start_dir):
     return None
 
 
-# --- Validación acceso corporativo (RECURSOS COMPARTIDOS) ---
 import os as _os_ac
 import sys as _sys_ac
 
@@ -77,14 +76,12 @@ if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
         pass
 
     try:
-        # Forzar recarga del bootstrap: si queda en sys.modules, el fingerprint
-        # viejo no ve cambios en scripts/.
-        if u"armado_muros_run" in sys.modules:
+        if u"mallas_en_muros_run" in sys.modules:
             try:
-                del sys.modules[u"armado_muros_run"]
+                del sys.modules[u"mallas_en_muros_run"]
             except Exception:
                 pass
-        from armado_muros_run import run_pyrevit
+        from mallas_en_muros_run import run_pyrevit
 
         run_pyrevit(__revit__)
     except Exception:
@@ -96,7 +93,7 @@ if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
         try:
             TaskDialog.Show(
                 _DIALOG_TITLE,
-                u"Error al iniciar Armado Muros v3:\n\n{0}".format(_err[-1800:]),
+                u"Error al iniciar Mallas en muros:\n\n{0}".format(_err[-1800:]),
             )
         except Exception:
             pass

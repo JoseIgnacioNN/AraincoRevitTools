@@ -5,6 +5,10 @@ Transacciones anidables para Armado Muros v3.
 Si el documento ya está en una Transaction abierta, abre ``SubTransaction``
 (rollback local barato). Si no, abre ``Transaction`` completa.
 
+``batch_mutation_scope`` agrupa muchas mutaciones en una sola SubTransaction/
+Transaction; mientras está activo, ``TxnScope`` anidados son no-op (evita
+O(rebars) SubTransactions en el post-proceso de mallas).
+
 Uso típico: envolver un lote en una Transaction y dejar que las operaciones
 por rebar usen estas helpers → un solo commit de documento.
 
@@ -25,6 +29,11 @@ from Autodesk.Revit.DB import (
 
 _KIND_TXN = u"txn"
 _KIND_SUB = u"sub"
+_KIND_NOOP = u"noop"
+
+# Profundidad de ``batch_mutation_scope``: si > 0, ``TxnScope`` / ``start_transaction``
+# no abren SubTransaction anidada (mutaciones van al batch abierto).
+_BATCH_MUTATION_DEPTH = 0
 
 _OUTSIDE_HOST_IDS = None
 
@@ -173,10 +182,15 @@ def start_transaction(doc, name):
     """
     Inicia Transaction o SubTransaction.
 
+    Bajo ``batch_mutation_scope`` (doc ya modificable): retorna handle no-op
+    para no anidar SubTransactions por mutación.
+
     :returns: handle ``(kind, obj)`` o ``None`` si no se pudo iniciar.
     """
     if doc is None:
         return None
+    if _BATCH_MUTATION_DEPTH > 0 and doc_is_modifiable(doc):
+        return (_KIND_NOOP, None)
     if doc_is_modifiable(doc):
         try:
             st = SubTransaction(doc)
@@ -200,6 +214,8 @@ def commit_transaction(handle):
         kind, obj = handle
     except Exception:
         return
+    if kind == _KIND_NOOP:
+        return
     try:
         if kind == _KIND_SUB:
             obj.Commit()
@@ -217,6 +233,8 @@ def rollback_transaction(handle):
         kind, obj = handle
     except Exception:
         return
+    if kind == _KIND_NOOP:
+        return
     try:
         if kind == _KIND_SUB:
             obj.RollBack()
@@ -225,6 +243,70 @@ def rollback_transaction(handle):
                 obj.RollBack()
     except Exception:
         pass
+
+
+class _BatchMutationScope(object):
+    """
+    Una sola SubTransaction/Transaction para un bloque de mutaciones.
+
+    Mientras está activo, ``TxnScope`` anidados son no-op (sin SubTxn por barra).
+    """
+
+    def __init__(self, doc, name):
+        self._doc = doc
+        self._name = name
+        self._handle = None
+        self._owns_handle = False
+        self._entered = False
+
+    def __enter__(self):
+        global _BATCH_MUTATION_DEPTH
+        if _BATCH_MUTATION_DEPTH > 0:
+            # Ya hay un batch externo: solo anidar contador.
+            _BATCH_MUTATION_DEPTH += 1
+            self._entered = True
+            return self
+        # Abrir batch real con profundidad 0 (start_transaction no ve batch aún).
+        self._handle = start_transaction(self._doc, self._name)
+        self._owns_handle = self._handle is not None
+        _BATCH_MUTATION_DEPTH += 1
+        self._entered = True
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        global _BATCH_MUTATION_DEPTH
+        if not self._entered:
+            return False
+        try:
+            if self._owns_handle:
+                if exc_type is not None:
+                    rollback_transaction(self._handle)
+                else:
+                    try:
+                        commit_transaction(self._handle)
+                    except Exception:
+                        rollback_transaction(self._handle)
+                        raise
+        finally:
+            if _BATCH_MUTATION_DEPTH > 0:
+                _BATCH_MUTATION_DEPTH -= 1
+            self._handle = None
+            self._owns_handle = False
+            self._entered = False
+        return False
+
+
+def batch_mutation_scope(doc, name):
+    """
+    Context manager: una SubTransaction (o Transaction) para muchas mutaciones.
+
+    Uso::
+
+        with batch_mutation_scope(doc, u\"Arainco: …\"):
+            # TxnScope internos no abren SubTxn adicionales
+            ...
+    """
+    return _BatchMutationScope(doc, name)
 
 
 def run_in_transaction(doc, name, fn):
@@ -259,6 +341,8 @@ class TxnScope(object):
     Si el documento ya es modificable (txn padre abierta), abre SubTransaction;
     si no, abre Transaction de documento. Compatible con el patrón API
     ``Commit`` / ``RollBack`` / ``HasStarted`` de ``Transaction``.
+
+    Bajo ``batch_mutation_scope``, el handle es no-op (sin SubTxn anidada).
     """
 
     def __init__(self, doc, name):
