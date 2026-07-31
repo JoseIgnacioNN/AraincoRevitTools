@@ -17,11 +17,16 @@ PATA_MIN_MM = 100.0
 CUT_HIT_MM = 180.0
 STAGGER_MARGIN_MM = 300.0  # margen extremo al clampar cortes desfasados
 # Desfase A-B (capas impares): delta = L_traslape (solo traslape; no espejo L−c)
-LAYER_CLEAR_MM = 20.0  # separación libre entre ejes de capas sucesivas
+# Separación fija entre ejes (centerlines) de capas sucesivas en el tramo mayor.
+LAYER_CENTERLINE_SPACING_MM = 50.0
 
 DIAMS_MM = (8, 10, 12, 16, 18, 20, 22, 25)
 N_BARS_OPTS = (2, 3, 4)
 CAPAS_OPTS = (1, 2, 3)
+
+# Dosificación hormigón (mismas claves que Wall Foundation / bimtools_rebar_hook_lengths)
+DOSIFICACION_HORMIGON_OPCIONES = (u"G25", u"G35", u"G45")
+DOSIFICACION_HORMIGON_DEFAULT = u"G25"
 
 # Misma clave que 56_DividirRebarPuntoTraslape (dividir_rebar_punto_geom)
 LAP_MODE_SYMMETRIC = u"symmetric"
@@ -83,18 +88,38 @@ def clamp_n_capas(n):
     return max(1, min(3, v))
 
 
-def traslape_mm_from_diam(diam_mm):
+def normalize_concrete_grade(concrete_grade):
+    """``G25`` / ``G35`` / ``G45``; otro valor → default G25."""
+    try:
+        s = u"{0}".format(concrete_grade or u"").strip().upper()
+    except Exception:
+        s = u""
+    if s in DOSIFICACION_HORMIGON_OPCIONES:
+        return s
+    return DOSIFICACION_HORMIGON_DEFAULT
+
+
+def traslape_mm_from_diam(diam_mm, concrete_grade=None):
+    """
+    Traslape / empotro (mm) por Ø y dosificación.
+
+    Usa tablas de ``bimtools_rebar_hook_lengths`` (G25/G35/G45 o legacy si grade
+    no reconocido internamente). Respaldo: tabla local base.
+    """
     d = clamp_diam_mm(diam_mm)
-    if d in _TRASLAPE_BY_DIAM:
-        return float(_TRASLAPE_BY_DIAM[d])
+    g = None
+    if concrete_grade is not None:
+        g = normalize_concrete_grade(concrete_grade)
     try:
         from bimtools_rebar_hook_lengths import traslape_mm_from_nominal_diameter_mm
 
-        t = traslape_mm_from_nominal_diameter_mm(d)
+        t = traslape_mm_from_nominal_diameter_mm(d, g)
         if t is not None and float(t) > 0:
             return float(t)
     except Exception:
         pass
+    if d in _TRASLAPE_BY_DIAM:
+        return float(_TRASLAPE_BY_DIAM[d])
     return 1140.0
 
 
@@ -124,21 +149,23 @@ def estimate_bar_lengths_mm(largo_muro_mm, espesor_mm):
     }
 
 
-def empotramiento_mm_from_diam(diam_mm):
-    """Empotramiento voladizo V3 ≈ tabla de traslape por Ø."""
-    return traslape_mm_from_diam(diam_mm)
+def empotramiento_mm_from_diam(diam_mm, concrete_grade=None):
+    """Empotramiento voladizo V3 ≈ tabla de traslape por Ø y dosificación."""
+    return traslape_mm_from_diam(diam_mm, concrete_grade)
 
 
-def estimate_empotrado_bar_lengths_mm(overhang_mm, espesor_mm, diam_mm=16):
+def estimate_empotrado_bar_lengths_mm(
+    overhang_mm, espesor_mm, diam_mm=16, concrete_grade=None
+):
     """
-    Desarrollado Empotrado (V3 voladizo): empotro(Ø) + voladizo libre + 1 pata L.
+    Desarrollado Empotrado (V3 voladizo): empotro(Ø, grado) + voladizo libre + 1 pata L.
 
     Returns:
         dict: main_mm (horiz), pata_mm, developed_mm, exceeds_12m,
               embed_mm, overhang_mm, geom_mode
     """
     overhang = ceil10_mm(overhang_mm)
-    embed = ceil10_mm(empotramiento_mm_from_diam(diam_mm))
+    embed = ceil10_mm(empotramiento_mm_from_diam(diam_mm, concrete_grade))
     pata = pata_mm_from_espesor(espesor_mm)
     main_mm = overhang + embed
     developed = main_mm + pata
@@ -216,8 +243,8 @@ def cover_axis_offset_mm_for_layer(layers, layer_index):
     Offset desde cara superior hasta el eje de la capa ``layer_index``.
 
     Capa 0: cover + Ø0/2.
-    Capa k: cover + Ø0/2 + Σ(Ø_i + clear) + Øk/2 … equivalente acumulando
-    centros: c0 = cover+d0/2; c_k = c_{k-1} + d_{k-1}/2 + clear + d_k/2.
+    Capas sucesivas: + ``LAYER_CENTERLINE_SPACING_MM`` (50 mm) entre ejes,
+    independiente del diámetro.
     """
     if not layers:
         return COVER_SUPERIOR_MM + 8.0
@@ -225,9 +252,7 @@ def cover_axis_offset_mm_for_layer(layers, layer_index):
     d0 = float(clamp_diam_mm(layers[0].get(u"diam_mm", 16)))
     z = COVER_SUPERIOR_MM + 0.5 * d0
     for i in range(1, li + 1):
-        d_prev = float(clamp_diam_mm(layers[i - 1].get(u"diam_mm", 16)))
-        d_cur = float(clamp_diam_mm(layers[i].get(u"diam_mm", 16)))
-        z += 0.5 * d_prev + LAYER_CLEAR_MM + 0.5 * d_cur
+        z += float(LAYER_CENTERLINE_SPACING_MM)
     return float(z)
 
 

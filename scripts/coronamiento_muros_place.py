@@ -7,12 +7,19 @@ Revit 2024+ | IronPython / pyRevit
 Traslapos: misma geometría/API que ``56_DividirRebarPuntoTraslape``
 (``divide_rebar_at_cuts``). Los cortes de la UI son estaciones sobre el vano
 horizontal desde el inicio U (LocationCurve P0); se convierten a distancia
-sobre centerline (pata L + vano). El canvas puede espejar izq./der. según
-la vista; el origen mm de corte no se invierte.
+sobre centerline (pata L + vano). En U libre el canvas puede espejar izq./der.
+según la vista; el origen mm de corte no se invierte. Empotrado ancla el
+preview a empotro→libre (sin flip de LocationCurve).
 
 Helpers internos (crear capa, stamp post-split, divide, etiquetas/visibilidad)
 abren sus propias Transaction / TxnScope. El flujo ``place_coronamiento_wall``
 las agrupa en un ``TransactionGroup`` con ``Assimilate`` para un solo Undo.
+
+U libre + empalmes: shape U «03»; tras split, extremos «02» e intermedios «01»
+(misma regla que 56 / ``dividir_rebar_punto_shapes``).
+
+Empotrado + empalmes: shape L «02»; tras split, tramos sin pata «01» y el
+último (extremo libre con pata) «02» (orden centerline embed→libre).
 """
 
 from __future__ import print_function
@@ -55,6 +62,7 @@ from coronamiento_muros_geom import (
     cover_axis_offset_mm_for_layer,
     estimate_bar_lengths_mm,
     estimate_empotrado_bar_lengths_mm,
+    normalize_concrete_grade,
     stagger_cuts_for_layer,
     to_dividir_lap_mode,
     traslape_mm_from_diam,
@@ -63,9 +71,18 @@ from coronamiento_muros_geom import (
 _TXN_GROUP = u"Arainco: Coronamiento muros"
 _TXN_CREATE = u"Arainco: Coronamiento muros (capa)"
 _TXN_STAMP = u"Arainco: Coronamiento muros (capa stamp)"
+_TXN_SHAPES = u"Arainco: Coronamiento muros (shapes empalme)"
 _TAG_EXTREMO = cor.CORONAMIENTO_TAG_EXTREMO_SUP
 _GEOM_U_LIBRE = u"u_libre"
 _GEOM_EMPOTRADO = u"empotrado"
+# U libre: shape completa; tras empalmes → extremos 02 / intermedios 01 (regla 56).
+_COR_U_SHAPE = u"03"
+_COR_U_SPLIT_ENDS = u"02"
+_COR_U_SPLIT_MID = u"01"
+# Empotrado L: shape completa 02; tras empalmes → sin pata 01 / con pata (último) 02.
+_COR_EMP_SHAPE = u"02"
+_COR_EMP_SPLIT_STRAIGHT = u"01"
+_COR_EMP_SPLIT_LEG = u"02"
 
 try:
     from armado_muros_lineales import ordenar_muros_por_base_asc
@@ -137,6 +154,211 @@ def _ensure_dividir_rebar_punto():
     except Exception as ex:
         _DIVIDIR56_LOAD_ERROR = _as_unicode(ex)
         return False, u"Import 56: {0}".format(_DIVIDIR56_LOAD_ERROR), None
+
+
+def _import_dividir_shapes():
+    """Módulo ``dividir_rebar_punto_shapes`` (requiere path 56)."""
+    ok, _err, _fn = _ensure_dividir_rebar_punto()
+    if not ok:
+        return None
+    try:
+        import dividir_rebar_punto_shapes as shmod
+
+        return shmod
+    except Exception:
+        return None
+
+
+def _set_rebar_shape_name(doc, rebar, shape_name):
+    """Asigna RebarShape por nombre (API 56). Returns (ok, msg)."""
+    shmod = _import_dividir_shapes()
+    if shmod is None:
+        return False, u"Shapes 56 no disponibles."
+    try:
+        ok, msg, _final = shmod.set_rebar_shape(doc, rebar, shape_name)
+        return bool(ok), msg or u""
+    except Exception as ex:
+        return False, _as_unicode(ex)
+
+
+def _assign_u_libre_shape_03(doc, rebar):
+    """Marca la U completa como shape «03» (antes de empalmes)."""
+    return _set_rebar_shape_name(doc, rebar, _COR_U_SHAPE)
+
+
+def _u_libre_split_shape_names(n_pieces):
+    """
+    Nombres de shape para tramos tras empalme(s) en U.
+
+    1 empalme → 2 tramos → [02, 02]
+    ≥2 empalmes → extremos 02, intermedios 01
+    """
+    shmod = _import_dividir_shapes()
+    if shmod is not None:
+        try:
+            names = shmod.target_shape_names_for_pieces(_COR_U_SHAPE, n_pieces)
+            if names and len(names) == int(n_pieces):
+                return list(names)
+        except Exception:
+            pass
+    try:
+        n = int(n_pieces)
+    except Exception:
+        return None
+    if n < 2:
+        return None
+    out = []
+    for i in range(n):
+        if i == 0 or i == n - 1:
+            out.append(_COR_U_SPLIT_ENDS)
+        else:
+            out.append(_COR_U_SPLIT_MID)
+    return out
+
+
+def _apply_u_libre_empalme_shapes(doc, rebar_id_ints):
+    """
+    Tras dividir U libre: 1 empalme → ambas «02»; ≥2 → extremos «02», medio «01».
+
+    Abre su propia Transaction. Returns mensaje corto o u\"\".
+    """
+    ids = []
+    for iv in rebar_id_ints or []:
+        try:
+            ids.append(int(iv))
+        except Exception:
+            continue
+    if len(ids) < 2:
+        return u""
+    names = _u_libre_split_shape_names(len(ids))
+    if not names:
+        return u"Sin mapa de shapes para {0} tramos.".format(len(ids))
+    shmod = _import_dividir_shapes()
+    if shmod is None:
+        return u"Shapes 56 no disponibles."
+
+    t = Transaction(doc, _TXN_SHAPES)
+    t.Start()
+    try:
+        errs = []
+        ok_n = 0
+        for i, iv in enumerate(ids):
+            try:
+                rb = doc.GetElement(ElementId(int(iv)))
+            except Exception:
+                rb = None
+            if rb is None:
+                errs.append(u"Id {0} no encontrado.".format(iv))
+                continue
+            target = names[i] if i < len(names) else names[-1]
+            ok, msg, _final = shmod.set_rebar_shape(doc, rb, target)
+            if ok:
+                ok_n += 1
+            elif msg:
+                errs.append(u"Id {0}→{1}: {2}".format(iv, target, msg))
+        try:
+            doc.Regenerate()
+        except Exception:
+            pass
+        t.Commit()
+    except Exception as ex:
+        try:
+            t.RollBack()
+        except Exception:
+            pass
+        return u"Shapes empalme: {0}".format(_as_unicode(ex))
+
+    if errs:
+        return u"Shapes {0}/{1} ok; {2}".format(
+            ok_n, len(ids), u"; ".join(errs[:3])
+        )
+    return u"Shapes: {0}".format(u" · ".join(names))
+
+
+def _assign_empotrado_shape_02(doc, rebar):
+    """Marca la L completa Empotrado como shape «02» (antes de empalmes)."""
+    return _set_rebar_shape_name(doc, rebar, _COR_EMP_SHAPE)
+
+
+def _empotrado_split_shape_names(n_pieces):
+    """
+    Nombres de shape para tramos tras empalme(s) en Empotrado.
+
+    Orden centerline embed→libre (pata en el último): [01]*(n-1) + [02].
+    1 empalme → [01, 02]; 2 → [01, 01, 02]; etc.
+    """
+    try:
+        n = int(n_pieces)
+    except Exception:
+        return None
+    if n < 2:
+        return None
+    out = []
+    for i in range(n):
+        if i == n - 1:
+            out.append(_COR_EMP_SPLIT_LEG)
+        else:
+            out.append(_COR_EMP_SPLIT_STRAIGHT)
+    return out
+
+
+def _apply_empotrado_empalme_shapes(doc, rebar_id_ints):
+    """
+    Tras dividir Empotrado: tramos sin pata «01»; último (pata en extremo libre) «02».
+
+    Abre su propia Transaction. Returns mensaje corto o u\"\".
+    """
+    ids = []
+    for iv in rebar_id_ints or []:
+        try:
+            ids.append(int(iv))
+        except Exception:
+            continue
+    if len(ids) < 2:
+        return u""
+    names = _empotrado_split_shape_names(len(ids))
+    if not names:
+        return u"Sin mapa de shapes Empotrado para {0} tramos.".format(len(ids))
+    shmod = _import_dividir_shapes()
+    if shmod is None:
+        return u"Shapes 56 no disponibles."
+
+    t = Transaction(doc, _TXN_SHAPES)
+    t.Start()
+    try:
+        errs = []
+        ok_n = 0
+        for i, iv in enumerate(ids):
+            try:
+                rb = doc.GetElement(ElementId(int(iv)))
+            except Exception:
+                rb = None
+            if rb is None:
+                errs.append(u"Id {0} no encontrado.".format(iv))
+                continue
+            target = names[i] if i < len(names) else names[-1]
+            ok, msg, _final = shmod.set_rebar_shape(doc, rb, target)
+            if ok:
+                ok_n += 1
+            elif msg:
+                errs.append(u"Id {0}→{1}: {2}".format(iv, target, msg))
+        try:
+            doc.Regenerate()
+        except Exception:
+            pass
+        t.Commit()
+    except Exception as ex:
+        try:
+            t.RollBack()
+        except Exception:
+            pass
+        return u"Shapes empalme Empotrado: {0}".format(_as_unicode(ex))
+
+    if errs:
+        return u"Shapes {0}/{1} ok; {2}".format(
+            ok_n, len(ids), u"; ".join(errs[:3])
+        )
+    return u"Shapes: {0}".format(u" · ".join(names))
 
 
 def _cuts_main_to_centerline_mm(rebar, cuts_main_mm):
@@ -381,10 +603,13 @@ def resolve_coronamiento_pick(walls):
     return out
 
 
-def wall_length_estimate_empotrado(host, overhang_mm, diam_mm=16):
+def wall_length_estimate_empotrado(host, overhang_mm, diam_mm=16, concrete_grade=None):
     """Estimación de largo Empotrado (host = muro Z baja)."""
     return estimate_empotrado_bar_lengths_mm(
-        overhang_mm, wall_espesor_mm(host), diam_mm=diam_mm
+        overhang_mm,
+        wall_espesor_mm(host),
+        diam_mm=diam_mm,
+        concrete_grade=concrete_grade,
     )
 
 
@@ -616,11 +841,13 @@ def wall_elev_canvas_flip_for_view(wall, view):
         u0 = P0 · rd,  u1 = P1 · rd
         flip = (u0 > u1)   # P0 (inicio U / mm=0) queda a la derecha en pantalla
 
-    Convención de cortes (no se invierte el origen mm):
+    Convención de cortes U libre (no se invierte el origen mm):
         mm=0 → inicio del vano principal = extremo LocationCurve P0
                (inicio de la cadena U: pata → vano → pata).
         Solo se espeja el mapeo píxel↔mm del dibujo/clic.
         Las siluetas del muro NO se espejan: izq. canvas = menor proyección Right.
+        Empotrado no usa este flip: mm=0=empotro, mm=main=pata libre
+        anclados a la geometría host/superior.
 
     Respaldo ``False`` (canvas izq = P0 = mm 0) si no hay vista/curva,
     |u1−u0| es despreciable frente al largo (muro de canto / eje ≈ ViewDirection),
@@ -763,6 +990,7 @@ def place_coronamiento_wall(
     layers,
     cuts_ref_mm=None,
     lap_mode_ui=None,
+    concrete_grade=None,
 ):
     """
     Crea coronamiento superior por capa; opcionalmente divide con traslape
@@ -792,6 +1020,7 @@ def place_coronamiento_wall(
         result[u"messages"].append(u"Sin capas configuradas.")
         return result
 
+    grade = normalize_concrete_grade(concrete_grade)
     est = wall_length_estimate(wall)
     result[u"developed_mm"] = float(est[u"developed_mm"])
     result[u"main_mm"] = float(est[u"main_mm"])
@@ -866,6 +1095,13 @@ def place_coronamiento_wall(
                 )
                 if rb is not None:
                     _stamp_layer(rb, li)
+                    ok_sh, err_sh = _assign_u_libre_shape_03(doc, rb)
+                    if not ok_sh and err_sh:
+                        result[u"messages"].append(
+                            u"Capa {0}: shape «{1}» no aplicada ({2}).".format(
+                                li + 1, _COR_U_SHAPE, err_sh
+                            )
+                        )
                     t.Commit()
                 else:
                     t.RollBack()
@@ -883,7 +1119,7 @@ def place_coronamiento_wall(
                 )
                 continue
 
-            lap_mm = traslape_mm_from_diam(diam_mm)
+            lap_mm = traslape_mm_from_diam(diam_mm, grade)
             layer_cuts_main = stagger_cuts_for_layer(cuts_ref, li, main_mm, lap_mm)
             final_ids = []
 
@@ -895,7 +1131,7 @@ def place_coronamiento_wall(
                     doc,
                     rb,
                     cuts_cl,
-                    concrete_grade=None,
+                    concrete_grade=grade,
                     view=view,
                     lap_mode=lap_mode,
                     place_lap_dims=place_dims,
@@ -907,11 +1143,17 @@ def place_coronamiento_wall(
                         if iv is not None:
                             final_ids.append(iv)
                     _stamp_ids(doc, final_ids, li)
+                    # Garantiza 02 extremos / 01 intermedios (1 empalme → ambas 02).
+                    sh_msg = _apply_u_libre_empalme_shapes(doc, final_ids)
                     result[u"messages"].append(
                         u"Capa {0}: {1}Ø{2} · {3} tramo(s).".format(
                             li + 1, n_bars, diam_mm, len(final_ids)
                         )
                     )
+                    if sh_msg:
+                        result[u"messages"].append(
+                            u"Capa {0}: {1}".format(li + 1, sh_msg)
+                        )
                 else:
                     iv = _element_id_int(rb.Id)
                     if iv is not None:
@@ -1005,6 +1247,7 @@ def place_coronamiento_empotrado(
     cuts_ref_mm=None,
     lap_mode_ui=None,
     overhang_mm=0.0,
+    concrete_grade=None,
 ):
     """
     Coronamiento Empotrado (V3 voladizo INF): barras en host (Z baja),
@@ -1043,8 +1286,11 @@ def place_coronamiento_empotrado(
         result[u"messages"].append(u"Sin capas configuradas.")
         return result
 
+    grade = normalize_concrete_grade(concrete_grade)
     diam0 = clamp_diam_mm(layers[0].get(u"diam_mm", 16))
-    est = wall_length_estimate_empotrado(host, overhang_mm, diam_mm=diam0)
+    est = wall_length_estimate_empotrado(
+        host, overhang_mm, diam_mm=diam0, concrete_grade=grade
+    )
     result[u"developed_mm"] = float(est[u"developed_mm"])
     result[u"main_mm"] = float(est[u"main_mm"])
     result[u"exceeds_12m"] = bool(est[u"exceeds_12m"])
@@ -1101,9 +1347,9 @@ def place_coronamiento_empotrado(
                 )
                 continue
 
-            lap_mm = traslape_mm_from_diam(diam_mm)
+            lap_mm = traslape_mm_from_diam(diam_mm, grade)
             est_li = wall_length_estimate_empotrado(
-                host, overhang_mm, diam_mm=diam_mm
+                host, overhang_mm, diam_mm=diam_mm, concrete_grade=grade
             )
             main_li = float(est_li[u"main_mm"])
             layer_cuts_main = stagger_cuts_for_layer(
@@ -1122,7 +1368,7 @@ def place_coronamiento_empotrado(
                     )
                     continue
                 u_embed, u_free, err_u = cor._intervalos_u_voladizo_barra(
-                    spec, bt, diam_mm
+                    spec, bt, diam_mm, concrete_grade=grade
                 )
                 if err_u:
                     result[u"messages"].append(
@@ -1150,6 +1396,13 @@ def place_coronamiento_empotrado(
                     )
                     if rb is not None:
                         _stamp_layer(rb, li)
+                        ok_sh, err_sh = _assign_empotrado_shape_02(doc, rb)
+                        if not ok_sh and err_sh:
+                            result[u"messages"].append(
+                                u"Capa {0} ({1}): shape «{2}» no aplicada ({3}).".format(
+                                    li + 1, side, _COR_EMP_SHAPE, err_sh
+                                )
+                            )
                         t.Commit()
                     else:
                         t.RollBack()
@@ -1179,7 +1432,7 @@ def place_coronamiento_empotrado(
                         doc,
                         rb,
                         cuts_cl,
-                        concrete_grade=None,
+                        concrete_grade=grade,
                         view=view,
                         lap_mode=lap_mode,
                         place_lap_dims=place_dims,
@@ -1191,6 +1444,12 @@ def place_coronamiento_empotrado(
                             if iv is not None:
                                 final_ids.append(iv)
                         _stamp_ids(doc, final_ids, li)
+                        # Sin pata 01 / último con pata 02 (orden embed→libre).
+                        sh_msg = _apply_empotrado_empalme_shapes(doc, final_ids)
+                        if sh_msg:
+                            result[u"messages"].append(
+                                u"Capa {0} ({1}): {2}".format(li + 1, side, sh_msg)
+                            )
                     else:
                         iv = _element_id_int(rb.Id)
                         if iv is not None:
@@ -1297,6 +1556,7 @@ def place_coronamiento(
     geom_mode=None,
     voladizo_specs=None,
     overhang_mm=0.0,
+    concrete_grade=None,
 ):
     """Despacha U libre o Empotrado según ``geom_mode``."""
     mode = _as_unicode(geom_mode or _GEOM_U_LIBRE).strip().lower()
@@ -1310,6 +1570,7 @@ def place_coronamiento(
             cuts_ref_mm=cuts_ref_mm,
             lap_mode_ui=lap_mode_ui,
             overhang_mm=overhang_mm,
+            concrete_grade=concrete_grade,
         )
     return place_coronamiento_wall(
         doc,
@@ -1318,4 +1579,5 @@ def place_coronamiento(
         layers,
         cuts_ref_mm=cuts_ref_mm,
         lap_mode_ui=lap_mode_ui,
+        concrete_grade=concrete_grade,
     )

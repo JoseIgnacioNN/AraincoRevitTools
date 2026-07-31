@@ -1349,10 +1349,8 @@ def _aplicar_pata_l_pie_fundacion(doc, rebar, host, res, solo_interior=False):
     if largo_l is None or float(largo_l) < 0.1:
         return rebar
 
-    es_exterior = _rebar_es_vertical_exterior(rebar, host)
+    # Ext. e int.: dirección geométrica hacia el espesor (sin flip por cara).
     invertir = bool(getattr(l135, u"INVERTIR_DIRECCION_PATA", False))
-    if not es_exterior:
-        invertir = not invertir
 
     if l135 is not None:
         pata_en_final = l135.pata_en_extremo_final_para_pie_por_elevacion(rebar, 0)
@@ -1403,9 +1401,8 @@ def _aplicar_pata_l_pie_muro_sin_fundacion(
         return rebar
 
     es_exterior = _rebar_es_vertical_exterior(rebar, host)
+    # Ext. e int.: dirección geométrica hacia el espesor (sin flip por cara).
     invertir = bool(getattr(l135, u"INVERTIR_DIRECCION_PATA", False))
-    if not es_exterior:
-        invertir = not invertir
 
     if l135 is not None:
         pata_en_final = l135.pata_en_extremo_final_para_pie_por_elevacion(rebar, 0)
@@ -1898,6 +1895,8 @@ def embed_stretch_collides_wall_solids_downward(
 def _excluir_extremos_rebar_set(doc, rebar, host=None):
     """
     Excluye extremos según orientación (horizontal: última; vertical: 1.ª y última).
+
+    En verticales partidos por desacople, el extremo en la junta no se apaga.
     """
     if doc is None or rebar is None or ajustar_inclusion_extremos_rebar_set_con_fallback is None:
         return rebar
@@ -1911,7 +1910,18 @@ def _excluir_extremos_rebar_set(doc, rebar, host=None):
             and host is not None
             and _rebar_es_vertical_por_criterio(rebar, host, 0)
         ):
-            ajustar_inclusion_extremos_rebar_set_con_fallback(rebar, doc, False, False)
+            inc0, inc1 = False, False
+            try:
+                import armado_muros_cabezal as _cab_malla
+
+                alcanza_ini, alcanza_fin = _cab_malla.rebar_vertical_alcanza_extremos_muro(
+                    rebar, host,
+                )
+                inc0 = not bool(alcanza_ini)
+                inc1 = not bool(alcanza_fin)
+            except Exception:
+                inc0, inc1 = False, False
+            ajustar_inclusion_extremos_rebar_set_con_fallback(rebar, doc, inc0, inc1)
         else:
             ajustar_inclusion_extremos_rebar_set_con_fallback(rebar, doc, True, False)
     except Exception:
@@ -2027,10 +2037,123 @@ def _ordenar_cadena_desde_hasta(chain, p_start, p_end, tol_ft=None):
     return out
 
 
-def _construir_cadena_l_cabeza_segmento_0_principal(chain, norm, largo_p_mm, invertir):
+def _punto_eje_location_muro(wall):
+    """Punto en el eje de ``LocationCurve`` del muro (centro del espesor)."""
+    if wall is None:
+        return None
+    try:
+        loc = wall.Location
+        curve = loc.Curve if loc is not None else None
+    except Exception:
+        curve = None
+    if curve is not None:
+        try:
+            return curve.Evaluate(0.5, True)
+        except Exception:
+            try:
+                return curve.GetEndPoint(0).Add(curve.GetEndPoint(1)).Multiply(0.5)
+            except Exception:
+                pass
+    try:
+        bb = wall.get_BoundingBox(None)
+        if bb is not None:
+            return XYZ(
+                0.5 * (float(bb.Min.X) + float(bb.Max.X)),
+                0.5 * (float(bb.Min.Y) + float(bb.Max.Y)),
+                0.5 * (float(bb.Min.Z) + float(bb.Max.Z)),
+            )
+    except Exception:
+        pass
+    return None
+
+
+def _dir_pata_l_hacia_adentro_host(wall, p_ref, t_vec, b_fallback=None):
+    """
+    Unitario hacia el **interior del espesor** del host (plano XY / ⊥ al eje).
+
+    No sustituye el ``b`` del boceto: usar
+    :func:`_b_pata_l_en_plano_hacia_adentro` para mantener coplanaridad con
+    ``norm × tangent`` (CreateFromCurves / shape L).
+    """
+    if wall is None or p_ref is None:
+        return b_fallback
+    mid = _punto_eje_location_muro(wall)
+    into = None
+    if mid is not None:
+        try:
+            into = XYZ(
+                float(mid.X) - float(p_ref.X),
+                float(mid.Y) - float(p_ref.Y),
+                0.0,
+            )
+        except Exception:
+            into = None
+    if into is None or float(into.GetLength()) < 1e-9:
+        try:
+            ori = wall.Orientation
+            if ori is not None and float(ori.GetLength()) > 1e-12:
+                ori = ori.Normalize()
+                if mid is not None:
+                    delta = XYZ(
+                        float(p_ref.X) - float(mid.X),
+                        float(p_ref.Y) - float(mid.Y),
+                        0.0,
+                    )
+                    if float(delta.DotProduct(ori)) >= 0.0:
+                        into = ori.Negate()
+                    else:
+                        into = ori
+                else:
+                    into = ori.Negate()
+        except Exception:
+            into = None
+    if into is None or float(into.GetLength()) < 1e-9:
+        return b_fallback
+    if t_vec is not None and float(t_vec.GetLength()) > 1e-12:
+        try:
+            t_hat = t_vec.Normalize()
+            into = into - t_hat.Multiply(float(into.DotProduct(t_hat)))
+        except Exception:
+            pass
+    if into is None or float(into.GetLength()) < 1e-9:
+        return b_fallback
+    try:
+        return into.Normalize()
+    except Exception:
+        return b_fallback
+
+
+def _b_pata_l_en_plano_hacia_adentro(b_vec, wall, p_ref, t_vec=None, invertir=False):
+    """
+    Elige ``±b_vec`` (ya en el plano del boceto) hacia el interior del host.
+
+    Ext. e int. usan el mismo criterio geométrico; ``invertir`` solo aplica el
+    flag global ``INVERTIR_DIRECCION_PATA``.
+    """
+    if b_vec is None:
+        return None
+    out = b_vec
+    into = _dir_pata_l_hacia_adentro_host(wall, p_ref, t_vec, b_fallback=None)
+    if into is not None:
+        try:
+            if float(out.DotProduct(into)) < 0.0:
+                out = out.Negate()
+        except Exception:
+            pass
+    if invertir:
+        try:
+            out = out.Negate()
+        except Exception:
+            pass
+    return out
+
+
+def _construir_cadena_l_cabeza_segmento_0_principal(
+    chain, norm, largo_p_mm, host=None, invertir=False,
+):
     """
     Polilínea en L con pata en cabeza (mayor Z): segmento 0 = tramo principal pie→cabeza,
-    segmento 1 = pata L (no al revés).
+    segmento 1 = pata L hacia el interior del host (ext. e int.), en el plano del boceto.
     """
     if not chain:
         return None, u"Cadena vacía."
@@ -2048,10 +2171,12 @@ def _construir_cadena_l_cabeza_segmento_0_principal(chain, norm, largo_p_mm, inv
     b_vec = l135._perp_in_plane(norm, t_vec)
     if b_vec is None:
         return None, u"Perpendicular in-plane nula."
-    if invertir:
-        b_vec = b_vec.Negate()
-    # Con eje pie→cabeza el «−b» histórico apunta hacia afuera; «+b» entra al muro.
-    p_tip = p_cab + b_vec.Multiply(le)
+    leg_dir = _b_pata_l_en_plano_hacia_adentro(
+        b_vec, host, p_cab, t_vec=t_vec, invertir=invertir,
+    )
+    if leg_dir is None:
+        return None, u"Dirección pata L nula."
+    p_tip = p_cab + leg_dir.Multiply(le)
     leg = Line.CreateBound(p_cab, p_tip)
     if len(chain) == 1:
         try:
@@ -2078,6 +2203,9 @@ def _agregar_pata_l_extremo_sketch(
 ):
     """
     Añade pata L en un extremo del boceto (edit sketch: polilínea L + CreateFromCurves).
+
+    La pata apunta hacia el interior del espesor del host (cara ext. e int.),
+    siempre en el plano ``norm × tangent`` del rebar.
     """
     if l135 is None or doc is None or rebar is None or host is None:
         return False, u"Módulo pata L no disponible.", None
@@ -2106,7 +2234,7 @@ def _agregar_pata_l_extremo_sketch(
 
     if cabeza_segmento_0_principal:
         new_chain, err_chain = _construir_cadena_l_cabeza_segmento_0_principal(
-            chain, norm, float(largo_p_mm), invertir,
+            chain, norm, float(largo_p_mm), host=host, invertir=invertir,
         )
         if new_chain is None:
             return False, err_chain or u"Cadena L cabeza inválida.", None
@@ -2118,10 +2246,13 @@ def _agregar_pata_l_extremo_sketch(
         b_vec = l135._perp_in_plane(norm, t_vec)
         if b_vec is None:
             return False, u"Perpendicular in-plane nula.", None
-        if invertir:
-            b_vec = b_vec.Negate()
         p0 = c0.GetEndPoint(0)
-        p_leg = p0 - b_vec.Multiply(le)
+        leg_dir = _b_pata_l_en_plano_hacia_adentro(
+            b_vec, host, p0, t_vec=t_vec, invertir=invertir,
+        )
+        if leg_dir is None:
+            return False, u"Dirección pata L nula.", None
+        p_leg = p0 + leg_dir.Multiply(le)
         leg = Line.CreateBound(p_leg, p0)
         new_chain = [leg] + chain
     else:
@@ -2132,10 +2263,13 @@ def _agregar_pata_l_extremo_sketch(
         b_vec = l135._perp_in_plane(norm, t_vec)
         if b_vec is None:
             return False, u"Perpendicular in-plane nula.", None
-        if invertir:
-            b_vec = b_vec.Negate()
         p_end = c_last.GetEndPoint(1)
-        p_tip = p_end - b_vec.Multiply(le)
+        leg_dir = _b_pata_l_en_plano_hacia_adentro(
+            b_vec, host, p_end, t_vec=t_vec, invertir=invertir,
+        )
+        if leg_dir is None:
+            return False, u"Dirección pata L nula.", None
+        p_tip = p_end + leg_dir.Multiply(le)
         leg = Line.CreateBound(p_end, p_tip)
         new_chain = chain + [leg]
 
@@ -2206,8 +2340,9 @@ def _agregar_pata_l_cabeza_vertical_sketch(
     muro_contencion=False,
 ):
     """
-    Pata L en cabeza (vertical ext/int sin colisión en cabeza).
-    Largo = espesor − 50 mm − Ø horiz. ext. − Ø horiz. int.; sentido según cara.
+    Pata L en cabeza (vertical ext/int).
+    Largo = espesor − 50 mm − Ø horiz. ext. − Ø horiz. int.;
+    sentido hacia el interior del host en ambas caras.
     """
     if l135 is None:
         return False, u"Módulo pata L no disponible.", None
@@ -2220,9 +2355,8 @@ def _agregar_pata_l_cabeza_vertical_sketch(
             u"(espesor − 50 − Ø horiz. ext. − Ø horiz. int.)."
         ), None
     es_exterior = _rebar_es_vertical_exterior(rebar, host)
+    # Ext. e int.: dirección geométrica hacia el espesor (sin flip por cara).
     invertir = bool(getattr(l135, u"INVERTIR_DIRECCION_PATA", False))
-    if not es_exterior:
-        invertir = not invertir
     cara_lbl = u"exterior" if es_exterior else u"interior"
     txn = u"Arainco: Armado muros lineales — pata L cabeza vertical {0}".format(
         cara_lbl,
@@ -2319,10 +2453,10 @@ def _procesar_rebar_vertical_cabeza_colision(
     bbox_z_cache=None,
 ):
     """
-    Cabeza: si ``params_dict['terminacion_cabeza']`` está definido
-    (``empotramiento`` / ``pata_l`` / ``recto``), aplica ese modo a int.+ext.
-    Si no (auto), empotrar solo con muro apilado encima; si no, retraer
-    ``25+Ø/2`` + pata L.
+    Cabeza: si ``params_dict['terminacion_cabeza']`` es ``recto`` / ``pata_l``,
+    aplica ese modo a int.+ext. Si es ``empotramiento`` o auto: empotrar solo
+    donde el rebar tiene **solape** con muro apilado encima; en **desacople**
+    (largos distintos) → retraer + pata L.
     """
     if not _rebar_es_vertical_cara_ext_o_int(rebar, host):
         res[u"n_skip"] += 1
@@ -2341,10 +2475,45 @@ def _procesar_rebar_vertical_cabeza_colision(
         return rebar
 
     modo = _terminacion_cabeza_desde_params(params_dict)
-    force_emp = modo == u"empotramiento"
     force_recto = modo == u"recto"
-    if modo is None:
-        force_emp = _host_tiene_apilado_sobre(host, ids_con_apilado_sobre)
+    force_pata = modo == u"pata_l"
+    force_emp = False
+    if force_recto:
+        force_emp = False
+    elif force_pata:
+        force_emp = False
+    else:
+        # Desacople experimental (off por defecto): emp solo en zona solape.
+        use_des = False
+        try:
+            import armado_muros_apilado_desacople as _des
+
+            use_des = bool(getattr(_des, u"ENABLE_DESACOPLE", False))
+        except Exception:
+            _des = None
+            use_des = False
+        if use_des and _des is not None:
+            try:
+                force_emp = bool(
+                    _des.rebar_en_solape_apilado(
+                        rebar, host, walls, _muro_apilado_sobre_host,
+                    )
+                )
+            except Exception:
+                if modo == u"empotramiento":
+                    force_emp = True
+                elif modo is None:
+                    force_emp = _host_tiene_apilado_sobre(host, ids_con_apilado_sobre)
+                else:
+                    force_emp = False
+        else:
+            # Comportamiento previo: muro con apilado encima → empotramiento.
+            if modo == u"empotramiento":
+                force_emp = True
+            elif modo is None:
+                force_emp = _host_tiene_apilado_sobre(host, ids_con_apilado_sobre)
+            else:
+                force_emp = False
 
     if force_emp:
         ok_eval, msg_eval, rebar_eval = _extender_vertical_cabeza_tabla_empotramiento(
@@ -2420,14 +2589,14 @@ def aplicar_empotramiento_verticales_cara_por_colision(
     fund_solids_cache=None,
 ):
     """
-    Post-proceso de verticales ext/int: fundación unida (pie) y, si aplica, empotramiento
-    en cabeza según **muro apilado encima** en la selección (orden Z / contacto bbox).
+    Post-proceso de verticales ext/int: fundación unida (pie) y empotramiento
+    en cabeza según **solape** con muro apilado encima (no solo sí/no apilado).
 
     ``rebars_por_muro_id``: ``{ wall_id_int: [ElementId, ...], ... }``
     ``evaluar_colision_cabeza``: si ``False`` (herramienta Cabezal muros), no ejecuta
     estiramiento/retraída por apilamiento en cabeza.
-    Cabeza con ``params_dict['terminacion_cabeza']`` (empotramiento/pata_l/recto)
-    fuerza ese modo (Mallas en muros); sin clave → auto por apilado.
+    Cabeza: ``recto``/``pata_l`` fuerzan ese modo; ``empotramiento``/auto empotran
+    solo en solape y usan pata L en desacople (largos distintos).
     Pie con fundación unida: lógica actual de sondeo (sin cambio).
     ``regenerate_fund_geom``: si ``False``, no regenera antes de sólidos de fundación
     (caller ya regeneró, p. ej. malla lote).
@@ -2448,6 +2617,7 @@ def aplicar_empotramiento_verticales_cara_por_colision(
         u"n_pie_muro_pata_l": 0,
         u"n_pie_muro_pata_l_ext": 0,
         u"n_pie_muro_pata_l_int": 0,
+        u"n_vertical_split_desacople": 0,
         u"n_skip": 0,
         u"n_fail": 0,
         u"messages": [],
@@ -2484,6 +2654,31 @@ def aplicar_empotramiento_verticales_cara_por_colision(
     def _run_vertical_lote():
         # Apilamiento en Z (bbox) una vez por lote — sin sonda de sólidos por barra.
         ids_sobre, ids_bajo = _build_apilamiento_maps(walls)
+        # Partir sets verticales solape/desacople (off si ENABLE_DESACOPLE=False).
+        if evaluar_colision_cabeza:
+            try:
+                import armado_muros_apilado_desacople as _des
+
+                if bool(getattr(_des, u"ENABLE_DESACOPLE", False)):
+                    split_res = _des.partir_verticales_lote_por_desacople(
+                        doc,
+                        walls,
+                        rebars_por_muro_id,
+                        _muro_apilado_sobre_host,
+                        es_vertical_cara_fn=_rebar_es_vertical_cara_ext_o_int,
+                    )
+                    n_part = int((split_res or {}).get(u"n_partidos", 0) or 0)
+                    if n_part:
+                        res[u"n_vertical_split_desacople"] = (
+                            int(res.get(u"n_vertical_split_desacople", 0)) + n_part
+                        )
+                    for m in (split_res or {}).get(u"messages") or []:
+                        if m:
+                            res[u"messages"].append(m)
+            except Exception as ex_split:
+                res[u"messages"].append(
+                    u"Partir verticales desacople: {0}".format(ex_split),
+                )
         # Fundación: reutilizar dict compartido entre lotes (fund_solids_cache)
         # o dict local si no hay caché del caller.
         if fund_solids_cache is not None:

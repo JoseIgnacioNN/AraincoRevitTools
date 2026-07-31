@@ -1131,10 +1131,10 @@ def _voladizo_u_tolerance_ft():
     return _mm_to_internal(CORONAMIENTO_VOLADIZO_U_TOL_MM)
 
 
-def _empotramiento_voladizo_mm(d_mm):
+def _empotramiento_voladizo_mm(d_mm, concrete_grade=None):
     if cabezal is not None:
         try:
-            emb = cabezal._empotramiento_tabla_mm(float(d_mm))
+            emb = cabezal._empotramiento_tabla_mm(float(d_mm), concrete_grade)
             if emb is not None and float(emb) > 0.1:
                 return float(emb)
         except Exception:
@@ -1281,7 +1281,7 @@ def _z_bar_voladizo_ft(wall, bar_type, role, fallback_diam_mm=None):
     return float(z_bot) + axis_offset_ft
 
 
-def _intervalos_u_voladizo_barra(spec, bar_type, fallback_diam_mm):
+def _intervalos_u_voladizo_barra(spec, bar_type, fallback_diam_mm, concrete_grade=None):
     """Calcula u_embed (sin pata L) y u_free (con pata L) en coordenadas del layout."""
     item = spec.get(u"item")
     if item is None:
@@ -1304,7 +1304,7 @@ def _intervalos_u_voladizo_barra(spec, bar_type, fallback_diam_mm):
     tol_u = _voladizo_u_tolerance_ft()
     long_off_u = float(long_off_ft) if long_off_ft else 0.0
     d_mm = _bar_diameter_mm(bar_type, fallback_diam_mm)
-    emb_mm = _empotramiento_voladizo_mm(d_mm)
+    emb_mm = _empotramiento_voladizo_mm(d_mm, concrete_grade)
     emb_u = float(_mm_to_internal(emb_mm))
 
     if side == u"der":

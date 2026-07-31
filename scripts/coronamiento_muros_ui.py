@@ -12,8 +12,15 @@ Modos (multi-pick previo):
 
 Elevación: siluetas desde LocationCurve + altura reales proyectadas sobre
 ``ActiveView.RightDirection`` (X) y Z (Y canvas). Con 2 muros apilados se
-conservan offsets relativos (voladizo / empotro). El flip izq./der. solo
-espeja el mapeo mm↔píxel de barras/cortes (origen mm = LocationCurve P0).
+conservan offsets relativos (voladizo / empotro).
+
+Mapeo mm↔píxel:
+  - U libre: flip izq./der. según vista (origen mm = LocationCurve P0).
+  - Empotrado: sin flip de LocationCurve; mm=0 = extremo empotro,
+    mm=main = extremo libre (pata L), anclado a la geometría host/superior.
+
+Dosificación hormigón (G25/G35/G45) en cabecera del stack: alimenta tablas
+de traslape / empotro (mismo criterio que Wall Foundation).
 
 Flag ``ENABLE_TRASLAPOS``: poner False para ocultar empalme sin quitar el código.
 """
@@ -60,12 +67,17 @@ from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
 from bimtools_wpf_shell import build_simple_tool_xaml
 from coronamiento_muros_geom import (
     CAPAS_OPTS,
+    COVER_SUPERIOR_MM,
     DIAMS_MM,
+    DOSIFICACION_HORMIGON_DEFAULT,
+    DOSIFICACION_HORMIGON_OPCIONES,
     LAP_MODE_LABELS,
     LAP_MODE_SYMMETRIC,
+    LAYER_CENTERLINE_SPACING_MM,
     N_BARS_OPTS,
     clamp_n_capas,
     format_mm_es,
+    normalize_concrete_grade,
     normalize_lap_mode_ui,
     stagger_cuts_for_layer,
     sync_layers,
@@ -247,9 +259,12 @@ class CoronamientoMurosWindow(object):
         self._layers = sync_layers(None, 1)
         self._n_capas = 1
         self._lap_mode = LAP_MODE_SYMMETRIC
+        self._concrete_grade = DOSIFICACION_HORMIGON_DEFAULT
         self._cuts_mm = []
         self._cmb_capas = None
         self._cmb_lap = None
+        self._txt_empalme_label = None
+        self._cmb_dosif = None
         self._layer_host = None
         self._elev_draw = {}
         self._canvas = None
@@ -304,6 +319,7 @@ class CoronamientoMurosWindow(object):
             pass
         self._wire()
         self._rebuild_layer_cards()
+        self._refresh_empalme_visibility()
         self._redraw()
         self._refresh_warn()
         self._set_status(self._status_line())
@@ -339,7 +355,10 @@ class CoronamientoMurosWindow(object):
             if self._layers:
                 diam = self._layers[0].get(u"diam_mm", 16)
             return wall_length_estimate_empotrado(
-                self._wall, self._overhang_mm, diam_mm=diam
+                self._wall,
+                self._overhang_mm,
+                diam_mm=diam,
+                concrete_grade=self._concrete_grade,
             )
         return wall_length_estimate(self._wall)
     def _build_body_xaml(self):
@@ -355,10 +374,13 @@ class CoronamientoMurosWindow(object):
                 )
             empalme_xaml = u"""
         <Border Height="1" Background="#21465C" Margin="0,8,0,8"/>
-        <TextBlock Text="EMPALME (conjunto)" Foreground="#64748b" FontSize="10"
-                   FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <TextBlock x:Name="TxtEmpalmeLabel" Text="EMPALME (conjunto)"
+                   Foreground="#64748b" FontSize="10"
+                   FontWeight="SemiBold" Margin="0,0,0,4"
+                   Visibility="Collapsed"/>
         <ComboBox x:Name="CmbLap" Style="{StaticResource ComboStretch}"
-                  HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
+                  HorizontalAlignment="Stretch" Margin="0,0,0,6"
+                  Visibility="Collapsed"/>
         <TextBlock x:Name="TxtCutsHint" Foreground="#64748b" FontSize="9"
                    TextWrapping="Wrap" Margin="0,0,0,6"
                    Text="Clic en elevación: añade corte · clic cerca: quita"/>
@@ -405,9 +427,12 @@ class CoronamientoMurosWindow(object):
           CornerRadius="4" Padding="10" VerticalAlignment="Top">
     <StackPanel>
         <DockPanel Margin="0,0,0,6">
-          <TextBlock Text="Stack coronamiento" Foreground="#E8F4F8" FontSize="12"
-                     FontWeight="SemiBold" VerticalAlignment="Center"/>
-          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                      VerticalAlignment="Center">
+            <ComboBox x:Name="CmbDosificacionHormigon" Style="{StaticResource Combo}"
+                      MinWidth="64" Margin="0,0,6,0" VerticalAlignment="Center"
+                      IsEditable="False" IsReadOnly="True"
+                      ToolTip="Dosificación del hormigón"/>
             <Border x:Name="ChipModeSide" BorderBrush="#fbbf24" BorderThickness="1"
                     Background="#0E1B32" Padding="6,2" CornerRadius="3" Margin="0,0,6,0">
               <TextBlock x:Name="TxtModeChipSide" Text="U LIBRE" Foreground="#fbbf24"
@@ -418,6 +443,8 @@ class CoronamientoMurosWindow(object):
               <TextBlock Text="COR" Foreground="#fbbf24" FontSize="10" FontWeight="SemiBold"/>
             </Border>
           </StackPanel>
+          <TextBlock Text="Stack coronamiento" Foreground="#E8F4F8" FontSize="12"
+                     FontWeight="SemiBold" VerticalAlignment="Center"/>
         </DockPanel>
         <TextBlock Text="__HINT__"
                    Foreground="#64748b" FontSize="10" TextWrapping="Wrap" Margin="0,0,0,8"/>
@@ -481,6 +508,10 @@ __EMPALME__
         self._canvas = w.FindName(u"CnvElev")
         self._cmb_capas = w.FindName(u"CmbCapas")
         self._cmb_lap = w.FindName(u"CmbLap") if ENABLE_TRASLAPOS else None
+        self._txt_empalme_label = (
+            w.FindName(u"TxtEmpalmeLabel") if ENABLE_TRASLAPOS else None
+        )
+        self._cmb_dosif = w.FindName(u"CmbDosificacionHormigon")
         self._layer_host = w.FindName(u"PanelLayers")
         self._txt_status = w.FindName(u"TxtStatus")
         self._txt_warn = w.FindName(u"TxtWarn")
@@ -507,6 +538,15 @@ __EMPALME__
             it.Tag = int(n)
             self._cmb_capas.Items.Add(it)
         self._cmb_capas.SelectedIndex = 0
+
+        if self._cmb_dosif is not None:
+            for lab in DOSIFICACION_HORMIGON_OPCIONES:
+                it = ComboBoxItem()
+                it.Content = lab
+                it.Tag = lab
+                self._cmb_dosif.Items.Add(it)
+            self._cmb_dosif.SelectedIndex = 0
+            self._concrete_grade = DOSIFICACION_HORMIGON_DEFAULT
 
         if ENABLE_TRASLAPOS and self._cmb_lap is not None:
             for key, label in LAP_MODE_LABELS:
@@ -536,11 +576,22 @@ __EMPALME__
             self._redraw()
             self._set_status(self._status_line())
 
+        def on_dosif(sender, args):
+            self._concrete_grade = self._read_concrete_grade()
+            self._sync_layer_tips()
+            self._refresh_warn()
+            self._redraw()
+            self._set_status(self._status_line())
+
         from System.Windows.Controls import SelectionChangedEventHandler
 
         self._cmb_capas.SelectionChanged += SelectionChangedEventHandler(on_capas)
+        if self._cmb_dosif is not None:
+            self._cmb_dosif.SelectionChanged += SelectionChangedEventHandler(on_dosif)
         if ENABLE_TRASLAPOS and self._cmb_lap is not None:
             self._cmb_lap.SelectionChanged += SelectionChangedEventHandler(on_lap)
+
+        self._refresh_empalme_visibility()
 
         if self._canvas is not None:
             def _on_size(sender, args):
@@ -558,6 +609,41 @@ __EMPALME__
             btn_c.Click += RoutedEventHandler(lambda s, a: self._win.Close())
         if btn_p is not None:
             btn_p.Click += RoutedEventHandler(lambda s, a: self._colocar_event.Raise())
+
+    def _read_concrete_grade(self):
+        cmb = self._cmb_dosif
+        if cmb is None:
+            return DOSIFICACION_HORMIGON_DEFAULT
+        try:
+            si = cmb.SelectedItem
+            if si is not None:
+                tag = getattr(si, u"Tag", None)
+                if tag is not None:
+                    return normalize_concrete_grade(tag)
+                return normalize_concrete_grade(si.Content)
+        except Exception:
+            pass
+        try:
+            return normalize_concrete_grade(cmb.Text)
+        except Exception:
+            pass
+        return DOSIFICACION_HORMIGON_DEFAULT
+
+    def _sync_layer_tips(self):
+        grade = self._concrete_grade
+        for i, triple in enumerate(self._layer_combos or []):
+            tip = triple[2] if len(triple) > 2 else None
+            if tip is None:
+                continue
+            d = 16
+            try:
+                if self._layers and i < len(self._layers):
+                    d = self._layers[i].get(u"diam_mm", 16)
+            except Exception:
+                pass
+            tip.Text = u"Traslape Ø ≈ {0} mm ({1})".format(
+                format_mm_es(traslape_mm_from_diam(d, grade)), grade
+            )
 
     def _apply_mode_chips(self):
         is_emb = self._is_empotrado()
@@ -672,8 +758,13 @@ __EMPALME__
             sp.Children.Add(row)
 
             tip = TextBlock()
-            tip.Text = u"Traslape Ø ≈ {0} mm".format(
-                format_mm_es(traslape_mm_from_diam(ly.get(u"diam_mm", 16)))
+            tip.Text = u"Traslape Ø ≈ {0} mm ({1})".format(
+                format_mm_es(
+                    traslape_mm_from_diam(
+                        ly.get(u"diam_mm", 16), self._concrete_grade
+                    )
+                ),
+                self._concrete_grade,
             )
             tip.Foreground = _brush(u"#64748b")
             tip.FontSize = 9
@@ -689,6 +780,7 @@ __EMPALME__
 
     def _read_layer_combos(self):
         layers = []
+        grade = self._concrete_grade
         for cmb_n, cmb_d, tip in self._layer_combos:
             n = 2
             d = 16
@@ -704,8 +796,8 @@ __EMPALME__
                 pass
             layers.append({u"n_bars": n, u"diam_mm": d})
             if tip is not None:
-                tip.Text = u"Traslape Ø ≈ {0} mm".format(
-                    format_mm_es(traslape_mm_from_diam(d))
+                tip.Text = u"Traslape Ø ≈ {0} mm ({1})".format(
+                    format_mm_es(traslape_mm_from_diam(d, grade)), grade
                 )
         if layers:
             self._layers = layers
@@ -717,7 +809,9 @@ __EMPALME__
             parts.append(
                 u"C{0}:{1}Ø{2}".format(i + 1, ly.get(u"n_bars"), ly.get(u"diam_mm"))
             )
-        base = u"{0} · {1}".format(mode, u" · ".join(parts))
+        base = u"{0} · {1} · {2}".format(
+            mode, self._concrete_grade, u" · ".join(parts)
+        )
         if not ENABLE_TRASLAPOS:
             return base
         ncuts = len(self._cuts_mm)
@@ -785,7 +879,7 @@ __EMPALME__
         return None
 
     def _canvas_flip(self):
-        """True si izq. del canvas = extremo P1 en pantalla (mm=main a la izq.)."""
+        """U libre: True si izq. canvas = P1 (mm=0 a la der. en pantalla). Empotrado no lo usa."""
         return bool(
             wall_elev_canvas_flip_for_view(self._wall, self._active_view())
         )
@@ -805,28 +899,64 @@ __EMPALME__
         if w < 10 or h < 10:
             return
         draw = getattr(self, u"_elev_draw", None) or {}
-        bar_x0 = draw.get(u"bar_x0")
-        bar_x1 = draw.get(u"bar_x1")
-        if bar_x0 is None or bar_x1 is None:
-            # Empotrado: barra no ocupa todo el muro — mismos insets que redraw.
-            if self._is_empotrado():
-                bar_x0, bar_x1 = self._empotrado_bar_x_range(w, main, est)
-            else:
+        x = float(pt.X)
+        if self._is_empotrado():
+            x_embed = draw.get(u"x_embed")
+            x_free = draw.get(u"x_free")
+            if x_embed is None or x_free is None:
+                x_embed, x_free = self._empotrado_bar_x_range(w, main, est)
+            x_embed = float(x_embed)
+            x_free = float(x_free)
+            x_lo = min(x_embed, x_free)
+            x_hi = max(x_embed, x_free)
+            if x < x_lo or x > x_hi:
+                return
+            denom = x_free - x_embed
+            if abs(denom) < 1e-6:
+                return
+            mm = main * (x - x_embed) / denom
+            if mm < 0.0:
+                mm = 0.0
+            elif mm > main:
+                mm = main
+        else:
+            bar_x0 = draw.get(u"bar_x0")
+            bar_x1 = draw.get(u"bar_x1")
+            if bar_x0 is None or bar_x1 is None:
                 pad_l, pad_r = 48.0, 28.0
                 bar_x0 = pad_l + 18.0
                 bar_x1 = w - pad_r - 18.0
-        span = max(1.0, float(bar_x1) - float(bar_x0))
-        x = float(pt.X)
-        if x < float(bar_x0) or x > float(bar_x1):
-            return
-        t = (x - float(bar_x0)) / span
-        if self._canvas_flip():
-            mm = (1.0 - t) * main
-        else:
-            mm = t * main
+            span = max(1.0, float(bar_x1) - float(bar_x0))
+            if x < float(bar_x0) or x > float(bar_x1):
+                return
+            t = (x - float(bar_x0)) / span
+            if self._canvas_flip():
+                mm = (1.0 - t) * main
+            else:
+                mm = t * main
         self._cuts_mm = toggle_cut_at_mm(self._cuts_mm, mm, main)
+        self._refresh_empalme_visibility()
         self._redraw()
         self._set_status(self._status_line())
+
+    def _refresh_empalme_visibility(self):
+        """Show lap-mode combo only when at least one cut/empalme is defined."""
+        if not ENABLE_TRASLAPOS:
+            return
+        show = len(self._cuts_mm) > 0
+        vis = Visibility.Visible if show else Visibility.Collapsed
+        changed = False
+        for el in (self._txt_empalme_label, self._cmb_lap):
+            if el is None:
+                continue
+            try:
+                if el.Visibility != vis:
+                    el.Visibility = vis
+                    changed = True
+            except Exception:
+                pass
+        if changed:
+            self._fit_height_to_content()
 
     def _elev_walls_for_layout(self):
         """Muros en orden base→cima para proyección (host, [upper])."""
@@ -937,7 +1067,13 @@ __EMPALME__
         return out
 
     def _empotrado_bar_x_range(self, canvas_w, main_mm, est, host_rect=None, upper_rect=None):
-        """Rango X de la barra L en canvas (empotro+voladizo) sobre host proyectado."""
+        """
+        Extremos X de la barra L en canvas (Empotrado).
+
+        Returns:
+            (x_embed, x_free): px de mm=0 (empotro) y mm=main (pata en voladizo).
+            Pueden ir en cualquier orden izq/der según el lado del voladizo.
+        """
         pad_l, pad_r = 48.0, 28.0
         end_inset = 18.0
         embed = float(est.get(u"embed_mm") or 0.0)
@@ -975,19 +1111,20 @@ __EMPALME__
                 side = u"der"
 
         if side == u"izq":
-            # Voladizo a la izquierda: barra desde extremo libre hacia reentrada.
-            bar_x0 = hx0 + end_inset
-            bar_x1 = bar_x0 + max(
-                20.0, (float(main_mm) / max(1.0, Lhost)) * wall_w
-            )
+            # Voladizo libre a la izq.; empotro bajo superior hacia la der.
+            x_free = hx0 + end_inset
             if upper_rect is not None:
                 reent_x = float(upper_rect[u"x0"])
-                bar_x1 = max(
-                    bar_x0 + 20.0,
-                    min(hx1 - end_inset, reent_x + (embed / max(1.0, Lhost)) * wall_w),
+                x_embed = min(
+                    hx1 - end_inset,
+                    reent_x + (embed / max(1.0, Lhost)) * wall_w,
                 )
+                x_embed = max(x_free + 20.0, x_embed)
             else:
-                bar_x1 = min(hx1 - end_inset, bar_x1)
+                x_embed = x_free + max(
+                    20.0, (float(main_mm) / max(1.0, Lhost)) * wall_w
+                )
+                x_embed = min(hx1 - end_inset, x_embed)
         else:
             # Empotro bajo superior (izq) + voladizo libre (der).
             if upper_rect is not None:
@@ -997,9 +1134,9 @@ __EMPALME__
                     0.05, min(0.95, (Lhost - overhang) / max(1.0, Lhost))
                 )
                 reent_x = hx0 + wall_w * reent_frac
-            bar_x0 = max(hx0 + 8.0, reent_x - (embed / max(1.0, Lhost)) * wall_w)
-            bar_x1 = hx1 - end_inset
-        return float(bar_x0), float(bar_x1)
+            x_embed = max(hx0 + 8.0, reent_x - (embed / max(1.0, Lhost)) * wall_w)
+            x_free = hx1 - end_inset
+        return float(x_embed), float(x_free)
 
     def _clear_canvas(self):
         if self._canvas is not None:
@@ -1108,18 +1245,24 @@ __EMPALME__
             )
 
         n_capas = len(self._layers)
-        gap = 10.0
-        cover = 10.0
+        # Esquema vertical proporcional al modelo (cover 25 mm → 10 px).
+        _elev_v_px_per_mm = 10.0 / max(1.0, float(COVER_SUPERIOR_MM))
+        cover = float(COVER_SUPERIOR_MM) * _elev_v_px_per_mm
+        gap = float(LAYER_CENTERLINE_SPACING_MM) * _elev_v_px_per_mm
         thick = float(_STROKE_BAR)
         leg = max(1.0, thick * 0.9)
         flip = self._canvas_flip()
         embed_mm = float(est.get(u"embed_mm") or 0.0)
 
         if is_emb:
-            bar_x0, bar_x1 = self._empotrado_bar_x_range(
+            # Empotrado: mm anclado a geometría (empotro→libre), sin flip P0.
+            x_embed, x_free = self._empotrado_bar_x_range(
                 w, main, est, host_rect=host_r, upper_rect=upper_r
             )
+            bar_x0 = min(float(x_embed), float(x_free))
+            bar_x1 = max(float(x_embed), float(x_free))
         else:
+            x_embed = x_free = None
             bar_x0 = hx0 + 18.0
             bar_x1 = hx1 - 18.0
             if bar_x1 <= bar_x0 + 4.0:
@@ -1129,13 +1272,20 @@ __EMPALME__
         self._elev_draw = {
             u"bar_x0": float(bar_x0),
             u"bar_x1": float(bar_x1),
+            u"x_embed": float(x_embed) if x_embed is not None else None,
+            u"x_free": float(x_free) if x_free is not None else None,
             u"host_rect": host_r,
             u"upper_rect": upper_r,
             u"host_top_y": float(host_top_y),
-            u"flip": bool(flip),
+            u"flip": bool(flip) if not is_emb else False,
         }
 
         def x_at(mm):
+            if is_emb:
+                # mm=0 → empotro; mm=main → pata en extremo libre.
+                return float(x_embed) + (float(mm) / max(1.0, main)) * (
+                    float(x_free) - float(x_embed)
+                )
             t = float(mm) / max(1.0, main)
             if flip:
                 t = 1.0 - t
@@ -1167,7 +1317,7 @@ __EMPALME__
             y = host_top_y + cover + li * gap
             color = _LAYER_COLORS[li % len(_LAYER_COLORS)]
             diam = float(ly.get(u"diam_mm", 16))
-            lap = traslape_mm_from_diam(diam)
+            lap = traslape_mm_from_diam(diam, self._concrete_grade)
             cuts = (
                 stagger_cuts_for_layer(self._cuts_mm, li, main, lap)
                 if ENABLE_TRASLAPOS
@@ -1264,12 +1414,14 @@ __EMPALME__
                 chip.Text = u"Host Id {0} · Sup Id {1} · EMPOTRADO".format(wid, uid)
             else:
                 chip.Text = u"Muro Id {0} · U LIBRE".format(wid)
+        self._refresh_empalme_visibility()
         self._refresh_warn()
         self._redraw()
         self._set_status(self._status_line())
 
     def _execute_colocar(self):
         self._read_layer_combos()
+        self._concrete_grade = self._read_concrete_grade()
         cuts = list(self._cuts_mm) if ENABLE_TRASLAPOS else []
         res = place_coronamiento(
             self._doc,
@@ -1281,6 +1433,7 @@ __EMPALME__
             geom_mode=self._geom_mode,
             voladizo_specs=self._voladizo_specs,
             overhang_mm=self._overhang_mm,
+            concrete_grade=self._concrete_grade,
         )
         if res.get(u"ok"):
             try:

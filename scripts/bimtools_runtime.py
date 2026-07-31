@@ -2,8 +2,11 @@
 """
 Detección de runtime pyRevit / Revit (IronPython 2 vs CPython 3, 2024–2026).
 
-Solo Revit 2024 + IronPython 2 soporta ProgressBar pyRevit, TransactionGroup
-anidados e iteración ``GetOrderedParameters`` sin errores de expression trees.
+Legacy (Revit 2024 + IronPython 2): ProgressBar, TransactionGroup anidados e
+iteración ``GetOrderedParameters`` sin errores de expression trees.
+
+Modernos (2025/2026, CPython 3): ProgressBar pyRevit habilitada; TG anidados y
+scan de parámetros AR siguen desactivados (solo legacy).
 """
 
 from __future__ import print_function
@@ -71,7 +74,7 @@ def is_legacy_revit2024_armado(doc):
     """
     Entorno validado (Revit 2024, IronPython 2).
 
-    Cualquier otro año o intérprete → comportamiento moderno (sin pbar/TG/scan).
+    Cualquier otro año o intérprete → comportamiento moderno (sin TG/scan).
     """
     if not is_ironpython2_runtime():
         return False
@@ -93,7 +96,22 @@ def use_embed_solid_collision_probe(doc=None):
 
 
 def pyrevit_progress_bar_enabled(doc):
-    return is_legacy_revit2024_armado(doc)
+    """
+    ``forms.ProgressBar`` de pyRevit en Armado Muros / Mallas.
+
+    Habilitada en Revit 2024–2026 (IronPython 2 y CPython 3). Antes solo
+    legacy 2024 IP2, por eso en 2025/2026 no aparecía barra.
+    """
+    try:
+        year = int(revit_year_from_doc(doc))
+    except Exception:
+        year = 0
+    if year >= 2024:
+        return True
+    # Sin documento / año ilegible: permitir si el runtime es pyRevit conocido.
+    if doc is None:
+        return is_ironpython2_runtime() or is_cpython3_runtime()
+    return False
 
 
 def use_transaction_group_armado_muros(doc, within_parent_transaction_group=False):

@@ -1254,10 +1254,20 @@ class _CrearMallasEjecutarHandler(IExternalEventHandler):
         rebars_por_muro_id = {}
         outer = None
         flujo_ok = False
+        # Post-creación: Etiquetas / Etiquetas muro / Visibilidad (tras pbar por muro).
+        _post_phases = geo._MALLAS_PBAR_PHASES[1:]
+        n_post = len(_post_phases)
+        pb_post = None
+        pbar_post_open = False
 
         # Una sola Transaction (un paso Deshacer), como Armado Muros v3.
         # Lotes internos → SubTransaction vía TxnScope; sin TransactionGroup anidado.
         try:
+            # Por si un unificado anterior abortó sin limpiar el flag anidado.
+            try:
+                geo._unificado_outer_pbar_set_active(False)
+            except Exception:
+                pass
             try:
                 from armado_muros_rebar_params import (
                     iniciar_armadura_conjunto_guid_ejecucion,
@@ -1275,6 +1285,7 @@ class _CrearMallasEjecutarHandler(IExternalEventHandler):
             if not outer.HasStarted():
                 raise Exception(u"No se pudo abrir la transacción de Mallas en muros.")
 
+            # 1) Mallas: ProgressBar por muro dentro de crear_areas_malla_parametrizada.
             ok, err, cover_n, embed_res = geo.crear_areas_malla_parametrizada(
                 doc,
                 self.walls,
@@ -1300,9 +1311,26 @@ class _CrearMallasEjecutarHandler(IExternalEventHandler):
             except Exception:
                 walls_ord = list(self.walls or [])
 
+            # 2–4) Etiquetas / Etiquetas muro / Visibilidad
+            pb_post = geo._mallas_pbar_start(doc, n_post)
+            # Título inicial = fase Etiquetas (índice 0 de post).
+            try:
+                if pb_post is not None:
+                    pb_post.title = geo._ml_pbar_phase_title(
+                        geo._mallas_pbar_phase_base(_post_phases[0]),
+                        n_post,
+                    )
+            except Exception:
+                pass
+            pbar_post_open = geo._ml_pbar_enter(pb_post)
+
+            geo._ml_pbar_step(
+                pb_post, 0, n_post, geo._mallas_pbar_phase_base(_post_phases[0]),
+            )
             if rebars_por_muro_id:
                 try:
-                    # Post-lote ya stampó Orientacion/spacing.
+                    # Siempre re-stamp Orientacion antes de etiquetar (tras split
+                    # desacople las copias pueden quedar sin V./H. en el mapa).
                     embed_res = geo._aplicar_etiquetas_malla_todos(
                         doc,
                         uidoc,
@@ -1313,11 +1341,15 @@ class _CrearMallasEjecutarHandler(IExternalEventHandler):
                         embed_res,
                         cover_asignados=int(cover_n or 0),
                         muro_contencion=muro_cont,
-                        stamp_pre_etiqueta=False,
+                        stamp_pre_etiqueta=True,
                     )
                 except Exception as ex_tag:
                     err.append(u"Etiquetas malla: {0}".format(ex_tag))
 
+            geo._ml_pbar_step(
+                pb_post, 1, n_post, geo._mallas_pbar_phase_base(_post_phases[1]),
+            )
+            if rebars_por_muro_id:
                 try:
                     from armado_muros_wall_tags_rebase import (
                         rebase_wall_tags_above_mesh,
@@ -1345,6 +1377,10 @@ class _CrearMallasEjecutarHandler(IExternalEventHandler):
                 except Exception as ex_wt:
                     err.append(u"Etiquetas muro (rebase): {0}".format(ex_wt))
 
+            geo._ml_pbar_step(
+                pb_post, 2, n_post, geo._mallas_pbar_phase_base(_post_phases[2]),
+            )
+            if rebars_por_muro_id:
                 try:
                     geo.aplicar_unobscured_armado_muros_en_vista(
                         doc,
@@ -1363,6 +1399,10 @@ class _CrearMallasEjecutarHandler(IExternalEventHandler):
             ok = ok or []
             flujo_ok = False
         finally:
+            try:
+                geo._ml_pbar_exit(pb_post, pbar_post_open)
+            except Exception:
+                pass
             try:
                 from armado_muros_rebar_params import (
                     finalizar_armadura_conjunto_guid_ejecucion,
@@ -1419,6 +1459,9 @@ class _CrearMallasEjecutarHandler(IExternalEventHandler):
                 int(embed_res.get(u"n_skip", 0)),
                 int(embed_res.get(u"n_fail", 0)),
             )
+            n_split = int(embed_res.get(u"n_vertical_split_desacople", 0) or 0)
+            if n_split:
+                msg_ok += u"\nDesacople vertical (partidos solape/desacople)={0}.".format(n_split)
             msg_ok += u"\nHorizontales ext/int: retraída inicio 25+Ø/2, fin 25 mm → total={0} (ext.={1}, int.={2}); forma 06 → total={3} (ext.={4}, int.={5}).".format(
                 int(embed_res.get(u"n_horiz_retract", 0)),
                 int(embed_res.get(u"n_horiz_retract_ext", 0)),
@@ -1463,9 +1506,12 @@ class _CrearMallasEjecutarHandler(IExternalEventHandler):
                 )
             embed_msgs = embed_res.get(u"messages") or []
             if embed_msgs:
-                msg_ok += u"\n" + u"\n".join(unicode(m) for m in embed_msgs[:5])
-                if len(embed_msgs) > 5:
-                    msg_ok += u"\n…"
+                show = [unicode(m) for m in embed_msgs[:8]]
+                if show:
+                    msg_ok += u"\n" + u"\n".join(show)
+                    n_more = len(embed_msgs) - len(show)
+                    if n_more > 0:
+                        msg_ok += u"\n… (+{0} msgs)".format(n_more)
         if ok and len(ok) > 12:
             msg_ok += u"…"
         if err:
@@ -1574,6 +1620,9 @@ class _CrearUnificadoEjecutarHandler(IExternalEventHandler):
                 int(embed_res.get(u"n_extended", 0)),
                 int(embed_res.get(u"n_retracted", 0)),
             )
+            n_split = int(embed_res.get(u"n_vertical_split_desacople", 0) or 0)
+            if n_split:
+                msg_ok += u"\nDesacople vertical (partidos)={0}.".format(n_split)
             msg_ok += u"\nHorizontales ext/int: retraída={0} (ext.={1}, int.={2}); forma 06={3} (ext.={4}, int.={5}).".format(
                 int(embed_res.get(u"n_horiz_retract", 0)),
                 int(embed_res.get(u"n_horiz_retract_ext", 0)),
@@ -1610,9 +1659,12 @@ class _CrearUnificadoEjecutarHandler(IExternalEventHandler):
                 )
             embed_msgs = embed_res.get(u"messages") or []
             if embed_msgs:
-                msg_ok += u"\n" + u"\n".join(unicode(m) for m in embed_msgs[:8])
-                if len(embed_msgs) > 8:
-                    msg_ok += u"\n…"
+                show = [unicode(m) for m in embed_msgs[:8]]
+                if show:
+                    msg_ok += u"\n" + u"\n".join(show)
+                    n_more = len(embed_msgs) - len(show)
+                    if n_more > 0:
+                        msg_ok += u"\n… (+{0} msgs)".format(n_more)
         if err:
             msg_ok += u"\n\n" + u"\n".join(err[:12])
             if len(err) > 12:

@@ -324,19 +324,32 @@ def _crear_tag_malla_multihost_rebar(
         if mh_regen_once is not None:
             mh_regen_once[u"pending"] = False
 
-    st = SubTransaction(document)
+    # Preferir mutar en la txn/SubTxn ya abierta: no anidar SubTransaction
+    # (falla si ``etiquetar_rebars_malla_en_vista`` ya abrió una SubTxn).
+    nested = None
     try:
-        st.Start()
+        from armado_muros_txn import doc_is_modifiable
+
+        already_open = doc_is_modifiable(document)
     except Exception:
-        return tag, None
+        already_open = False
+    if not already_open:
+        try:
+            nested = SubTransaction(document)
+            nested.Start()
+        except Exception:
+            nested = None
+            return tag, None
     try:
         add_fn(refs_add)
-        st.Commit()
+        if nested is not None:
+            nested.Commit()
         _aplicar_estilo_tag_malla(tag, head_pos)
         return tag, None
     except Exception as ex_mh:
         try:
-            st.RollBack()
+            if nested is not None:
+                nested.RollBack()
         except Exception:
             pass
         try:

@@ -36,6 +36,7 @@ _KIND_NOOP = u"noop"
 _BATCH_MUTATION_DEPTH = 0
 
 _OUTSIDE_HOST_IDS = None
+_SWALLOWER_SINGLETON = None
 
 
 def _outside_host_failure_ids():
@@ -82,8 +83,12 @@ def _failure_message_looks_outside_host(fmsg):
         u"completamente fuera",
         u"completely outside",
         u"outside of its host",
+        u"outside of the host",
+        u"outside of host",
         u"fuera de su anfitrión",
         u"fuera de su host",
+        u"fuera del host",
+        u"fuera del anfitrión",
     )
     for m in markers:
         if m in low:
@@ -126,6 +131,9 @@ class RebarOutsideHostWarningSwallower(IFailuresPreprocessor):
         if failures_accessor is None:
             return FailureProcessingResult.Continue
         known = _outside_host_failure_ids()
+        # Recolectar primero: DeleteWarning mientras se itera GetFailureMessages
+        # puede tumbar Revit (sobre todo con muchos warnings de capas nuevas).
+        to_delete = []
         for f in self._iter_failure_msgs(failures_accessor):
             try:
                 if f.GetSeverity() != FailureSeverity.Warning:
@@ -148,10 +156,12 @@ class RebarOutsideHostWarningSwallower(IFailuresPreprocessor):
             if not delete:
                 delete = _failure_message_looks_outside_host(f)
             if delete:
-                try:
-                    failures_accessor.DeleteWarning(f)
-                except Exception:
-                    pass
+                to_delete.append(f)
+        for f in to_delete:
+            try:
+                failures_accessor.DeleteWarning(f)
+            except Exception:
+                pass
         return FailureProcessingResult.Continue
 
 
@@ -159,12 +169,19 @@ def attach_rebar_outside_host_swallower(txn):
     """
     Adjunta el preprocessor a una ``Transaction`` (no aplica a SubTransaction).
     Retorna True si se pudo configurar.
+
+    Reutiliza una sola instancia CLR (crear N wrappers IronPython del
+    ``IFailuresPreprocessor`` y adjuntarlos en sucesivas ejecuciones puede
+    tumbar Revit en la 2ª apertura de la herramienta).
     """
+    global _SWALLOWER_SINGLETON
     if txn is None or not isinstance(txn, Transaction):
         return False
     try:
+        if _SWALLOWER_SINGLETON is None:
+            _SWALLOWER_SINGLETON = RebarOutsideHostWarningSwallower()
         opts = txn.GetFailureHandlingOptions()
-        opts.SetFailuresPreprocessor(RebarOutsideHostWarningSwallower())
+        opts.SetFailuresPreprocessor(_SWALLOWER_SINGLETON)
         txn.SetFailureHandlingOptions(opts)
         return True
     except Exception:

@@ -1,17 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Divide un conjunto de barras (Rebar) con regla de trazado *Maximum Spacing* en dos
-subconjuntos en la barra seleccionada.
+Divide un conjunto de barras (Rebar) shape-driven en dos subconjuntos.
 
-Flujo:
-1. Seleccionar el Rebar (shape-driven, layout Maximum Spacing, más de una barra).
-2. Seleccionar una barra del conjunto (subelemento).
-3. Dividir el set en el índice de esa barra.
+UI (pushbutton): layout Maximum Spacing + selección interactiva.
+Pipeline (mallas desacople): también NumberWithSpacing / FixedNumber vía
+``dividir_rebar_set_en_indice_en_tx`` (sin Transaction propia).
 
 Implementación:
-- Revit 2027+ con ``SplitRebar``: API nativa.
-- Revit 2024–2026: recrea dos conjuntos copiando el Rebar, ajustando longitud de
-  distribución con ``GetBarPositionTransform`` y ``SetLayoutAsMaximumSpacing``.
+- Revit 2027+ con ``SplitRebar``: API nativa (si disponible).
+- Revit 2024–2026: Copy + Move por ``GetBarPositionTransform`` + SetLayout
+  con ArrayLength parcial (anclado en barra 0 / barra al corte).
 """
 
 from __future__ import print_function
@@ -98,7 +96,34 @@ def _es_layout_maximum_spacing(rebar):
     return rule == u"MaximumSpacing" or u"MaximumSpacing" in rule
 
 
+def _layout_rule_kind(rebar):
+    """
+    ``maximum`` | ``number_spacing`` | ``fixed`` | ``other``.
+    """
+    rule = _layout_rule_nombre(rebar) or u""
+    if rule == u"MaximumSpacing" or u"MaximumSpacing" in rule:
+        return u"maximum"
+    if rule == u"NumberWithSpacing" or u"NumberWithSpacing" in rule:
+        return u"number_spacing"
+    if rule in (u"Number", u"FixedNumber") or u"FixedNumber" in rule:
+        return u"fixed"
+    if RebarShapeDrivenLayoutRule is not None:
+        try:
+            lr = rebar.LayoutRule
+            name = lr.ToString() if lr is not None else u""
+            if u"MaximumSpacing" in name:
+                return u"maximum"
+            if u"NumberWithSpacing" in name:
+                return u"number_spacing"
+            if u"FixedNumber" in name or name == u"Number":
+                return u"fixed"
+        except Exception:
+            pass
+    return u"other"
+
+
 def _es_rebar_divisible(rebar):
+    """UI: solo Maximum Spacing."""
     if rebar is None or not isinstance(rebar, Rebar):
         return False, u"No es un elemento Rebar."
     try:
@@ -109,6 +134,27 @@ def _es_rebar_divisible(rebar):
         return False, u"Solo aplica a barras shape-driven (no free-form)."
     if not _es_layout_maximum_spacing(rebar):
         return False, u"La regla de trazado debe ser Maximum Spacing (separación máxima)."
+    n = _cantidad_posiciones(rebar)
+    if n < 2:
+        return False, u"El conjunto debe tener al menos dos posiciones de barra."
+    return True, u""
+
+
+def _es_rebar_divisible_pipeline(rebar):
+    """Pipeline desacople: MaxSpacing / NumberWithSpacing / FixedNumber."""
+    if rebar is None or not isinstance(rebar, Rebar):
+        return False, u"No es un elemento Rebar."
+    try:
+        acc = rebar.GetShapeDrivenAccessor()
+    except Exception:
+        acc = None
+    if acc is None:
+        return False, u"Solo aplica a barras shape-driven (no free-form)."
+    kind = _layout_rule_kind(rebar)
+    if kind not in (u"maximum", u"number_spacing", u"fixed"):
+        return False, u"Layout no soportado para dividir: {0}.".format(
+            _layout_rule_nombre(rebar) or kind,
+        )
     n = _cantidad_posiciones(rebar)
     if n < 2:
         return False, u"El conjunto debe tener al menos dos posiciones de barra."
@@ -213,25 +259,76 @@ def _layout_params(rebar):
     return acc, sp, alen, b_side, inc0, inc1
 
 
-def _aplicar_layout_segmento(acc, spacing, array_len, b_side, inc_first, inc_last):
+def _aplicar_layout_segmento(
+    acc, spacing, array_len, b_side, inc_first, inc_last,
+    rule_kind=u"maximum", n_bars=None,
+):
+    """Aplica layout al segmento. ``n_bars`` obligatorio si no es MaximumSpacing."""
     if acc is None:
         return False
-    if array_len < 1e-9 or spacing >= array_len - 1e-9:
+    kind = rule_kind or u"maximum"
+    try:
+        n_seg = int(n_bars) if n_bars is not None else 0
+    except Exception:
+        n_seg = 0
+
+    if n_seg == 1 or array_len < 1e-9:
         try:
             acc.SetLayoutAsSingle()
             return True
         except Exception:
             return False
+
+    if kind == u"maximum" and spacing > 1e-12 and spacing >= array_len - 1e-9:
+        try:
+            acc.SetLayoutAsSingle()
+            return True
+        except Exception:
+            return False
+
     combos = (
         (bool(b_side), bool(inc_first), bool(inc_last)),
         (not bool(b_side), bool(inc_first), bool(inc_last)),
     )
     for b_try, i0, i1 in combos:
         try:
-            acc.SetLayoutAsMaximumSpacing(float(spacing), float(array_len), b_try, i0, i1)
+            if kind == u"number_spacing":
+                if n_seg < 1 or spacing < 1e-12:
+                    continue
+                acc.SetLayoutAsNumberWithSpacing(
+                    int(n_seg), float(spacing), float(array_len), b_try, i0, i1,
+                )
+                return True
+            if kind == u"fixed":
+                if n_seg < 1:
+                    continue
+                acc.SetLayoutAsFixedNumber(
+                    int(n_seg), float(array_len), b_try, i0, i1,
+                )
+                return True
+            # maximum (default)
+            acc.SetLayoutAsMaximumSpacing(
+                float(spacing), float(array_len), b_try, i0, i1,
+            )
             return True
         except Exception:
             continue
+    # Último recurso: FixedNumber / Single
+    if n_seg >= 2:
+        for b_try, i0, i1 in combos:
+            try:
+                acc.SetLayoutAsFixedNumber(
+                    int(n_seg), float(array_len), b_try, i0, i1,
+                )
+                return True
+            except Exception:
+                continue
+    if n_seg == 1 or array_len < 1e-9:
+        try:
+            acc.SetLayoutAsSingle()
+            return True
+        except Exception:
+            pass
     return False
 
 
@@ -244,6 +341,41 @@ def _distribucion_desde_rebar(rebar, n):
     if delta.GetLength() < 1e-9:
         return None, t0
     return delta.Normalize(), t0
+
+
+def _distribucion_fallback(rebar, n, spacing, alen):
+    """
+    Si los transforms no distinguen posiciones, estima eje de reparto con
+    Normal del shape-driven × eje vertical (mallas verticales).
+    """
+    t0 = _get_bar_transform(rebar, 0)
+    if t0 is None:
+        return None, None, None
+    direction = None
+    try:
+        acc = rebar.GetShapeDrivenAccessor()
+        normal = acc.Normal if acc is not None else None
+        if normal is not None:
+            for up in (XYZ(0.0, 0.0, 1.0), XYZ(1.0, 0.0, 0.0), XYZ(0.0, 1.0, 0.0)):
+                cross = normal.CrossProduct(up)
+                if cross is not None and cross.GetLength() > 1e-6:
+                    direction = cross.Normalize()
+                    break
+    except Exception:
+        direction = None
+    if direction is None:
+        return None, None, None
+
+    positions = []
+    if spacing is not None and float(spacing) > 1e-12 and n > 1:
+        for i in range(n):
+            positions.append(float(i) * float(spacing))
+    elif alen is not None and float(alen) > 1e-12 and n > 1:
+        for i in range(n):
+            positions.append(float(i) / float(n - 1) * float(alen))
+    else:
+        return None, None, None
+    return direction, t0, positions
 
 
 def _posicion_escalar(rebar, bar_index, direction, t0):
@@ -263,30 +395,67 @@ def _dividir_con_split_rebar_api(document, rebar, bar_index):
     document.Regenerate()
 
 
-def _dividir_manual_max_spacing(document, rebar, bar_index):
+def _rebar_ids_in_document(document):
+    out = set()
+    try:
+        from Autodesk.Revit.DB import FilteredElementCollector
+
+        for e in FilteredElementCollector(document).OfClass(Rebar):
+            iid = _element_id_int(getattr(e, "Id", None))
+            if iid is not None:
+                out.add(int(iid))
+    except Exception:
+        pass
+    return out
+
+
+def _dividir_manual(document, rebar, bar_index):
+    """
+    Copy + Move + SetLayout. Devuelve ``(ok, msg, rb_left, rb_right)``.
+    ``rb_left`` = original acortado (barras 0..idx); ``rb_right`` = copia.
+    """
     idx = int(bar_index)
     n = _cantidad_posiciones(rebar)
-    acc0, spacing, _alen_total, b_side, inc0, inc1 = _layout_params(rebar)
+    rule_kind = _layout_rule_kind(rebar)
+    acc0, spacing, alen_total, b_side, inc0, inc1 = _layout_params(rebar)
     if acc0 is None:
-        return False, u"GetShapeDrivenAccessor no disponible."
+        return False, u"GetShapeDrivenAccessor no disponible.", None, None
 
     direction, t0 = _distribucion_desde_rebar(rebar, n)
-    if direction is None or t0 is None:
-        return False, u"No se pudieron leer posiciones de barras (GetBarPositionTransform)."
+    positions_fb = None
+    if direction is None:
+        direction, t0, positions_fb = _distribucion_fallback(
+            rebar, n, spacing, alen_total,
+        )
+        if direction is None or t0 is None or not positions_fb:
+            return False, u"No se pudieron leer posiciones de barras (GetBarPositionTransform).", None, None
 
-    pos_idx = _posicion_escalar(rebar, idx, direction, t0)
-    pos_next = _posicion_escalar(rebar, idx + 1, direction, t0)
-    pos_last = _posicion_escalar(rebar, n - 1, direction, t0)
-    if pos_idx is None or pos_next is None or pos_last is None:
-        return False, u"No se pudo calcular la posición de corte."
+    if positions_fb is not None:
+        pos_idx = float(positions_fb[idx])
+        pos_next = float(positions_fb[idx + 1])
+        pos_last = float(positions_fb[n - 1])
+        delta_move = XYZ(
+            float(direction.X) * pos_next,
+            float(direction.Y) * pos_next,
+            float(direction.Z) * pos_next,
+        )
+    else:
+        pos_idx = _posicion_escalar(rebar, idx, direction, t0)
+        pos_next = _posicion_escalar(rebar, idx + 1, direction, t0)
+        pos_last = _posicion_escalar(rebar, n - 1, direction, t0)
+        if pos_idx is None or pos_next is None or pos_last is None:
+            return False, u"No se pudo calcular la posición de corte.", None, None
+        t_next = _get_bar_transform(rebar, idx + 1)
+        if t_next is None:
+            return False, u"No se pudo leer la transformación de la barra {}.".format(idx + 1), None, None
+        delta_move = t_next.Origin - t0.Origin
 
     len1 = max(0.0, float(pos_idx))
     len2 = max(0.0, float(pos_last - pos_next))
-
-    t_next = _get_bar_transform(rebar, idx + 1)
-    if t_next is None:
-        return False, u"No se pudo leer la transformación de la barra {}.".format(idx + 1)
-    delta_move = t_next.Origin - t0.Origin
+    n1 = int(idx) + 1
+    n2 = int(n) - (int(idx) + 1)
+    if n1 < 1 or n2 < 1:
+        return False, u"Segmentos con n<1 (n1={0} n2={1}).".format(n1, n2), None, None
 
     try:
         new_ids = ElementTransformUtils.CopyElement(document, rebar.Id, XYZ.Zero)
@@ -295,42 +464,159 @@ def _dividir_manual_max_spacing(document, rebar, bar_index):
             msg = unicode(ex)
         except NameError:
             msg = str(ex)
-        return False, u"No se pudo copiar el Rebar: {}".format(msg)
+        return False, u"No se pudo copiar el Rebar: {}".format(msg), None, None
 
     if new_ids is None or len(new_ids) < 1:
-        return False, u"CopyElement no devolvió elementos."
+        return False, u"CopyElement no devolvió elementos.", None, None
 
     rb2 = document.GetElement(new_ids[0])
     if rb2 is None:
-        return False, u"No se pudo obtener la copia del Rebar."
+        return False, u"No se pudo obtener la copia del Rebar.", None, None
 
-    if not _aplicar_layout_segmento(acc0, spacing, len1, b_side, inc0, True):
-        return False, u"No se pudo aplicar Maximum Spacing al primer subconjunto."
+    if not _aplicar_layout_segmento(
+        acc0, spacing, len1, b_side, inc0, True,
+        rule_kind=rule_kind, n_bars=n1,
+    ):
+        try:
+            document.Delete(rb2.Id)
+        except Exception:
+            pass
+        return False, u"No se pudo aplicar layout al primer subconjunto.", None, None
 
     acc2 = rb2.GetShapeDrivenAccessor()
     if acc2 is None:
-        return False, u"La copia no tiene ShapeDrivenAccessor."
+        try:
+            document.Delete(rb2.Id)
+        except Exception:
+            pass
+        return False, u"La copia no tiene ShapeDrivenAccessor.", None, None
 
     if delta_move.GetLength() > 1e-9:
         try:
             ElementTransformUtils.MoveElement(document, rb2.Id, delta_move)
         except Exception as ex:
             try:
+                document.Delete(rb2.Id)
+            except Exception:
+                pass
+            try:
                 msg = unicode(ex)
             except NameError:
                 msg = str(ex)
-            return False, u"No se pudo trasladar el segundo subconjunto: {}".format(msg)
+            return False, u"No se pudo trasladar el segundo subconjunto: {}".format(msg), None, None
 
-    if not _aplicar_layout_segmento(acc2, spacing, len2, b_side, True, inc1):
-        return False, u"No se pudo aplicar Maximum Spacing al segundo subconjunto."
+    if not _aplicar_layout_segmento(
+        acc2, spacing, len2, b_side, True, inc1,
+        rule_kind=rule_kind, n_bars=n2,
+    ):
+        try:
+            document.Delete(rb2.Id)
+        except Exception:
+            pass
+        return False, u"No se pudo aplicar layout al segundo subconjunto.", None, None
 
-    document.Regenerate()
-    return True, u""
+    try:
+        document.Regenerate()
+    except Exception:
+        pass
+    return True, u"", rebar, rb2
+
+
+def _dividir_manual_max_spacing(document, rebar, bar_index):
+    """Compat UI: ``(ok, msg)``."""
+    ok, msg, _a, _b = _dividir_manual(document, rebar, bar_index)
+    return ok, msg
+
+
+def dividir_rebar_set_en_indice_en_tx(document, rebar, bar_index):
+    """
+    Divide ``rebar`` en el índice indicado **sin** abrir Transaction.
+
+    Prefiere el camino manual (Copy+Move+SetLayout) porque devuelve ambos
+    Rebar de forma fiable. ``SplitRebar`` solo si el manual falla.
+
+    Returns:
+        ``(ok, mensaje, [rb_left, rb_right])`` — elementos Rebar o lista vacía.
+    """
+    ok_pre, msg_pre = _es_rebar_divisible_pipeline(rebar)
+    if not ok_pre:
+        return False, msg_pre, []
+
+    ok_idx, msg_idx = _validar_indice_division(rebar, bar_index)
+    if not ok_idx:
+        return False, msg_idx, []
+
+    idx = int(bar_index)
+    n = _cantidad_posiciones(rebar)
+
+    ok_m, msg_m, rb_l, rb_r = _dividir_manual(document, rebar, idx)
+    if ok_m and rb_l is not None and rb_r is not None:
+        detalle = (
+            u"Corte tras índice {} (manual): left=0–{}, right={}-{}."
+        ).format(idx, idx, idx + 1, max(idx + 1, n - 1))
+        return True, detalle, [rb_l, rb_r]
+
+    if _split_rebar_api_disponible(rebar):
+        ids_before = _rebar_ids_in_document(document)
+        id0 = _element_id_int(getattr(rebar, "Id", None))
+        try:
+            _dividir_con_split_rebar_api(document, rebar, idx)
+            ids_after = _rebar_ids_in_document(document)
+            new_ids = [i for i in ids_after if i not in ids_before]
+            rb_left = None
+            rb_right = None
+            try:
+                rb_left = document.GetElement(rebar.Id)
+            except Exception:
+                rb_left = None
+            if rb_left is None or not isinstance(rb_left, Rebar):
+                rb_left = None
+            for iid in new_ids:
+                try:
+                    el = document.GetElement(ElementId(iid))
+                except Exception:
+                    el = None
+                if el is not None and isinstance(el, Rebar):
+                    if rb_left is None:
+                        rb_left = el
+                    elif rb_right is None and el.Id != rb_left.Id:
+                        rb_right = el
+            if rb_left is not None and rb_right is None and id0 is not None:
+                # Buscar cualquier otro rebar nuevo
+                for iid in ids_after:
+                    if iid == id0:
+                        continue
+                    try:
+                        el = document.GetElement(ElementId(iid))
+                    except Exception:
+                        el = None
+                    if (
+                        el is not None
+                        and isinstance(el, Rebar)
+                        and (rb_left is None or el.Id != rb_left.Id)
+                    ):
+                        if rb_left is None:
+                            rb_left = el
+                        else:
+                            rb_right = el
+                            break
+            if rb_left is not None and rb_right is not None:
+                detalle = (
+                    u"Corte tras índice {} (SplitRebar): left=0–{}, right={}-{}."
+                ).format(idx, idx, idx + 1, max(idx + 1, n - 1))
+                return True, detalle, [rb_left, rb_right]
+        except Exception as ex_sp:
+            try:
+                msg_m = u"manual: {0}; SplitRebar: {1}".format(msg_m, ex_sp)
+            except Exception:
+                pass
+
+    return False, msg_m or u"división falló", []
 
 
 def dividir_rebar_set_en_indice(document, rebar, bar_index):
     """
-    Divide ``rebar`` en el índice indicado.
+    Divide ``rebar`` en el índice indicado (abre Transaction).
 
     Returns:
         (ok: bool, mensaje: unicode, ids_resultantes: list)
@@ -343,25 +629,13 @@ def dividir_rebar_set_en_indice(document, rebar, bar_index):
     if not ok_idx:
         return False, msg_idx, []
 
-    idx = int(bar_index)
-    n = _cantidad_posiciones(rebar)
-    metodo = u"manual"
-
     t = Transaction(document, _TRANSACTION_NAME)
     t.Start()
+    msg = u""
     try:
-        if _split_rebar_api_disponible(rebar):
-            try:
-                _dividir_con_split_rebar_api(document, rebar, idx)
-                metodo = u"SplitRebar"
-            except Exception:
-                ok_m, msg_m = _dividir_manual_max_spacing(document, rebar, idx)
-                if not ok_m:
-                    raise RuntimeError(msg_m)
-        else:
-            ok_m, msg_m = _dividir_manual_max_spacing(document, rebar, idx)
-            if not ok_m:
-                raise RuntimeError(msg_m)
+        ok, msg, rbs = dividir_rebar_set_en_indice_en_tx(document, rebar, bar_index)
+        if not ok:
+            raise RuntimeError(msg or u"Error al dividir el conjunto.")
         t.Commit()
     except Exception as ex:
         t.RollBack()
@@ -371,11 +645,7 @@ def dividir_rebar_set_en_indice(document, rebar, bar_index):
             msg = str(ex) if ex else u"Error al dividir el conjunto."
         return False, msg, []
 
-    detalle = (
-        u"Corte tras la barra índice {} ({}): subconjunto 1 (barras 0–{}), "
-        u"subconjunto 2 (barras {}–{})."
-    ).format(idx, metodo, idx, idx + 1, max(idx + 1, n - 1))
-    return True, detalle, []
+    return True, msg, []
 
 
 class _FiltroRebarMaxSpacing(ISelectionFilter):

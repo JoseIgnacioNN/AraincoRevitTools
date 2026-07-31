@@ -1983,6 +1983,224 @@ def malla_n_remove_por_extremo(ex_cfg):
     return 1
 
 
+_U_EXTREMO_MURO_TOL = 0.04  # fracción del eje: interior a la junta desacople/solape
+
+
+def _location_curve_host(host):
+    if host is None:
+        return None
+    try:
+        loc = host.Location
+        if loc is not None and hasattr(loc, "Curve") and loc.Curve is not None:
+            return loc.Curve
+    except Exception:
+        pass
+    return None
+
+
+def _u_along_host_curve(lc, pt):
+    if lc is None or pt is None:
+        return None
+    try:
+        from Autodesk.Revit.DB import XYZ
+
+        p0 = lc.GetEndPoint(0)
+        p1 = lc.GetEndPoint(1)
+        vx = float(p1.X) - float(p0.X)
+        vy = float(p1.Y) - float(p0.Y)
+        L2 = vx * vx + vy * vy
+        if L2 < 1e-18:
+            return None
+        wx = float(pt.X) - float(p0.X)
+        wy = float(pt.Y) - float(p0.Y)
+        return (wx * vx + wy * vy) / L2
+    except Exception:
+        return None
+
+
+def _rebar_u_span_en_host_malla(rebar, host):
+    """``(u_min, u_max)`` del set en el eje del host, o ``None``."""
+    if rebar is None or host is None:
+        return None
+    lc = _location_curve_host(host)
+    if lc is None:
+        return None
+    from Autodesk.Revit.DB import XYZ
+
+    us = []
+    try:
+        bb = rebar.get_BoundingBox(None)
+        if bb is not None:
+            for pt in (
+                XYZ(float(bb.Min.X), float(bb.Min.Y), float(bb.Min.Z)),
+                XYZ(float(bb.Max.X), float(bb.Max.Y), float(bb.Max.Z)),
+                XYZ(float(bb.Min.X), float(bb.Max.Y), float(bb.Min.Z)),
+                XYZ(float(bb.Max.X), float(bb.Min.Y), float(bb.Max.Z)),
+            ):
+                u = _u_along_host_curve(lc, pt)
+                if u is not None:
+                    us.append(float(u))
+    except Exception:
+        pass
+    n = 1
+    for getter in (
+        lambda: int(rebar.NumberOfBarPositions),
+        lambda: int(rebar.GetNumberOfBarPositions()),
+        lambda: int(rebar.Quantity),
+    ):
+        try:
+            n = max(n, int(getter()))
+        except Exception:
+            pass
+    for i in (0, max(0, n - 1)):
+        try:
+            tr = rebar.GetBarPositionTransform(int(i))
+            if tr is not None:
+                u = _u_along_host_curve(lc, tr.Origin)
+                if u is not None:
+                    us.append(float(u))
+        except Exception:
+            pass
+    if not us:
+        return None
+    return (min(us), max(us))
+
+
+def rebar_vertical_alcanza_extremos_muro(rebar, host, tol_u=None):
+    """
+    ``(alcanza_inicio, alcanza_fin)`` respecto al LocationCurve del host.
+
+    Si el set fue partido por desacople/solape, el extremo en la **junta** no
+    alcanza el inicio o el fin del muro → no debe apagarse first/last ahí.
+    """
+    if tol_u is None:
+        tol_u = _U_EXTREMO_MURO_TOL
+    span = _rebar_u_span_en_host_malla(rebar, host)
+    if span is None:
+        return True, True
+    u_lo = min(float(span[0]), float(span[1]))
+    u_hi = max(float(span[0]), float(span[1]))
+    alcanza_inicio = u_lo <= float(tol_u)
+    alcanza_fin = u_hi >= (1.0 - float(tol_u))
+    return alcanza_inicio, alcanza_fin
+
+
+def malla_indices_lineas_a_excluir(
+    n_lines,
+    ex_cfg_inicio,
+    ex_cfg_fin,
+    excluir_inicio=True,
+    excluir_fin=True,
+):
+    """
+    Índices de líneas verticales de malla a excluir (regla simplificada).
+
+    Por defecto apaga la **primera** y la **última** barra del set (una por
+    extremo de muro). Si ``excluir_inicio``/``excluir_fin`` es False (p. ej.
+    extremo en junta desacople/solape), ese lado no se apaga.
+
+    Rebar set malla vertical (post Remove System), alineado con ``LocationCurve``:
+    índice ``0`` = **inicio** (P0); índice ``n-1`` = **fin / término** (P1).
+    """
+    try:
+        n = int(n_lines)
+    except Exception:
+        n = 0
+    if n < 1:
+        return []
+    ni = malla_n_remove_por_extremo(ex_cfg_inicio) if excluir_inicio else 0
+    nf = malla_n_remove_por_extremo(ex_cfg_fin) if excluir_fin else 0
+    ni = max(0, min(int(ni), n))
+    nf = max(0, min(int(nf), max(0, n - ni)))
+    excl = set()
+    for k in range(ni):
+        excl.add(k)
+    for k in range(nf):
+        excl.add(n - 1 - k)
+    return sorted(excl)
+
+
+def cabezal_extremos_config_for_muro(cabezal_por_muro_id, wall_id):
+    """``(ex_cfg_inicio, ex_cfg_fin)`` para correlación malla; ``None`` si no hay cabezal."""
+    if not cabezal_por_muro_id:
+        return None, None
+    wid = normalize_muro_id_key(wall_id)
+    if wid is None:
+        return None, None
+    cfg = cabezal_por_muro_id.get(wid)
+    if not cfg:
+        try:
+            cfg = cabezal_por_muro_id.get(int(wid))
+        except Exception:
+            cfg = None
+    if not cfg:
+        cfg = {}
+    if not cfg:
+        return None, None
+    ex_ini = cfg.get(CABEZAL_EXTREMO_INICIO)
+    ex_fin = cfg.get(CABEZAL_EXTREMO_FIN)
+    try:
+        if ex_ini:
+            _normalize_cabezal_extremo_layers(ex_ini)
+        if ex_fin:
+            _normalize_cabezal_extremo_layers(ex_fin)
+    except Exception:
+        pass
+    return ex_ini, ex_fin
+
+
+def aplicar_exclusion_verticales_malla_rebar(
+    rebar, ex_cfg_inicio, ex_cfg_fin, doc=None, host=None, regenerate=True,
+):
+    """
+    Excluye barras verticales de malla según capas cabezal (post Remove System).
+
+    Usa ``SetBarIncluded`` por índice. En la **junta** entre paños de desacople
+    y solape (set que no llega a un extremo del muro) no se apaga first/last.
+    """
+    if rebar is None:
+        return False
+    try:
+        from armado_muros_rebar_layout import (
+            _excluir_barras_por_indices,
+            _rebar_bar_included,
+            _rebar_cantidad_posiciones,
+        )
+    except Exception:
+        return False
+    if host is None and doc is not None:
+        try:
+            host = doc.GetElement(rebar.GetHostId())
+        except Exception:
+            host = None
+    try:
+        n = int(_rebar_cantidad_posiciones(rebar))
+    except Exception:
+        n = 0
+    if n < 1:
+        return False
+    alcanza_ini, alcanza_fin = rebar_vertical_alcanza_extremos_muro(rebar, host)
+    indices = malla_indices_lineas_a_excluir(
+        n,
+        ex_cfg_inicio,
+        ex_cfg_fin,
+        excluir_inicio=bool(alcanza_ini),
+        excluir_fin=bool(alcanza_fin),
+    )
+    if not indices:
+        return False
+    ok = _excluir_barras_por_indices(
+        rebar, indices, doc=doc, regenerate=regenerate,
+    )
+    if ok:
+        return True
+    try:
+        pending = [i for i in indices if _rebar_bar_included(rebar, i)]
+    except Exception:
+        pending = list(indices)
+    return len(pending) < len(indices)
+
+
 def _rebar_coincide_tipo_capas_malla(rebar, params_dict, layer_keys):
     """True si ``GetTypeId()`` coincide con algún tipo en ``layer_keys`` del panel."""
     if rebar is None or not params_dict or not layer_keys:
@@ -2060,108 +2278,6 @@ def rebar_es_malla_vertical_por_tipo(rebar, params_dict, muro_contencion=False):
     ):
         return False
     return True
-
-
-def malla_indices_lineas_a_excluir(n_lines, ex_cfg_inicio, ex_cfg_fin):
-    """
-    Índices de líneas verticales de malla a excluir (regla simplificada).
-
-    Siempre se apaga solo la **primera** y la **última** barra del set vertical
-    (una por extremo), sin importar cabezal / encuentro / ``n_capas``.
-    Si hay solapamiento ini+fin (sets muy cortos), se prioriza inicio.
-
-    Rebar set malla vertical (post Remove System), alineado con ``LocationCurve``:
-    índice ``0`` = **inicio** (P0); índice ``n-1`` = **fin / término** (P1).
-    """
-    try:
-        n = int(n_lines)
-    except Exception:
-        n = 0
-    if n < 1:
-        return []
-    ni = malla_n_remove_por_extremo(ex_cfg_inicio)
-    nf = malla_n_remove_por_extremo(ex_cfg_fin)
-    ni = max(0, min(int(ni), n))
-    nf = max(0, min(int(nf), max(0, n - ni)))
-    excl = set()
-    for k in range(ni):
-        excl.add(k)
-    for k in range(nf):
-        excl.add(n - 1 - k)
-    return sorted(excl)
-
-
-def cabezal_extremos_config_for_muro(cabezal_por_muro_id, wall_id):
-    """``(ex_cfg_inicio, ex_cfg_fin)`` para correlación malla; ``None`` si no hay cabezal."""
-    if not cabezal_por_muro_id:
-        return None, None
-    wid = normalize_muro_id_key(wall_id)
-    if wid is None:
-        return None, None
-    cfg = cabezal_por_muro_id.get(wid)
-    if not cfg:
-        try:
-            cfg = cabezal_por_muro_id.get(int(wid))
-        except Exception:
-            cfg = None
-    if not cfg:
-        cfg = {}
-    if not cfg:
-        return None, None
-    ex_ini = cfg.get(CABEZAL_EXTREMO_INICIO)
-    ex_fin = cfg.get(CABEZAL_EXTREMO_FIN)
-    try:
-        if ex_ini:
-            _normalize_cabezal_extremo_layers(ex_ini)
-        if ex_fin:
-            _normalize_cabezal_extremo_layers(ex_fin)
-    except Exception:
-        pass
-    return ex_ini, ex_fin
-
-
-def aplicar_exclusion_verticales_malla_rebar(
-    rebar, ex_cfg_inicio, ex_cfg_fin, doc=None, host=None, regenerate=True,
-):
-    """
-    Excluye barras verticales de malla según capas cabezal (post Remove System).
-
-    Usa ``SetBarIncluded`` por índice (todas las posiciones 0…n_remove-1 por extremo).
-    """
-    if rebar is None:
-        return False
-    try:
-        from armado_muros_rebar_layout import (
-            _excluir_barras_por_indices,
-            _rebar_bar_included,
-            _rebar_cantidad_posiciones,
-        )
-    except Exception:
-        return False
-    if host is None and doc is not None:
-        try:
-            host = doc.GetElement(rebar.GetHostId())
-        except Exception:
-            host = None
-    try:
-        n = int(_rebar_cantidad_posiciones(rebar))
-    except Exception:
-        n = 0
-    if n < 1:
-        return False
-    indices = malla_indices_lineas_a_excluir(n, ex_cfg_inicio, ex_cfg_fin)
-    if not indices:
-        return False
-    ok = _excluir_barras_por_indices(
-        rebar, indices, doc=doc, regenerate=regenerate,
-    )
-    if ok:
-        return True
-    try:
-        pending = [i for i in indices if _rebar_bar_included(rebar, i)]
-    except Exception:
-        pending = list(indices)
-    return len(pending) < len(indices)
 
 
 def _troceo_por_muro_from_extremo_cfg(ex_cfg):

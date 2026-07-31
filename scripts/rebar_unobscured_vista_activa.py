@@ -1,28 +1,62 @@
 # -*- coding: utf-8 -*-
 """
-View Unobscured en la vista activa: aplicar, quitar o consultar estado de barras y armaduras.
+View Unobscured en la vista activa — interruptor según icono (ojo).
+
+Ojo cerrado → aplica; ojo abierto → quita. Sin diálogo de acción.
 
 Revit 2024+ | pyRevit / IronPython.
-Respaldo plano de ``37_RebarUnobscuredVista.pushbutton/scripts/run.py``.
+Entrada: ``37_RebarUnobscuredVista.smartbutton/script.py`` (botón ligero).
 """
 
 from __future__ import print_function
 
 from Autodesk.Revit.DB import Transaction, View, ViewSchedule, ViewSheet
+from Autodesk.Revit.UI import TaskDialog
 
 from bimtools_rebar_3d_visibility import (
     apply_reinforcement_unobscured_in_view,
     collect_reinforcement_in_view,
-    summarize_reinforcement_unobscured_in_view,
-)
-from rebar_unobscured_action_dialog import (
-    show_info_dialog,
-    show_rebar_unobscured_action_dialog,
 )
 
 __title__ = u"Arainco: View Unobscured barras"
 __title_apply__ = u"Arainco: Aplicar View Unobscured barras"
 __title_remove__ = u"Arainco: Quitar View Unobscured barras"
+
+_ENV_ON = u"BIMTOOLS_REBAR_UNOBSCURED_ON"
+_ICON_LARGE = 32
+
+
+def _mostrar_aviso(uiapp, instruction, content=u"", title=None, ok_text=u"Entendido"):
+    dlg_title = title or __title__
+    hwnd = None
+    try:
+        if uiapp is not None:
+            from revit_wpf_window_position import revit_main_hwnd
+
+            hwnd = revit_main_hwnd(uiapp)
+    except Exception:
+        pass
+    try:
+        from bimtools_instruction_dialog import show_message_dialog
+
+        show_message_dialog(
+            dlg_title,
+            instruction,
+            content=content,
+            ok_text=ok_text,
+            hwnd_revit=hwnd,
+            uiapp=uiapp,
+        )
+        return
+    except Exception:
+        pass
+    try:
+        body = instruction
+        if content:
+            body = instruction + u"\n\n" + content
+        TaskDialog.Show(dlg_title, body)
+    except Exception:
+        pass
 
 
 def _resolve_active_model_view(uidoc):
@@ -69,158 +103,99 @@ def _resolve_active_model_view(uidoc):
     return view
 
 
-def _count_by_type(refuerzos):
-    n_rebar = 0
-    n_in_system = 0
-    n_area = 0
+def _is_eye_open():
     try:
-        from Autodesk.Revit.DB.Structure import AreaReinforcement, Rebar, RebarInSystem
+        from pyrevit import script
 
-        for el in refuerzos:
-            if isinstance(el, Rebar):
-                n_rebar += 1
-            elif isinstance(el, RebarInSystem):
-                n_in_system += 1
-            elif isinstance(el, AreaReinforcement):
-                n_area += 1
+        return bool(script.get_envvar(_ENV_ON))
     except Exception:
-        pass
-    return n_rebar, n_in_system, n_area
+        return False
 
 
-def _estado_texto(summary):
-    return (
-        u"Estado actual en la vista:\n"
-        u"  · Con View Unobscured: {0}\n"
-        u"  · Sin View Unobscured: {1}\n"
-        u"  · Sin dato / no aplica: {2}"
-    ).format(
-        summary.get("unobscured", 0),
-        summary.get("obscured", 0),
-        summary.get("unknown", 0),
-    )
+def _set_eye_state(is_open):
+    """Actualiza envvar + icono on/off. No lanza."""
+    try:
+        from pyrevit import script
+    except Exception:
+        return
+    try:
+        from pyrevit.coreutils.ribbon import ICON_LARGE
 
+        icon_size = ICON_LARGE
+    except Exception:
+        icon_size = _ICON_LARGE
 
-def _resumen_dialogo(view_name, refuerzos, summary):
-    n_rebar, n_in_system, n_area = _count_by_type(refuerzos)
-    return (
-        u"Elementos en vista: {0}\n"
-        u"  · Rebar: {1}\n"
-        u"  · RebarInSystem: {2}\n"
-        u"  · AreaReinforcement: {3}\n\n"
-        u"{4}"
-    ).format(
-        len(refuerzos),
-        n_rebar,
-        n_in_system,
-        n_area,
-        _estado_texto(summary),
-    )
-
-
-def _preguntar_accion(view_name, refuerzos, summary, uiapp):
-    return show_rebar_unobscured_action_dialog(
-        title=__title__,
-        subtitle=u"Barras en vista «{0}»".format(view_name),
-        summary=_resumen_dialogo(view_name, refuerzos, summary),
-        uiapp=uiapp,
-    )
+    try:
+        script.set_envvar(_ENV_ON, bool(is_open))
+        script.toggle_icon(bool(is_open), icon_size=icon_size)
+    except Exception:
+        try:
+            script.set_envvar(_ENV_ON, bool(is_open))
+        except Exception:
+            pass
 
 
 def run(revit_app):
     uidoc = revit_app.ActiveUIDocument
     if uidoc is None:
-        show_info_dialog(__title__, u"No hay documento activo.", uiapp=revit_app)
+        _mostrar_aviso(revit_app, u"No hay documento activo.")
         return
     doc = uidoc.Document
     view = _resolve_active_model_view(uidoc)
 
     if view is None:
-        show_info_dialog(
-            __title__,
-            u"No hay una vista de modelo activa (o la activa es una plantilla de vista).\n"
-            u"Activa una planta, alzado, sección o 3D e inténtalo de nuevo.",
-            uiapp=revit_app,
+        _mostrar_aviso(
+            revit_app,
+            u"No hay una vista de modelo activa (o la activa es una plantilla de vista).",
+            content=u"Activa una planta, alzado, sección o 3D e inténtalo de nuevo.",
         )
         return
 
     if isinstance(view, (ViewSheet, ViewSchedule)):
-        show_info_dialog(
-            __title__,
+        _mostrar_aviso(
+            revit_app,
             u"Abre una vista de modelo (planta, alzado, sección, 3D…), no una lámina ni un cuadro.",
-            uiapp=revit_app,
         )
         return
 
-    # Congelar el Id: tras el diálogo modal no se relee ActiveView.
     target_view_id = view.Id
     refuerzos = collect_reinforcement_in_view(doc, view)
     if not refuerzos:
-        show_info_dialog(
-            __title__,
+        _mostrar_aviso(
+            revit_app,
             u"No hay barras ni armaduras en la vista activa «{0}».".format(
                 getattr(view, "Name", None) or u"(vista)"
             ),
-            uiapp=revit_app,
         )
         return
 
-    view_name = getattr(view, "Name", None) or u"(vista)"
-    summary = summarize_reinforcement_unobscured_in_view(doc, refuerzos, view)
-    accion = _preguntar_accion(view_name, refuerzos, summary, revit_app)
-    if accion is None:
-        return
-
-    if accion == "status":
-        show_info_dialog(
-            __title__,
-            u"Vista: {0}\n\nElementos en vista: {1}\n\n{2}".format(
-                view_name,
-                len(refuerzos),
-                _estado_texto(summary),
-            ),
-            uiapp=revit_app,
-        )
-        return
-
-    unobscured = accion == "apply"
+    # Ojo cerrado → aplicar; ojo abierto → quitar.
+    eye_open = _is_eye_open()
+    unobscured = not eye_open
     tx_name = __title_apply__ if unobscured else __title_remove__
 
-    # Reafirmar la misma vista por Id (no ActiveView tras el diálogo modal).
     try:
         view = doc.GetElement(target_view_id)
     except Exception:
         view = None
     if not isinstance(view, View) or isinstance(view, (ViewSheet, ViewSchedule)):
-        show_info_dialog(
-            tx_name,
+        _mostrar_aviso(
+            revit_app,
             u"La vista activa ya no está disponible. Vuelve a ejecutar la herramienta.",
-            uiapp=revit_app,
+            title=tx_name,
         )
         return
 
     t = Transaction(doc, tx_name)
     t.Start()
     try:
-        n_ok = apply_reinforcement_unobscured_in_view(
+        apply_reinforcement_unobscured_in_view(
             doc, refuerzos, view, unobscured=unobscured
         )
         t.Commit()
     except Exception as ex:
         t.RollBack()
-        show_info_dialog(tx_name, u"Error: {0}".format(ex), uiapp=revit_app)
+        _mostrar_aviso(revit_app, u"Error: {0}".format(ex), title=tx_name)
         raise
 
-    summary_after = summarize_reinforcement_unobscured_in_view(doc, refuerzos, view)
-    accion_txt = u"Aplicado" if unobscured else u"Quitado"
-    msg = (
-        u"Vista: {0}\n\n"
-        u"{1} View Unobscured en {2} elemento(s) (solo esta vista).\n\n"
-        u"{3}"
-    ).format(
-        view_name,
-        accion_txt,
-        n_ok,
-        _estado_texto(summary_after),
-    )
-    show_info_dialog(tx_name, msg, uiapp=revit_app)
+    _set_eye_state(unobscured)

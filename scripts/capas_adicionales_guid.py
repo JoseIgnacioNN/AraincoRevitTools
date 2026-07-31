@@ -24,7 +24,6 @@ from __future__ import print_function
 
 import math
 import re
-import weakref
 
 import clr
 
@@ -149,6 +148,7 @@ except Exception:
     stamp_armadura_arainco = None
 
 _APPDOMAIN_WINDOW_KEY = u"Arainco_CapasAdicionalesGuid_UI"
+_APPDOMAIN_CTRL_KEY = u"Arainco_CapasAdicionalesGuid_Ctrl"
 _TOOL_TITLE = u"Arainco: Capas adicionales por GUID"
 _TXN_NAME = u"Arainco: Capas adicionales en Muro"
 
@@ -1477,10 +1477,14 @@ def _sort_cluster_along_axis(group):
     return sorted(group, key=_key)
 
 
-def _place_lap_details_between_new_rebars(doc, view, rebars, guid, layer_index):
+def _place_lap_details_between_new_rebars(
+    doc, view, rebars, guid, layer_index, skip_regen=False
+):
     """
     Coloca lap details en el **solape real** entre tramos consecutivos de las
     barras nuevas (misma fibra), no copiando details a una altura fija.
+
+    ``skip_regen``: True si el caller ya regeneró el documento.
 
     Returns: (n_ok, errors_list)
     """
@@ -1500,10 +1504,11 @@ def _place_lap_details_between_new_rebars(doc, view, rebars, guid, layer_index):
     if symbol is None:
         return 0, [u"No se encontró familia Detail Item de empalme (Empalme)."]
 
-    try:
-        doc.Regenerate()
-    except Exception:
-        pass
+    if not skip_regen:
+        try:
+            doc.Regenerate()
+        except Exception:
+            pass
 
     # Releer elementos frescos
     fresh = []
@@ -1870,16 +1875,114 @@ def _copy_and_offset(doc, source_rebar, delta_xyz, host_c=None, strict=True):
 
 
 def _tie_s_along_inward(tie, origin, inward):
-    """Proyección del midpoint de la traba sobre ``inward`` desde ``origin``."""
+    """
+    Proyección de la traba sobre ``inward`` desde ``origin``.
+
+    Usa centerline planar sin ganchos (más fiable que BarPositionTransform /
+    promedio con hooks, que sesgan la profundidad en espesor).
+    """
     if tie is None or origin is None or inward is None:
         return None
-    p = _rebar_midpoint(tie)
-    if p is None:
-        return None
+    pts = []
     try:
-        return float(_xyz_sub(p, origin).DotProduct(inward))
+        curves = tie.GetCenterlineCurves(
+            False, True, False, MultiplanarOption.IncludeOnlyPlanarCurves, 0
+        )
+    except Exception:
+        curves = None
+    if curves is not None:
+        try:
+            n = int(curves.Count)
+        except Exception:
+            n = 0
+        for i in range(n):
+            try:
+                c = curves[i]
+                if c is None:
+                    continue
+                pts.append(c.Evaluate(0.5, True))
+            except Exception:
+                try:
+                    pts.append(c.GetEndPoint(0))
+                    pts.append(c.GetEndPoint(1))
+                except Exception:
+                    pass
+    if not pts:
+        p = _rebar_midpoint(tie)
+        if p is None:
+            return None
+        pts = [p]
+    try:
+        acc = 0.0
+        for p in pts:
+            acc += float(_xyz_sub(p, origin).DotProduct(inward))
+        return acc / float(len(pts))
     except Exception:
         return None
+
+
+def _delta_tie_to_target_depth(tie, target_centroid, inward, fallback_ft=None):
+    """
+    Offset (pies) para llevar ``tie`` a la misma profundidad (eje inward)
+    que ``target_centroid`` (centroide de la capa longitudinal nueva).
+    """
+    if inward is None:
+        return None
+    if target_centroid is None:
+        if fallback_ft is None:
+            return None
+        return _xyz_scale(inward, float(fallback_ft))
+    s_tie = _tie_s_along_inward(tie, target_centroid, inward)
+    if s_tie is None:
+        # Sin geometría medible: empujar solo el fallback (p. ej. k×e).
+        if fallback_ft is None:
+            return None
+        return _xyz_scale(inward, float(fallback_ft))
+    # s_tie = proyección de la traba relativa al target: hay que mover -s_tie
+    # para coincidir con el centroide de la capa nueva.
+    return _xyz_scale(inward, -float(s_tie))
+
+
+def _delta_tie_to_new_layer(tie, last_layer, inward, k, step_ft, target_centroid=None):
+    """
+    Offset (pies) para llevar una copia de ``tie`` a la profundidad de la capa
+    nueva k (misma profundidad inward que las longitudinales nuevas).
+
+    Preferir ``target_centroid`` de las barras nuevas ya creadas; si no, usar
+    última capa + k×e.
+    """
+    if inward is None or step_ft is None:
+        return None
+    fallback = float(step_ft) * float(k)
+    if target_centroid is not None:
+        return _delta_tie_to_target_depth(
+            tie, target_centroid, inward, fallback_ft=fallback
+        )
+    last_c = None
+    if last_layer is not None:
+        last_c = last_layer.get(u"centroid")
+        if last_c is None:
+            last_c = _layer_centroid(last_layer.get(u"rebars") or [])
+    if last_c is None:
+        return _xyz_scale(inward, fallback)
+    # Objetivo = última + k×e; anclar la medición al objetivo.
+    try:
+        target = last_c.Add(_xyz_scale(inward, fallback))
+    except Exception:
+        target = None
+        try:
+            d = _xyz_scale(inward, fallback)
+            if d is not None:
+                target = XYZ(
+                    float(last_c.X) + float(d.X),
+                    float(last_c.Y) + float(d.Y),
+                    float(last_c.Z) + float(d.Z),
+                )
+        except Exception:
+            target = None
+    return _delta_tie_to_target_depth(
+        tie, target, inward, fallback_ft=fallback
+    )
 
 
 def _rebar_shape_display_name(rebar, doc=None):
@@ -2075,27 +2178,6 @@ def _innermost_tie_templates(ties, inward, layers, doc=None):
     tol_ft = _mm_to_ft(25.0)
     lot = [t for s, t in scored if abs(s - best_s) <= tol_ft]
     return lot if lot else [scored[-1][1]]
-
-
-def _delta_tie_to_new_layer(tie, last_layer, inward, k, step_ft):
-    """
-    Offset (pies) para llevar una copia de ``tie`` a la profundidad de la capa
-    nueva k (última capa + k×e hacia el interior).
-    """
-    if inward is None or step_ft is None:
-        return None
-    target = float(step_ft) * float(k)
-    last_c = None
-    if last_layer is not None:
-        last_c = last_layer.get(u"centroid")
-    mid = _rebar_midpoint(tie)
-    if mid is None or last_c is None:
-        return _xyz_scale(inward, target)
-    try:
-        s_rel = float(_xyz_sub(mid, last_c).DotProduct(inward))
-        return _xyz_scale(inward, target - s_rel)
-    except Exception:
-        return _xyz_scale(inward, target)
 
 
 def _max_capa_index(layers):
@@ -2420,6 +2502,7 @@ def create_additional_layers(
         u"errors": [],
     }
     add_trabas = bool(add_trabas)
+
     if not analysis or not analysis.get(u"ok"):
         result[u"message"] = (analysis or {}).get(u"error") or u"Sin análisis válido."
         return result
@@ -2698,9 +2781,10 @@ def create_additional_layers(
                 msg += u" Avisos: " + u"; ".join(result[u"errors"][:3])
             result[u"message"] = msg
         else:
-            result[u"message"] = u"No se creó ninguna rebar."
-            if result[u"errors"]:
-                result[u"message"] += u" " + u"; ".join(result[u"errors"][:5])
+            result[u"message"] = (
+                u"No se creó ninguna longitudinal. "
+                + (u"; ".join(result[u"errors"][:3]) if result[u"errors"] else u"")
+            )
         return result
     except Exception as ex:
         try:
@@ -3162,23 +3246,25 @@ class _RebarSelectionFilter(ISelectionFilter):
 
 
 class _CrearCapasHandler(IExternalEventHandler):
-    """Ejecuta la creación en contexto API de Revit (ventana modeless)."""
+    """
+    Handler único de proceso (AppDomain).
 
-    def __init__(self, window_ref):
-        self._window_ref = window_ref
+    No crear/Dispose ExternalEvent por cada apertura de ventana: en IronPython
+    eso tumba Revit en la 2ª ejecución.
+    """
 
     def GetName(self):
         return _TXN_NAME
 
     def Execute(self, uiapp):
-        win = self._window_ref()
-        if win is None:
+        ctrl = _CREATE_TARGET
+        if ctrl is None:
             return
         try:
-            win._execute_create(uiapp)
+            ctrl._execute_create(uiapp)
         except Exception as ex:
             try:
-                win._set_status(_as_unicode(ex))
+                ctrl._set_status(_as_unicode(ex))
             except Exception:
                 pass
             _mostrar_aviso(
@@ -3188,7 +3274,38 @@ class _CrearCapasHandler(IExternalEventHandler):
             )
 
 
+_CREATE_TARGET = None
+_CREATE_EVENT = None
+_CREATE_HANDLER = None
+
+
+def _ensure_create_event():
+    """Un solo ExternalEvent para toda la vida del AppDomain. Nunca Dispose."""
+    global _CREATE_EVENT, _CREATE_HANDLER
+    if _CREATE_EVENT is None:
+        _CREATE_HANDLER = _CrearCapasHandler()
+        _CREATE_EVENT = ExternalEvent.Create(_CREATE_HANDLER)
+    return _CREATE_EVENT
+
+
+def _set_create_target(ctrl):
+    global _CREATE_TARGET
+    _CREATE_TARGET = ctrl
+
+
+def _clear_create_target(ctrl=None):
+    global _CREATE_TARGET
+    if ctrl is None or _CREATE_TARGET is ctrl:
+        _CREATE_TARGET = None
+
+
 def _get_active_window():
+    ctrl = _get_active_controller()
+    if ctrl is not None:
+        try:
+            return ctrl._win
+        except Exception:
+            pass
     try:
         win = AppDomain.CurrentDomain.GetData(_APPDOMAIN_WINDOW_KEY)
     except Exception:
@@ -3209,9 +3326,43 @@ def _get_active_window():
     return win
 
 
+def _get_active_controller():
+    try:
+        ctrl = AppDomain.CurrentDomain.GetData(_APPDOMAIN_CTRL_KEY)
+    except Exception:
+        return None
+    if ctrl is None:
+        return None
+    try:
+        win = getattr(ctrl, u"_win", None)
+        if win is None:
+            _clear_active_controller()
+            return None
+        if hasattr(win, "IsLoaded") and (not win.IsLoaded):
+            _clear_active_controller()
+            return None
+        _ = win.Title
+    except Exception:
+        _clear_active_controller()
+        return None
+    return ctrl
+
+
 def _set_active_window(win):
     try:
         AppDomain.CurrentDomain.SetData(_APPDOMAIN_WINDOW_KEY, win)
+    except Exception:
+        pass
+
+
+def _set_active_controller(ctrl):
+    try:
+        AppDomain.CurrentDomain.SetData(_APPDOMAIN_CTRL_KEY, ctrl)
+    except Exception:
+        pass
+    try:
+        if ctrl is not None:
+            _set_active_window(getattr(ctrl, u"_win", None))
     except Exception:
         pass
 
@@ -3221,6 +3372,14 @@ def _clear_active_window():
         AppDomain.CurrentDomain.SetData(_APPDOMAIN_WINDOW_KEY, None)
     except Exception:
         pass
+
+
+def _clear_active_controller():
+    try:
+        AppDomain.CurrentDomain.SetData(_APPDOMAIN_CTRL_KEY, None)
+    except Exception:
+        pass
+    _clear_active_window()
 
 
 # Shell: canvas sección (izq) + cards SELECCION/CAPAS/NUEVAS (der) + footer.
@@ -3260,7 +3419,7 @@ __BIMTOOLS_DARK_STYLES__
 
       <TextBlock x:Name="TxtInfoHint" Grid.Row="1" Foreground="__FG_MUTED__" FontSize="10"
                  Margin="0,0,0,10" TextWrapping="Wrap"
-                 Text="Solo Armadura_Capa cuenta como capa. Estribo canvas = lote Z↓. Trabas nuevas = opt-in aditivo (estribo existente intacto)."/>
+                 Text="Solo Armadura_Capa cuenta como capa. Estribo regenerable C1…Cn. Trabas ⊥ (sin última si regen) · long. Tipo 3 opt-in."/>
 
       <Grid Grid.Row="2">
         <Grid.ColumnDefinitions>
@@ -3556,16 +3715,20 @@ def _build_xaml():
 
 
 def _attach_revit_owner(win, uiapp):
-    if win is None or uiapp is None:
-        return
-    try:
-        from System.Windows.Interop import WindowInteropHelper
-
-        hwnd = revit_main_hwnd(uiapp)
-        if hwnd is not None:
-            WindowInteropHelper(win).Owner = hwnd
-    except Exception:
-        pass
+    """
+    Owner opcional. Desactivado: fijar Owner al hwnd de Revit con WPF modeless
+    ha correlacionado con cierres en reaperturas; la ventana sigue usable.
+    """
+    return
+    # if win is None or uiapp is None:
+    #     return
+    # try:
+    #     from System.Windows.Interop import WindowInteropHelper
+    #     hwnd = revit_main_hwnd(uiapp)
+    #     if hwnd is not None:
+    #         WindowInteropHelper(win).Owner = hwnd
+    # except Exception:
+    #     pass
 
 
 def _prepare_window(win, uiapp):
@@ -3577,7 +3740,8 @@ def _prepare_window(win, uiapp):
         position_wpf_window_center_on_monitor(win, hwnd)
     except Exception:
         pass
-    _attach_revit_owner(win, uiapp)
+    # No Owner hwnd (ver _attach_revit_owner).
+
 
 
 def _parse_int_box(tb, default=0, minimum=None):
@@ -3636,20 +3800,19 @@ class CapasAdicionalesGuidWindow(object):
         self._doc = self._uidoc.Document if self._uidoc else None
         self._analysis = analysis if analysis and analysis.get(u"ok") else None
         self._pending_create = None
+        self._create_done = False
         self._section_canvas = None
         self._trabas_toggle_parts = {}
         self._win = XamlReader.Parse(_build_xaml())
-        self._create_handler = _CrearCapasHandler(weakref.ref(self))
-        self._create_event = ExternalEvent.Create(self._create_handler)
+        # ExternalEvent de proceso: Create una vez, nunca Dispose.
+        self._create_event = _ensure_create_event()
+        _set_create_target(self)
         self._wire()
         _prepare_window(self._win, uiapp)
-        _set_active_window(self._win)
-
-        def _on_closed(sender, args):
-            _clear_active_window()
+        _set_active_controller(self)
 
         try:
-            self._win.Closed += EventHandler(_on_closed)
+            self._win.Closed += EventHandler(self._on_window_closed)
         except Exception:
             pass
 
@@ -3657,6 +3820,37 @@ class CapasAdicionalesGuidWindow(object):
             self._populate_selection(self._analysis)
         else:
             self._set_status(u"Sin selección válida.")
+
+    def _on_window_closed(self, sender, args):
+        """Solo limpia singleton; no Dispose del ExternalEvent compartido."""
+        _clear_create_target(self)
+        _clear_active_controller()
+
+    def _schedule_close(self):
+        """Cerrar fuera de Execute (si se usa). Preferir dejar la ventana abierta."""
+        win = self._win
+        if win is None:
+            return
+
+        def _do_close():
+            try:
+                win.Close()
+            except Exception:
+                pass
+
+        try:
+            from System import Action
+            from System.Windows.Threading import DispatcherPriority
+
+            win.Dispatcher.BeginInvoke(
+                Action(_do_close),
+                DispatcherPriority.Background,
+            )
+        except Exception:
+            try:
+                _do_close()
+            except Exception:
+                pass
 
     def _wire(self):
         w = self._win
@@ -3899,10 +4093,16 @@ class CapasAdicionalesGuidWindow(object):
                 n_trabas = 0
         if tb is not None:
             if add_on:
-                tb.Text = (
-                    u"ON: solo trabas aditivas (no estribos) en cada capa nueva · "
-                    u"mismo GUID · el estribo perimetral existente no se toca."
-                )
+                if lot_n > 0:
+                    tb.Text = (
+                        u"ON: se agregan trabas ⊥ naranja solo en capas nuevas "
+                        u"(mismo GUID). El estribo existente no se regenera ni amplía."
+                    )
+                else:
+                    tb.Text = (
+                        u"ON: opt-in activo, pero no hay trabas plantilla "
+                        u"(solo estribo o vacío)."
+                    )
             else:
                 tb.Text = (
                     u"OFF: no se crean trabas en capas nuevas "
@@ -3911,33 +4111,22 @@ class CapasAdicionalesGuidWindow(object):
         if plant is not None:
             try:
                 from System.Windows import Visibility
-            except Exception:
-                Visibility = None
-            if add_on and lot_n > 0:
-                plant.Text = (
-                    u"Plantilla: {0} traba(s) (estribos excluidos) → "
-                    u"se crearán × N capas nuevas."
-                ).format(lot_n)
-                if Visibility is not None:
+
+                if add_on and lot_n > 0:
                     plant.Visibility = Visibility.Visible
-            elif add_on and n_ties > 0 and n_trabas <= 0:
-                plant.Text = (
-                    u"Este GUID solo tiene estribo(s); no hay trabas plantilla. "
-                    u"No se crearán estribos en capas nuevas."
-                )
-                if Visibility is not None:
+                    plant.Text = (
+                        u"Plantilla: {0} traba(s) del lote interior "
+                        u"({1} trabas / {2} ties en GUID)."
+                    ).format(lot_n, n_trabas, n_ties)
+                elif add_on:
                     plant.Visibility = Visibility.Visible
-            elif add_on and n_ties <= 0:
-                plant.Text = (
-                    u"Este GUID no tiene trabas plantilla; "
-                    u"solo se crearán longitudinales."
-                )
-                if Visibility is not None:
-                    plant.Visibility = Visibility.Visible
-            else:
-                plant.Text = u""
-                if Visibility is not None:
+                    plant.Text = (
+                        u"Sin lote de trabas (n_trabas={0}, ties={1})."
+                    ).format(n_trabas, n_ties)
+                else:
                     plant.Visibility = Visibility.Collapsed
+            except Exception:
+                pass
 
     def _on_pick(self, sender, args):
         if self._uidoc is None:
@@ -4409,12 +4598,13 @@ class CapasAdicionalesGuidWindow(object):
 
         tip_left = True
         existing_pts = []
+        all_pts = []
         for it in items:
-            if it[u"kind"] != u"existing":
-                continue
             cx = mm_to_x(it[u"x_mm"])
             for cy in _bar_ys_in_layer(it[u"qty"], wall_top, wall_h, bar_r):
-                existing_pts.append((cx, cy))
+                all_pts.append((cx, cy))
+                if it[u"kind"] == u"existing":
+                    existing_pts.append((cx, cy))
 
         # Barras primero (si el estribo falla, las capas siguen visibles)
         bars_drawn = 0
@@ -4572,9 +4762,9 @@ class CapasAdicionalesGuidWindow(object):
                         tie_brush,
                         _TIE_STROKE,
                     )
-            except Exception as ex_t:
+            except Exception as ex_tie:
                 try:
-                    print(u"Trabas canvas: {0}".format(_as_unicode(ex_t)))
+                    print(u"Trabas canvas: {0}".format(_as_unicode(ex_tie)))
                 except Exception:
                     pass
 
@@ -4637,20 +4827,21 @@ class CapasAdicionalesGuidWindow(object):
                 btn.IsEnabled = False
             except Exception:
                 pass
-        try:
-            self._create_event.Raise()
-        except Exception as ex:
-            if btn is not None:
-                try:
-                    btn.IsEnabled = True
-                except Exception:
-                    pass
-            self._pending_create = None
-            _mostrar_aviso(
-                self._uiapp,
-                u"No se pudo encolar la creación en Revit.",
-                content=_as_unicode(ex),
-            )
+            try:
+                evt = self._create_event or _ensure_create_event()
+                evt.Raise()
+            except Exception as ex:
+                if btn is not None:
+                    try:
+                        btn.IsEnabled = True
+                    except Exception:
+                        pass
+                self._pending_create = None
+                _mostrar_aviso(
+                    self._uiapp,
+                    u"No se pudo encolar la creación en Revit.",
+                    content=_as_unicode(ex),
+                )
 
     def _execute_create(self, uiapp):
         btn = None
@@ -4709,9 +4900,14 @@ class CapasAdicionalesGuidWindow(object):
             )
             self._set_status(result.get(u"message") or u"")
             if result.get(u"ok"):
-                # Cerrar UI tras colocar barras (sin diálogo de resumen).
+                # No cerrar la ventana desde Execute. Marcar éxito para que
+                # finally no re-habilite «Crear».
+                self._create_done = True
                 try:
-                    self._win.Close()
+                    btn_c = self._win.FindName(u"BtnCreate")
+                    if btn_c is not None:
+                        btn_c.IsEnabled = False
+                        btn_c.Content = u"Capas creadas"
                 except Exception:
                     pass
                 return
@@ -4726,11 +4922,12 @@ class CapasAdicionalesGuidWindow(object):
                 uiapp, u"Error al crear capas adicionales.", content=_as_unicode(ex)
             )
         finally:
-            # Si la ventana ya se cerró (éxito), no tocar el botón.
             try:
                 if self._win is None or not self._win.IsLoaded:
                     return
             except Exception:
+                return
+            if getattr(self, u"_create_done", False):
                 return
             if btn is not None:
                 try:
@@ -4756,7 +4953,15 @@ class CapasAdicionalesGuidWindow(object):
 
 def run(revit):
     """Punto de entrada pyRevit: pick inmediato → analizar → UI poblada."""
-    existing = _get_active_window()
+    existing_ctrl = _get_active_controller()
+    existing = None
+    if existing_ctrl is not None:
+        try:
+            existing = existing_ctrl._win
+        except Exception:
+            existing = None
+    if existing is None:
+        existing = _get_active_window()
     if existing is not None:
         try:
             if existing.WindowState == WindowState.Minimized:
@@ -4770,6 +4975,9 @@ def run(revit):
             pass
         _mostrar_aviso(revit, u"La herramienta ya esta en ejecucion.")
         return
+
+    # Por si quedó un ExternalEvent/huérfano de una sesión previa mal cerrada.
+    _clear_active_controller()
 
     uidoc = getattr(revit, u"ActiveUIDocument", None)
     if uidoc is None:
