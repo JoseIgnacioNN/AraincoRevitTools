@@ -61,6 +61,7 @@ from Autodesk.Revit.DB.Structure import (
     Rebar,
     RebarHookOrientation,
     RebarHookType,
+    RebarInSystem,
     RebarPresentationMode,
     RebarShape,
     RebarStyle,
@@ -819,13 +820,16 @@ def crear_multi_rebar_annotations_por_nombre_tipo(
     document, view, rebars, avisos, type_name
 ):
     """
-    Una ``MultiReferenceAnnotation`` por cada ``Rebar`` en ``rebars`` (cada conjunto).
+    Una ``MultiReferenceAnnotation`` por cada ``Rebar`` / ``RebarInSystem`` en ``rebars``
+    (cada conjunto / capa de sistema).
 
     ``type_name``: nombre del tipo en la categoría **Multi-Rebar Annotations** del proyecto
     (p. ej. «Recorrido Barras»). Misma lógica de colocación que estribos (línea de cota debajo del
     conjunto según ``UpDirection`` de la vista), sin uso de cotas de traslape vigas.
 
     El llamador debe tener abierta una ``Transaction``.
+    Si el tipo no existe o un elemento no es válido para MRA, se añade aviso y se continúa
+    (no lanza).
 
     Returns:
         Cantidad de anotaciones creadas correctamente.
@@ -860,7 +864,11 @@ def crear_multi_rebar_annotations_por_nombre_tipo(
             v_up_ref = v_up_ref.Normalize()
     except Exception:
         v_up_ref = XYZ.BasisZ
-    candidatos = [rb for rb in (rebars or []) if rb is not None and isinstance(rb, Rebar)]
+    candidatos = [
+        rb
+        for rb in (rebars or [])
+        if rb is not None and isinstance(rb, (Rebar, RebarInSystem))
+    ]
     d_list = []
     for rb in candidatos:
         pm = _centro_rebar_para_mra(rb, view)
