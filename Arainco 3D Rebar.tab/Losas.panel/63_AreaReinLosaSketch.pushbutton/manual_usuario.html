@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Arainco: Area Rein. losa (Sketch)</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #5BC0DE;
+            --accent-dim: #95B8CC;
+            --accent-inf: #4ade80;
+            --accent-sup: #5BC0DE;
+            --accent-ahorro: #fbbf24;
+            --accent-borde: #f59e0b;
+            --accent-pata: #f472b6;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: 920px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.75em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 32px;
+        }
+        h3 {
+            font-size: 1.05em;
+            color: var(--text);
+            margin-top: 22px;
+        }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        code {
+            background: #0E1B32;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 1px 6px;
+            font-size: 0.92em;
+            color: var(--text);
+        }
+        kbd {
+            background: #0E1B32;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 2px 7px;
+            font-size: 0.88em;
+            color: var(--accent);
+        }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        .step {
+            background: var(--bg-panel);
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin: 10px 0;
+            border: 1px solid var(--border);
+        }
+        .step-num {
+            display: inline-block;
+            background: var(--accent);
+            color: var(--bg-dark);
+            width: 24px;
+            height: 24px;
+            text-align: center;
+            line-height: 24px;
+            border-radius: 50%;
+            font-weight: bold;
+            font-size: 0.9em;
+            margin-right: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 0.9em;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 10px 12px;
+            text-align: left;
+        }
+        th {
+            background: var(--bg-panel);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        td { color: var(--text-dim); }
+        .tip {
+            background: rgba(91, 192, 222, 0.1);
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            padding: 12px;
+            margin: 12px 0;
+            color: var(--text-dim);
+        }
+        .tip::before { content: "Tip — "; font-weight: 700; color: var(--accent); }
+        .warn {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid var(--accent-borde);
+            border-radius: 6px;
+            padding: 12px;
+            margin: 12px 0;
+            color: var(--text-dim);
+        }
+        .warn::before { content: "Nota — "; font-weight: 700; color: var(--accent-borde); }
+        .pill {
+            display: inline-block;
+            border-radius: 3px;
+            padding: 1px 8px;
+            font-size: 0.85em;
+            font-weight: 700;
+            border: 1px solid;
+        }
+        .pill-inf {
+            color: var(--accent-inf);
+            border-color: var(--accent-inf);
+            background: rgba(74, 222, 128, 0.08);
+        }
+        .pill-sup {
+            color: var(--accent-sup);
+            border-color: var(--accent-sup);
+            background: rgba(91, 192, 222, 0.08);
+        }
+        .pill-af {
+            color: var(--accent-ahorro);
+            border-color: var(--accent-ahorro);
+            background: rgba(251, 191, 36, 0.08);
+        }
+        .pill-pata {
+            color: var(--accent-pata);
+            border-color: var(--accent-pata);
+            background: rgba(244, 114, 182, 0.08);
+        }
+        .footer {
+            margin-top: 40px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+            font-size: 0.9em;
+            color: var(--muted);
+        }
+        .meta {
+            color: var(--muted);
+            font-size: 0.9em;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Manual — Arainco: Area Rein. losa (Sketch)</h1>
+    <p class="meta">BIMTools · Armadura · Revit 2024–2026</p>
+
+    <div class="intro">
+        <strong>Area Rein. losa (Sketch)</strong> permite seleccionar una losa
+        (<code>Floor</code>), ver su planta a escala real en un canvas y dibujar
+        <strong>paños</strong> (polígonos) por cara — inferior y superior —
+        para crear <code>AreaReinforcement</code> con dirección principal =
+        luz menor del paño, diámetro, espaciado y opción de
+        <strong>Ahorro de fierro</strong>.
+    </div>
+
+    <h2>1. Requisitos</h2>
+    <ul>
+        <li>Proyecto de Revit (no family document).</li>
+        <li><strong>Vista de planta activa</strong> (<code>ViewPlan</code>). No funciona en alzado, sección, 3D, lámina ni plantilla.</li>
+        <li>Losa con boceto válido (<code>Floor.SketchId</code> / Profile).</li>
+        <li>Tipos de <code>AreaReinforcement</code> y <code>RebarBarType</code> en el proyecto.</li>
+        <li>Acceso corporativo BIMTools (unidad de incidencias / JSON de permiso).</li>
+    </ul>
+
+    <h2>2. Flujo general</h2>
+
+    <div class="step">
+        <span class="step-num">1</span>
+        <strong>Seleccionar la losa</strong> — Al lanzar la herramienta, elija un
+        <code>Floor</code> en el modelo (o use la selección previa si es una losa).
+    </div>
+    <div class="step">
+        <span class="step-num">2</span>
+        <strong>Revisar la planta</strong> — Se abre la ventana con el contorno de la
+        losa, muros, vigas, pasadas/shafts y Area Rein. existentes (solo lectura).
+        Tras elegir la losa, el cursor muestra espera (estilo Windows) mientras
+        se prepara todo; la ventana solo se abre cuando el canvas ya tiene
+        losa, muros, vigas y pasadas listos (sin pantalla vacía intermedia).
+        El botón <strong>Manual</strong> (abajo a la izquierda) abre este documento
+        en el navegador.
+    </div>
+    <div class="step">
+        <span class="step-num">3</span>
+        <strong>Elegir la cara</strong> — Tabs
+        <span class="pill pill-inf">INF</span> Malla Inferior (izquierda, por defecto) y
+        <span class="pill pill-sup">SUP</span> Malla Superior (derecha).
+        Los paños se definen <em>por cara</em>.
+    </div>
+    <div class="step">
+        <span class="step-num">4</span>
+        <strong>Dibujar paños</strong> — Dos clics en esquinas opuestas crean un
+        rectángulo. El toggle de malla de esa cara se activa automáticamente.
+    </div>
+    <div class="step">
+        <span class="step-num">5</span>
+        <strong>Configurar</strong> — Ø, espaciado, Principal/Secundaria y
+        (opcional) Ahorro de fierro del paño activo.
+    </div>
+    <div class="step">
+        <span class="step-num">6</span>
+        <strong>Crear</strong> — Pulse <strong>Crear Area Reinf.</strong>
+        Se generan los AR de todos los paños definidos (cada uno en su cara).
+    </div>
+
+    <div class="warn">
+        Si una cara no tiene polígonos, <strong>no se crea</strong> Area Reinforcement
+        en esa cara. Inferior y Superior son independientes.
+    </div>
+
+    <h2>3. Tabs Inferior / Superior</h2>
+    <p>
+        El panel derecho tiene dos pestañas; al abrir la herramienta queda activa
+        <span class="pill pill-inf">INF</span> Malla Inferior. Solo se muestran y
+        editan los paños de la cara activa.
+    </p>
+    <table>
+        <thead>
+            <tr>
+                <th>Tab</th>
+                <th>Capas Revit</th>
+                <th>Ubicación</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><span class="pill pill-inf">INF</span> Malla Inferior</td>
+                <td>BottomOrBack Major / Minor</td>
+                <td>Cara inferior (F)</td>
+            </tr>
+            <tr>
+                <td><span class="pill pill-sup">SUP</span> Malla Superior</td>
+                <td>TopOrFront Major / Minor</td>
+                <td>Cara superior (F')</td>
+            </tr>
+        </tbody>
+    </table>
+    <ul>
+        <li><strong>Toggle de malla</strong> — Arranca apagado. Al dibujar el primer
+            paño de esa cara se enciende solo. Si elimina todos los paños de la cara,
+            se apaga.</li>
+        <li><strong>Principal / Secundaria</strong> — Diámetro (Ø) y espaciado (mm).
+            Principal = dirección de la luz menor del paño (Major en Revit).</li>
+        <li><strong>Ahorro de fierro</strong> —
+            <span class="pill pill-af">AF</span>
+            Por paño y cara. Ver sección 5.</li>
+        <li><strong>Barras en borde de losa</strong> (solo Inferior) — Card de UI
+            preparada; el modelado se definirá en una versión posterior.</li>
+    </ul>
+
+    <h2>4. Canvas (planta)</h2>
+    <h3>Dibujo y selección</h3>
+    <ul>
+        <li><strong>2 clics</strong> — Esquinas opuestas de un rectángulo → nuevo paño
+            en la cara activa.</li>
+        <li><strong>Clic</strong> en un paño — Lo activa; las cards muestran su
+            configuración.</li>
+        <li><strong>Snap</strong> — Vértices y aristas del Sketch, muros, vigas y paños
+            de la cara activa.</li>
+    </ul>
+
+    <h3>Fusión de paños</h3>
+    <ul>
+        <li><kbd>Ctrl</kbd>+clic — Añade/quita paños del conjunto de fusión
+            (solo misma cara).</li>
+        <li>Con ≥2 paños que se toquen o solapen, la fusión es automática
+            (unión booleana).</li>
+        <li>El paño resultante conserva ajustes del paño activo (o del primero
+            fusionado).</li>
+    </ul>
+
+    <h3>Navegación</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Acción</th>
+                <th>Control</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Zoom</td>
+                <td>Rueda del ratón</td>
+            </tr>
+            <tr>
+                <td>Pan</td>
+                <td>Clic central (rueda) y arrastrar</td>
+            </tr>
+            <tr>
+                <td>Reset vista (fit)</td>
+                <td><kbd>Ctrl</kbd>+<kbd>0</kbd></td>
+            </tr>
+            <tr>
+                <td>Eliminar paños en fusión / selección</td>
+                <td><kbd>Supr</kbd> / <kbd>Delete</kbd></td>
+            </tr>
+            <tr>
+                <td>Cancelar fusión o paño en curso</td>
+                <td><kbd>Esc</kbd></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>Qué se dibuja en planta</h3>
+    <ul>
+        <li>Contorno de losa y huecos del Sketch.</li>
+        <li>Muros (terracota), vigas (dorado), pasadas/shafts (mismo trazo que el
+            borde de losa, sin cruz simbólica).</li>
+        <li>Area Rein. existentes (referencia, no se modifican).</li>
+        <li>Paños de usuario de la cara activa, con símbolo de luz menor (Major)
+            y etiqueta solo de esa malla (Inf o Sup; no mezcla ambas caras).
+            El relleno del paño se recorta con pasadas/shafts y huecos del Sketch.</li>
+    </ul>
+
+    <h2>5. Ahorro de fierro</h2>
+    <p>
+        Toggle <span class="pill pill-af">Ahorro de fierro</span> por paño y cara
+        (default OFF).
+    </p>
+    <ul>
+        <li><strong>OFF</strong> — Un <code>AreaReinforcement</code> completo con el
+            espaciado <em>e</em> configurado.</li>
+        <li><strong>ON</strong> — Dos series intercaladas a espaciado <em>2e</em>,
+            con polígonos recortados ~10&nbsp;% en extremos opuestos. La luz de
+            distribución se ajusta a múltiplos de <em>2e</em>.</li>
+    </ul>
+    <div class="tip">
+        Inferior y Superior pueden tener Ahorro distinto en el mismo paño
+        (cada cara tiene su propio flag).
+    </div>
+
+    <h2>6. Patas L (borde / shafts / huecos)</h2>
+    <p>
+        Se aplican <span class="pill pill-pata">siempre</span> a todo paño
+        generado. No usa <code>RebarHookType</code>: es una extensión geométrica
+        a 90° sobre las barras libres tras disolver el sistema de área.
+    </p>
+    <ul>
+        <li><strong>Detección</strong> — Se comparan las aristas del paño
+            (perímetro y cortes por shaft/hueco) con el outline de la losa y
+            con shafts/huecos del Sketch. Solo las aristas que <em>coinciden</em>
+            definen extremos con pata L: cada extremo de Rebar (Major/Minor)
+            ~perpendicular a esas aristas recibe la pata.</li>
+        <li><strong>Tramo principal</strong> — Siempre el segmento in-plane de la
+            barra (distinto a las patas L); ahí se mide dirección y extremos.</li>
+        <li><strong>Shape</strong> — Una pata L → RebarShape <code>02</code>;
+            patas en ambos extremos → <code>03</code> (deben existir en el
+            proyecto).</li>
+        <li><strong>Largo</strong> — Espesor de la losa host − 50&nbsp;mm
+            (mínimo sensato ~10&nbsp;mm).</li>
+        <li><strong>Sentido</strong> — Malla Inferior: pata hacia arriba (+normal
+            de losa). Malla Superior: pata hacia abajo (−normal).</li>
+        <li><strong>Ahorro ON</strong> — La misma regla aplica a ambas series
+            intercaladas.</li>
+    </ul>
+    <div class="warn">
+        Solo cuentan aristas del paño alineadas con el borde de losa o con
+        shafts/huecos. Un paño interior sin coincidencia no recibe patas. Si
+        falla recrear alguna barra en L, se deja la Rebar recta y el resto del
+        post (etiquetas/MRA) continúa.
+    </div>
+
+    <h2>7. Creación y resultado</h2>
+    <ul>
+        <li>El botón <strong>Crear Area Reinf.</strong> procesa todos los paños
+            (ambas caras) con sus ajustes.</li>
+        <li>Inset de ~25&nbsp;mm hacia adentro solo al crear (el dibujo en canvas
+            no se altera).</li>
+        <li>Tras crear: se quita el sistema de área (Rebar libres), Show Middle,
+            stamps, <strong>patas L</strong> (siempre, por borde/shaft/hueco),
+            etiquetas <code>EST_A_STRUCTURAL REBAR TAG_FLOOR</code> (tipo =
+            RebarShape, fallback «01») y Multi-Rebar Annotation
+            «Recorrido Barras» en <strong>cada</strong> conjunto Rebar
+            generado (requiere el tipo MRA en el proyecto).</li>
+        <li>Parámetros corporativos de ubicación / posición según cara y
+            Major/Minor.</li>
+    </ul>
+
+    <h2>8. Resumen de atajos</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Tecla / gesto</th>
+                <th>Efecto</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>2 clics en canvas</td><td>Nuevo paño (rectángulo)</td></tr>
+            <tr><td>Clic en paño</td><td>Activar / editar cards</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+clic</td><td>Fusión (misma cara)</td></tr>
+            <tr><td><kbd>Supr</kbd></td><td>Eliminar paños seleccionados</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>Cancelar fusión o punto A</td></tr>
+            <tr><td>Rueda</td><td>Zoom</td></tr>
+            <tr><td>Clic rueda + arrastre</td><td>Pan</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>0</kbd></td><td>Reset zoom/pan</td></tr>
+        </tbody>
+    </table>
+
+    <h2>9. Solución de problemas</h2>
+    <ul>
+        <li><strong>«Defina al menos un paño…»</strong> — Dibuje un rectángulo con
+            2 clics en Inferior o Superior.</li>
+        <li><strong>No se crea AR en una cara</strong> — Compruebe que esa tab
+            tiene polígonos y el toggle de malla encendido.</li>
+        <li><strong>Inset falló / paño estrecho</strong> — Amplíe el paño; el
+            offset de 25&nbsp;mm necesita espacio.</li>
+        <li><strong>«Solo funciona en vistas de planta»</strong> — Active una
+            planta (no alzado, sección ni 3D) y vuelva a lanzar la herramienta.</li>
+        <li><strong>Sin etiquetas</strong> — Cargue la familia
+            <code>EST_A_STRUCTURAL REBAR TAG_FLOOR</code> en la planta activa.</li>
+        <li><strong>Pata L no se aplica</strong> — Compruebe que el extremo llega
+            cerca del borde/shaft/hueco y revise el mensaje de estado. Create
+            fallido deja la barra recta.</li>
+        <li><strong>Sin permiso</strong> — Verifique red / servidor de incidencias
+            y el JSON de acceso BIMTools.</li>
+    </ul>
+
+    <div class="footer">
+        Arainco · BIMTools · Area Rein. losa (Sketch)<br>
+        Autor del bundle: José Ignacio Núñez · Revit 2024–2026
+    </div>
+</body>
+</html>
