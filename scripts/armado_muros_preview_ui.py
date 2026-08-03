@@ -40,7 +40,6 @@ from Autodesk.Revit.DB import (
     ElementId,
     FilteredElementCollector,
     StorageType,
-    Transaction,
     UnitUtils,
     UnitTypeId,
     Wall,
@@ -578,10 +577,18 @@ def _get_bar_types_sorted_display(document):
         if cabezal is not None:
             rts = list(cabezal._cached_rebar_bar_types(document))
         else:
-            rts = list(FilteredElementCollector(document).OfClass(RebarBarType))
+            rts = list(
+                FilteredElementCollector(document)
+                .OfClass(RebarBarType)
+                .WhereElementIsElementType()
+            )
     except Exception:
         try:
-            rts = list(FilteredElementCollector(document).OfClass(RebarBarType))
+            rts = list(
+                FilteredElementCollector(document)
+                .OfClass(RebarBarType)
+                .WhereElementIsElementType()
+            )
         except Exception:
             return []
     keyed = []
@@ -2657,15 +2664,16 @@ class ArmadoMurosPreviewWindow(object):
                     legacy_ids = _pop_legacy_extremo_marker_ids()
                     if legacy_ids:
                         try:
-                            t = Transaction(self.doc, u"Arainco: Limpiar marcadores extremos")
-                            t.Start()
-                            cabezal._delete_wall_extremo_markers(self.doc, legacy_ids)
-                            t.Commit()
+                            from armado_muros_txn import transaction_scope
+                            with transaction_scope(
+                                self.doc,
+                                u"Arainco: Limpiar marcadores extremos",
+                            ):
+                                cabezal._delete_wall_extremo_markers(
+                                    self.doc, legacy_ids,
+                                )
                         except Exception:
-                            try:
-                                t.RollBack()
-                            except Exception:
-                                pass
+                            pass
                 self._set_estado(u"Analizando encuentros de muros…")
                 self._pump_dispatcher()
                 self._warm_vecinos_caches()

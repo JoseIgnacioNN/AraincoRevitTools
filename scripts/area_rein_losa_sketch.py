@@ -576,7 +576,10 @@ _BORDE_LOSA_TIP = (
     u"Barras en borde de losa (cara inferior). "
     u"Comportamiento por definir."
 )
-# Patas L: siempre al crear (borde / shafts / huecos → extremos de barra)
+# Temporalmente desactivados — poner True para reactivar UI / lógica
+_FEATURE_AHORRO_FIERRO = False
+_FEATURE_PATA_L = False
+# Patas L: al crear (borde / shafts / huecos → extremos de barra)
 try:
     from area_rein_losa_sketch_pata import (
         aplicar_patas_l_por_outline,
@@ -6390,7 +6393,7 @@ __STYLES__
 
       <TextBlock Grid.Row="2" x:Name="TxtHint" Foreground="#64748b" FontSize="10"
                  TextWrapping="Wrap" Margin="0,8,0,0"
-                 Text="Tabs Superior/Inferior: paños por cara (2 clics). Sin polígonos en una cara → no se crea AR ahí. Clic = activo · Principal = luz menor · Ahorro por paño · Ctrl+clic fusión · Supr elimina · Esc cancela."/>
+                 Text="Tabs Superior/Inferior: paños por cara (2 clics). Sin polígonos en una cara → no se crea AR ahí. Clic = activo · Principal = luz menor · Ctrl+clic fusión · Supr elimina · Esc cancela."/>
 
       <Grid Grid.Row="3" Margin="0,14,0,0">
         <Grid.ColumnDefinitions>
@@ -6801,12 +6804,17 @@ class AreaReinLosaSketchController(object):
                 ).format(fid)
             hint = win.FindName(u"TxtHint")
             if hint is not None:
+                _ahorro_hint = (
+                    u"Ahorro / Ø / esp. por paño. "
+                    if _FEATURE_AHORRO_FIERRO
+                    else u"Ø / esp. por paño. "
+                )
                 hint.Text = (
                     u"Tabs Superior / Inferior: dibuje paños en cada cara (2 clics). "
                     u"Sin polígonos en una cara → no se crea Area Rein. ahí. "
                     u"Clic en un paño lo activa. Principal = luz menor del paño. "
-                    u"Ahorro / Ø / esp. por paño. "
-                    u"Ctrl+clic fusión (misma cara) · Supr elimina · Esc cancela. "
+                    + _ahorro_hint
+                    + u"Ctrl+clic fusión (misma cara) · Supr elimina · Esc cancela. "
                     u"Rueda = zoom · clic rueda = pan · Ctrl+0 = reset vista."
                 )
         except Exception:
@@ -8297,6 +8305,9 @@ class AreaReinLosaSketchController(object):
             pano[u"ahorro_inferior"] = False
         else:
             pano[u"ahorro_superior"] = False
+        if not _FEATURE_AHORRO_FIERRO:
+            pano[u"ahorro_inferior"] = False
+            pano[u"ahorro_superior"] = False
         # Compat: limpiar flags/UI antiguos de pata L
         for _k in (u"pata_edges", u"pata_l_auto"):
             if _k in pano:
@@ -8498,6 +8509,8 @@ class AreaReinLosaSketchController(object):
             mesh = self._face_cfg_summary_line(
                 cfg, (u"exterior_major", u"exterior_minor"), u"Sup"
             )
+        if not _FEATURE_AHORRO_FIERRO:
+            return mesh
         af = self._pano_ahorro_tags(pano, cfg, face_id=face)
         ahorro = u"sí" if af else u"no"
         return u"{0} · Ahorro: {1}".format(mesh, ahorro)
@@ -9282,52 +9295,58 @@ class AreaReinLosaSketchController(object):
             except Exception:
                 pass
 
-            # Ahorro de fierro: toggle por cara (default OFF), independiente del dim de Ø/Esp
-            ahorro_chk = CheckBox()
-            ahorro_chk.IsChecked = False
-            ahorro_chk.VerticalAlignment = VerticalAlignment.Center
-            ahorro_chk.Cursor = Cursors.Hand
-            ahorro_chk.Margin = Thickness(0, 0, 0, 0)
-            try:
-                ahorro_chk.Style = self._win.FindResource(u"BimToolsToggleMini")
-            except Exception:
-                pass
+            # Ahorro de fierro: toggle por cara (default OFF); desactivado de momento
+            ahorro_chk = None
+            ahorro_host = None
             ahorro_parts = {}
-            _apply_face_toggle(
-                ahorro_chk, u"Ahorro de fierro", _AHORRO_TOGGLE_ACCENT, ahorro_parts
-            )
-            try:
-                ahorro_chk.ToolTip = _AHORRO_TIP
-            except Exception:
-                pass
+            if _FEATURE_AHORRO_FIERRO:
+                ahorro_chk = CheckBox()
+                ahorro_chk.IsChecked = False
+                ahorro_chk.VerticalAlignment = VerticalAlignment.Center
+                ahorro_chk.Cursor = Cursors.Hand
+                ahorro_chk.Margin = Thickness(0, 0, 0, 0)
+                try:
+                    ahorro_chk.Style = self._win.FindResource(u"BimToolsToggleMini")
+                except Exception:
+                    pass
+                _apply_face_toggle(
+                    ahorro_chk,
+                    u"Ahorro de fierro",
+                    _AHORRO_TOGGLE_ACCENT,
+                    ahorro_parts,
+                )
+                try:
+                    ahorro_chk.ToolTip = _AHORRO_TIP
+                except Exception:
+                    pass
 
-            ahorro_sub = TextBlock()
-            ahorro_sub.Text = _AHORRO_TIP
-            ahorro_sub.Foreground = _brush(u"#64748b")
-            ahorro_sub.FontSize = 9
-            ahorro_sub.TextWrapping = TextWrapping.Wrap
-            ahorro_sub.Margin = Thickness(28, 2, 0, 0)
+                ahorro_sub = TextBlock()
+                ahorro_sub.Text = _AHORRO_TIP
+                ahorro_sub.Foreground = _brush(u"#64748b")
+                ahorro_sub.FontSize = 9
+                ahorro_sub.TextWrapping = TextWrapping.Wrap
+                ahorro_sub.Margin = Thickness(28, 2, 0, 0)
 
-            ahorro_host = StackPanel()
-            ahorro_host.Orientation = Orientation.Vertical
-            ahorro_host.Margin = Thickness(0, 0, 0, 6)
-            ahorro_host.Children.Add(ahorro_chk)
-            ahorro_host.Children.Add(ahorro_sub)
+                ahorro_host = StackPanel()
+                ahorro_host.Orientation = Orientation.Vertical
+                ahorro_host.Margin = Thickness(0, 0, 0, 6)
+                ahorro_host.Children.Add(ahorro_chk)
+                ahorro_host.Children.Add(ahorro_sub)
 
-            def _make_ahorro_handler(parts, chk_ref):
-                def _on_ahorro_toggle(s, e):
-                    try:
-                        on = bool(chk_ref.IsChecked)
-                    except Exception:
-                        on = False
-                    _sync_face_toggle_visual(parts, on)
-                    _on_layer_change(s, e)
+                def _make_ahorro_handler(parts, chk_ref):
+                    def _on_ahorro_toggle(s, e):
+                        try:
+                            on = bool(chk_ref.IsChecked)
+                        except Exception:
+                            on = False
+                        _sync_face_toggle_visual(parts, on)
+                        _on_layer_change(s, e)
 
-                return _on_ahorro_toggle
+                    return _on_ahorro_toggle
 
-            ahorro_handler = _make_ahorro_handler(ahorro_parts, ahorro_chk)
-            ahorro_chk.Checked += RoutedEventHandler(ahorro_handler)
-            ahorro_chk.Unchecked += RoutedEventHandler(ahorro_handler)
+                ahorro_handler = _make_ahorro_handler(ahorro_parts, ahorro_chk)
+                ahorro_chk.Checked += RoutedEventHandler(ahorro_handler)
+                ahorro_chk.Unchecked += RoutedEventHandler(ahorro_handler)
 
             def _make_face_handler(parts, body_panel, chk_ref):
                 def _on_face_toggle(s, e):
@@ -9349,9 +9368,10 @@ class AreaReinLosaSketchController(object):
             face_chk.Checked += RoutedEventHandler(face_handler)
             face_chk.Unchecked += RoutedEventHandler(face_handler)
 
-            # Orden: toggle malla → Ahorro de fierro → Principal/Secundaria
+            # Orden: toggle malla → [Ahorro de fierro] → Principal/Secundaria
             g_sp.Children.Add(face_chk)
-            g_sp.Children.Add(ahorro_host)
+            if ahorro_host is not None:
+                g_sp.Children.Add(ahorro_host)
 
             keys = group[u"keys"]
             for ki, key in enumerate(keys):
@@ -9717,6 +9737,8 @@ class AreaReinLosaSketchController(object):
 
     def _read_ahorro_flags(self):
         """Ahorro por cara desde el toggle «Ahorro de fierro» (Inferior / Superior)."""
+        if not _FEATURE_AHORRO_FIERRO:
+            return False, False
         ahorro_inferior = False
         ahorro_superior = False
         for g_id in (u"inferior", u"superior"):
@@ -9805,12 +9827,22 @@ class AreaReinLosaSketchController(object):
                     u"pts": pts_copy,
                     u"major_xyz": major_xyz,
                     u"layer_cfg": layer_copy,
-                    u"ahorro_inferior": bool(pano.get(u"ahorro_inferior"))
-                    if face == u"inferior"
-                    else False,
-                    u"ahorro_superior": bool(pano.get(u"ahorro_superior"))
-                    if face == u"superior"
-                    else False,
+                    u"ahorro_inferior": (
+                        bool(pano.get(u"ahorro_inferior"))
+                        if (
+                            _FEATURE_AHORRO_FIERRO
+                            and face == u"inferior"
+                        )
+                        else False
+                    ),
+                    u"ahorro_superior": (
+                        bool(pano.get(u"ahorro_superior"))
+                        if (
+                            _FEATURE_AHORRO_FIERRO
+                            and face == u"superior"
+                        )
+                        else False
+                    ),
                 }
             )
 
@@ -10848,12 +10880,15 @@ class AreaReinLosaSketchController(object):
                         )
                     )
                     free_rebars = []
-                    # Patas L siempre: aristas del paño que coinciden con
-                    # outline / shafts / huecos
+                    # Patas L: aristas del paño ∩ outline / shafts / huecos
                     pata_ctx = None
                     try:
                         _ppt = item.get(u"pano_pts") or []
-                        if _ppt and (outline_pts or hole_rings):
+                        if (
+                            _FEATURE_PATA_L
+                            and _ppt
+                            and (outline_pts or hole_rings)
+                        ):
                             pata_ctx = {
                                 u"floor": floor,
                                 u"plane": plane,

@@ -869,7 +869,12 @@ def _cached_rebar_bar_types(doc):
     if cached is not None:
         return cached
     try:
-        rts = list(FilteredElementCollector(doc).OfClass(RebarBarType))
+        # OfClass + WhereElementIsElementType: filtro nativo C#.
+        rts = list(
+            FilteredElementCollector(doc)
+            .OfClass(RebarBarType)
+            .WhereElementIsElementType()
+        )
     except Exception:
         rts = []
     _REBAR_BAR_TYPES_CACHE[key] = rts
@@ -3822,6 +3827,16 @@ NO_COLLISION_RETRACT_BASE_MM = 25.0
 FOUNDATION_PROBE_BASE_MM = 100.0
 FOUNDATION_STRETCH_RESTA_MM = 50.0
 TROCEO_EMPALME_POLICY_BASE = u"base"
+# AppDomain: alinear XY de líneas del mismo (extremo, capa) antes de fusionar
+# (Capas Adicionales / stacks con extremos no colineales al mm).
+_APPDOMAIN_FUSE_ALIGN_XY = u"Arainco_Cabezal_FuseAlignXY"
+# AppDomain legacy: True → cabeza siempre empotramiento L(Ø) (sin sonda).
+_APPDOMAIN_SKIP_TOP_EMBED_COLLISION = u"Arainco_Cabezal_SkipTopEmbedCollision"
+# AppDomain Capas: terminación cabeza forzada — ``empotramiento`` | ``pata_l``.
+# None / ausente → sondeo de colisión (Armado Muros v3).
+_APPDOMAIN_TOP_TERMINATION = u"Arainco_Cabezal_TopTermination"
+TOP_TERMINATION_EMPOTRAMIENTO = u"empotramiento"
+TOP_TERMINATION_PATA_L = u"pata_l"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -4514,7 +4529,20 @@ def _z_cut_vertical_bar_plane(bx, by, z_lo, z_hi, plane, tol_ft):
     nx = float(n.X)
     ny = float(n.Y)
     z_int = oz - (nx * (float(bx) - ox) + ny * (float(by) - oy)) / nz
-    if z_int <= float(z_lo) + tt or z_int >= float(z_hi) - tt:
+    z_lo_f = float(z_lo)
+    z_hi_f = float(z_hi)
+    if z_int <= z_lo_f + tt or z_int >= z_hi_f - tt:
+        # Capas / fuse-align: si el plano cae justo en el borde (Z-base),
+        # empujar 2 mm hacia el interior para que el split no se descarte.
+        if _fuse_align_xy_enabled():
+            try:
+                inset = max(tt * 2.0, float(_mm_to_internal(2.0)))
+            except Exception:
+                inset = tt * 2.0
+            if z_int <= z_lo_f + tt and (z_lo_f + inset) < (z_hi_f - tt):
+                return z_lo_f + inset
+            if z_int >= z_hi_f - tt and (z_hi_f - inset) > (z_lo_f + tt):
+                return z_hi_f - inset
         return None
     return z_int
 
@@ -4629,6 +4657,16 @@ def _troceo_planificar_seg_jobs_from_fused_line(
 
     extremo = fj.get(u"extremo") or CABEZAL_EXTREMO_INICIO
     layer_index = int(fj.get(u"layer_index", 0))
+    # Paridad A/B: preferir índice de sello (enum) para continuar el stack GUID
+    # (capas nuevas con offset). Si no hay enum, usa layer_index local.
+    try:
+        _parity_li = fj.get(u"enum_layer_index")
+        if _parity_li is not None:
+            _parity_li = int(_parity_li)
+        else:
+            _parity_li = int(layer_index)
+    except Exception:
+        _parity_li = int(layer_index)
 
     try:
         d_mm = _bar_diameter_mm(fj[u"bar_type"])
@@ -4652,7 +4690,27 @@ def _troceo_planificar_seg_jobs_from_fused_line(
             merged.append(w)
         ref_walls_job = merged
 
-    use_a = (int(layer_index) % 2 == 0)
+    use_a = (int(_parity_li) % 2 == 0)
+    # Opt-out / forzado de alternancia A/B (herramientas vía AppDomain):
+    # False / 0 → todas las capas usan planos A
+    # "force_b" / 2 → todas las capas usan planos B (empalme con empotramiento)
+    # True / None → paridad por capa (pares=A, impares=B)
+    try:
+        from System import AppDomain as _AD
+
+        _alt = _AD.CurrentDomain.GetData(u"Arainco_Cabezal_Empalme_Alternancia")
+        if _alt is False or _alt == 0 or _alt == u"0":
+            use_a = True
+        elif (
+            _alt == 2
+            or _alt == u"2"
+            or _alt == u"force_b"
+            or _alt == u"b"
+            or _alt == u"B"
+        ):
+            use_a = False
+    except Exception:
+        pass
     cut_planes = []
     cut_policies = []
     if ref_walls_job:
@@ -4807,18 +4865,149 @@ def _troceo_planificar_seg_jobs_from_fused_line(
 # Fusión colineal
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _align_line_jobs_xy_for_stack_fusion(line_jobs):
+    """
+    Misma XY por (extremo, layer_index) usando el muro de Z más baja.
+    Permite fusionar el stack aunque los extremos no coincidan al mm
+    (largos distintos / desfaces). También unifica espesor de fusión.
+    """
+    groups = {}
+    order = []
+    for job in list(line_jobs or []):
+        if job is None:
+            continue
+        extremo = job.get(u"extremo") or CABEZAL_EXTREMO_INICIO
+        try:
+            li = int(job.get(u"layer_index", 0))
+        except Exception:
+            li = 0
+        key = (extremo, li)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(job)
+    out = []
+    for key in order:
+        g = groups.get(key) or []
+        if not g:
+            continue
+        try:
+            g_sorted = sorted(
+                g,
+                key=lambda j: float(j[u"p_lo"].Z),
+            )
+        except Exception:
+            g_sorted = list(g)
+        ref = g_sorted[0]
+        try:
+            rx = float(ref[u"p_lo"].X)
+            ry = float(ref[u"p_lo"].Y)
+        except Exception:
+            out.extend(g)
+            continue
+        for job in g:
+            try:
+                lo = job[u"p_lo"]
+                hi = job[u"p_hi"]
+                j = dict(job)
+                j[u"p_lo"] = XYZ(rx, ry, float(lo.Z))
+                j[u"p_hi"] = XYZ(rx, ry, float(hi.Z))
+                j[u"thickness_mm"] = 0.0
+                out.append(j)
+            except Exception:
+                out.append(job)
+    return out
+
+
+def _fuse_align_xy_enabled():
+    try:
+        from System import AppDomain as _AD
+
+        v = _AD.CurrentDomain.GetData(_APPDOMAIN_FUSE_ALIGN_XY)
+        if v is True or v == 1 or v == u"1":
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _skip_top_embed_collision_enabled():
+    """True → cabeza: siempre +L(Ø), sin sonda (legacy Capas)."""
+    try:
+        from System import AppDomain as _AD
+
+        v = _AD.CurrentDomain.GetData(_APPDOMAIN_SKIP_TOP_EMBED_COLLISION)
+        if v is True or v == 1 or v == u"1":
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _top_termination_override():
+    """
+    Override de terminación en cabeza (sin sonda de colisión).
+
+    Returns:
+        ``TOP_TERMINATION_EMPOTRAMIENTO`` | ``TOP_TERMINATION_PATA_L`` | None
+        (None = comportamiento v3 con sonda).
+    """
+    try:
+        from System import AppDomain as _AD
+
+        v = _AD.CurrentDomain.GetData(_APPDOMAIN_TOP_TERMINATION)
+    except Exception:
+        v = None
+    if v is not None:
+        try:
+            s = unicode(v).strip().lower()
+        except Exception:
+            try:
+                s = str(v).strip().lower()
+            except Exception:
+                s = u""
+        if s in (
+            TOP_TERMINATION_EMPOTRAMIENTO,
+            u"embed",
+            u"empotrar",
+            u"1",
+            u"true",
+        ):
+            return TOP_TERMINATION_EMPOTRAMIENTO
+        if s in (
+            TOP_TERMINATION_PATA_L,
+            u"pata",
+            u"pata-l",
+            u"l",
+            u"2",
+        ):
+            return TOP_TERMINATION_PATA_L
+    if _skip_top_embed_collision_enabled():
+        return TOP_TERMINATION_EMPOTRAMIENTO
+    return None
+
+
 def _fuse_colinear_cabezal_lines(line_jobs):
     """
     Fusión colineal: agrupa por (XY, extremo, capa, espesor muro mm) y extiende
     el intervalo Z al rango combinado ``[min(Z), max(Z)]``.
     Solo fusiona líneas de muros con el mismo espesor nominal.
     Acumula muros con ``troceo_por_muro`` para planos de corte.
+
+    Con ``Arainco_Cabezal_FuseAlignXY``: alinea XY por (extremo, capa) para
+    poder trocear stacks Capas aunque los extremos no sean colineales.
     """
     if not line_jobs:
         return []
+    jobs_in = list(line_jobs)
+    if _fuse_align_xy_enabled():
+        try:
+            jobs_in = _align_line_jobs_xy_for_stack_fusion(jobs_in)
+        except Exception:
+            jobs_in = list(line_jobs)
     buckets = {}
     key_order = []
-    for job in line_jobs:
+    for job in jobs_in:
         p_lo = job[u"p_lo"]
         p_hi = job[u"p_hi"]
         xf = round(float(p_lo.X), _XY_KEY_DECIMALS)
@@ -5726,7 +5915,11 @@ def _resolve_cabezal_stirrup_hook_135(doc):
         u"Stirrup/Tie - 135 deg. ",
     )
     try:
-        for ht in FilteredElementCollector(doc).OfClass(RebarHookType):
+        for ht in (
+            FilteredElementCollector(doc)
+            .OfClass(RebarHookType)
+            .WhereElementIsElementType()
+        ):
             try:
                 nm = u"{0}".format(ht.Name or u"").strip()
             except Exception:
@@ -6086,7 +6279,11 @@ def _find_cabezal_confinement_rebar_shape(doc, nombre):
     match_digits = None
     found = None
     try:
-        shapes = FilteredElementCollector(doc).OfClass(RebarShape)
+        shapes = (
+            FilteredElementCollector(doc)
+            .OfClass(RebarShape)
+            .WhereElementIsElementType()
+        )
     except Exception:
         cache[dkey] = None
         return None
@@ -8828,10 +9025,17 @@ def _aplicar_cabezales_muros_pipeline(
             dz_retract_ft = _mm_to_internal(retract_mm) if retract_mm > 0.1 else 0.0
 
             if dz_embed_ft > 1e-12:
-                collides = _embed_collides_wall_solids_upward(
-                    doc, bx, by, z_top, dz_embed_ft, d_mm,
-                    walls, host_wall.Id, geom_opts,
-                )
+                # Capas (AppDomain): forzar empotramiento o pata L sin sonda.
+                top_mode = _top_termination_override()
+                if top_mode == TOP_TERMINATION_EMPOTRAMIENTO:
+                    collides = True
+                elif top_mode == TOP_TERMINATION_PATA_L:
+                    collides = False
+                else:
+                    collides = _embed_collides_wall_solids_upward(
+                        doc, bx, by, z_top, dz_embed_ft, d_mm,
+                        walls, host_wall.Id, geom_opts,
+                    )
                 if collides:
                     old_hi = fj[u"p_hi"]
                     fj[u"p_hi"] = XYZ(float(old_hi.X), float(old_hi.Y),

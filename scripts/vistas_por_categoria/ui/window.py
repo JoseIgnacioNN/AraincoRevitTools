@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""UI WPF — Vistas por Usuario (shell visual alineado a Elevación Eje)."""
+"""UI WPF — Vistas por Categoría (shell visual alineado a Vistas por Usuario)."""
 
 from __future__ import print_function
 
@@ -35,6 +35,7 @@ from System.Windows.Controls import (
     SelectionChangedEventHandler,
     StackPanel,
     TextBlock,
+    TextChangedEventHandler,
 )
 from System.Windows.Input import Cursors, MouseButtonEventHandler
 from System.Windows.Markup import XamlReader
@@ -50,20 +51,19 @@ from revit_wpf_window_position import (
     revit_main_hwnd,
 )
 
-from vistas_por_usuario.constants import TRANSACTION_TITLE, VIEW_SCALE_RATIOS
-from vistas_por_usuario import singleton
-from vistas_por_usuario.people import (
-    display_to_code,
-    invalidate_modeladores_cache,
-    load_modeladores,
-    personas_paths,
+from vistas_por_categoria.constants import (
+    CATEGORIA_OPTIONS,
+    TRANSACTION_TITLE,
+    VIEW_SCALE_RATIOS,
+    ZONA_DEFAULT,
 )
+from vistas_por_categoria import singleton
 
 _DIALOG_TITLE = TRANSACTION_TITLE
-_WINDOW_TITLE = u"Arainco: Vistas por usuario"
+_WINDOW_TITLE = u"Arainco: Vistas por categoría"
 _DEFAULT_VIEW_SCALE = 50
-_APPDOMAIN_EVENT_KEY = u"Arainco_VistasPorUsuario_ExtEvent"
-_APPDOMAIN_HANDLER_KEY = u"Arainco_VistasPorUsuario_Handler"
+_APPDOMAIN_EVENT_KEY = u"Arainco_VistasPorCategoria_ExtEvent"
+_APPDOMAIN_HANDLER_KEY = u"Arainco_VistasPorCategoria_Handler"
 
 _BRUSH_SEG_ON_BG = SolidColorBrush(Color.FromArgb(0x24, 0x5B, 0xB8, 0xD4))
 _BRUSH_SEG_ON_BD = SolidColorBrush(Color.FromRgb(0x5B, 0xB8, 0xD4))
@@ -75,32 +75,28 @@ _BRUSH_ROW_HOVER = SolidColorBrush(Color.FromArgb(0x28, 0x5B, 0xC0, 0xDE))
 
 _BODY_XAML = u"""
 <StackPanel>
-  <!-- 1. Modelador -->
-  <TextBlock Text="Modelador" Foreground="#95B8CC" FontSize="11" FontWeight="SemiBold"
+  <!-- 1. Categoría + zona -->
+  <TextBlock Text="Categoría de vistas" Foreground="#95B8CC" FontSize="11" FontWeight="SemiBold"
              Margin="0,0,0,4"/>
-  <ComboBox x:Name="CmbUsuario" Style="{StaticResource Combo}" IsEditable="False"
+  <ComboBox x:Name="CmbCategoria" Style="{StaticResource Combo}" IsEditable="False"
             Margin="0,0,0,8"/>
-  <Grid Margin="0,0,0,14">
-    <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="*"/>
-      <ColumnDefinition Width="Auto"/>
-    </Grid.ColumnDefinitions>
-    <Border x:Name="ChipClasificacion" Grid.Column="0" Padding="7,3"
-            Background="#245BB8D4" BorderBrush="#4D5BB8D4" BorderThickness="1"
-            CornerRadius="10" HorizontalAlignment="Left" VerticalAlignment="Center">
-      <StackPanel Orientation="Horizontal">
-        <TextBlock Text="Clasificación" Foreground="#64748b" FontSize="10"
-                   VerticalAlignment="Center" Margin="0,0,8,0"/>
-        <TextBlock x:Name="TxtCodigo" Text="—" Foreground="#E8F4F8" FontSize="11"
-                   FontFamily="Consolas" FontWeight="SemiBold" VerticalAlignment="Center"/>
-      </StackPanel>
-    </Border>
-    <Button x:Name="BtnGestionarPersonas" Grid.Column="1"
-            Content="Personas" Padding="6,1" MinWidth="0" FontSize="11"
-            Style="{StaticResource BtnSelectOutline}"
-            VerticalAlignment="Center" HorizontalAlignment="Right"
-            ToolTip="Gestionar directorio de personas"/>
-  </Grid>
+  <Border x:Name="ChipCodigo" Padding="7,3" Margin="0,0,0,14"
+          Background="#245BB8D4" BorderBrush="#4D5BB8D4" BorderThickness="1"
+          CornerRadius="10" HorizontalAlignment="Left" VerticalAlignment="Center">
+    <StackPanel Orientation="Horizontal">
+      <TextBlock Text="Código" Foreground="#64748b" FontSize="10"
+                 VerticalAlignment="Center" Margin="0,0,8,0"/>
+      <TextBlock x:Name="TxtCodigo" Text="—" Foreground="#E8F4F8" FontSize="11"
+                 FontFamily="Consolas" FontWeight="SemiBold" VerticalAlignment="Center"/>
+    </StackPanel>
+  </Border>
+
+  <TextBlock Text="Nombre de la zona" Foreground="#95B8CC" FontSize="11" FontWeight="SemiBold"
+             Margin="0,0,0,4"/>
+  <TextBox x:Name="TxtZona" Style="{StaticResource BimToolsTextBoxDark}"
+           Text="GENERAL" Margin="0,0,0,4"/>
+  <TextBlock Foreground="#64748b" FontSize="10" TextWrapping="Wrap" Margin="0,0,0,14"
+             Text="Si el proyecto no está dividido en zonas, use GENERAL."/>
 
   <!-- 2. Niveles -->
   <Grid Margin="0,0,0,8">
@@ -137,7 +133,7 @@ _BODY_XAML = u"""
              Foreground="#95B8CC" FontSize="11" FontWeight="SemiBold"/>
   <WrapPanel x:Name="PanelEscala" Orientation="Horizontal"/>
   <TextBlock Margin="0,8,0,0" Foreground="#64748b" FontSize="10" TextWrapping="Wrap"
-             Text="También crea plantillas y tipos Detail/Sección del modelador."/>
+             Text="También crea plantillas y tipos Detail/Sección de la categoría."/>
 </StackPanel>
 """
 
@@ -146,7 +142,7 @@ _FOOTER_ACTIONS_XAML = u"""
         Style="{StaticResource BtnSelectOutline}" MinWidth="100"/>
 <Button x:Name="BtnIniciar" Content="Crear vistas"
         Style="{StaticResource BtnPrimary}" MinWidth="150"
-        ToolTip="Crear el conjunto 02_TRABAJO para el modelador seleccionado"/>
+        ToolTip="Crear el conjunto 01_ENTREGABLE para la categoría y zona seleccionadas"/>
 """
 
 
@@ -283,7 +279,7 @@ class _LevelCheck(object):
         self.checkbox = checkbox
 
 
-class _CreateUserViewsHandler(IExternalEventHandler):
+class _CreateCategoriaViewsHandler(IExternalEventHandler):
     """Ejecuta la creación en el hilo de Revit (UI ya cerrada)."""
 
     def __init__(self):
@@ -298,11 +294,11 @@ class _CreateUserViewsHandler(IExternalEventHandler):
             _unpin_external_event()
             return
 
-        from vistas_por_usuario.service import (
-            VistasPorUsuarioError,
-            create_user_views,
+        from vistas_por_categoria.service import (
+            VistasPorCategoriaError,
+            create_categoria_views,
             format_success_dialog,
-            validate_user_views_not_exist,
+            validate_categoria_views_not_exist,
         )
 
         try:
@@ -312,17 +308,19 @@ class _CreateUserViewsHandler(IExternalEventHandler):
                 return
 
             doc = uidoc.Document
-            ok, msg = validate_user_views_not_exist(doc, req.usuario_code)
+            ok, msg = validate_categoria_views_not_exist(
+                doc, req.categoria_code, req.zona
+            )
             if not ok:
                 mostrar_aviso(host, msg)
                 return
 
-            result = create_user_views(doc, req)
+            result = create_categoria_views(doc, req)
             instruction, content = format_success_dialog(
-                result, req.usuario_display, req.usuario_code
+                result, req.categoria_display, req.categoria_code, req.zona
             )
             mostrar_aviso(host, instruction, content, ok_text=u"Entendido")
-        except VistasPorUsuarioError as ex:
+        except VistasPorCategoriaError as ex:
             mostrar_aviso(host, str(ex))
         except Exception as ex:
             mostrar_aviso(
@@ -337,7 +335,7 @@ class _CreateUserViewsHandler(IExternalEventHandler):
         return TRANSACTION_TITLE
 
 
-class VistasPorUsuarioWindow(object):
+class VistasPorCategoriaWindow(object):
     def __init__(self, doc, uidoc, revit_app):
         self._doc = doc
         self._uidoc = uidoc
@@ -346,13 +344,13 @@ class VistasPorUsuarioWindow(object):
         self._scale_buttons = []
         self._scale_ratio = int(_DEFAULT_VIEW_SCALE)
         self._busy = False
-        self._usuario_map = {}
 
-        self._create_handler = _CreateUserViewsHandler()
+        self._create_handler = _CreateCategoriaViewsHandler()
         self._create_event = ExternalEvent.Create(self._create_handler)
 
         self._win = XamlReader.Parse(_build_xaml())
-        self._cmb_usuario = self._win.FindName("CmbUsuario")
+        self._cmb_categoria = self._win.FindName("CmbCategoria")
+        self._txt_zona = self._win.FindName("TxtZona")
         self._panel_escala = self._win.FindName("PanelEscala")
         self._txt_codigo = self._win.FindName("TxtCodigo")
         self._panel_niveles = self._win.FindName("PanelNiveles")
@@ -366,23 +364,28 @@ class VistasPorUsuarioWindow(object):
 
         if self._txt_subtitle is not None:
             try:
-                self._txt_subtitle.Text = u"Plantas Cielo/Piso · 02_TRABAJO"
+                self._txt_subtitle.Text = u"Plantas Cielo/Piso · 01_ENTREGABLE"
             except Exception:
                 pass
 
-        self._fill_usuarios()
+        self._fill_categorias()
         self._fill_escalas()
         self._fill_niveles()
+        if self._txt_zona is not None:
+            self._txt_zona.Text = ZONA_DEFAULT
+            try:
+                self._txt_zona.TextChanged += TextChangedEventHandler(
+                    self._on_zona_changed
+                )
+            except Exception:
+                pass
         self._refresh_form_state()
 
-        self._cmb_usuario.SelectionChanged += SelectionChangedEventHandler(
-            self._on_usuario_changed
+        self._cmb_categoria.SelectionChanged += SelectionChangedEventHandler(
+            self._on_categoria_changed
         )
         self._btn_iniciar.Click += RoutedEventHandler(self._on_iniciar)
         self._btn_cancelar.Click += RoutedEventHandler(lambda s, e: self._win.Close())
-        btn_gest = self._win.FindName("BtnGestionarPersonas")
-        if btn_gest is not None:
-            btn_gest.Click += RoutedEventHandler(self._on_gestionar_personas)
         if btn_all is not None:
             btn_all.Click += RoutedEventHandler(
                 lambda s, e: self._set_all_levels(True)
@@ -394,94 +397,21 @@ class VistasPorUsuarioWindow(object):
 
         self._win.Closed += EventHandler(lambda s, e: singleton.clear())
 
-    def _selected_usuario_display(self):
-        sel = self._cmb_usuario.SelectedItem
-        if sel is None:
-            return u""
-        try:
-            return unicode(sel.Content or u"").strip()
-        except Exception:
-            return u""
-
-    def _on_usuario_changed(self, _sender, _e):
+    def _on_categoria_changed(self, _sender, _e):
         self._refresh_form_state()
 
-    def _fill_usuarios(self, prefer_display=None):
-        """Combo = nombre; Tag/código = abreviación con puntos (clasificación)."""
-        prefer = unicode(prefer_display or u"").strip()
-        self._cmb_usuario.Items.Clear()
-        items, mapping = load_modeladores()
-        self._usuario_map = mapping or {}
-        sel_idx = 0
-        for i, display in enumerate(items):
-            code = display_to_code(display, self._usuario_map)
+    def _on_zona_changed(self, _sender, _e):
+        self._refresh_form_state()
+
+    def _fill_categorias(self):
+        self._cmb_categoria.Items.Clear()
+        for code, label in CATEGORIA_OPTIONS:
             it = ComboBoxItem()
-            it.Content = display
+            it.Content = label
             it.Tag = code
-            self._cmb_usuario.Items.Add(it)
-            if prefer and unicode(display).strip() == prefer:
-                sel_idx = i
-        if self._cmb_usuario.Items.Count > 0:
-            self._cmb_usuario.SelectedIndex = sel_idx
-        else:
-            self._set_status(
-                u"No hay modeladores en personas.json ni lista de respaldo."
-            )
-
-    def _on_gestionar_personas(self, _sender, _e):
-        """Alta/edición en personas.json (mismo diálogo que Siguiente Revisión)."""
-        prev = self._selected_usuario_display()
-        try:
-            from gestionar_personas_wpf import GestionarPersonasDialog, load_personas_list
-            from System.Collections.ObjectModel import ObservableCollection
-            from System.IO import Directory
-        except Exception:
-            mostrar_aviso(
-                self._revit,
-                u"No se pudo cargar el módulo de gestión de personas.",
-            )
-            return
-
-        issues_dir, personas_file = personas_paths()
-        oc = ObservableCollection[object]()
-        for p in load_personas_list(personas_file):
-            oc.Add(p)
-        try:
-            Directory.CreateDirectory(issues_dir)
-        except Exception:
-            pass
-
-        prev_top = None
-        try:
-            prev_top = self._win.Topmost
-            self._win.Topmost = False
-        except Exception:
-            pass
-        try:
-            GestionarPersonasDialog(
-                oc,
-                issues_dir,
-                personas_file,
-                uidoc=self._uidoc,
-                revit_app=self._revit,
-                owner=self._win,
-            )
-        except Exception as ex:
-            mostrar_aviso(
-                self._revit,
-                u"No se pudo abrir el directorio de personas.",
-                content=u"{}".format(ex),
-            )
-        finally:
-            if prev_top is not None:
-                try:
-                    self._win.Topmost = prev_top
-                except Exception:
-                    pass
-
-        invalidate_modeladores_cache()
-        self._fill_usuarios(prefer_display=prev)
-        self._refresh_form_state()
+            self._cmb_categoria.Items.Add(it)
+        if self._cmb_categoria.Items.Count > 0:
+            self._cmb_categoria.SelectedIndex = 0
 
     def _fill_escalas(self):
         self._panel_escala.Children.Clear()
@@ -640,17 +570,34 @@ class VistasPorUsuarioWindow(object):
             item.checkbox.IsChecked = checked
         self._refresh_form_state()
 
-    def _get_selected_usuario(self):
-        sel = self._cmb_usuario.SelectedItem
+    def _get_selected_categoria(self):
+        sel = self._cmb_categoria.SelectedItem
         if sel is None:
             return None, None
-        code = getattr(sel, "Tag", None) or u""
+        code = getattr(sel, "Tag", None)
+        try:
+            code = unicode(code).strip() if code is not None else u""
+        except Exception:
+            code = u""
         display = u""
         try:
             display = unicode(sel.Content)
         except Exception:
             display = code
+        if not code and display:
+            parts = display.split(u" - ", 1)
+            if parts:
+                code = parts[0].strip()
         return code, display
+
+    def _get_zona(self):
+        if self._txt_zona is None:
+            return ZONA_DEFAULT
+        try:
+            z = unicode(self._txt_zona.Text or u"").strip()
+        except Exception:
+            z = u""
+        return z or ZONA_DEFAULT
 
     def _get_selected_scale(self):
         try:
@@ -680,7 +627,8 @@ class VistasPorUsuarioWindow(object):
         if self._busy:
             return
 
-        code, display = self._get_selected_usuario()
+        code, display = self._get_selected_categoria()
+        zona = self._get_zona()
         if self._txt_codigo is not None:
             self._txt_codigo.Text = unicode(code or u"—")
 
@@ -700,15 +648,13 @@ class VistasPorUsuarioWindow(object):
         _style_crear_button(self._btn_iniciar, can_run)
 
         if not code:
-            self._set_status(u"Seleccione un modelador.")
+            self._set_status(u"Seleccione una categoría.")
         elif n == 0:
             self._set_status(u"Seleccione al menos un nivel.")
         else:
-            name = unicode(display or code)
-            plantas = n * 2
             self._set_status(
-                u"{0} ({1}) · 1:{2} · {3} plantas".format(
-                    name, code, scale, plantas
+                u"{0} / zona {1} · 1:{2} · {3} plantas".format(
+                    code, zona, scale, n * 2
                 )
             )
 
@@ -716,10 +662,10 @@ class VistasPorUsuarioWindow(object):
         if self._busy:
             return
 
-        code, display = self._get_selected_usuario()
+        code, display = self._get_selected_categoria()
         if not code:
-            self._set_status(u"Seleccione un modelador.")
-            mostrar_aviso(self._revit, u"Seleccione un modelador.")
+            self._set_status(u"Seleccione una categoría.")
+            mostrar_aviso(self._revit, u"Seleccione una categoría.")
             return
 
         levels = self._get_selected_levels()
@@ -728,10 +674,11 @@ class VistasPorUsuarioWindow(object):
             mostrar_aviso(self._revit, u"Seleccione al menos un nivel.")
             return
 
-        from vistas_por_usuario.service import VistasPorUsuarioRequest
+        from vistas_por_categoria.service import VistasPorCategoriaRequest
 
         scale = self._get_selected_scale()
-        req = VistasPorUsuarioRequest(code, scale, list(levels), display)
+        zona = self._get_zona()
+        req = VistasPorCategoriaRequest(code, zona, scale, list(levels), display)
 
         self._busy = True
         _style_crear_button(self._btn_iniciar, False)
@@ -764,7 +711,7 @@ class VistasPorUsuarioWindow(object):
         self._win.Show()
 
 
-def show_vistas_por_usuario_ui(revit_app):
+def show_vistas_por_categoria_ui(revit_app):
     if singleton.try_activate_existing():
         mostrar_aviso(revit_app, u"La herramienta ya está en ejecución.")
         return
@@ -774,5 +721,5 @@ def show_vistas_por_usuario_ui(revit_app):
     except Exception:
         mostrar_aviso(revit_app, u"No hay documento activo.")
         return
-    w = VistasPorUsuarioWindow(doc, uidoc, revit_app)
+    w = VistasPorCategoriaWindow(doc, uidoc, revit_app)
     w.show()
