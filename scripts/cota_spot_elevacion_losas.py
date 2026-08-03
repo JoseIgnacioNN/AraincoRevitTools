@@ -8,7 +8,8 @@ Flujo:
 1. Validar vista Sección o Alzado (no plantilla).
 2. Selección múltiple de Floors.
 3. PickPoint para ubicar la cota.
-4. Crear cota alineada entre caras superiores horizontales + Spot Elevation por losa.
+4. Crear cota alineada entre caras superiores horizontales + Spot Elevation por losa
+   (origen sobre la cara; líder hacia la posición de la cota).
 5. Ocultar lo creado en el resto del árbol de vistas dependientes (solo visible en la activa).
 """
 
@@ -36,6 +37,7 @@ from Autodesk.Revit.DB import (
     TransactionGroup,
     UnitTypeId,
     UnitUtils,
+    UV,
     ViewType,
     XYZ,
 )
@@ -57,11 +59,18 @@ CATEGORY_SPOT_MAPPING = {
     int(BuiltInCategory.OST_Floors): u"Survey Point_Nivel Tope de Losa",
 }
 
-# Offsets en mm → pies internos vía UnitUtils.
-_OFFSET_LEADER_MM = 450.0
-_OFFSET_END_MM = 150.0
+# Offsets en mm de modelo, calibrados a escala de vista 1:50.
+# En otras escalas se escalan: mm = mm_at_50 * (Scale / 50) para mantener
+# la misma separación aparente en papel.
+_REF_VIEW_SCALE = 50
+_OFFSET_LEADER_MM_AT_50 = 450.0
+_OFFSET_END_MM_AT_50 = 150.0
+_LEADER_SHOULDER_MM_AT_50 = 300.0
+# Separación Spot respecto a la línea de cota (hacia fuera del modelo) @ 1:50.
+_SPOT_OFFSET_PAST_DIM_MM_AT_50 = 450.0
 _DIM_LINE_LENGTH_MM = 3000.0
 _HORIZONTAL_DOT_MIN = 0.9999
+_MIN_LEADER_LEN_MM = 25.0
 
 
 def _as_unicode(text):
@@ -75,6 +84,23 @@ def _as_unicode(text):
 
 def _mm_to_internal(mm):
     return UnitUtils.ConvertToInternalUnits(float(mm), UnitTypeId.Millimeters)
+
+
+def _view_scale_int(view):
+    """Denominador de escala de vista (50 → 1:50). Fallback a la escala de calibración."""
+    try:
+        s = int(view.Scale)
+        if s > 0:
+            return s
+    except Exception:
+        pass
+    return _REF_VIEW_SCALE
+
+
+def _mm_scaled_to_view(mm_at_ref_scale, view):
+    """Convierte un offset calibrado a 1:50 a mm de modelo según Scale de la vista."""
+    scale = _view_scale_int(view)
+    return float(mm_at_ref_scale) * (float(scale) / float(_REF_VIEW_SCALE))
 
 
 def mostrar_aviso(uiapp, instruction, content=u""):
@@ -155,8 +181,11 @@ def _ensure_sketch_plane(doc, active_view):
         return False
 
 
-def _project_point_on_face(planar_face, pt, view_up):
-    """Proyecta el clic sobre la cara planar (intersección con Up de la vista)."""
+def _annotation_on_face_plane(planar_face, pt, view_up):
+    """
+    Punto de anotación (línea de cota) en el plano infinito de la cara.
+    Puede quedar fuera del polígono de la losa; sirve para el extremo del líder.
+    """
     normal = planar_face.FaceNormal
     face_origin = planar_face.Origin
     denominator = normal.DotProduct(view_up)
@@ -172,9 +201,337 @@ def _project_point_on_face(planar_face, pt, view_up):
     return face_origin
 
 
+def _xyz_avg(points):
+    if not points:
+        return None
+    n = float(len(points))
+    try:
+        return XYZ(
+            sum(float(p.X) for p in points) / n,
+            sum(float(p.Y) for p in points) / n,
+            sum(float(p.Z) for p in points) / n,
+        )
+    except Exception:
+        return None
+
+
+def _point_accepted_on_face(planar_face, candidate):
+    """Solo acepta puntos que Face.Project confirma sobre la cara."""
+    if planar_face is None or candidate is None:
+        return None
+    try:
+        ir = planar_face.Project(candidate)
+        if ir is None:
+            return None
+        return ir.XYZPoint
+    except Exception:
+        return None
+
+
+def _face_interior_from_uv_grid(planar_face):
+    """Muestrea la caja UV; el centro bbox falla en losas en L / con huecos."""
+    try:
+        bb = planar_face.GetBoundingBox()
+    except Exception:
+        return None
+    try:
+        u0 = float(bb.Min.U)
+        u1 = float(bb.Max.U)
+        v0 = float(bb.Min.V)
+        v1 = float(bb.Max.V)
+    except Exception:
+        return None
+    if abs(u1 - u0) < 1e-12 or abs(v1 - v0) < 1e-12:
+        return None
+
+    fractions = (
+        (0.5, 0.5),
+        (0.33, 0.33),
+        (0.33, 0.67),
+        (0.67, 0.33),
+        (0.67, 0.67),
+        (0.25, 0.5),
+        (0.75, 0.5),
+        (0.5, 0.25),
+        (0.5, 0.75),
+        (0.2, 0.2),
+        (0.2, 0.8),
+        (0.8, 0.2),
+        (0.8, 0.8),
+        (0.15, 0.5),
+        (0.85, 0.5),
+        (0.5, 0.15),
+        (0.5, 0.85),
+    )
+    for fu, fv in fractions:
+        try:
+            uv = UV(u0 + (u1 - u0) * fu, v0 + (v1 - v0) * fv)
+            pt = planar_face.Evaluate(uv)
+        except Exception:
+            continue
+        accepted = _point_accepted_on_face(planar_face, pt)
+        if accepted is not None:
+            return accepted
+
+    steps = 8
+    for i in range(1, steps):
+        for j in range(1, steps):
+            try:
+                uv = UV(
+                    u0 + (u1 - u0) * (float(i) / steps),
+                    v0 + (v1 - v0) * (float(j) / steps),
+                )
+                pt = planar_face.Evaluate(uv)
+            except Exception:
+                continue
+            accepted = _point_accepted_on_face(planar_face, pt)
+            if accepted is not None:
+                return accepted
+    return None
+
+
+def _face_interior_from_triangulation(planar_face):
+    """Centroides de triángulos de la malla de la cara."""
+    try:
+        mesh = planar_face.Triangulate()
+    except Exception:
+        return None
+    if mesh is None:
+        return None
+    try:
+        ntri = int(mesh.NumTriangles)
+    except Exception:
+        return None
+    for i in range(ntri):
+        try:
+            tri = mesh.get_Triangle(i)
+            pts = [tri.get_Vertex(0), tri.get_Vertex(1), tri.get_Vertex(2)]
+        except Exception:
+            continue
+        c = _xyz_avg(pts)
+        accepted = _point_accepted_on_face(planar_face, c)
+        if accepted is not None:
+            return accepted
+        for vt in pts:
+            mid = _xyz_avg([c, vt]) if c is not None else vt
+            accepted = _point_accepted_on_face(planar_face, mid)
+            if accepted is not None:
+                return accepted
+    return None
+
+
+def _face_interior_from_edges(planar_face):
+    """Puntos medios de aristas, ligeramente hacia el origen de la cara."""
+    try:
+        edge_loops = planar_face.EdgeLoops
+    except Exception:
+        return None
+    if edge_loops is None:
+        return None
+    try:
+        face_origin = planar_face.Origin
+    except Exception:
+        face_origin = None
+    try:
+        for loop in edge_loops:
+            for edge in loop:
+                try:
+                    curve = edge.AsCurve()
+                    mid = curve.Evaluate(0.5, True)
+                except Exception:
+                    continue
+                accepted = _point_accepted_on_face(planar_face, mid)
+                if accepted is not None:
+                    return accepted
+                if face_origin is not None and mid is not None:
+                    try:
+                        toward = face_origin - mid
+                        ln = toward.GetLength()
+                        if ln > 1e-9:
+                            nudged = mid + toward * (min(0.05, ln * 0.1) / ln)
+                            accepted = _point_accepted_on_face(planar_face, nudged)
+                            if accepted is not None:
+                                return accepted
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return None
+
+
+def _face_interior_point(planar_face):
+    """
+    Punto interior que Face.Project acepta.
+    El centro del BoundingBox UV suele caer fuera en losas en L o con huecos.
+    """
+    if planar_face is None or not isinstance(planar_face, PlanarFace):
+        return None
+    for finder in (
+        _face_interior_from_uv_grid,
+        _face_interior_from_triangulation,
+        _face_interior_from_edges,
+    ):
+        try:
+            pt = finder(planar_face)
+        except Exception:
+            pt = None
+        if pt is not None:
+            return pt
+    try:
+        return _point_accepted_on_face(planar_face, planar_face.Origin)
+    except Exception:
+        return None
+
+
+def _origin_on_face(planar_face):
+    """Origen del Spot: interior real de la cara (validado con Face.Project)."""
+    return _face_interior_point(planar_face)
+
+
+def _pick_horizontal_top_face(elem, top_faces):
+    """
+    Elige la primera cara superior horizontal con un origen interior válido.
+    No usar solo top_faces[0]: puede ser un fragmento sin punto usable.
+    Retorna (face_ref, planar_face, origin_pt) o (None, None, None).
+    """
+    try:
+        n_faces = int(top_faces.Count)
+    except Exception:
+        try:
+            n_faces = len(top_faces)
+        except Exception:
+            n_faces = 0
+
+    saw_sloped = False
+    for i in range(n_faces):
+        try:
+            face_ref = top_faces[i]
+        except Exception:
+            continue
+        try:
+            planar_face = elem.GetGeometryObjectFromReference(face_ref)
+        except Exception:
+            planar_face = None
+        if planar_face is None or not isinstance(planar_face, PlanarFace):
+            continue
+        try:
+            nz = abs(float(planar_face.FaceNormal.Z))
+        except Exception:
+            continue
+        if nz < _HORIZONTAL_DOT_MIN:
+            saw_sloped = True
+            continue
+        origin_pt = _origin_on_face(planar_face)
+        if origin_pt is not None:
+            return face_ref, planar_face, origin_pt, u"ok"
+
+    if saw_sloped:
+        return None, None, None, u"slope"
+    return None, None, None, u"other"
+
+
+def _annotation_past_dimension(origin, annotation_pt, view_right, view):
+    """
+    Desplaza el extremo del Spot más allá de la línea de cota, alejándolo del modelo.
+    El offset es proporcional a la escala de la vista (calibrado a 1:50).
+    """
+    if annotation_pt is None:
+        return None
+    offset_mm = _mm_scaled_to_view(_SPOT_OFFSET_PAST_DIM_MM_AT_50, view)
+    offset = _mm_to_internal(offset_mm)
+    if origin is None:
+        return annotation_pt - view_right * offset
+    try:
+        along = view_right.DotProduct(annotation_pt - origin)
+    except Exception:
+        along = 0.0
+    if abs(along) > 1e-9:
+        sign = 1.0 if along > 0 else -1.0
+        return annotation_pt + view_right * (sign * offset)
+    return annotation_pt - view_right * offset
+
+
+def _leader_bend_end(origin, annotation_pt, view_right, view):
+    """
+    Líder largo: origen (interior losa) → bend → end (más allá de la cota).
+    Shoulder y offsets de respaldo también siguen la escala de la vista.
+    """
+    shoulder = _mm_to_internal(
+        _mm_scaled_to_view(_LEADER_SHOULDER_MM_AT_50, view)
+    )
+    min_len = _mm_to_internal(_MIN_LEADER_LEN_MM)
+    offset_leader = _mm_to_internal(
+        _mm_scaled_to_view(_OFFSET_LEADER_MM_AT_50, view)
+    )
+    offset_end = _mm_to_internal(_mm_scaled_to_view(_OFFSET_END_MM_AT_50, view))
+
+    if origin is None:
+        return None, None
+
+    end = _annotation_past_dimension(origin, annotation_pt, view_right, view)
+
+    if end is None:
+        bend = origin - view_right * offset_leader
+        end = bend - view_right * offset_end
+        return bend, end
+
+    try:
+        dist = (end - origin).GetLength()
+    except Exception:
+        dist = 0.0
+
+    if dist < min_len:
+        bend = origin - view_right * offset_leader
+        end = bend - view_right * offset_end
+        return bend, end
+
+    # Codo cerca del texto, hacia la losa (brazo largo origin→bend).
+    along = view_right.DotProduct(origin - end)
+    if abs(along) > min_len:
+        sign = 1.0 if along > 0 else -1.0
+        shoulder_use = min(shoulder, abs(along) * 0.35)
+        if shoulder_use < min_len:
+            shoulder_use = min(shoulder, abs(along) * 0.5)
+        bend = end + view_right * (sign * shoulder_use)
+    else:
+        bend = XYZ(
+            (origin.X + end.X) * 0.5,
+            (origin.Y + end.Y) * 0.5,
+            (origin.Z + end.Z) * 0.5,
+        )
+    return bend, end
+
+
+def _try_new_spot_elevation(doc, view, face_ref, origin, bend, end, ref_pt):
+    """Crea Spot con líder hacia la cota. Retorna el Spot o None."""
+    candidates = [
+        (origin, bend, end, ref_pt, True),
+        (origin, bend, end, origin, True),
+    ]
+    if origin is not None and end is not None:
+        mid = XYZ(
+            (origin.X + end.X) * 0.5,
+            (origin.Y + end.Y) * 0.5,
+            (origin.Z + end.Z) * 0.5,
+        )
+        candidates.append((origin, mid, end, origin, True))
+
+    for o, b, e, rp, hl in candidates:
+        if o is None or b is None or e is None:
+            continue
+        try:
+            spot = doc.Create.NewSpotElevation(view, face_ref, o, b, e, rp, hl)
+            if spot is not None:
+                return spot
+        except Exception:
+            continue
+    return None
+
+
 def _collect_floor_spot_data(doc, sel_refs, pt, view_up):
     """
     Filtra losas horizontales y prepara referencias + puntos de spot.
+    Cada item: (face_ref, origin_on_face, annotation_pt, cat_id, elem_id).
     Retorna (ref_array, spots_data, discarded_slope, discarded_other).
     """
     ref_array = ReferenceArray()
@@ -203,24 +560,20 @@ def _collect_floor_spot_data(doc, sel_refs, pt, view_up):
             discarded_other += 1
             continue
 
-        top_face_ref = top_faces[0]
-        try:
-            planar_face = elem.GetGeometryObjectFromReference(top_face_ref)
-        except Exception:
-            planar_face = None
-        if planar_face is None or not isinstance(planar_face, PlanarFace):
+        face_ref, planar_face, origin_pt, status = _pick_horizontal_top_face(
+            elem, top_faces
+        )
+        if status == u"slope":
+            discarded_slope += 1
+            continue
+        if face_ref is None or planar_face is None or origin_pt is None:
             discarded_other += 1
             continue
 
-        normal = planar_face.FaceNormal
-        if abs(normal.Z) < _HORIZONTAL_DOT_MIN:
-            discarded_slope += 1
-            continue
-
-        intersection_pt = _project_point_on_face(planar_face, pt, view_up)
-        ref_array.Append(top_face_ref)
+        annotation_pt = _annotation_on_face_plane(planar_face, pt, view_up)
+        ref_array.Append(face_ref)
         cat_id = elem.Category.Id.IntegerValue
-        spots_data.append((top_face_ref, intersection_pt, cat_id, elem.Id))
+        spots_data.append((face_ref, origin_pt, annotation_pt, cat_id, elem.Id))
 
     return ref_array, spots_data, discarded_slope, discarded_other
 
@@ -385,8 +738,6 @@ def create_smart_dimensions_and_spots(uiapp):
         spot_fail = 0
         hide_warnings = []
 
-        offset_leader = _mm_to_internal(_OFFSET_LEADER_MM)
-        offset_end = _mm_to_internal(_OFFSET_END_MM)
         dim_len = _mm_to_internal(_DIM_LINE_LENGTH_MM)
 
         t = Transaction(doc, _TXN_CREATE)
@@ -398,42 +749,40 @@ def create_smart_dimensions_and_spots(uiapp):
                 raise Exception(u"NewDimension devolvió None.")
             created_ids.Add(new_dim.Id)
 
-            for face_ref, intersect_pt, cat_id, _elem_id in spots_data:
-                bend = intersect_pt - view_right * offset_leader
-                end = bend - view_right * offset_end
-                try:
-                    new_spot = doc.Create.NewSpotElevation(
-                        active_view,
-                        face_ref,
-                        intersect_pt,
-                        bend,
-                        end,
-                        intersect_pt,
-                        True,
-                    )
-                    if new_spot is None:
-                        spot_fail += 1
-                        continue
-                    created_ids.Add(new_spot.Id)
-                    spot_ok += 1
-
-                    target_type_name = CATEGORY_SPOT_MAPPING.get(cat_id)
-                    if not target_type_name:
-                        continue
-                    if target_type_name not in spot_types_cache:
-                        spot_types_cache[target_type_name] = _get_spot_type_by_name(
-                            doc, target_type_name
-                        )
-                    target_type = spot_types_cache[target_type_name]
-                    if target_type is None:
-                        missing_types.add(target_type_name)
-                        continue
-                    try:
-                        new_spot.ChangeTypeId(target_type.Id)
-                    except Exception:
-                        missing_types.add(target_type_name)
-                except Exception:
+            for face_ref, origin_pt, annotation_pt, cat_id, _elem_id in spots_data:
+                bend, end = _leader_bend_end(
+                    origin_pt, annotation_pt, view_right, active_view
+                )
+                new_spot = _try_new_spot_elevation(
+                    doc,
+                    active_view,
+                    face_ref,
+                    origin_pt,
+                    bend,
+                    end,
+                    origin_pt,
+                )
+                if new_spot is None:
                     spot_fail += 1
+                    continue
+                created_ids.Add(new_spot.Id)
+                spot_ok += 1
+
+                target_type_name = CATEGORY_SPOT_MAPPING.get(cat_id)
+                if not target_type_name:
+                    continue
+                if target_type_name not in spot_types_cache:
+                    spot_types_cache[target_type_name] = _get_spot_type_by_name(
+                        doc, target_type_name
+                    )
+                target_type = spot_types_cache[target_type_name]
+                if target_type is None:
+                    missing_types.add(target_type_name)
+                    continue
+                try:
+                    new_spot.ChangeTypeId(target_type.Id)
+                except Exception:
+                    missing_types.add(target_type_name)
 
             if created_ids.Count > 0:
                 views_hide = _views_to_hide_created_elements(doc, active_view)
