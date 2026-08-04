@@ -419,7 +419,24 @@ def _draw_level_marker(canvas, elev_x, elev_col_w, foot_y, label_txt):
         canvas.Children.Add(lead)
 
 
-def lap_mm_from_long_diam(diam_mm):
+def lap_mm_from_long_diam(diam_mm, concrete_grade=None):
+    """Traslape/empalme (mm) por ø; opcional G25/G35/G45 de tablas de proyecto."""
+    try:
+        from bimtools_rebar_hook_lengths import traslape_mm_from_nominal_diameter_mm
+
+        g = concrete_grade
+        if g is not None:
+            try:
+                g = unicode(g).strip().upper()
+            except Exception:
+                g = str(g).strip().upper() if g else None
+            if g not in (u"G25", u"G35", u"G45"):
+                g = u"G25"
+        L = traslape_mm_from_nominal_diameter_mm(float(diam_mm or 16.0), g)
+        if L is not None and float(L) > 50.0:
+            return float(L)
+    except Exception:
+        pass
     d = float(diam_mm or 16.0)
     if d <= 10:
         return 350.0
@@ -1058,6 +1075,8 @@ def redraw_elevation(
     selected_segments_fin=None,
     show_tramo_bands=True,
     show_pie_controls=True,
+    concrete_grade=None,
+    lap_mm_by_wall=None,
 ):
     """
     ``wall_meta``: lista ordenada base→cima con keys
@@ -1081,6 +1100,7 @@ def redraw_elevation(
 
     ``show_tramo_bands`` / ``show_pie_controls``: False en Mallas en muros
     (solo elevación de fustes + etiquetas malla; sin bandas Tn ni Auto).
+    ``concrete_grade`` / ``lap_mm_by_wall``: L empalme en elevación por G del tramo.
     """
     if canvas is None:
         return
@@ -1821,13 +1841,21 @@ def redraw_elevation(
             canvas.Children.Add(tick)
 
     if show_tramo_bands:
-        lap_mm = lap_mm_from_long_diam(long_diam_mm)
-        lap_px = max(8.0, float(lap_mm) * scale_px)
+        lap_default = lap_mm_from_long_diam(long_diam_mm, concrete_grade)
         for wi in empalme_indices_from_modes(modes, autos, base_index=base_i):
             geom = band_geom.get(wi)
             y_foot = y_bottom_of_wall.get(wi)
             if geom is None or y_foot is None:
                 continue
+            lap_mm = lap_default
+            try:
+                if lap_mm_by_wall is not None and wi < len(lap_mm_by_wall):
+                    lv = lap_mm_by_wall[wi]
+                    if lv is not None and float(lv) > 50.0:
+                        lap_mm = float(lv)
+            except Exception:
+                pass
+            lap_px = max(8.0, float(lap_mm) * scale_px)
             bx, bw, _yt = geom
             ln_a = Line()
             ln_a.X1 = bx

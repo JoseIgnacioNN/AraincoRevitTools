@@ -6987,6 +6987,7 @@ class ArmadoMurosPreviewWindow(object):
             u"sic_encuentro_total",
             u"sic_encuentro_diam_mm",
             u"sic_basis",
+            u"concrete_grade",
         )
         walls = getattr(self, u"walls_ordered", []) or []
         prev_ex_cfg = None
@@ -7075,6 +7076,7 @@ class ArmadoMurosPreviewWindow(object):
             u"sic_encuentro_total",
             u"sic_encuentro_diam_mm",
             u"sic_basis",
+            u"concrete_grade",
         )
         walls = getattr(self, u"walls_ordered", []) or []
         for wi in seg.get(u"wall_indices") or []:
@@ -7110,6 +7112,7 @@ class ArmadoMurosPreviewWindow(object):
             u"segment_bar_type_ids",
             u"armado_activo",
             u"layer_spacing_mm",
+            u"concrete_grade",
         )
 
     def _cabezal_owner_wid_for_segment(self, seg):
@@ -8520,6 +8523,7 @@ class ArmadoMurosPreviewWindow(object):
             u"sic_basis",
             u"post_encuentro_activo",
             u"n_capas_encuentro",
+            u"concrete_grade",
         )
 
     def _apply_cabezal_extremo_to_all_tramos(self, extremo):
@@ -10698,10 +10702,11 @@ class ArmadoMurosPreviewWindow(object):
                 pass
 
     def _fill_cabezal_segmento_chips_host(self, chips_host, extremo):
-        """SEGMENTO header + chips S0... en el host del rail Machones."""
+        """DOSIFICACIÓN (1º) + SEGMENTO header + chips S0... en rail Machones."""
         if chips_host is None:
             return
-        from System.Windows.Controls import Orientation
+        from System.Windows.Controls import Orientation, StackPanel, TextBlock
+        from System.Windows import Thickness, FontWeights, HorizontalAlignment
 
         try:
             chips_host.Children.Clear()
@@ -10712,10 +10717,310 @@ class ArmadoMurosPreviewWindow(object):
         except Exception:
             pass
         pal = self._mesh_ui_palette(u"bulk")
+
+        # 1º Dosificación (G del tramo/lote seleccionado)
+        dosif = self._build_cabezal_dosificacion_block(extremo, pal)
+        if dosif is not None:
+            chips_host.Children.Add(dosif)
+            try:
+                chips_host.Children.Add(self._cabezal_style_divider(pal))
+            except Exception:
+                pass
+
         chips_host.Children.Add(self._cabezal_section_label(u"SEGMENTO", pal))
         chips = self._build_cabezal_tramo_selector_chips(extremo)
         if chips is not None:
             chips_host.Children.Add(chips)
+
+    def _cabezal_concrete_grade_for_owner_wid(self, wid, extremo):
+        if cabezal is None or wid is None:
+            return u"G25"
+        try:
+            cfg = (self._cabezal_by_wall_id.get(int(wid)) or {}).get(extremo) or {}
+        except Exception:
+            cfg = {}
+        try:
+            return cabezal.cabezal_concrete_grade_from_ex_cfg(cfg)
+        except Exception:
+            return u"G25"
+
+    def _cabezal_selected_concrete_grades(self, extremo):
+        """Lista de G por tramos seleccionados (orden de selección)."""
+        out = []
+        for sid in (self._cabezal_selected_segment_ids(extremo) or []):
+            try:
+                segs = self._cabezal_segments_for_extremo(extremo) or []
+                seg = None
+                for s in segs:
+                    try:
+                        if int(s.get(u"id", -1)) == int(sid):
+                            seg = s
+                            break
+                    except Exception:
+                        pass
+                if seg is None:
+                    continue
+                ow = self._cabezal_owner_wid_for_segment(seg)
+                out.append(self._cabezal_concrete_grade_for_owner_wid(ow, extremo))
+            except Exception:
+                pass
+        if not out:
+            try:
+                seg = self._cabezal_selected_segment(extremo)
+                ow = self._cabezal_owner_wid_for_segment(seg)
+                out.append(self._cabezal_concrete_grade_for_owner_wid(ow, extremo))
+            except Exception:
+                out.append(u"G25")
+        return out
+
+    def _cabezal_common_selected_concrete_grade(self, extremo):
+        grades = self._cabezal_selected_concrete_grades(extremo)
+        if not grades:
+            return u"G25"
+        g0 = grades[0]
+        for g in grades[1:]:
+            if g != g0:
+                return None
+        return g0
+
+    def _set_cabezal_concrete_grade_on_selected(self, extremo, grade):
+        """Escribe G en el owner de cada tramo multi-seleccionado."""
+        if cabezal is None:
+            return
+        try:
+            g = cabezal.normalize_cabezal_concrete_grade(grade)
+        except Exception:
+            g = u"G25"
+        selected_ids = list(self._cabezal_selected_segment_ids(extremo) or [])
+        if not selected_ids:
+            try:
+                sid = int((self._selected_segment_id or {}).get(extremo, 0))
+            except Exception:
+                sid = 0
+            selected_ids = [sid]
+        segs = self._cabezal_segments_for_extremo(extremo) or []
+        by_id = {}
+        for s in segs:
+            try:
+                by_id[int(s.get(u"id", -1))] = s
+            except Exception:
+                pass
+        n = 0
+        touched = set()
+        for sid in selected_ids:
+            try:
+                seg = by_id.get(int(sid))
+            except Exception:
+                seg = None
+            if seg is None:
+                continue
+            ow = self._cabezal_owner_wid_for_segment(seg)
+            if ow is None:
+                continue
+            try:
+                ow = int(ow)
+            except Exception:
+                continue
+            if ow in touched:
+                continue
+            touched.add(ow)
+            cfg = self._cabezal_by_wall_id.setdefault(
+                ow, cabezal.default_cabezal_muro_config(),
+            )
+            ex = cfg.setdefault(extremo, cabezal.default_cabezal_extremo_config())
+            ex[u"concrete_grade"] = g
+            try:
+                self._cabezal_propagate_segment_armado_from_owner(extremo, ow)
+            except Exception:
+                pass
+            n += 1
+        try:
+            self._refresh_cabezal_tramo_selection_chrome(extremo)
+        except Exception:
+            pass
+        try:
+            self._schedule_full_redraw()
+        except Exception:
+            pass
+        try:
+            labs = []
+            for sid in selected_ids:
+                labs.append(u"S{0}".format(int(sid)))
+            self._set_estado(
+                u"Dosificación {0} · {1} · {2} tramo(s)".format(
+                    g, u"+".join(labs) if labs else u"—", n,
+                ),
+            )
+        except Exception:
+            pass
+
+    def _build_cabezal_dosificacion_block(self, extremo, palette=None):
+        """Chips G25/G35/G45 (1º en card), similar a SEGMENTO."""
+        from System.Windows.Controls import StackPanel, Border, TextBlock, Orientation
+        from System.Windows import (
+            Thickness,
+            FontWeights,
+            VerticalAlignment,
+            HorizontalAlignment,
+            CornerRadius,
+        )
+        from System.Windows.Media import SolidColorBrush, Color
+        from System.Windows.Input import MouseButtonEventHandler, Cursors
+
+        if palette is None:
+            palette = self._mesh_ui_palette(u"bulk")
+
+        root = StackPanel()
+        root.Orientation = Orientation.Vertical
+        root.Margin = Thickness(0, 0, 0, 0)
+        root.HorizontalAlignment = HorizontalAlignment.Stretch
+
+        hdr = StackPanel()
+        hdr.Orientation = Orientation.Horizontal
+        hdr.Margin = Thickness(0, 0, 0, 6)
+        title = TextBlock()
+        title.Text = u"DOSIFICACIÓN"
+        title.Foreground = palette.get(u"text_muted") or palette.get(u"text_section")
+        title.FontSize = 10.0
+        title.FontWeight = FontWeights.SemiBold
+        title.VerticalAlignment = VerticalAlignment.Center
+        hdr.Children.Add(title)
+        hint = TextBlock()
+        hint.Text = u"  · por defecto G25"
+        hint.Foreground = palette.get(u"text_caption") or palette.get(u"text_muted")
+        hint.FontSize = 9.0
+        hint.VerticalAlignment = VerticalAlignment.Center
+        hdr.Children.Add(hint)
+        root.Children.Add(hdr)
+
+        common = self._cabezal_common_selected_concrete_grade(extremo)
+        try:
+            grades = list(cabezal.CABEZAL_CONCRETE_GRADES)
+        except Exception:
+            grades = [u"G25", u"G35", u"G45"]
+
+        row = StackPanel()
+        row.Orientation = Orientation.Horizontal
+        row.HorizontalAlignment = HorizontalAlignment.Left
+        row.Margin = Thickness(0, 0, 0, 4)
+
+        sel_labs = []
+        try:
+            for sid in (self._cabezal_selected_segment_ids(extremo) or []):
+                sel_labs.append(u"S{0}".format(int(sid)))
+        except Exception:
+            pass
+        if not sel_labs:
+            try:
+                sid = int((self._selected_segment_id or {}).get(extremo, 0))
+                sel_labs = [u"S{0}".format(sid)]
+            except Exception:
+                sel_labs = []
+
+        for g in grades:
+            is_on = common is not None and common == g
+            is_def = (g == u"G25")
+            chip = Border()
+            try:
+                chip.CornerRadius = CornerRadius(4.0)
+            except Exception:
+                pass
+            chip.Padding = Thickness(10, 5, 10, 5)
+            chip.Margin = Thickness(0, 0, 6, 0)
+            chip.BorderThickness = Thickness(1.5 if is_on else 1)
+            try:
+                chip.Cursor = Cursors.Hand
+            except Exception:
+                pass
+            if is_on:
+                chip.Background = SolidColorBrush(Color.FromRgb(14, 27, 50))
+                if is_def:
+                    chip.BorderBrush = SolidColorBrush(Color.FromRgb(91, 192, 222))
+                else:
+                    chip.BorderBrush = SolidColorBrush(Color.FromRgb(251, 191, 36))
+            else:
+                chip.Background = SolidColorBrush(Color.FromRgb(5, 14, 24))
+                chip.BorderBrush = SolidColorBrush(Color.FromRgb(33, 70, 92))
+            tb = TextBlock()
+            tb.Text = g
+            tb.FontSize = 11.0
+            tb.FontWeight = FontWeights.SemiBold if is_on else FontWeights.Normal
+            tb.IsHitTestVisible = False
+            if is_on and is_def:
+                tb.Foreground = SolidColorBrush(Color.FromRgb(91, 192, 222))
+            elif is_on:
+                tb.Foreground = SolidColorBrush(Color.FromRgb(251, 191, 36))
+            else:
+                tb.Foreground = SolidColorBrush(Color.FromRgb(100, 116, 139))
+            tb.VerticalAlignment = VerticalAlignment.Center
+            chip.Child = tb
+            try:
+                chip.ToolTip = (
+                    u"Dosificación {0} para {1}.\n"
+                    u"Define longitudes de traslape, empalme y pata."
+                ).format(g, u"+".join(sel_labs) if sel_labs else u"tramo activo")
+            except Exception:
+                pass
+
+            def _on_g(sender, e, ex=extremo, gr=g):
+                try:
+                    self._set_cabezal_concrete_grade_on_selected(ex, gr)
+                except Exception:
+                    pass
+
+            try:
+                chip.MouseLeftButtonDown += MouseButtonEventHandler(_on_g)
+            except Exception:
+                pass
+            row.Children.Add(chip)
+
+        root.Children.Add(row)
+
+        foot = TextBlock()
+        if common is None:
+            mixed = self._cabezal_selected_concrete_grades(extremo)
+            foot.Text = u"Selección mixta ({0}). Elegir G unifica el lote.".format(
+                u"/".join(mixed) if mixed else u"—",
+            )
+            foot.Foreground = SolidColorBrush(Color.FromRgb(251, 191, 36))
+        else:
+            # Preview L con ø de la 1ª capa del owner primario
+            Ltxt = u""
+            try:
+                seg = self._cabezal_selected_segment(extremo)
+                ow = self._cabezal_owner_wid_for_segment(seg)
+                d_mm = 16.0
+                try:
+                    bid = self._cabezal_layer_diam_id(ow, extremo, 0)
+                    bt = self.doc.GetElement(bid) if bid is not None else None
+                    if bt is not None:
+                        d_mm = float(bt.BarNominalDiameter) * 304.8
+                except Exception:
+                    d_mm = 16.0
+                from bimtools_rebar_hook_lengths import (
+                    traslape_mm_from_nominal_diameter_mm,
+                    hook_length_mm_from_nominal_diameter_mm,
+                )
+                L = traslape_mm_from_nominal_diameter_mm(d_mm, common)
+                pata = hook_length_mm_from_nominal_diameter_mm(d_mm, common)
+                Ltxt = u"ø{0:.0f} · traslape/empalme {1:.0f} mm · pata {2:.0f} mm · {3}".format(
+                    d_mm, float(L or 0), float(pata or 0), common,
+                )
+            except Exception:
+                Ltxt = u"{0} · tramo(s) {1}".format(
+                    common, u"+".join(sel_labs) if sel_labs else u"—",
+                )
+            foot.Text = Ltxt
+            foot.Foreground = palette.get(u"text_caption") or palette.get(u"text_muted")
+        foot.FontSize = 9.0
+        try:
+            from System.Windows import TextWrapping
+            foot.TextWrapping = TextWrapping.Wrap
+        except Exception:
+            pass
+        foot.Margin = Thickness(0, 2, 0, 0)
+        root.Children.Add(foot)
+        return root
 
     def _mesh_stacked_label_combo_col(self, label, combo, pal=None):
         """Columna etiqueta arriba + combo stretch (Capas en Encuentro / Post)."""
@@ -18796,6 +19101,8 @@ class ArmadoMurosPreviewWindow(object):
 
             # Ø long. de referencia (lap): primer muro / extremo activo.
             long_diam = 16.0
+            elev_concrete_grade = u"G25"
+            lap_mm_by_wall = None
             try:
                 walls = getattr(self, u"walls_ordered", None) or []
                 if walls:
@@ -18804,8 +19111,38 @@ class ArmadoMurosPreviewWindow(object):
                     bt = self.doc.GetElement(bid) if bid is not None else None
                     if bt is not None:
                         long_diam = float(bt.BarNominalDiameter) * 304.8
+                    elev_concrete_grade = self._cabezal_concrete_grade_for_owner_wid(
+                        wid0, active_ex,
+                    )
+                    # L por muro (stack base→cima) para bandas de empalme.
+                    lap_mm_by_wall = []
+                    for wi, w in enumerate(walls):
+                        try:
+                            wid = _wall_id_int(w)
+                            d_w = long_diam
+                            try:
+                                bid_w = self._cabezal_layer_diam_id(wid, active_ex, 0)
+                                bt_w = self.doc.GetElement(bid_w) if bid_w else None
+                                if bt_w is not None:
+                                    d_w = float(bt_w.BarNominalDiameter) * 304.8
+                            except Exception:
+                                d_w = long_diam
+                            g_w = self._cabezal_concrete_grade_for_owner_wid(
+                                wid, active_ex,
+                            )
+                            try:
+                                from armado_muros_v3_elevation import (
+                                    lap_mm_from_long_diam as _lap_mm,
+                                )
+                                lap_mm_by_wall.append(_lap_mm(d_w, g_w))
+                            except Exception:
+                                lap_mm_by_wall.append(None)
+                        except Exception:
+                            lap_mm_by_wall.append(None)
             except Exception:
                 long_diam = 16.0
+                elev_concrete_grade = u"G25"
+                lap_mm_by_wall = None
 
             conf_by_wall = []
             try:
@@ -18907,6 +19244,8 @@ class ArmadoMurosPreviewWindow(object):
                 selected_segments_fin=list(sels_fin),
                 show_tramo_bands=not self._uses_mallas_machones_shell(),
                 show_pie_controls=not self._uses_mallas_machones_shell(),
+                concrete_grade=elev_concrete_grade,
+                lap_mm_by_wall=lap_mm_by_wall,
             )
         except Exception:
             # Un reintento tras recrear host (p. ej. canvas huérfano post-Clear).

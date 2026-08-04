@@ -1107,6 +1107,53 @@ def default_cabezal_confinement_config(n_capas=None):
     }
 
 
+# Dosificación de hormigón (tablas traslape/empalme/pata). G25 por defecto.
+CABEZAL_CONCRETE_GRADES = (u"G25", u"G35", u"G45")
+CABEZAL_CONCRETE_GRADE_DEFAULT = u"G25"
+
+
+def normalize_cabezal_concrete_grade(grade):
+    """``G25`` / ``G35`` / ``G45``; inválido o vacío → G25."""
+    if grade is None:
+        return CABEZAL_CONCRETE_GRADE_DEFAULT
+    try:
+        s = unicode(grade).strip().upper()
+    except Exception:
+        try:
+            s = str(grade).strip().upper()
+        except Exception:
+            return CABEZAL_CONCRETE_GRADE_DEFAULT
+    if s in CABEZAL_CONCRETE_GRADES:
+        return s
+    return CABEZAL_CONCRETE_GRADE_DEFAULT
+
+
+def cabezal_concrete_grade_from_ex_cfg(ex_cfg):
+    if not ex_cfg or not isinstance(ex_cfg, dict):
+        return CABEZAL_CONCRETE_GRADE_DEFAULT
+    return normalize_cabezal_concrete_grade(ex_cfg.get(u"concrete_grade"))
+
+
+def concrete_grade_for_stack(
+    walls, cabezal_por_muro_id, extremo, stack_index,
+):
+    """G del tramo de config cuyo owner es el muro en ``stack_index``."""
+    try:
+        si = int(stack_index)
+    except Exception:
+        si = 0
+    wlist = walls or []
+    if not (0 <= si < len(wlist)):
+        return CABEZAL_CONCRETE_GRADE_DEFAULT
+    try:
+        wid = wall_id_int(wlist[si])
+    except Exception:
+        return CABEZAL_CONCRETE_GRADE_DEFAULT
+    cfg = (cabezal_por_muro_id or {}).get(wid) or {}
+    ex = cfg.get(extremo) if extremo else None
+    return cabezal_concrete_grade_from_ex_cfg(ex)
+
+
 def default_cabezal_extremo_config():
     return {
         u"layers": [
@@ -1124,6 +1171,7 @@ def default_cabezal_extremo_config():
         u"troceo_auto_geom": False,
         u"armado_activo": True,
         u"segment_bar_type_ids": {},
+        u"concrete_grade": CABEZAL_CONCRETE_GRADE_DEFAULT,
         u"confinement": default_cabezal_confinement_config(),
     }
 
@@ -4347,7 +4395,10 @@ def _empotramiento_max_mm_at_z_joint(
             bt_j = fallback_bar_type
         if bt_j is None:
             continue
-        emb = _empotramiento_tabla_mm(_bar_diameter_mm(bt_j)) or 0.0
+        g_j = concrete_grade_for_stack(
+            walls, cabezal_por_muro_id, extremo, stack_j,
+        )
+        emb = _empotramiento_tabla_mm(_bar_diameter_mm(bt_j), g_j) or 0.0
         if emb > embed_mm:
             embed_mm = emb
     if embed_mm < 1e-6:
@@ -4731,7 +4782,12 @@ def _troceo_planificar_seg_jobs_from_fused_line(
                     if bt_tr is None:
                         bt_tr = fj[u"bar_type"]
                     d_tr = _bar_diameter_mm(bt_tr)
-                    embeds_b.append(_empotramiento_tabla_mm(d_tr) or 860.0)
+                    g_tr = concrete_grade_for_stack(
+                        walls, cabezal_por_muro_id, extremo, stack_ri,
+                    )
+                    embeds_b.append(
+                        _empotramiento_tabla_mm(d_tr, g_tr) or 860.0
+                    )
                 cut_planes, cut_policies = build_wall_b_cut_planes_embeds(
                     ref_walls_job, curve_tol, embeds_b,
                 )
@@ -4766,7 +4822,10 @@ def _troceo_planificar_seg_jobs_from_fused_line(
                     if bt_j is None:
                         bt_j = fj[u"bar_type"]
                     d_j = _bar_diameter_mm(bt_j)
-                    emb = _empotramiento_tabla_mm(d_j) or 0.0
+                    g_j = concrete_grade_for_stack(
+                        walls, cabezal_por_muro_id, extremo, stack_j,
+                    )
+                    emb = _empotramiento_tabla_mm(d_j, g_j) or 0.0
                     if emb > embed_joint:
                         embed_joint = emb
                 dz_joint = _mm_to_internal(embed_joint) if embed_joint > 0.1 else 0.0
@@ -4791,7 +4850,10 @@ def _troceo_planificar_seg_jobs_from_fused_line(
             if bt_bot is None:
                 bt_bot = fj[u"bar_type"]
             d_bot = _bar_diameter_mm(bt_bot)
-            embed_bot = _empotramiento_tabla_mm(d_bot) or 0.0
+            g_bot = concrete_grade_for_stack(
+                walls, cabezal_por_muro_id, extremo, stack_bot,
+            )
+            embed_bot = _empotramiento_tabla_mm(d_bot, g_bot) or 0.0
             dz_embed_bot = _mm_to_internal(embed_bot) if embed_bot > 0.1 else 0.0
             retract_ft = _mm_to_internal(_retract_mm_sin_colision(d_bot))
             s0_z = seg_list[0][0]
@@ -4826,7 +4888,12 @@ def _troceo_planificar_seg_jobs_from_fused_line(
                 cabezal_por_muro_id, walls, extremo, stack_si, layer_index,
             )
             d_seg = _bar_diameter_mm(bt_seg)
-            pata_eje_mm = _pata_l_eje_sketch_mm_desde_diametro(d_seg) or 0.0
+            g_seg = concrete_grade_for_stack(
+                walls, cabezal_por_muro_id, extremo, stack_si,
+            )
+            pata_eje_mm = _pata_l_eje_sketch_mm_desde_diametro(
+                d_seg, g_seg,
+            ) or 0.0
             pata_ft_seg = _mm_to_internal(pata_eje_mm) if pata_eje_mm > 0.1 else 0.0
             want_bot = (si == 0 and (has_fund or reverted_bot) and pata_ft_seg > 1e-12)
             want_top = (si == n_seg - 1 and reverted_top and pata_ft_seg > 1e-12)
@@ -4851,6 +4918,7 @@ def _troceo_planificar_seg_jobs_from_fused_line(
                     fj.get(u"enum_layer_index", layer_index) or layer_index,
                 ),
                 u"extremo": extremo,
+                u"concrete_grade": g_seg,
                 u"fusion_key": u"fj_{0}".format(fj_idx),
                 u"seg_index": int(si),
                 u"n_segments": int(n_seg),
@@ -9018,8 +9086,11 @@ def _aplicar_cabezales_muros_pipeline(
                 bar_type_top = fj[u"bar_type"]
             d_mm = _bar_diameter_mm(bar_type_top)
             host_wall = fj[u"wall"]
+            g_top = concrete_grade_for_stack(
+                walls, cabezal_por_muro_id, extremo, stack_idx_top,
+            )
 
-            embed_mm = _empotramiento_tabla_mm(d_mm) or 0.0
+            embed_mm = _empotramiento_tabla_mm(d_mm, g_top) or 0.0
             dz_embed_ft = _mm_to_internal(embed_mm) if embed_mm > 0.1 else 0.0
             retract_mm = _retract_mm_sin_colision(d_mm)
             dz_retract_ft = _mm_to_internal(retract_mm) if retract_mm > 0.1 else 0.0

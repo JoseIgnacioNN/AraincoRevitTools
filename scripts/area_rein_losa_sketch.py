@@ -92,6 +92,7 @@ from System.Windows.Shapes import Ellipse as WpfEllipse
 from System.Windows.Shapes import Rectangle as WpfRectangle
 
 from Autodesk.Revit.DB import (
+    BooleanOperationsUtils,
     BoundingBoxIntersectsFilter,
     BuiltInCategory,
     BuiltInParameter,
@@ -100,23 +101,29 @@ from Autodesk.Revit.DB import (
     ElementTypeGroup,
     FilteredElementCollector,
     Floor,
+    GeometryInstance,
     Grid,
     IndependentTag,
     Line,
     LocationCurve,
     Opening,
+    Options,
     Outline,
+    PlanarFace,
+    Plane,
+    PlanViewPlane,
+    PlanViewRange,
     Reference,
     Sketch,
+    Solid,
     StorageType,
     TagMode,
     TagOrientation,
-    Transaction,
-    TransactionGroup,
     UnitTypeId,
     UnitUtils,
     View,
     View3D,
+    ViewDetailLevel,
     ViewPlan,
     Wall,
     XYZ,
@@ -137,6 +144,7 @@ try:
         polygons_form_single_component_mm,
         inset_polygon_mm,
         ahorro_fierro_polygons_mm,
+        ensure_ccw,
         _line_seg_intersection as _pano_line_seg_intersection,
     )
 except Exception:
@@ -146,6 +154,7 @@ except Exception:
     polygons_form_single_component_mm = None
     inset_polygon_mm = None
     ahorro_fierro_polygons_mm = None
+    ensure_ccw = None
     _pano_line_seg_intersection = None
 
     def rect_from_two_points_mm(p1, p2):
@@ -520,16 +529,29 @@ _SPACING_OPTS_MM = (100, 125, 150, 200, 250, 300)
 # Overlay canvas (magnitud real)
 _CTX_WALL = u"wall"
 _CTX_BEAM = u"beam"
+_CTX_COLUMN = u"column"
 _CTX_PASADA = u"pasada"
 _CTX_GRID = u"grid"
 _CTX_COLORS = {
     # Muro: terracota (distinto del azul-gris de la losa)
     _CTX_WALL: (u"#2a1814", u"#d4957a"),
     _CTX_BEAM: (u"#2a2818", u"#c4b86a"),
+    # Columna: azul pizarra (distinto de muro/viga/losa)
+    _CTX_COLUMN: (u"#141c24", u"#6b8cae"),
     # Mismo trazo que borde de losa (#95B8CC); sin estilo «cruz»/dash
     _CTX_PASADA: (u"#071018", u"#95B8CC"),
     _CTX_GRID: (u"#1a1510", u"#d4a574"),
 }
+_CTX_SOLID_VOL_TOL = 1e-12
+_CTX_CUT_FACE_DIST_TOLS = (0.02, 0.05, 0.12, 0.25)
+# Multiplicador global de grosor de línea en el canvas de planta
+_CANVAS_LINE_SCALE = 0.32
+# Bases de trazo (px a scale=1); se escalan con context_line_scale
+_CANVAS_STROKE_FLOOR = 0.95
+_CANVAS_STROKE_CTX = 0.75
+_CANVAS_STROKE_CTX_PATH = 0.85
+_CANVAS_STROKE_GRID = 0.3
+_CANVAS_STROKE_MIN = 0.25
 _GRID_CLIP_PAD_MM = 5000.0  # margen alrededor de la losa (ejes → snap)
 _BEAM_WIDTH_FALLBACK_MM = 300.0
 
@@ -554,12 +576,43 @@ _MERGE_FILL = u"#f59e0b"
 _ACTIVE_STROKE = u"#38bdf8"
 _ACTIVE_FILL = u"#0ea5e9"
 
-# Snap magnético en canvas (radio en píxeles de pantalla)
-_SNAP_PX = 8.0
+# Snap magnético canvas — estilo AutoCAD OSNAP + OTRACK
+_SNAP_PX = 10.0  # apertura (px pantalla), cercano a AutoCAD ~10px
 _SNAP_TAG = u"snapOverlay"
 _HUD_SCALE_TAG = u"hudScaleBar"
-_SNAP_VERTEX_PREF = 1.15  # umbral relativo: vértice gana sobre arista
-_SNAP_CELL_MM = 1000.0  # índice espacial snap (mm); misma prioridad vértice/arista
+_SNAP_VERTEX_PREF = 1.12  # puntos (END/MID/INT/CEN) ganan sobre arista
+_SNAP_CELL_MM = 1000.0
+_SNAP_TRACK_GUIDE_HALF_MM = 15000.0
+_SNAP_TRACK_NEAR_MAX = 64
+_SNAP_ACQUIRE_MAX = 8  # puntos/pistas OTRACK pegajosos
+_SNAP_ACQUIRE_COLIN_MM = 2.5
+_SNAP_POLAR_ANGLES_DEG = (0.0, 45.0, 90.0, 135.0)  # + simétricos
+_SNAP_PAR_COS = 0.995  # ~5.7° tol. para paralelo
+# Colores marcadores (aprox. AutoCAD)
+_OSNAP_MARKER = {
+    u"end": u"#fbbf24",
+    u"mid": u"#4ade80",
+    u"int": u"#f472b6",
+    u"app": u"#f472b6",
+    u"cen": u"#a78bfa",
+    u"per": u"#fb923c",
+    u"par": u"#38bdf8",
+    u"nea": u"#94a3b8",
+    u"ext": u"#22d3ee",
+    u"otrack": u"#22d3ee",
+    u"polar": u"#67e8f9",
+    # aliases legacy
+    u"vertex": u"#fbbf24",
+    u"edge": u"#94a3b8",
+    u"track": u"#22d3ee",
+    u"track_x": u"#22d3ee",
+}
+
+# Modo de dibujo de paño (principal: rectángulo 2 pts; secundario: polígono n pts)
+_DRAW_RECT = u"rect"
+_DRAW_POLY = u"poly"
+_POLY_MIN_EDGE_MM = 25.0  # vértice nulo / duplicado
+_POLY_CLOSE_SNAP_MULT = 1.75  # × apertura snap para cerrar en primer punto
 
 # Cache de SolidColorBrush congelados: clave (hex6, alpha)
 _BRUSH_CACHE = {}
@@ -587,9 +640,31 @@ try:
 except Exception:
     aplicar_patas_l_por_outline = None
 try:
-    from armado_muros_txn import attach_rebar_outside_host_swallower
+    from armado_muros_txn import (
+        attach_rebar_outside_host_swallower,
+        transaction_group_scope,
+        transaction_scope,
+    )
 except Exception:
     attach_rebar_outside_host_swallower = None
+    transaction_group_scope = None
+    transaction_scope = None
+
+
+class _TxnJobSkip(Exception):
+    """Fallo de un job: rollback solo de esa Transaction (no del grupo)."""
+
+    def __init__(self, message=u""):
+        Exception.__init__(self, message)
+        self.message = message
+
+
+class _EmptyCrearBatch(Exception):
+    """Sin armadura creada: fuerza RollBack del TransactionGroup."""
+
+    pass
+
+
 _AHORRO_TIP = (
     u"2 series intercaladas a 2×espaciado, extremos recortados ~10%"
 )
@@ -850,16 +925,27 @@ def _build_wall_beam_geo_mm(overlays):
 
 
 def _element_id_int(eid):
+    """Revit 2025+: preferir ``ElementId.Value``; ``IntegerValue`` solo legado."""
     if eid is None:
         return None
     try:
-        v = getattr(eid, "Value", None)
+        v = getattr(eid, u"Value", None)
         if v is not None:
             return int(v)
     except Exception:
         pass
     try:
+        # Ruta legacy (pre-2024); evitar en 2025+ si Value existe.
         return int(eid.IntegerValue)
+    except Exception:
+        return None
+
+
+def _category_id_int(elem):
+    if elem is None:
+        return None
+    try:
+        return _element_id_int(elem.Category.Id)
     except Exception:
         return None
 
@@ -1004,8 +1090,98 @@ def _plane_from_curves(curves):
         return None
 
 
+def _vector_project_onto_plane_unit(vec, plane_normal):
+    """Proyecta ``vec`` al plano de ``plane_normal`` y normaliza; None si es degenerada."""
+    if vec is None or plane_normal is None:
+        return None
+    try:
+        n = plane_normal.Normalize()
+        d = float(vec.DotProduct(n))
+        px = float(vec.X) - d * float(n.X)
+        py = float(vec.Y) - d * float(n.Y)
+        pz = float(vec.Z) - d * float(n.Z)
+        ln = math.sqrt(px * px + py * py + pz * pz)
+        if ln < 1e-12:
+            return None
+        return XYZ(px / ln, py / ln, pz / ln)
+    except Exception:
+        return None
+
+
+def _align_plane_xy_to_view(plane, view):
+    """
+    Reorienta X/Y del plano para coincidir con la vista activa:
+
+    - X = ``RightDirection`` proyectado al plano (derecha en pantalla)
+    - Y = base ortonormal que se alinea con ``UpDirection`` (arriba en pantalla)
+
+    Origen y normal se conservan. Así el canvas (mm → px con Y invertido WPF)
+    reproduce la orientación de la planta donde se ejecuta la herramienta.
+    """
+    if plane is None:
+        return plane
+    if view is None:
+        return plane
+    try:
+        o = plane.Origin
+        n = plane.Normal.Normalize()
+    except Exception:
+        return plane
+    try:
+        right = view.RightDirection
+        up = view.UpDirection
+    except Exception:
+        return plane
+    if right is None or up is None:
+        return plane
+    try:
+        right = right.Normalize()
+        up = up.Normalize()
+    except Exception:
+        return plane
+
+    xvec = _vector_project_onto_plane_unit(right, n)
+    if xvec is None:
+        try:
+            xvec = plane.XVec.Normalize()
+        except Exception:
+            return plane
+    # Base Y ortonormal (X×Y = N  ⇒  Y = N×X)
+    try:
+        yvec = n.CrossProduct(xvec).Normalize()
+    except Exception:
+        return plane
+    # Si Up de la vista va en sentido contrario a Y, invertir X (e Y con él)
+    up_on_plane = _vector_project_onto_plane_unit(up, n)
+    if up_on_plane is not None:
+        try:
+            if float(yvec.DotProduct(up_on_plane)) < 0.0:
+                xvec = XYZ(-float(xvec.X), -float(xvec.Y), -float(xvec.Z))
+                yvec = n.CrossProduct(xvec).Normalize()
+        except Exception:
+            pass
+    try:
+        return Plane.CreateByOriginAndBasis(o, xvec, yvec)
+    except Exception:
+        pass
+    # Fallback: objeto duck-type (mismo contrato que _plane_from_curves)
+    try:
+        return type(
+            "P",
+            (),
+            {
+                "Origin": o,
+                "XVec": xvec,
+                "YVec": yvec,
+                "Normal": n,
+            },
+        )()
+    except Exception:
+        return plane
+
+
 def _xyz_to_plane_mm(pt, plane):
-    """Proyecta XYZ al plano → (x_mm, y_mm) en ejes del Sketch/plane."""
+    """Proyecta XYZ al plano → (x_mm, y_mm) en ejes del plano (tras alinear a vista)."""
     o = plane.Origin
     xv = plane.XVec
     yv = plane.YVec
@@ -1085,14 +1261,22 @@ def _ring_closed_pts(pts):
     return out
 
 
-def _append_ring_snap(verts, segs, pts, include_midpoints=True):
-    """Añade vértices, aristas y (opc.) puntos medios de un anillo cerrado."""
+def _append_ring_snap(verts, segs, pts, include_midpoints=True, mids=None, centers=None):
+    """Añade extremos, aristas, puntos medios y centro de un anillo cerrado."""
     ring = _ring_closed_pts(pts)
     n = len(ring)
     if n < 2:
         return
+    sx = 0.0
+    sy = 0.0
     for p in ring:
-        verts.append((float(p[0]), float(p[1])))
+        px, py = float(p[0]), float(p[1])
+        verts.append((px, py))
+        sx += px
+        sy += py
+    if centers is not None and n >= 3:
+        centers.append((sx / float(n), sy / float(n)))
+    mid_tgt = mids if mids is not None else verts
     for i in range(n):
         a = ring[i]
         b = ring[(i + 1) % n]
@@ -1100,23 +1284,24 @@ def _append_ring_snap(verts, segs, pts, include_midpoints=True):
         bx, by = float(b[0]), float(b[1])
         segs.append(((ax, ay), (bx, by)))
         if include_midpoints:
-            verts.append(((ax + bx) * 0.5, (ay + by) * 0.5))
+            mid_tgt.append(((ax + bx) * 0.5, (ay + by) * 0.5))
 
 
-def _append_polyline_snap(verts, segs, pts, include_midpoints=True):
-    """Añade vértices/aristas de una polilínea abierta (p. ej. ejes Grid)."""
+def _append_polyline_snap(verts, segs, pts, include_midpoints=True, mids=None):
+    """Añade extremos/aristas de una polilínea abierta (p. ej. ejes Grid)."""
     if not pts or len(pts) < 2:
         return
     poly = [(float(p[0]), float(p[1])) for p in pts]
     n = len(poly)
     for p in poly:
         verts.append(p)
+    mid_tgt = mids if mids is not None else verts
     for i in range(n - 1):
         a = poly[i]
         b = poly[i + 1]
         segs.append((a, b))
         if include_midpoints:
-            verts.append(((a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5))
+            mid_tgt.append(((a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5))
 
 
 def _ring_edges_mm(pts):
@@ -1262,6 +1447,1024 @@ def _closest_on_segment_mm(px, py, a, b):
     return (qx, qy), ddx * ddx + ddy * ddy
 
 
+def _closest_on_line_mm(px, py, a, b):
+    """
+    Punto más cercano sobre la recta infinita por a–b.
+    Retorna ((qx, qy), dist2, t) con t paramétrico en ab (sin acotar).
+    """
+    ax, ay = float(a[0]), float(a[1])
+    bx, by = float(b[0]), float(b[1])
+    dx = bx - ax
+    dy = by - ay
+    len2 = dx * dx + dy * dy
+    if len2 < 1e-12:
+        qx, qy = ax, ay
+        t = 0.0
+    else:
+        t = ((float(px) - ax) * dx + (float(py) - ay) * dy) / len2
+        qx = ax + t * dx
+        qy = ay + t * dy
+    ddx = float(px) - qx
+    ddy = float(py) - qy
+    return (qx, qy), ddx * ddx + ddy * ddy, t
+
+
+def _line_intersect_mm(a1, a2, b1, b2):
+    """Intersección de dos rectas infinitas; None si paralelas o degeneradas."""
+    try:
+        ax, ay = float(a1[0]), float(a1[1])
+        bx, by = float(a2[0]), float(a2[1])
+        cx, cy = float(b1[0]), float(b1[1])
+        dx, dy = float(b2[0]), float(b2[1])
+    except Exception:
+        return None
+    rx = bx - ax
+    ry = by - ay
+    sx = dx - cx
+    sy = dy - cy
+    denom = rx * sy - ry * sx
+    if abs(denom) < 1e-14:
+        return None
+    t = ((cx - ax) * sy - (cy - ay) * sx) / denom
+    return (ax + t * rx, ay + t * ry)
+
+
+def _track_guide_span_mm(a, b, center, half_len=None):
+    """Segmento de guía centrado en ``center`` a lo largo de la recta a–b."""
+    half = float(half_len if half_len is not None else _SNAP_TRACK_GUIDE_HALF_MM)
+    if half < 100.0:
+        half = 100.0
+    try:
+        ax, ay = float(a[0]), float(a[1])
+        bx, by = float(b[0]), float(b[1])
+        cx, cy = float(center[0]), float(center[1])
+    except Exception:
+        return None
+    dx = bx - ax
+    dy = by - ay
+    ln = math.sqrt(dx * dx + dy * dy)
+    if ln < 1e-9:
+        return ((cx - half, cy), (cx + half, cy))
+    ux = dx / ln
+    uy = dy / ln
+    return ((cx - ux * half, cy - uy * half), (cx + ux * half, cy + uy * half))
+
+
+def _lines_collinear_mm(a1, b1, a2, b2, tol_mm=None):
+    """True si a1–b1 y a2–b2 son la misma recta (paralelas + colineales)."""
+    tol = float(tol_mm if tol_mm is not None else _SNAP_ACQUIRE_COLIN_MM)
+    try:
+        ax, ay = float(a1[0]), float(a1[1])
+        bx, by = float(b1[0]), float(b1[1])
+        cx, cy = float(a2[0]), float(a2[1])
+        dx, dy = float(b2[0]), float(b2[1])
+    except Exception:
+        return False
+    ux, uy = bx - ax, by - ay
+    vx, vy = dx - cx, dy - cy
+    lu = math.sqrt(ux * ux + uy * uy)
+    lv = math.sqrt(vx * vx + vy * vy)
+    if lu < 1e-9 or lv < 1e-9:
+        return False
+    # |u×v| ≈ 0 → paralelas
+    cross = abs(ux * vy - uy * vx) / (lu * lv)
+    if cross > 0.02:
+        return False
+    # distancia de c y d a la recta a–b
+    inv = 1.0 / lu
+    for px, py in ((cx, cy), (dx, dy)):
+        d_line = abs((px - ax) * uy - (py - ay) * ux) * inv
+        if d_line > tol:
+            return False
+    return True
+
+
+def _merge_acquired_tracks(acquired, new_lines, max_n=None):
+    """
+    Añade rectas a la lista de tracks pegajosos (dedupe colineal).
+    ``new_lines``: iterable de ((ax,ay),(bx,by)).
+    """
+    if acquired is None:
+        acquired = []
+    cap = int(max_n if max_n is not None else _SNAP_ACQUIRE_MAX)
+    if cap < 2:
+        cap = 2
+    for ln in new_lines or []:
+        try:
+            a, b = ln[0], ln[1]
+            ax, ay = float(a[0]), float(a[1])
+            bx, by = float(b[0]), float(b[1])
+        except Exception:
+            continue
+        if (bx - ax) * (bx - ax) + (by - ay) * (by - ay) < 1e-8:
+            continue
+        dup = False
+        for old in acquired:
+            try:
+                if _lines_collinear_mm(old[0], old[1], (ax, ay), (bx, by)):
+                    dup = True
+                    break
+            except Exception:
+                pass
+        if dup:
+            continue
+        acquired.append(((ax, ay), (bx, by)))
+        while len(acquired) > cap:
+            acquired.pop(0)
+    return acquired
+
+
+def _merge_ot_points(acquired_pts, new_pts, max_n=None):
+    """Puntos OTRACK adquiridos: {u'pt':(x,y), u'dirs':[(ux,uy),...]}."""
+    if acquired_pts is None:
+        acquired_pts = []
+    cap = int(max_n if max_n is not None else _SNAP_ACQUIRE_MAX)
+    if cap < 2:
+        cap = 2
+    tol = 2.0
+    tol2 = tol * tol
+    for item in new_pts or []:
+        try:
+            p = item.get(u"pt") if isinstance(item, dict) else item[0]
+            px, py = float(p[0]), float(p[1])
+            dirs = item.get(u"dirs") if isinstance(item, dict) else []
+        except Exception:
+            continue
+        found = None
+        for old in acquired_pts:
+            try:
+                ox, oy = float(old[u"pt"][0]), float(old[u"pt"][1])
+            except Exception:
+                continue
+            if (ox - px) * (ox - px) + (oy - py) * (oy - py) <= tol2:
+                found = old
+                break
+        if found is not None:
+            # fusionar direcciones
+            od = list(found.get(u"dirs") or [])
+            for d in dirs or []:
+                try:
+                    ux, uy = float(d[0]), float(d[1])
+                    ln = math.sqrt(ux * ux + uy * uy)
+                    if ln < 1e-12:
+                        continue
+                    ux, uy = ux / ln, uy / ln
+                    # normalizar semi-dirección (u y -u = misma recta)
+                    if abs(ux) < 1e-12:
+                        ux, uy = 0.0, 1.0 if uy >= 0 else -1.0
+                    elif ux < 0:
+                        ux, uy = -ux, -uy
+                    ok = True
+                    for e in od:
+                        if abs(e[0] - ux) < 0.02 and abs(e[1] - uy) < 0.02:
+                            ok = False
+                            break
+                    if ok:
+                        od.append((ux, uy))
+                except Exception:
+                    pass
+            found[u"dirs"] = od
+            continue
+        ndirs = []
+        for d in dirs or []:
+            try:
+                ux, uy = float(d[0]), float(d[1])
+                ln = math.sqrt(ux * ux + uy * uy)
+                if ln < 1e-12:
+                    continue
+                ux, uy = ux / ln, uy / ln
+                if abs(ux) < 1e-12:
+                    ux, uy = 0.0, 1.0 if uy >= 0 else -1.0
+                elif ux < 0:
+                    ux, uy = -ux, -uy
+                ndirs.append((ux, uy))
+            except Exception:
+                pass
+        acquired_pts.append({u"pt": (px, py), u"dirs": ndirs})
+        while len(acquired_pts) > cap:
+            acquired_pts.pop(0)
+    return acquired_pts
+
+
+def _guides_from_tracks_mm(tracks, center):
+    """Guías centradas en ``center`` para cada recta adquirida."""
+    if not tracks or center is None:
+        return None
+    out = []
+    seen = []
+    for ln in tracks:
+        try:
+            a, b = ln[0], ln[1]
+            g = _track_guide_span_mm(a, b, center)
+        except Exception:
+            continue
+        if g is None:
+            continue
+        try:
+            gx0, gy0 = g[0]
+            gx1, gy1 = g[1]
+            key = (
+                round(gx0, 1),
+                round(gy0, 1),
+                round(gx1, 1),
+                round(gy1, 1),
+            )
+        except Exception:
+            key = None
+        if key is not None and key in seen:
+            continue
+        if key is not None:
+            seen.append(key)
+        out.append(g)
+    return out if out else None
+
+
+def _tracking_paths_from_ot(ot_points, last_pt=None, include_polar=True):
+    """
+    Genera trayectorias de tracking AutoCAD-like:
+    - H/V por cada punto adquirido
+    - dirección de aristas incidentes en el punto
+    - polar/orto desde last_pt (0°/45°/90°…)
+    """
+    paths = []  # ((ax,ay),(bx,by))
+    span = float(_SNAP_TRACK_GUIDE_HALF_MM) * 2.0
+
+    def _push_line(ax, ay, ux, uy):
+        ln = math.sqrt(ux * ux + uy * uy)
+        if ln < 1e-12:
+            return
+        ux, uy = ux / ln, uy / ln
+        paths.append(
+            (
+                (ax - ux * span, ay - uy * span),
+                (ax + ux * span, ay + uy * span),
+            )
+        )
+
+    for acq in ot_points or []:
+        try:
+            ax = float(acq[u"pt"][0])
+            ay = float(acq[u"pt"][1])
+        except Exception:
+            continue
+        _push_line(ax, ay, 1.0, 0.0)
+        _push_line(ax, ay, 0.0, 1.0)
+        for d in acq.get(u"dirs") or []:
+            try:
+                _push_line(ax, ay, float(d[0]), float(d[1]))
+            except Exception:
+                pass
+
+    if include_polar and last_pt is not None:
+        try:
+            ox = float(last_pt[0])
+            oy = float(last_pt[1])
+        except Exception:
+            ox = oy = None
+        if ox is not None:
+            for ang in _SNAP_POLAR_ANGLES_DEG:
+                rad = math.radians(float(ang))
+                _push_line(ox, oy, math.cos(rad), math.sin(rad))
+            # 180–315 implícitos vía ±span
+
+    return paths
+
+
+def _dirs_incident_to_point(px, py, segs, tol_mm=3.0):
+    """Direcciones unitarias de aristas que tocan (px,py)."""
+    tol2 = float(tol_mm) * float(tol_mm)
+    dirs = []
+    for seg in segs or []:
+        try:
+            a, b = seg[0], seg[1]
+            ax, ay = float(a[0]), float(a[1])
+            bx, by = float(b[0]), float(b[1])
+        except Exception:
+            continue
+        d0 = (ax - px) * (ax - px) + (ay - py) * (ay - py)
+        d1 = (bx - px) * (bx - px) + (by - py) * (by - py)
+        on_end = d0 <= tol2 or d1 <= tol2
+        if not on_end:
+            q, d2s = _closest_on_segment_mm(px, py, (ax, ay), (bx, by))
+            if d2s > tol2:
+                continue
+        ux, uy = bx - ax, by - ay
+        ln = math.sqrt(ux * ux + uy * uy)
+        if ln < 1e-12:
+            continue
+        dirs.append((ux / ln, uy / ln))
+    return dirs
+
+
+def _osnap_pick_point(cands, px, py, thresh2, pref=1.0):
+    """Mejor punto en lista; cands = [(x,y),...]."""
+    lim = thresh2 * (pref * pref)
+    best = None
+    best_d2 = lim
+    for v in cands or []:
+        try:
+            vx, vy = float(v[0]), float(v[1])
+        except Exception:
+            continue
+        d2 = (px - vx) * (px - vx) + (py - vy) * (py - vy)
+        if d2 <= best_d2:
+            best_d2 = d2
+            best = (vx, vy)
+    return best, best_d2
+
+
+def _cell_points(cell_index, pts_map_key, px, py, radius):
+    if cell_index is None:
+        return None
+    try:
+        cell = float(cell_index[u"cell"])
+        vmap = cell_index.get(pts_map_key)
+        if vmap is None or cell < 1e-9:
+            return None
+        out = []
+        for key in _snap_cells_for_radius(px, py, radius, cell):
+            bucket = vmap.get(key)
+            if bucket:
+                out.extend(bucket)
+        return out
+    except Exception:
+        return None
+
+
+def _cell_segs(cell_index, px, py, radius):
+    if cell_index is None:
+        return None
+    try:
+        cell = float(cell_index[u"cell"])
+        smap = cell_index.get(u"segs")
+        if smap is None or cell < 1e-9:
+            return None
+        out = []
+        for key in _snap_cells_for_radius(px, py, radius, cell):
+            bucket = smap.get(key)
+            if bucket:
+                out.extend(bucket)
+        return out
+    except Exception:
+        return None
+
+
+def _build_snap_typed_index(ends, mids, ints, centers, segs, cell_mm=None):
+    """Índice espacial multi-tipo para OSNAP."""
+    cell = float(cell_mm if cell_mm is not None else _SNAP_CELL_MM)
+    if cell < 1.0:
+        cell = float(_SNAP_CELL_MM)
+
+    def _index_pts(pts):
+        m = {}
+        for v in pts or []:
+            try:
+                vx, vy = float(v[0]), float(v[1])
+            except Exception:
+                continue
+            key = (int(math.floor(vx / cell)), int(math.floor(vy / cell)))
+            bucket = m.get(key)
+            if bucket is None:
+                m[key] = [(vx, vy)]
+            else:
+                bucket.append((vx, vy))
+        return m
+
+    base = _build_snap_cell_index(
+        list(ends or []) + list(mids or []) + list(ints or []) + list(centers or []),
+        segs,
+        cell,
+    )
+    base[u"ends"] = _index_pts(ends)
+    base[u"mids"] = _index_pts(mids)
+    base[u"ints"] = _index_pts(ints)
+    base[u"centers"] = _index_pts(centers)
+    return base
+
+
+def _param_on_line_mm(p, a, b):
+    """Parámetro t de p sobre la recta a–b (sin acotar)."""
+    try:
+        ax, ay = float(a[0]), float(a[1])
+        bx, by = float(b[0]), float(b[1])
+        px, py = float(p[0]), float(p[1])
+    except Exception:
+        return 0.0
+    dx, dy = bx - ax, by - ay
+    len2 = dx * dx + dy * dy
+    if len2 < 1e-14:
+        return 0.0
+    return ((px - ax) * dx + (py - ay) * dy) / len2
+
+
+def _line_x_segment_mm(a1, b1, a2, b2, seg_eps=1e-6):
+    """
+    Intersección de la recta infinita a1–b1 con el segmento a2–b2.
+    Retorna ((x,y), t_line, t_seg) o None.
+    """
+    hit = _line_intersect_mm(a1, b1, a2, b2)
+    if hit is None:
+        return None
+    t_seg = _param_on_line_mm(hit, a2, b2)
+    if t_seg < -seg_eps or t_seg > 1.0 + seg_eps:
+        return None
+    t_line = _param_on_line_mm(hit, a1, b1)
+    return (
+        (float(hit[0]), float(hit[1])),
+        float(t_line),
+        float(max(0.0, min(1.0, t_seg))),
+    )
+
+
+def _seg_pairs_for_projection_snap(all_segs, px, py, thr_mm, max_segs=72):
+    """
+    Aristas candidatas: el cursor está cerca del segmento o de su recta.
+    Ordenadas por distancia (a la recta o al segmento).
+    """
+    thr2 = float(thr_mm) * float(thr_mm)
+    thr2_seg = thr2 * 9.0  # 3× apertura para segment “cerca”
+    thr2_line = thr2 * 1.15
+    scored = []
+    for seg in all_segs or []:
+        try:
+            a, b = seg[0], seg[1]
+            ax, ay = float(a[0]), float(a[1])
+            bx, by = float(b[0]), float(b[1])
+        except Exception:
+            continue
+        if (bx - ax) * (bx - ax) + (by - ay) * (by - ay) < 1e-8:
+            continue
+        ab = ((ax, ay), (bx, by))
+        q_s, d_s = _closest_on_segment_mm(px, py, ab[0], ab[1])
+        q_l, d_l, t = _closest_on_line_mm(px, py, ab[0], ab[1])
+        if d_s > thr2_seg and d_l > thr2_line:
+            continue
+        scored.append((min(d_s, d_l), ab, d_s, d_l, t))
+    scored.sort(key=lambda it: it[0])
+    cap = int(max_segs)
+    if cap < 8:
+        cap = 8
+    return scored[:cap]
+
+
+def _best_projection_edge_intersection_mm(px, py, all_segs, thr_mm, cell_index=None):
+    """
+    Snap: intersección de la proyección (recta) de una arista con otra arista.
+
+    Casos (prioridad):
+      1) recta(A) ∩ segmento(B) con A en extensión (t∉[0,1]) — tipico AutoCAD
+      2) recta(A) ∩ segmento(B) con A interior (respaldo si no cubre INT)
+      3) recta(A) ∩ recta(B) con al menos una extensión
+
+    Retorna (hit, kind_detail, pair_ab, guides_meta) o None.
+    pair_ab = ((a1,b1),(a2,b2))
+    """
+    thr = float(thr_mm)
+    thr2 = thr * thr
+    thr2_pt = thr2 * (float(_SNAP_VERTEX_PREF) * float(_SNAP_VERTEX_PREF))
+    # Candidatos: locales + por distancia a recta (extensiones lejos del tramo)
+    cand = _seg_pairs_for_projection_snap(all_segs, px, py, thr, max_segs=64)
+    # Enriquecer con segs del índice cerca del cursor
+    extra = _cell_segs(cell_index, px, py, thr * 4.0) if cell_index else None
+    seen_keys = set()
+    segs_u = []
+    for item in cand:
+        ab = item[1]
+        key = (
+            round(ab[0][0], 2),
+            round(ab[0][1], 2),
+            round(ab[1][0], 2),
+            round(ab[1][1], 2),
+        )
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        segs_u.append(ab)
+    for seg in extra or []:
+        try:
+            a, b = seg[0], seg[1]
+            ax, ay = float(a[0]), float(a[1])
+            bx, by = float(b[0]), float(b[1])
+        except Exception:
+            continue
+        key = (round(ax, 2), round(ay, 2), round(bx, 2), round(by, 2))
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        segs_u.append(((ax, ay), (bx, by)))
+        if len(segs_u) >= 72:
+            break
+    n = len(segs_u)
+    if n < 2:
+        return None
+
+    # Mutable box: IronPython 2.7 no soporta ``nonlocal``
+    st = [None, thr2_pt, 99, None]  # best, best_d2, best_rank, best_pair
+
+    def _consider(hit, rank, a1, b1, a2, b2):
+        if hit is None:
+            return
+        hx, hy = float(hit[0]), float(hit[1])
+        d2 = (px - hx) * (px - hx) + (py - hy) * (py - hy)
+        if d2 > st[1]:
+            return
+        if d2 < st[1] - 1e-9 or rank < st[2]:
+            st[0] = (hx, hy)
+            st[1] = d2
+            st[2] = rank
+            st[3] = (
+                (
+                    (float(a1[0]), float(a1[1])),
+                    (float(b1[0]), float(b1[1])),
+                ),
+                (
+                    (float(a2[0]), float(a2[1])),
+                    (float(b2[0]), float(b2[1])),
+                ),
+            )
+
+    for i in range(n):
+        a1, b1 = segs_u[i]
+        for j in range(i + 1, n):
+            a2, b2 = segs_u[j]
+            if _lines_collinear_mm(a1, b1, a2, b2):
+                continue
+            # 1–2) recta(i) ∩ segmento(j)
+            r = _line_x_segment_mm(a1, b1, a2, b2)
+            if r is not None:
+                hit, t_line, _ts = r
+                # t_line fuera de [0,1] → proyección/extensión de arista i
+                if t_line < -0.02 or t_line > 1.02:
+                    _consider(hit, 0, a1, b1, a2, b2)
+                else:
+                    # interior: solo si no es el cruce de segmentos ya cubierto
+                    # (sigue siendo útil con umbral más estricto)
+                    _consider(hit, 2, a1, b1, a2, b2)
+            # recta(j) ∩ segmento(i)
+            r = _line_x_segment_mm(a2, b2, a1, b1)
+            if r is not None:
+                hit, t_line, _ts = r
+                if t_line < -0.02 or t_line > 1.02:
+                    _consider(hit, 0, a2, b2, a1, b1)
+                else:
+                    _consider(hit, 2, a2, b2, a1, b1)
+            # 3) recta × recta (ambas extensiones / meeting point)
+            hit_ll = _line_intersect_mm(a1, b1, a2, b2)
+            if hit_ll is not None:
+                t1 = _param_on_line_mm(hit_ll, a1, b1)
+                t2 = _param_on_line_mm(hit_ll, a2, b2)
+                ext1 = t1 < -0.02 or t1 > 1.02
+                ext2 = t2 < -0.02 or t2 > 1.02
+                if ext1 or ext2:
+                    _consider(hit_ll, 1 if (ext1 and ext2) else 1, a1, b1, a2, b2)
+
+    best = st[0]
+    best_pair = st[3]
+    best_rank = st[2]
+    if best is None or best_pair is None:
+        return None
+    g1 = _track_guide_span_mm(best_pair[0][0], best_pair[0][1], best)
+    g2 = _track_guide_span_mm(best_pair[1][0], best_pair[1][1], best)
+    guides = [g for g in (g1, g2) if g]
+    detail = u"ext" if best_rank <= 1 else u"line"
+    return best, detail, best_pair, guides if guides else None
+
+
+def _osnap_resolve_mm(
+    pt,
+    ends,
+    mids,
+    ints,
+    centers,
+    segs,
+    thresh_mm,
+    cell_index=None,
+    last_pt=None,
+    ot_points=None,
+    acquired_lines=None,
+):
+    """
+    Motor OSNAP + OTRACK estilo AutoCAD (2D plano mm).
+
+    Prioridad (típica AutoCAD running):
+      END > INT > APP(proj∩arista) > MID > CEN > PER > PAR > NEA > OTRACK > EXT > POLAR
+
+    Retorna (pt, kind, guides, for_acquire_lines, for_acquire_pts)
+    kind: end|mid|int|app|cen|per|par|nea|ext|otrack|polar|None
+    """
+    empty_ln = []
+    empty_pt = []
+    if pt is None or thresh_mm is None or thresh_mm <= 0:
+        return pt, None, None, empty_ln, empty_pt
+    px, py = float(pt[0]), float(pt[1])
+    thr = float(thresh_mm)
+    thr2 = thr * thr
+    pref = float(_SNAP_VERTEX_PREF)
+    thr2_pt = thr2 * (pref * pref)
+    all_segs = segs or []
+    acq_lines = list(acquired_lines or [])
+    acq_pts = list(ot_points or [])
+    for_ln = []
+    for_pt = []
+
+    def _push_ln(a, b):
+        try:
+            ax, ay = float(a[0]), float(a[1])
+            bx, by = float(b[0]), float(b[1])
+        except Exception:
+            return
+        if (bx - ax) * (bx - ax) + (by - ay) * (by - ay) < 1e-8:
+            return
+        for_ln.append(((ax, ay), (bx, by)))
+
+    def _push_pt(p, dirs=None):
+        try:
+            for_pt.append(
+                {u"pt": (float(p[0]), float(p[1])), u"dirs": list(dirs or [])}
+            )
+        except Exception:
+            pass
+
+    r_pt = thr * pref
+
+    def _local_pts(lst, key):
+        loc = _cell_points(cell_index, key, px, py, r_pt) if key else None
+        return loc if loc is not None else lst
+
+    # ---- 1) END ----
+    best, d2 = _osnap_pick_point(
+        _local_pts(ends, u"ends"), px, py, thr2_pt
+    )
+    if best is not None:
+        dirs = _dirs_incident_to_point(best[0], best[1], all_segs)
+        _push_pt(best, dirs)
+        for d in dirs:
+            _push_ln(best, (best[0] + d[0] * 100.0, best[1] + d[1] * 100.0))
+        return best, u"end", None, for_ln, for_pt
+
+    # ---- 2) INT (precomputados + cruces de segmentos) ----
+    best, d2 = _osnap_pick_point(
+        _local_pts(ints, u"ints"), px, py, thr2_pt
+    )
+    if best is None:
+        # cruces on-the-fly de candidatos cercanos
+        cand_s = _cell_segs(cell_index, px, py, thr * 3.0)
+        if cand_s is None:
+            cand_s = all_segs
+        lim_n = min(len(cand_s), 40)
+        best_i = None
+        best_id2 = thr2_pt
+        for i in range(lim_n):
+            try:
+                a1, b1 = cand_s[i][0], cand_s[i][1]
+            except Exception:
+                continue
+            for j in range(i + 1, lim_n):
+                try:
+                    a2, b2 = cand_s[j][0], cand_s[j][1]
+                except Exception:
+                    continue
+                if _lines_collinear_mm(a1, b1, a2, b2):
+                    continue
+                hit = _seg_intersect_point_mm(a1, b1, a2, b2)
+                if hit is None:
+                    continue
+                hx, hy = float(hit[0]), float(hit[1])
+                dd = (px - hx) * (px - hx) + (py - hy) * (py - hy)
+                if dd <= best_id2:
+                    best_id2 = dd
+                    best_i = (hx, hy)
+        if best_i is not None:
+            best = best_i
+    if best is not None:
+        dirs = _dirs_incident_to_point(best[0], best[1], all_segs)
+        _push_pt(best, dirs)
+        return best, u"int", None, for_ln, for_pt
+
+    # ---- 2b) INT por proyección: recta(arista) ∩ arista (u otra recta) ----
+    try:
+        proj = _best_projection_edge_intersection_mm(
+            px, py, all_segs, thr, cell_index=cell_index
+        )
+    except Exception:
+        proj = None
+    if proj is not None:
+        hit, detail, pair, guides = proj
+        a1, b1 = pair[0]
+        a2, b2 = pair[1]
+        _push_ln(a1, b1)
+        _push_ln(a2, b2)
+        dirs = []
+        try:
+            d1x = float(b1[0]) - float(a1[0])
+            d1y = float(b1[1]) - float(a1[1])
+            d2x = float(b2[0]) - float(a2[0])
+            d2y = float(b2[1]) - float(a2[1])
+            dirs = [(d1x, d1y), (d2x, d2y)]
+        except Exception:
+            dirs = []
+        _push_pt(hit, dirs)
+        # app = intersección aparente / por proyección de arista
+        return hit, u"app", guides, for_ln, for_pt
+
+    # ---- 3) MID ----
+    best, d2 = _osnap_pick_point(
+        _local_pts(mids, u"mids"), px, py, thr2_pt
+    )
+    if best is not None:
+        dirs = _dirs_incident_to_point(best[0], best[1], all_segs, tol_mm=thr)
+        _push_pt(best, dirs)
+        return best, u"mid", None, for_ln, for_pt
+
+    # ---- 4) CEN ----
+    best, d2 = _osnap_pick_point(
+        _local_pts(centers, u"centers"), px, py, thr2_pt
+    )
+    if best is not None:
+        _push_pt(best, [])
+        return best, u"cen", None, for_ln, for_pt
+
+    # candidatos de arista locales
+    cand_segs = _cell_segs(cell_index, px, py, thr * 2.0)
+    if cand_segs is None:
+        cand_segs = all_segs
+
+    # ---- 5) PER (desde last_pt) ----
+    if last_pt is not None:
+        try:
+            ox, oy = float(last_pt[0]), float(last_pt[1])
+        except Exception:
+            ox = oy = None
+        if ox is not None:
+            best_per = None
+            best_pd2 = thr2
+            best_seg = None
+            for seg in cand_segs:
+                try:
+                    a, b = seg[0], seg[1]
+                except Exception:
+                    continue
+                # pie de O sobre recta infinita ab, preferir en segmento
+                q, d2l, t = _closest_on_line_mm(ox, oy, a, b)
+                if t < -0.02 or t > 1.02:
+                    # fuera del tramo: pie en extremo más cercano
+                    continue
+                qx, qy = float(q[0]), float(q[1])
+                # el cursor debe estar cerca del pie (OSNAP)
+                ddc = (px - qx) * (px - qx) + (py - qy) * (py - qy)
+                if ddc > best_pd2:
+                    continue
+                best_pd2 = ddc
+                best_per = (qx, qy)
+                best_seg = (a, b)
+            if best_per is not None:
+                if best_seg is not None:
+                    _push_ln(best_seg[0], best_seg[1])
+                    dirs = _dirs_incident_to_point(
+                        best_per[0], best_per[1], [best_seg], tol_mm=thr
+                    )
+                    _push_pt(best_per, dirs)
+                g = [
+                    _track_guide_span_mm(
+                        (ox, oy), best_per, best_per
+                    )
+                ]
+                g = [x for x in g if x]
+                guides = g or None
+                return best_per, u"per", guides, for_ln, for_pt
+
+    # ---- 6) PAR (desde last_pt, paralelo a arista) ----
+    if last_pt is not None:
+        try:
+            ox, oy = float(last_pt[0]), float(last_pt[1])
+        except Exception:
+            ox = oy = None
+        if ox is not None:
+            best_par = None
+            best_ad2 = thr2
+            best_u = None
+            for seg in cand_segs:
+                try:
+                    a, b = seg[0], seg[1]
+                    ax, ay = float(a[0]), float(a[1])
+                    bx, by = float(b[0]), float(b[1])
+                except Exception:
+                    continue
+                ux, uy = bx - ax, by - ay
+                ln = math.sqrt(ux * ux + uy * uy)
+                if ln < 1e-9:
+                    continue
+                ux, uy = ux / ln, uy / ln
+                # proyección de cursor sobre recta por O // (ux,uy)
+                tx = (px - ox) * ux + (py - oy) * uy
+                qx = ox + tx * ux
+                qy = oy + tx * uy
+                ddc = (px - qx) * (px - qx) + (py - qy) * (py - qy)
+                if ddc > best_ad2:
+                    continue
+                # la arista de referencia debe estar “cerca” (apertura otracking)
+                qe, d2e = _closest_on_segment_mm(px, py, (ax, ay), (bx, by))
+                qe2, d2e2, _t = _closest_on_line_mm(px, py, (ax, ay), (bx, by))
+                if min(d2e, d2e2) > thr2 * 4.0:
+                    # no forzar PAR sin estar cerca de un objeto
+                    continue
+                best_ad2 = ddc
+                best_par = (qx, qy)
+                best_u = (ux, uy)
+                _seg_ref = ((ax, ay), (bx, by))
+            if best_par is not None and best_u is not None:
+                _push_ln(
+                    best_par,
+                    (best_par[0] + best_u[0] * 100.0, best_par[1] + best_u[1] * 100.0),
+                )
+                _push_pt(best_par, [best_u])
+                g = _track_guide_span_mm(
+                    best_par,
+                    (
+                        best_par[0] + best_u[0],
+                        best_par[1] + best_u[1],
+                    ),
+                    best_par,
+                )
+                return best_par, u"par", [g] if g else None, for_ln, for_pt
+
+    # ---- 7) NEA (más cercano en segmento) ----
+    best_e = None
+    best_ed2 = thr2
+    best_e_seg = None
+    for seg in cand_segs:
+        try:
+            a, b = seg[0], seg[1]
+        except Exception:
+            continue
+        q, d2 = _closest_on_segment_mm(px, py, a, b)
+        if d2 <= best_ed2:
+            best_ed2 = d2
+            best_e = q
+            best_e_seg = (a, b)
+    if best_e is not None:
+        if best_e_seg is not None:
+            _push_ln(best_e_seg[0], best_e_seg[1])
+            dirs = [
+                (
+                    float(best_e_seg[1][0]) - float(best_e_seg[0][0]),
+                    float(best_e_seg[1][1]) - float(best_e_seg[0][1]),
+                )
+            ]
+            _push_pt(best_e, dirs)
+        return best_e, u"nea", None, for_ln, for_pt
+
+    # ---- 8–10) OTRACK / EXT / POLAR sobre trayectorias ----
+    track_paths = _tracking_paths_from_ot(
+        acq_pts, last_pt=last_pt, include_polar=True
+    )
+    # también extensiones de aristas + líneas ya adquiridas
+    ext_paths = list(acq_lines)
+    for seg in all_segs:
+        try:
+            ext_paths.append((seg[0], seg[1]))
+        except Exception:
+            pass
+
+    near_paths = []  # (d2, a, b, q, kind_hint)
+
+    def _collect(paths, hint):
+        for path in paths or []:
+            try:
+                a, b = path[0], path[1]
+                q, d2, t = _closest_on_line_mm(px, py, a, b)
+            except Exception:
+                continue
+            if d2 > thr2:
+                continue
+            near_paths.append((d2, a, b, q, hint, t))
+
+    _collect(track_paths, u"otrack")
+    _collect(ext_paths, u"ext")
+
+    if not near_paths:
+        return (px, py), None, None, for_ln, for_pt
+
+    near_paths.sort(key=lambda it: it[0])
+    if len(near_paths) > int(_SNAP_TRACK_NEAR_MAX):
+        near_paths = near_paths[: int(_SNAP_TRACK_NEAR_MAX)]
+
+    # Cruce de dos trayectorias
+    best_x = None
+    best_xd2 = thr2
+    best_x_pair = None
+    n_np = len(near_paths)
+    for i in range(n_np):
+        a1, b1 = near_paths[i][1], near_paths[i][2]
+        for j in range(i + 1, n_np):
+            a2, b2 = near_paths[j][1], near_paths[j][2]
+            if _lines_collinear_mm(a1, b1, a2, b2):
+                continue
+            hit = _line_intersect_mm(a1, b1, a2, b2)
+            if hit is None:
+                continue
+            hx, hy = float(hit[0]), float(hit[1])
+            ddc = (px - hx) * (px - hx) + (py - hy) * (py - hy)
+            if ddc > best_xd2:
+                continue
+            best_xd2 = ddc
+            best_x = (hx, hy)
+            best_x_pair = ((a1, b1), (a2, b2))
+
+    if best_x is not None:
+        g1 = _track_guide_span_mm(best_x_pair[0][0], best_x_pair[0][1], best_x)
+        g2 = _track_guide_span_mm(best_x_pair[1][0], best_x_pair[1][1], best_x)
+        guides = [g for g in (g1, g2) if g]
+        _push_ln(best_x_pair[0][0], best_x_pair[0][1])
+        _push_ln(best_x_pair[1][0], best_x_pair[1][1])
+        return best_x, u"otrack", guides if guides else None, for_ln, for_pt
+
+    # Mejor proyección simple
+    d2, a, b, q, hint, t = near_paths[0]
+    qx, qy = float(q[0]), float(q[1])
+    _push_ln(a, b)
+    g = _track_guide_span_mm(a, b, (qx, qy))
+    kind = hint
+    # polar: trayectoria desde last_pt en ángulo fijo
+    if last_pt is not None and hint == u"otrack":
+        try:
+            ox, oy = float(last_pt[0]), float(last_pt[1])
+            # si la trayectoria pasa por last_pt → polar/orto
+            _, d2o, _ = _closest_on_line_mm(ox, oy, a, b)
+            if d2o < 1.0:
+                kind = u"polar"
+        except Exception:
+            pass
+    if hint == u"ext" and (t < -0.02 or t > 1.02):
+        kind = u"ext"
+    elif hint == u"ext":
+        kind = u"ext"
+    return (qx, qy), kind, [g] if g else None, for_ln, for_pt
+
+
+def _snap_point_mm(
+    pt,
+    verts,
+    segs,
+    thresh_mm,
+    cell_index=None,
+    track_origin=None,
+    acquired=None,
+    ends=None,
+    mids=None,
+    ints=None,
+    centers=None,
+    ot_points=None,
+):
+    """
+    Compatibilidad: OSNAP completo. Si ends/mids no vienen, ``verts`` = extremos.
+    Retorna (pt, kind, guides, for_acquire_lines) — 4-tuple legacy.
+    """
+    e = ends if ends is not None else verts
+    m = mids if mids is not None else []
+    i = ints if ints is not None else []
+    c = centers if centers is not None else []
+    snap_pt, kind, guides, for_ln, for_pt = _osnap_resolve_mm(
+        pt,
+        e,
+        m,
+        i,
+        c,
+        segs,
+        thresh_mm,
+        cell_index=cell_index,
+        last_pt=track_origin,
+        ot_points=ot_points,
+        acquired_lines=acquired,
+    )
+    # Adjuntar for_pt en guides meta no cabe en 4-tuple → callers nuevos usan 5
+    # Store for_pt as optional 5th for internal; keep 4-tuple for old callers
+    # We'll change to always return 5 elements
+    return snap_pt, kind, guides, for_ln, for_pt
+
+
+def _osnap_status_label(kind):
+    """Etiqueta de estado estilo AutoCAD (español)."""
+    return {
+        u"end": u" · Extremo",
+        u"mid": u" · Medio",
+        u"int": u" · Intersección",
+        u"app": u" · Intersección (proyección)",
+        u"cen": u" · Centro",
+        u"per": u" · Perpendicular",
+        u"par": u" · Paralelo",
+        u"nea": u" · Más cercano",
+        u"ext": u" · Extensión",
+        u"otrack": u" · Tracking",
+        u"polar": u" · Polar",
+        # legacy
+        u"vertex": u" · Extremo",
+        u"edge": u" · Más cercano",
+        u"track": u" · Extensión",
+        u"track_x": u" · Tracking",
+    }.get(kind, u"")
+
+
 def _snap_cells_for_radius(px, py, radius, cell):
     """Celdas (ix, iy) que cubren el disco de radio ``radius`` en mm."""
     cell = float(cell)
@@ -1324,67 +2527,6 @@ def _build_snap_cell_index(verts, segs, cell_mm=None):
     return {u"cell": cell, u"verts": vmap, u"segs": smap}
 
 
-def _snap_point_mm(pt, verts, segs, thresh_mm, cell_index=None):
-    """
-    Snap a vértice (prioridad) o proyección sobre arista.
-    Retorna (pt_snapped, kind) con kind in ('vertex','edge',None).
-    ``cell_index`` opcional: mismos criterios, menos candidatos.
-    """
-    if pt is None or thresh_mm is None or thresh_mm <= 0:
-        return pt, None
-    px, py = float(pt[0]), float(pt[1])
-    thresh2 = float(thresh_mm) * float(thresh_mm)
-    cand_verts = verts
-    cand_segs = segs
-    if cell_index is not None:
-        try:
-            cell = float(cell_index[u"cell"])
-            vmap = cell_index[u"verts"]
-            smap = cell_index[u"segs"]
-            if cell > 1e-9:
-                cv = []
-                r_v = float(thresh_mm) * float(_SNAP_VERTEX_PREF)
-                for key in _snap_cells_for_radius(px, py, r_v, cell):
-                    bucket = vmap.get(key)
-                    if bucket:
-                        cv.extend(bucket)
-                cand_verts = cv
-                cs = []
-                for key in _snap_cells_for_radius(px, py, float(thresh_mm), cell):
-                    bucket = smap.get(key)
-                    if bucket:
-                        cs.extend(bucket)
-                cand_segs = cs
-        except Exception:
-            cand_verts = verts
-            cand_segs = segs
-    best_v = None
-    best_vd2 = thresh2 * (_SNAP_VERTEX_PREF * _SNAP_VERTEX_PREF)
-    for v in cand_verts or []:
-        dx = px - float(v[0])
-        dy = py - float(v[1])
-        d2 = dx * dx + dy * dy
-        if d2 <= best_vd2:
-            best_vd2 = d2
-            best_v = (float(v[0]), float(v[1]))
-    if best_v is not None:
-        return best_v, u"vertex"
-    best_e = None
-    best_ed2 = thresh2
-    for seg in cand_segs or []:
-        try:
-            a, b = seg[0], seg[1]
-        except Exception:
-            continue
-        q, d2 = _closest_on_segment_mm(px, py, a, b)
-        if d2 <= best_ed2:
-            best_ed2 = d2
-            best_e = q
-    if best_e is not None:
-        return best_e, u"edge"
-    return (px, py), None
-
-
 def _curve_length_ft(curve):
     try:
         return float(curve.Length)
@@ -1422,13 +2564,6 @@ def direccion_arista_mas_larga(curves):
 # ---------------------------------------------------------------------------
 
 
-def _category_id_int(elem):
-    try:
-        return int(elem.Category.Id.IntegerValue)
-    except Exception:
-        return None
-
-
 def _es_muro(elem):
     if elem is None:
         return False
@@ -1444,6 +2579,25 @@ def _es_viga(elem):
     if elem is None:
         return False
     return _category_id_int(elem) == int(BuiltInCategory.OST_StructuralFraming)
+
+
+def _es_columna(elem):
+    if elem is None:
+        return False
+    cid = _category_id_int(elem)
+    if cid is None:
+        return False
+    try:
+        if cid == int(BuiltInCategory.OST_StructuralColumns):
+            return True
+    except Exception:
+        pass
+    try:
+        if cid == int(BuiltInCategory.OST_Columns):
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def _shaft_category():
@@ -2256,7 +3410,7 @@ def _elements_intersecting_floor_bbox(document, floor, category):
 
 
 def _joined_context_elements(document, floor):
-    walls, beams = [], []
+    walls, beams, columns = [], [], []
     ids = []
     if get_joined_element_ids is not None:
         try:
@@ -2286,7 +3440,9 @@ def _joined_context_elements(document, floor):
             walls.append(el)
         elif _es_viga(el):
             beams.append(el)
-    return walls, beams
+        elif _es_columna(el):
+            columns.append(el)
+    return walls, beams, columns
 
 
 def _curve_has_graphics_style(curve):
@@ -2441,23 +3597,51 @@ def _curvas_pasada_opening(opening):
 
 
 def _hosted_floor_openings(document, floor):
-    """Opening cuyo Host es la losa (filtrado por bbox de la losa)."""
+    """Opening cuyo Host es la losa (filtro nativo HOST_ID + bbox si es posible)."""
     out = []
     if document is None or floor is None:
         return out
     fid = floor.Id
     try:
-        bb = floor.get_BoundingBox(None)
+        from Autodesk.Revit.DB import (
+            ElementParameterFilter,
+            FilterElementIdRule,
+            FilterNumericEquals,
+            ParameterValueProvider,
+        )
+
         col = FilteredElementCollector(document).OfClass(Opening)
-        if bb is not None:
-            pad = 0.5  # ft
-            mn, mx = bb.Min, bb.Max
-            outline = Outline(
-                XYZ(mn.X - pad, mn.Y - pad, mn.Z - pad),
-                XYZ(mx.X + pad, mx.Y + pad, mx.Z + pad),
+        try:
+            col = col.WhereElementIsNotElementType()
+        except Exception:
+            pass
+        try:
+            pvp = ParameterValueProvider(
+                ElementId(BuiltInParameter.HOST_ID_PARAM)
             )
-            col = col.WherePasses(BoundingBoxIntersectsFilter(outline))
+            rule = FilterElementIdRule(pvp, FilterNumericEquals(), fid)
+            col = col.WherePasses(ElementParameterFilter(rule))
+            host_filter_ok = True
+        except Exception:
+            host_filter_ok = False
+        try:
+            bb = floor.get_BoundingBox(None)
+            if bb is not None:
+                pad = 0.5  # ft
+                mn, mx = bb.Min, bb.Max
+                outline = Outline(
+                    XYZ(mn.X - pad, mn.Y - pad, mn.Z - pad),
+                    XYZ(mx.X + pad, mx.Y + pad, mx.Z + pad),
+                )
+                col = col.WherePasses(BoundingBoxIntersectsFilter(outline))
+        except Exception:
+            pass
         for op in col:
+            if op is None:
+                continue
+            if host_filter_ok:
+                out.append(op)
+                continue
             try:
                 host = op.Host
                 if host is not None and host.Id == fid:
@@ -2595,16 +3779,29 @@ def _collect_grid_overlays_mm(document, floor, plane, pad_mm=None):
 
     grids = []
     try:
-        for g in FilteredElementCollector(document).OfClass(Grid):
+        col_g = (
+            FilteredElementCollector(document)
+            .OfCategory(BuiltInCategory.OST_Grids)
+            .WhereElementIsNotElementType()
+        )
+        try:
+            bb = floor.get_BoundingBox(None)
+            if bb is not None:
+                pad = 50.0  # ft: grids largos / offset
+                mn, mx = bb.Min, bb.Max
+                outline = Outline(
+                    XYZ(mn.X - pad, mn.Y - pad, mn.Z - pad),
+                    XYZ(mx.X + pad, mx.Y + pad, mx.Z + pad),
+                )
+                col_g = col_g.WherePasses(BoundingBoxIntersectsFilter(outline))
+        except Exception:
+            pass
+        for g in col_g:
             if g is not None:
                 grids.append(g)
     except Exception:
         try:
-            for g in (
-                FilteredElementCollector(document)
-                .OfCategory(BuiltInCategory.OST_Grids)
-                .WhereElementIsNotElementType()
-            ):
+            for g in FilteredElementCollector(document).OfClass(Grid):
                 if g is not None:
                     grids.append(g)
         except Exception:
@@ -2644,24 +3841,565 @@ def _collect_grid_overlays_mm(document, floor, plane, pad_mm=None):
     return overlays
 
 
-def recolectar_contexto_planta(document, floor, plane, include_grids=True):
-    """
-    Muros, vigas, pasadas y (opcional) ejes (Grid) en mm del plano del Sketch.
-    Returns: (overlays, walls_list, beams_list)
+# ---------------------------------------------------------------------------
+# Huellas canvas: CutPlane (muros/columnas) y cara inferior (vigas)
+# ---------------------------------------------------------------------------
 
-    ``include_grids=False``: omite ejes (solo snap; no se pintan). Útil para
-    diferirlos tras el primer paint de muros/vigas.
+
+def _cut_plane_from_viewplan(view, fallback_plane=None):
+    """
+    Plano horizontal en la elevación del CutPlane de una ``ViewPlan``.
+    Respaldo: origen Z del plano del Sketch de la losa.
+    """
+    if view is not None and isinstance(view, ViewPlan):
+        try:
+            doc = view.Document
+            vr = view.GetViewRange()
+            lid = vr.GetLevelId(PlanViewPlane.CutPlane)
+            offset = float(vr.GetOffset(PlanViewPlane.CutPlane))
+            level = None
+            try:
+                unlim = PlanViewRange.Unlimited
+            except Exception:
+                unlim = None
+            if (
+                lid is not None
+                and lid != ElementId.InvalidElementId
+                and (unlim is None or lid != unlim)
+                and doc is not None
+            ):
+                try:
+                    level = doc.GetElement(lid)
+                except Exception:
+                    level = None
+            if level is None:
+                try:
+                    level = view.GenLevel
+                except Exception:
+                    level = None
+            if level is not None:
+                z = float(level.Elevation) + offset
+                return Plane.CreateByNormalAndOrigin(
+                    XYZ.BasisZ, XYZ(0.0, 0.0, z)
+                )
+        except Exception:
+            pass
+    if fallback_plane is not None:
+        try:
+            o = fallback_plane.Origin
+            return Plane.CreateByNormalAndOrigin(
+                XYZ.BasisZ, XYZ(float(o.X), float(o.Y), float(o.Z))
+            )
+        except Exception:
+            pass
+    return None
+
+
+def _ctx_element_solids(element):
+    """Sólidos con volumen > 0; Medium en muros, Fine en el resto."""
+    if element is None:
+        return []
+    opts = Options()
+    opts.ComputeReferences = False
+    try:
+        if isinstance(element, Wall):
+            opts.DetailLevel = ViewDetailLevel.Medium
+        else:
+            opts.DetailLevel = ViewDetailLevel.Fine
+    except Exception:
+        pass
+    try:
+        opts.IncludeNonVisibleObjects = True
+    except Exception:
+        pass
+    try:
+        geom = element.get_Geometry(opts)
+    except Exception:
+        return []
+    if geom is None:
+        return []
+    out = []
+    for obj in geom:
+        if obj is None:
+            continue
+        if isinstance(obj, Solid):
+            try:
+                if float(obj.Volume) > _CTX_SOLID_VOL_TOL:
+                    out.append(obj)
+            except Exception:
+                pass
+        elif isinstance(obj, GeometryInstance):
+            inst = None
+            try:
+                inst = obj.GetInstanceGeometry(obj.Transform)
+            except Exception:
+                inst = None
+            if inst is None:
+                try:
+                    inst = obj.GetInstanceGeometry()
+                except Exception:
+                    inst = None
+            if inst is None:
+                continue
+            for g in inst:
+                if isinstance(g, Solid):
+                    try:
+                        if float(g.Volume) > _CTX_SOLID_VOL_TOL:
+                            out.append(g)
+                    except Exception:
+                        pass
+    return out
+
+
+def _dist_point_to_plane_ft(pt, plane):
+    try:
+        n = plane.Normal
+        o = plane.Origin
+        return abs(
+            float(
+                (float(pt.X) - float(o.X)) * float(n.X)
+                + (float(pt.Y) - float(o.Y)) * float(n.Y)
+                + (float(pt.Z) - float(o.Z)) * float(n.Z)
+            )
+        )
+    except Exception:
+        return 1.0e9
+
+
+def _largest_planar_face_on_plane(solid_cut, plane_ref, tol_dist):
+    if solid_cut is None or plane_ref is None:
+        return None
+    try:
+        pn = plane_ref.Normal
+        pn_len = math.sqrt(
+            float(pn.X) ** 2 + float(pn.Y) ** 2 + float(pn.Z) ** 2
+        )
+        if pn_len < 1e-12:
+            return None
+        pnx, pny, pnz = float(pn.X) / pn_len, float(pn.Y) / pn_len, float(pn.Z) / pn_len
+    except Exception:
+        return None
+    best = None
+    best_a = -1.0
+    try:
+        for face in solid_cut.Faces:
+            if not isinstance(face, PlanarFace):
+                continue
+            try:
+                fn = face.FaceNormal
+                fl = math.sqrt(
+                    float(fn.X) ** 2 + float(fn.Y) ** 2 + float(fn.Z) ** 2
+                )
+                if fl < 1e-12:
+                    continue
+                fx, fy, fz = float(fn.X) / fl, float(fn.Y) / fl, float(fn.Z) / fl
+                if abs(abs(fx * pnx + fy * pny + fz * pnz) - 1.0) > 0.02:
+                    continue
+            except Exception:
+                continue
+            pt = None
+            try:
+                pt = face.Origin
+            except Exception:
+                pt = None
+            if pt is None:
+                continue
+            if _dist_point_to_plane_ft(pt, plane_ref) > tol_dist:
+                continue
+            try:
+                a = float(face.Area)
+            except Exception:
+                a = 0.0
+            if a > best_a:
+                best_a = a
+                best = face
+    except Exception:
+        return None
+    return best
+
+
+def _cut_face_from_solid(solid, plane_ref):
+    """Cara planar del sólido tras ``CutWithHalfSpace`` (±normal)."""
+    if solid is None or plane_ref is None:
+        return None
+    try:
+        pn = plane_ref.Normal
+        origin = plane_ref.Origin
+    except Exception:
+        return None
+    for td in _CTX_CUT_FACE_DIST_TOLS:
+        for flip in (False, True):
+            try:
+                if flip:
+                    nn = XYZ(-float(pn.X), -float(pn.Y), -float(pn.Z))
+                else:
+                    nn = pn
+                cut_pl = Plane.CreateByNormalAndOrigin(nn, origin)
+            except Exception:
+                continue
+            try:
+                s_cut = BooleanOperationsUtils.CutWithHalfSpace(solid, cut_pl)
+            except Exception:
+                s_cut = None
+            if s_cut is None:
+                continue
+            try:
+                if float(s_cut.Volume) <= _CTX_SOLID_VOL_TOL:
+                    continue
+            except Exception:
+                pass
+            pf = _largest_planar_face_on_plane(s_cut, cut_pl, td)
+            if pf is not None:
+                return pf
+    return None
+
+
+def _loops_from_planar_face(face):
+    if face is None:
+        return []
+    try:
+        loops_raw = face.GetEdgesAsCurveLoops()
+    except Exception:
+        return []
+    if loops_raw is None:
+        return []
+    loops = []
+    try:
+        for i in range(int(loops_raw.Count)):
+            loops.append(loops_raw[i])
+    except Exception:
+        try:
+            loops = list(loops_raw)
+        except Exception:
+            loops = []
+    if not loops:
+        return []
+
+    def _area(cl):
+        try:
+            return abs(float(cl.GetArea()))
+        except Exception:
+            return 0.0
+
+    try:
+        loops.sort(key=_area, reverse=True)
+    except Exception:
+        pass
+    return loops
+
+
+def _curveloop_to_pts_mm(curve_loop, sketch_plane):
+    if curve_loop is None or sketch_plane is None:
+        return None
+    curves = []
+    try:
+        for c in curve_loop:
+            if c is not None and c.IsBound:
+                curves.append(c)
+    except Exception:
+        try:
+            n = int(curve_loop.NumberOfCurves())
+            for i in range(n):
+                c = curve_loop.get_Item(i) if hasattr(curve_loop, u"get_Item") else None
+                if c is None:
+                    try:
+                        c = list(curve_loop)[i]
+                    except Exception:
+                        c = None
+                if c is not None and c.IsBound:
+                    curves.append(c)
+        except Exception:
+            return None
+    if not curves:
+        return None
+    pts = _ring_closed_pts(_loop_to_polyline_mm(curves, sketch_plane))
+    if not pts or len(pts) < 3:
+        return None
+    return pts
+
+
+def _segment_plane_hit(p0, p1, plane):
+    """Intersección segmento-plano o None."""
+    try:
+        o = plane.Origin
+        n = plane.Normal
+        d0 = (
+            (float(p0.X) - float(o.X)) * float(n.X)
+            + (float(p0.Y) - float(o.Y)) * float(n.Y)
+            + (float(p0.Z) - float(o.Z)) * float(n.Z)
+        )
+        d1 = (
+            (float(p1.X) - float(o.X)) * float(n.X)
+            + (float(p1.Y) - float(o.Y)) * float(n.Y)
+            + (float(p1.Z) - float(o.Z)) * float(n.Z)
+        )
+    except Exception:
+        return None
+    if abs(d0) < 1e-9:
+        return p0
+    if abs(d1) < 1e-9:
+        return p1
+    if d0 * d1 > 0.0:
+        return None
+    den = d0 - d1
+    if abs(den) < 1e-18:
+        return None
+    t = d0 / den
+    try:
+        return XYZ(
+            float(p0.X) + t * (float(p1.X) - float(p0.X)),
+            float(p0.Y) + t * (float(p1.Y) - float(p0.Y)),
+            float(p0.Z) + t * (float(p1.Z) - float(p0.Z)),
+        )
+    except Exception:
+        return None
+
+
+def _section_pts_from_solid_edges(solid, plane):
+    pts = []
+    if solid is None or plane is None:
+        return pts
+    try:
+        edges = solid.Edges
+    except Exception:
+        return pts
+    try:
+        for edge in edges:
+            try:
+                crv = edge.AsCurve()
+            except Exception:
+                crv = None
+            if crv is None or not crv.IsBound:
+                continue
+            try:
+                hit = _segment_plane_hit(crv.GetEndPoint(0), crv.GetEndPoint(1), plane)
+            except Exception:
+                hit = None
+            if hit is not None:
+                pts.append(hit)
+    except Exception:
+        pass
+    # Dedupe
+    out = []
+    for p in pts:
+        dup = False
+        for q in out:
+            try:
+                if p.DistanceTo(q) < 1e-4:
+                    dup = True
+                    break
+            except Exception:
+                pass
+        if not dup:
+            out.append(p)
+    return out
+
+
+def _order_xyz_angular_on_plane(pts, plane):
+    if not pts or plane is None:
+        return []
+    try:
+        o = plane.Origin
+        n = plane.Normal.Normalize()
+    except Exception:
+        return list(pts)
+    try:
+        if abs(float(n.DotProduct(XYZ.BasisZ))) < 0.9:
+            u = n.CrossProduct(XYZ.BasisZ).Normalize()
+        else:
+            u = n.CrossProduct(XYZ.BasisX).Normalize()
+        v = n.CrossProduct(u).Normalize()
+    except Exception:
+        return list(pts)
+    xy = []
+    for p in pts:
+        try:
+            w = p - o
+            xy.append((float(w.DotProduct(u)), float(w.DotProduct(v)), p))
+        except Exception:
+            continue
+    if len(xy) < 3:
+        return [t[2] for t in xy]
+    cx = sum(t[0] for t in xy) / float(len(xy))
+    cy = sum(t[1] for t in xy) / float(len(xy))
+
+    def _ang(item):
+        return math.atan2(item[1] - cy, item[0] - cx)
+
+    xy.sort(key=_ang)
+    return [t[2] for t in xy]
+
+
+def _footprint_polys_from_cut(element, cut_plane, sketch_plane):
+    """
+    Huellas 2D (lista de polígonos mm Sketch) por sólido ∩ CutPlane.
+    Primario: CutWithHalfSpace → cara → CurveLoops.
+    Fallback: aristas ∩ plano + orden angular.
+    """
+    if element is None or cut_plane is None or sketch_plane is None:
+        return []
+    solids = _ctx_element_solids(element)
+    if not solids:
+        return []
+    try:
+        solids = sorted(solids, key=lambda s: -float(s.Volume))
+    except Exception:
+        pass
+    for solid in solids:
+        face = _cut_face_from_solid(solid, cut_plane)
+        if face is None:
+            continue
+        loops = _loops_from_planar_face(face)
+        if not loops:
+            continue
+        pts = _curveloop_to_pts_mm(loops[0], sketch_plane)
+        if pts and len(pts) >= 3:
+            return [pts]
+    # Edge ∩ plane
+    hits = []
+    for solid in solids:
+        hits.extend(_section_pts_from_solid_edges(solid, cut_plane))
+    ordered = _order_xyz_angular_on_plane(hits, cut_plane)
+    if len(ordered) < 3:
+        return []
+    pts_mm = [_xyz_to_plane_mm(p, sketch_plane) for p in ordered]
+    pts_mm = _ring_closed_pts(pts_mm)
+    if pts_mm and len(pts_mm) >= 3:
+        return [pts_mm]
+    return []
+
+
+def _obtener_cara_inferior_framing_local(elemento):
+    """Cara planar con menor ``FaceNormal.Z`` (vista desde abajo)."""
+    try:
+        from geometria_viga_cara_superior_detalle import (
+            obtener_cara_inferior_framing,
+        )
+
+        cara = obtener_cara_inferior_framing(elemento)
+        if cara is not None:
+            return cara
+    except Exception:
+        pass
+    best_face = None
+    best_nz = None
+    for solid in _ctx_element_solids(elemento):
+        try:
+            faces = solid.Faces
+        except Exception:
+            continue
+        for face in faces:
+            if not isinstance(face, PlanarFace):
+                continue
+            try:
+                nz = float(face.FaceNormal.Z)
+            except Exception:
+                continue
+            if best_nz is None or nz < best_nz:
+                best_nz = nz
+                best_face = face
+    return best_face
+
+
+def _footprint_polys_from_beam_bottom(beam, sketch_plane):
+    """Huella de viga desde cara inferior (planta ceiling, vista desde abajo)."""
+    if beam is None or sketch_plane is None:
+        return []
+    cara = _obtener_cara_inferior_framing_local(beam)
+    if cara is not None:
+        loops = _loops_from_planar_face(cara)
+        if loops:
+            pts = _curveloop_to_pts_mm(loops[0], sketch_plane)
+            if pts and len(pts) >= 3:
+                return [pts]
+        # Plano de la cara → edge cut del sólido (si loops vacíos)
+        try:
+            n = cara.FaceNormal
+            o = cara.Origin
+            face_pl = Plane.CreateByNormalAndOrigin(n, o)
+            solids = _ctx_element_solids(beam)
+            hits = []
+            for solid in solids:
+                hits.extend(_section_pts_from_solid_edges(solid, face_pl))
+            ordered = _order_xyz_angular_on_plane(hits, face_pl)
+            if len(ordered) >= 3:
+                pts_mm = _ring_closed_pts(
+                    [_xyz_to_plane_mm(p, sketch_plane) for p in ordered]
+                )
+                if pts_mm and len(pts_mm) >= 3:
+                    return [pts_mm]
+        except Exception:
+            pass
+    return []
+
+
+def _column_bbox_footprint_mm(column, sketch_plane):
+    """Respaldo: polígono AABB del bbox proyectado al plano Sketch."""
+    if column is None or sketch_plane is None:
+        return None
+    try:
+        bb = column.get_BoundingBox(None)
+        if bb is None:
+            return None
+        mn, mx = bb.Min, bb.Max
+        z = 0.5 * (float(mn.Z) + float(mx.Z))
+        corners = (
+            XYZ(float(mn.X), float(mn.Y), z),
+            XYZ(float(mx.X), float(mn.Y), z),
+            XYZ(float(mx.X), float(mx.Y), z),
+            XYZ(float(mn.X), float(mx.Y), z),
+        )
+        pts = [_xyz_to_plane_mm(c, sketch_plane) for c in corners]
+        pts = _ring_closed_pts(pts)
+        if pts and len(pts) >= 3:
+            return pts
+    except Exception:
+        pass
+    return None
+
+
+def _append_overlay_polys(overlays, kind, label, polys, eid):
+    for pts in polys or []:
+        if not pts or len(pts) < 3:
+            continue
+        overlays.append(
+            {
+                u"kind": kind,
+                u"pts": pts,
+                u"eid": eid,
+                u"eids": [eid] if eid is not None else [],
+                u"label": label,
+            }
+        )
+
+
+def recolectar_contexto_planta(
+    document, floor, plane, include_grids=True, view=None
+):
+    """
+    Muros, vigas, columnas, pasadas y (opcional) ejes en mm del plano del Sketch.
+
+    - Muros/columnas: sólido ∩ CutPlane de la ``ViewPlan`` (fallback LocationCurve/bbox).
+    - Vigas: cara inferior (fallback strip LocationCurve).
+    - Losa/huecos: no se recolectan aquí (paint desde Sketch).
+
+    Returns: (overlays, walls_list, beams_list)
     """
     overlays = []
     if document is None or floor is None or plane is None:
         return overlays, [], []
 
-    walls_j, beams_j = _joined_context_elements(document, floor)
+    cut_plane = _cut_plane_from_viewplan(view, plane)
+
+    walls_j, beams_j, cols_j = _joined_context_elements(document, floor)
     walls_b = _elements_intersecting_floor_bbox(
         document, floor, BuiltInCategory.OST_Walls
     )
     beams_b = _elements_intersecting_floor_bbox(
         document, floor, BuiltInCategory.OST_StructuralFraming
+    )
+    cols_b = _elements_intersecting_floor_bbox(
+        document, floor, BuiltInCategory.OST_StructuralColumns
     )
 
     walls_by_id = {}
@@ -2674,38 +4412,56 @@ def recolectar_contexto_planta(document, floor, plane, include_grids=True):
         ni = _element_id_int(b.Id)
         if ni is not None:
             beams_by_id[ni] = b
+    cols_by_id = {}
+    for c in cols_j + cols_b:
+        ni = _element_id_int(c.Id)
+        if ni is not None:
+            cols_by_id[ni] = c
 
     walls_list = list(walls_by_id.values())
-    for mono in _wall_monolithic_footprints_mm(walls_list, plane):
-        pts = mono.get(u"pts")
-        if not pts or len(pts) < 3:
-            continue
-        eids = mono.get(u"eids") or []
-        overlays.append(
-            {
-                u"kind": _CTX_WALL,
-                u"pts": pts,
-                u"eid": eids[0] if eids else None,
-                u"eids": eids,
-                u"label": u"Muro",
-            }
-        )
+    for w in walls_list:
+        eid = _element_id_int(w.Id)
+        polys = []
+        if cut_plane is not None:
+            try:
+                polys = _footprint_polys_from_cut(w, cut_plane, plane)
+            except Exception:
+                polys = []
+        if not polys:
+            for mono in _wall_monolithic_footprints_mm([w], plane):
+                pts = mono.get(u"pts")
+                if pts and len(pts) >= 3:
+                    polys.append(pts)
+        _append_overlay_polys(overlays, _CTX_WALL, u"Muro", polys, eid)
 
     beams_list = list(beams_by_id.values())
-    for mono in _beam_monolithic_footprints_mm(beams_list, plane):
-        pts = mono.get(u"pts")
-        if not pts or len(pts) < 3:
-            continue
-        eids = mono.get(u"eids") or []
-        overlays.append(
-            {
-                u"kind": _CTX_BEAM,
-                u"pts": pts,
-                u"eid": eids[0] if eids else None,
-                u"eids": eids,
-                u"label": u"Viga",
-            }
-        )
+    for b in beams_list:
+        eid = _element_id_int(b.Id)
+        polys = []
+        try:
+            polys = _footprint_polys_from_beam_bottom(b, plane)
+        except Exception:
+            polys = []
+        if not polys:
+            for mono in _beam_monolithic_footprints_mm([b], plane):
+                pts = mono.get(u"pts")
+                if pts and len(pts) >= 3:
+                    polys.append(pts)
+        _append_overlay_polys(overlays, _CTX_BEAM, u"Viga", polys, eid)
+
+    for c in cols_by_id.values():
+        eid = _element_id_int(c.Id)
+        polys = []
+        if cut_plane is not None:
+            try:
+                polys = _footprint_polys_from_cut(c, cut_plane, plane)
+            except Exception:
+                polys = []
+        if not polys:
+            bb_pts = _column_bbox_footprint_mm(c, plane)
+            if bb_pts:
+                polys = [bb_pts]
+        _append_overlay_polys(overlays, _CTX_COLUMN, u"Columna", polys, eid)
 
     # Pasadas: shafts por bbox + openings hospedados
     pasadas = []
@@ -2737,7 +4493,6 @@ def recolectar_contexto_planta(document, floor, plane, include_grids=True):
     if include_grids:
         overlays.extend(_collect_grid_overlays_mm(document, floor, plane))
 
-    # Huecos del Sketch (loops interiores) como pasadas de perfil
     return overlays, walls_list, beams_list
 
 
@@ -2796,7 +4551,7 @@ def _poly_mm_to_curves(pts_mm, plane):
 
 
 def _count_ctx(overlays):
-    n_w = n_b = n_p = 0
+    n_w = n_b = n_p = n_c = 0
     for o in overlays or []:
         k = o.get(u"kind")
         if k == _CTX_WALL:
@@ -2811,9 +4566,15 @@ def _count_ctx(overlays):
                 n_b += len(eids)
             else:
                 n_b += 1
+        elif k == _CTX_COLUMN:
+            eids = o.get(u"eids")
+            if eids:
+                n_c += len(eids)
+            else:
+                n_c += 1
         elif k == _CTX_PASADA:
             n_p += 1
-    return n_w, n_b, n_p
+    return n_w, n_b, n_p, n_c
 
 
 # ---------------------------------------------------------------------------
@@ -3832,7 +5593,7 @@ def _crear_mra_rebar_uno(document, view, barra, mrat_type, avisos):
         return False
 
     try:
-        rid = int(barra.Id.IntegerValue)
+        rid = _element_id_int(barra.Id)
     except Exception:
         rid = 0
 
@@ -5872,24 +7633,27 @@ def paint_planta_context_layers(
     context_line_scale=1.0,
 ):
     """
-    Pinta capas de contexto de planta (mismo orden visual que Area Rein. Sketch):
+    Pinta capas de contexto de planta.
 
-    grid 1 m → losa/huecos → AR existentes → vigas → muros → pasadas →
-    [mid_layer encima] → header → leyenda HUD.
+    Jerarquía (arriba = encima en canvas; paint de abajo → arriba):
+    grid → **losa/huecos** → pasadas → **vigas** → **columnas** → **muros**
+    → [mid_layer / paños] → header → leyenda HUD.
 
     ``mid_layer_callback(scene, to_px, add_polygon[, sw_fn])`` opcional
-    (p. ej. paños). Se pinta **después** de muros/vigas/pasadas para quedar
-    por encima. ``sw_fn(base)`` es el mismo escalado de grosor del contexto.
+    (p. ej. paños). Se pinta **después** del contexto estructural.
+    ``sw_fn(base)`` es el mismo escalado de grosor del contexto.
     ``ctx_geo_cache``: dict con wall_geo/beam_geo/wall_pts/beam_pts (o None).
-    ``context_line_scale``: multiplica el grosor de losa/huecos/muros/vigas/pasadas
-    (1.0 = grosor actual del sketch; p. ej. 0.5 en Suples).
+    Columnas se pintan desde overlays (kind column), no van en el cache de unión.
+    ``context_line_scale``: multiplica el grosor de losa/huecos/muros/vigas/pasadas/columnas
+    (1.0 = grosor base; p. ej. ``_CANVAS_LINE_SCALE``).
+    ``existing_ars`` se acepta por compatibilidad; no se dibuja.
     """
     try:
         _cls = float(context_line_scale)
     except Exception:
         _cls = 1.0
-    if _cls < 0.15:
-        _cls = 0.15
+    if _cls < 0.1:
+        _cls = 0.1
     if _cls > 3.0:
         _cls = 3.0
 
@@ -5898,9 +7662,9 @@ def paint_planta_context_layers(
             v = float(base) * _cls
         except Exception:
             v = float(base)
-        return max(0.35, v)
+        return max(_CANVAS_STROKE_MIN, v)
 
-    # Grid 1 m
+    # Grid 1 m (fondo)
     try:
         x0 = int(math.floor(min_x / 1000.0)) * 1000
         y0 = int(math.floor(min_y / 1000.0)) * 1000
@@ -5913,7 +7677,7 @@ def paint_planta_context_layers(
             ln = WpfLine()
             ln.X1, ln.Y1, ln.X2, ln.Y2 = px0, py0, px1, py1
             ln.Stroke = _brush(u"#21465C", 90)
-            ln.StrokeThickness = 0.5
+            ln.StrokeThickness = _sw(_CANVAS_STROKE_GRID)
             scene.Children.Add(ln)
             gx += 1000
         gy = y0
@@ -5923,19 +7687,21 @@ def paint_planta_context_layers(
             ln = WpfLine()
             ln.X1, ln.Y1, ln.X2, ln.Y2 = px0, py0, px1, py1
             ln.Stroke = _brush(u"#21465C", 90)
-            ln.StrokeThickness = 0.5
+            ln.StrokeThickness = _sw(_CANVAS_STROKE_GRID)
             scene.Children.Add(ln)
             gy += 1000
     except Exception:
         pass
 
-    # Contorno losa + huecos Sketch
+    # --- Jerarquía base → cima: losa → vigas → columnas → muros ---
+
+    # 1) Losa + huecos Sketch (capa inferior)
     if loop_polylines:
         add_polygon(
             loop_polylines[0],
             u"#1a3544",
             u"#95B8CC",
-            stroke_w=_sw(1.5),
+            stroke_w=_sw(_CANVAS_STROKE_FLOOR),
             fill_a=220,
         )
         for hole in loop_polylines[1:]:
@@ -5943,59 +7709,26 @@ def paint_planta_context_layers(
                 hole,
                 u"#071018",
                 u"#95B8CC",
-                stroke_w=_sw(1.2),
+                stroke_w=_sw(_CANVAS_STROKE_CTX),
                 dashed=False,
                 fill_a=255,
             )
 
-    # AreaReinforcement existentes (solo visualización)
-    try:
-        for ar in existing_ars or []:
-            loops = ar.get(u"loops") or []
-            if not loops and ar.get(u"pts"):
-                loops = [ar.get(u"pts")]
-            if not loops:
-                continue
-            for hi, ring in enumerate(loops):
-                if not ring or len(ring) < 3:
-                    continue
-                if hi == 0:
-                    add_polygon(
-                        ring,
-                        _EXISTING_AR_FILL,
-                        _EXISTING_AR_STROKE,
-                        stroke_w=1.6,
-                        dashed=True,
-                        fill_a=70,
-                    )
-                else:
-                    add_polygon(
-                        ring,
-                        u"#071018",
-                        _EXISTING_AR_STROKE,
-                        stroke_w=1.2,
-                        dashed=True,
-                        fill_a=180,
-                    )
-            try:
-                pts0 = loops[0]
-                cx = sum(q[0] for q in pts0) / float(len(pts0))
-                cy = sum(q[1] for q in pts0) / float(len(pts0))
-                px, py = to_px(cx, cy)
-                tb = TextBlock()
-                tb.Text = ar.get(u"label") or u"AR"
-                tb.Foreground = _brush(_EXISTING_AR_LABEL)
-                tb.FontSize = 9
-                tb.FontWeight = FontWeights.SemiBold
-                WpfCanvas.SetLeft(tb, px - 22)
-                WpfCanvas.SetTop(tb, py - 8)
-                scene.Children.Add(tb)
-            except Exception:
-                pass
-    except Exception:
-        pass
+    # Pasadas asociadas a la losa (sobre losa, bajo estructura)
+    fill_p, stroke_p = _CTX_COLORS[_CTX_PASADA]
+    for ov in overlays or []:
+        if ov.get(u"kind") != _CTX_PASADA:
+            continue
+        add_polygon(
+            ov.get(u"pts"),
+            fill_p,
+            stroke_p,
+            stroke_w=_sw(_CANVAS_STROKE_CTX),
+            dashed=False,
+            fill_a=230,
+        )
 
-    # Vigas/muros: PathGeometry en coords fit
+    # Geometría muros/vigas (mm → PathGeometry en coords fit)
     fill_w, stroke_w_col = _CTX_COLORS[_CTX_WALL]
     fill_b, stroke_b = _CTX_COLORS[_CTX_BEAM]
     cache = ctx_geo_cache
@@ -6034,44 +7767,69 @@ def paint_planta_context_layers(
                     g.Freeze()
             except Exception:
                 pass
+
+    # 2) Vigas
     try:
         if beam_geo is not None:
             _add_path_geometry(
-                scene, beam_geo, fill_b, stroke_b, stroke_w=_sw(1.4), fill_a=220
+                scene,
+                beam_geo,
+                fill_b,
+                stroke_b,
+                stroke_w=_sw(_CANVAS_STROKE_CTX_PATH),
+                fill_a=220,
             )
         else:
             for pts in beam_pts_list:
-                add_polygon(pts, fill_b, stroke_b, stroke_w=_sw(1.2), fill_a=220)
+                add_polygon(
+                    pts, fill_b, stroke_b, stroke_w=_sw(_CANVAS_STROKE_CTX), fill_a=220
+                )
     except Exception:
         for pts in beam_pts_list:
-            add_polygon(pts, fill_b, stroke_b, stroke_w=_sw(1.2), fill_a=220)
-    try:
-        if wall_geo is not None:
-            _add_path_geometry(
-                scene, wall_geo, fill_w, stroke_w_col, stroke_w=_sw(1.4), fill_a=255
+            add_polygon(
+                pts, fill_b, stroke_b, stroke_w=_sw(_CANVAS_STROKE_CTX), fill_a=220
             )
-        else:
-            for pts in wall_pts_list:
-                add_polygon(pts, fill_w, stroke_w_col, stroke_w=_sw(1.2), fill_a=255)
-    except Exception:
-        for pts in wall_pts_list:
-            add_polygon(pts, fill_w, stroke_w_col, stroke_w=_sw(1.2), fill_a=255)
 
-    # Pasadas / shafts (mismo color que borde losa; sin dash)
-    fill_p, stroke_p = _CTX_COLORS[_CTX_PASADA]
+    # 3) Columnas
+    fill_c, stroke_c = _CTX_COLORS[_CTX_COLUMN]
     for ov in overlays or []:
-        if ov.get(u"kind") != _CTX_PASADA:
+        if ov.get(u"kind") != _CTX_COLUMN:
             continue
         add_polygon(
             ov.get(u"pts"),
-            fill_p,
-            stroke_p,
-            stroke_w=_sw(1.2),
-            dashed=False,
-            fill_a=230,
+            fill_c,
+            stroke_c,
+            stroke_w=_sw(_CANVAS_STROKE_CTX),
+            fill_a=240,
         )
 
-    # Paños / mid-layer al final → por encima de muros, vigas y pasadas
+    # 4) Muros (capa estructural superior)
+    try:
+        if wall_geo is not None:
+            _add_path_geometry(
+                scene,
+                wall_geo,
+                fill_w,
+                stroke_w_col,
+                stroke_w=_sw(_CANVAS_STROKE_CTX_PATH),
+                fill_a=255,
+            )
+        else:
+            for pts in wall_pts_list:
+                add_polygon(
+                    pts,
+                    fill_w,
+                    stroke_w_col,
+                    stroke_w=_sw(_CANVAS_STROKE_CTX),
+                    fill_a=255,
+                )
+    except Exception:
+        for pts in wall_pts_list:
+            add_polygon(
+                pts, fill_w, stroke_w_col, stroke_w=_sw(_CANVAS_STROKE_CTX), fill_a=255
+            )
+
+    # Paños / mid-layer → por encima del contexto estructural
     if mid_layer_callback is not None:
         try:
             mid_layer_callback(scene, to_px, add_polygon, _sw)
@@ -6089,22 +7847,22 @@ def paint_planta_context_layers(
         except Exception:
             pass
 
-    # Leyenda HUD
+    # Leyenda HUD (misma jerarquía: muro → columna → viga → losa)
     try:
-        lx, ly = cw - 118.0, 10.0
+        lx, ly = cw - 128.0, 8.0
         items = (
             (u"Muro", _CTX_COLORS[_CTX_WALL][1], False),
+            (u"Columna", _CTX_COLORS[_CTX_COLUMN][1], False),
             (u"Viga", _CTX_COLORS[_CTX_BEAM][1], False),
-            (u"Pasada", _CTX_COLORS[_CTX_PASADA][1], False),
-            (u"AR exist.", _EXISTING_AR_STROKE, True),
             (u"Losa", u"#95B8CC", False),
+            (u"Pasada", _CTX_COLORS[_CTX_PASADA][1], False),
         )
         for i, (lab, col, dashed) in enumerate(items):
             yy = ly + i * 16.0
             sw = WpfLine()
             sw.X1, sw.Y1, sw.X2, sw.Y2 = lx, yy + 6, lx + 14, yy + 6
             sw.Stroke = _brush(col)
-            sw.StrokeThickness = 3
+            sw.StrokeThickness = 1.8
             sw.IsHitTestVisible = False
             if dashed:
                 try:
@@ -6353,9 +8111,28 @@ __STYLES__
             </Grid.RowDefinitions>
             <Border Grid.Row="0" Background="#0a1620" BorderBrush="#21465C"
                     BorderThickness="0,0,0,1" Padding="8,6,8,4">
-              <TextBlock x:Name="TxtCanvasHeader" Foreground="#64748b"
-                         FontSize="10" FontWeight="SemiBold"
-                         Text="PLANTA · SKETCH (mm)"/>
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="TxtCanvasHeader" Grid.Column="0"
+                           Foreground="#64748b" FontSize="10" FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           Text="PLANTA · SKETCH (mm)"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                            VerticalAlignment="Center">
+                  <Button x:Name="BtnDrawRect" Content="Rectángulo"
+                          Style="{StaticResource BtnSelectOutline}"
+                          MinWidth="88" Margin="0,0,6,0" Padding="8,3"
+                          FontSize="10" ToolTip="Paño con 2 clics (esquinas opuestas)"/>
+                  <Button x:Name="BtnDrawPoly" Content="Polígono"
+                          Style="{StaticResource BtnSelectOutline}"
+                          MinWidth="80" Padding="8,3"
+                          FontSize="10"
+                          ToolTip="Paño por vértices: clic añade; cierre en 1º/Enter; luego clic en arista = dirección Principal"/>
+                </StackPanel>
+              </Grid>
             </Border>
             <Border Grid.Row="1" Background="#050E18" BorderBrush="Transparent"
                     BorderThickness="0" Padding="8,4,8,8">
@@ -6393,7 +8170,7 @@ __STYLES__
 
       <TextBlock Grid.Row="2" x:Name="TxtHint" Foreground="#64748b" FontSize="10"
                  TextWrapping="Wrap" Margin="0,8,0,0"
-                 Text="Tabs Superior/Inferior: paños por cara (2 clics). Sin polígonos en una cara → no se crea AR ahí. Clic = activo · Principal = luz menor · Ctrl+clic fusión · Supr elimina · Esc cancela."/>
+                 Text="Rectángulo (2 clics) o Polígono (n clics; cierre en 1º vértice / Enter). Sin polígonos en una cara → no AR ahí. Clic = activo · Principal = luz menor · Ctrl+clic fusión · Supr elimina · Esc cancela."/>
 
       <Grid Grid.Row="3" Margin="0,14,0,0">
         <Grid.ColumnDefinitions>
@@ -6438,9 +8215,13 @@ class AreaReinLosaSketchController(object):
         self._win = None
         self._crear_event = None
         self._crear_request = None  # snapshot para ExternalEvent (sin WPF)
-        # Contexto completo antes del reveal (muros/vigas/pasadas/ejes snap).
+        # Contexto completo antes del reveal (muros/vigas/columnas/pasadas/ejes).
+        try:
+            active_view = uidoc.ActiveView if uidoc is not None else None
+        except Exception:
+            active_view = None
         overlays, walls_list, beams_list = recolectar_contexto_planta(
-            doc, floor, plane, include_grids=True
+            doc, floor, plane, include_grids=True, view=active_view
         )
         self._overlays = overlays or []
         self._walls_list = walls_list or []
@@ -6458,7 +8239,13 @@ class AreaReinLosaSketchController(object):
         self._pano_seq = 0
         self._pano_seq_by_face = {u"superior": 0, u"inferior": 0}
         self._borde_inf_ui = {}  # card Barras en borde (Inferior) — UI only
-        self._pick_pt1 = None  # (x_mm, y_mm) o None
+        self._draw_mode = _DRAW_RECT  # rect | poly
+        self._pick_pts = []  # vértices en definición (rect: 0–1; poly: n)
+        self._pick_pt1 = None  # alias primer vértice / legado (sincronizado)
+        # Polígono cerrado pendiente de arista Major (dirección principal)
+        self._poly_pending_pts = None  # list pts mm o None
+        self._poly_pending_snap_lbl = u""
+        self._poly_hover_edge = None  # ((a),(b)) arista resaltada o None
         self._view_xform = None  # dict para clic→mm
         # Zoom/pan de usuario (persisten entre redraw; zoom=1 + pan=0 = fit)
         self._view_zoom = 1.0
@@ -6468,11 +8255,18 @@ class AreaReinLosaSketchController(object):
         self._pan_last_x = 0.0  # px canvas durante arrastre botón medio
         self._pan_last_y = 0.0
         self._cursor_ctrl = False  # último estado Ctrl aplicado al cursor del canvas
-        self._snap_verts = []
+        self._snap_verts = []  # legacy: extremos (+ unificados)
+        self._snap_ends = []
+        self._snap_mids = []
+        self._snap_ints = []
+        self._snap_centers = []
         self._snap_segs = []
         self._snap_cell_index = None
         self._snap_geo_dirty = True
         self._hover_snap = None  # (x_mm, y_mm, kind) o None
+        self._snap_guides = None  # guías de object tracking (mm)
+        self._acquired_tracks = []  # rectas OTRACK: [((ax,ay),(bx,by)), ...]
+        self._ot_points = []  # puntos OTRACK: [{pt, dirs}, ...]
         # Cache geometría muros/vigas en mm (CombinedGeometry solo al crear)
         self._ctx_geo_cache = None
         # Polylines Sketch en mm (loops); invalidar solo si cambia contexto losa
@@ -6508,13 +8302,14 @@ class AreaReinLosaSketchController(object):
         n_ar = len(self._existing_ars or [])
         if n_ar > 0:
             self._set_status(
-                u"Floor Id {0} · {1} Area Rein. existentes · dibuje paños: 2 clics.".format(
+                u"Floor Id {0} · {1} Area Rein. existentes · dibuje paños "
+                u"(Rectángulo o Polígono).".format(
                     _element_id_int(floor.Id), n_ar
                 )
             )
         else:
             self._set_status(
-                u"Floor Id {0} · dibuje paños: 2 clics en el canvas (esquinas opuestas).".format(
+                u"Floor Id {0} · Rectángulo (2 clics) o Polígono (varios vértices).".format(
                     _element_id_int(floor.Id)
                 )
             )
@@ -6559,8 +8354,12 @@ class AreaReinLosaSketchController(object):
         btn_c = win.FindName(u"BtnCancelar")
         btn_ok = win.FindName(u"BtnCrear")
         btn_man = win.FindName(u"BtnManual")
+        btn_draw_rect = win.FindName(u"BtnDrawRect")
+        btn_draw_poly = win.FindName(u"BtnDrawPoly")
         cv = win.FindName(u"CvPlan")
         self._ui_cv_plan = cv
+        self._ui_btn_draw_rect = btn_draw_rect
+        self._ui_btn_draw_poly = btn_draw_poly
         try:
             self._ui_txt_canvas_header = win.FindName(u"TxtCanvasHeader")
         except Exception:
@@ -6645,18 +8444,40 @@ class AreaReinLosaSketchController(object):
                         return
             except Exception:
                 pass
-            # Supr/Delete (y Back): elimina paños en selección Ctrl (_pano_merge).
-            # Prioridad sobre fusión: no auto-merge en esta tecla.
+            # Supr/Delete: elimina paños en selección Ctrl (_pano_merge).
+            # Retroceso: primero deshace vértice de polígono en curso.
             try:
-                is_delete = (key == Key.Delete)
-                try:
-                    if key == Key.Back:
-                        is_delete = True
-                except Exception:
-                    pass
+                is_back = key == Key.Back
+            except Exception:
+                is_back = False
+            try:
+                is_delete = key == Key.Delete
             except Exception:
                 is_delete = False
-            if is_delete:
+            # Enter / Return: cerrar polígono multipunto
+            try:
+                if key == Key.Enter or key == Key.Return:
+                    if getattr(self, u"_draw_mode", None) == _DRAW_POLY and len(
+                        getattr(self, u"_pick_pts", None) or []
+                    ) >= 3:
+                        if self._try_finish_poly(status_snap=u""):
+                            try:
+                                e.Handled = True
+                            except Exception:
+                                pass
+                        return
+            except Exception:
+                pass
+            if is_back:
+                pts = getattr(self, u"_pick_pts", None) or []
+                if getattr(self, u"_draw_mode", None) == _DRAW_POLY and pts:
+                    self._undo_poly_vertex()
+                    try:
+                        e.Handled = True
+                    except Exception:
+                        pass
+                    return
+            if is_delete or is_back:
                 ids = list(self._pano_merge or [])
                 if ids:
                     self._remove_panos(ids)
@@ -6674,7 +8495,7 @@ class AreaReinLosaSketchController(object):
             cleared_merge = bool(self._pano_merge)
             if cleared_merge:
                 self._pano_merge.clear()
-            if self._pick_pt1 is not None or self._hover_snap is not None:
+            if self._has_active_pick() or self._hover_snap is not None:
                 self._cancel_current_pano_pick()
                 try:
                     e.Handled = True
@@ -6729,6 +8550,21 @@ class AreaReinLosaSketchController(object):
             btn_c.Click += RoutedEventHandler(_cancel)
         if btn_ok is not None:
             btn_ok.Click += RoutedEventHandler(_crear)
+
+        def _draw_rect(s, e):
+            self._set_draw_mode(_DRAW_RECT)
+
+        def _draw_poly(s, e):
+            self._set_draw_mode(_DRAW_POLY)
+
+        if btn_draw_rect is not None:
+            btn_draw_rect.Click += RoutedEventHandler(_draw_rect)
+        if btn_draw_poly is not None:
+            btn_draw_poly.Click += RoutedEventHandler(_draw_poly)
+        try:
+            self._apply_draw_mode_visuals()
+        except Exception:
+            pass
         try:
             win.Focusable = True
             win.PreviewKeyDown += KeyEventHandler(_on_key)
@@ -6957,6 +8793,10 @@ class AreaReinLosaSketchController(object):
             self._rebuild_snap_geometry()
         except Exception:
             self._snap_verts = []
+            self._snap_ends = []
+            self._snap_mids = []
+            self._snap_ints = []
+            self._snap_centers = []
             self._snap_segs = []
             self._snap_cell_index = None
         self._snap_geo_dirty = False
@@ -7061,15 +8901,15 @@ class AreaReinLosaSketchController(object):
             sl = WpfLine()
             sl.X1, sl.Y1, sl.X2, sl.Y2 = sx, sy, sx + bar_px, sy
             sl.Stroke = _brush(u"#95B8CC")
-            sl.StrokeThickness = 2
+            sl.StrokeThickness = 1.2
             sl.Tag = _HUD_SCALE_TAG
             sl.IsHitTestVisible = False
             hud.Children.Add(sl)
             for xx in (sx, sx + bar_px):
                 t = WpfLine()
-                t.X1, t.Y1, t.X2, t.Y2 = xx, sy - 4, xx, sy + 4
+                t.X1, t.Y1, t.X2, t.Y2 = xx, sy - 3, xx, sy + 3
                 t.Stroke = _brush(u"#95B8CC")
-                t.StrokeThickness = 1.5
+                t.StrokeThickness = 0.9
                 t.Tag = _HUD_SCALE_TAG
                 t.IsHitTestVisible = False
                 hud.Children.Add(t)
@@ -7145,7 +8985,7 @@ class AreaReinLosaSketchController(object):
         """view_only: transform al instante; False → hace falta rebuild."""
         if not self._apply_scene_view_transform():
             return False
-        if self._hover_snap is not None or self._pick_pt1 is not None:
+        if self._hover_snap is not None or self._has_active_pick():
             try:
                 self._refresh_snap_overlay()
             except Exception:
@@ -7179,7 +9019,7 @@ class AreaReinLosaSketchController(object):
         Fallback coalescido (~12 ms) solo si aún no hay capa de escena.
         """
         if self._apply_scene_view_transform():
-            if self._hover_snap is not None or self._pick_pt1 is not None:
+            if self._hover_snap is not None or self._has_active_pick():
                 try:
                     self._refresh_snap_overlay()
                 except Exception:
@@ -7512,16 +9352,368 @@ class AreaReinLosaSketchController(object):
             pass
         self._schedule_view_redraw()
 
-    def _cancel_current_pano_pick(self):
-        """Cancela el paño en definición (punto A / preview)."""
-        had_pick = self._pick_pt1 is not None
-        had = had_pick or self._hover_snap is not None
+    def _has_active_pick(self):
+        return bool(getattr(self, u"_pick_pts", None)) or (
+            getattr(self, u"_poly_pending_pts", None) is not None
+        )
+
+    def _sync_pick_pt1_alias(self):
+        """Mantiene _pick_pt1 como primer vértice (compatibilidad)."""
+        pts = getattr(self, u"_pick_pts", None) or []
+        self._pick_pt1 = pts[0] if pts else None
+
+    def _snap_track_origin(self):
+        """Origen OTRACK: último vértice (poly) o esquina A (rect)."""
+        pts = getattr(self, u"_pick_pts", None) or []
+        if not pts:
+            return None
+        if getattr(self, u"_draw_mode", None) == _DRAW_POLY:
+            return pts[-1]
+        return pts[0]
+
+    def _clear_poly_major_pending(self):
+        self._poly_pending_pts = None
+        self._poly_pending_snap_lbl = u""
+        self._poly_hover_edge = None
+
+    def _unit_dir_from_edge_mm(self, a, b):
+        """Vector unitario de arista a→b en mm; None si degenerada."""
+        try:
+            ax, ay = float(a[0]), float(a[1])
+            bx, by = float(b[0]), float(b[1])
+        except Exception:
+            return None
+        dx = bx - ax
+        dy = by - ay
+        ln = math.sqrt(dx * dx + dy * dy)
+        if ln < 1e-9:
+            return None
+        # Orientación estable: +X / +Y preferente (misma semi-recta)
+        if abs(dx) >= abs(dy):
+            if dx < 0:
+                dx, dy = -dx, -dy
+        else:
+            if dy < 0:
+                dx, dy = -dx, -dy
+        return (dx / ln, dy / ln)
+
+    def _hit_ring_edge_mm(self, pt_mm, ring, thresh_mm=None):
+        """
+        Arista del anillo más cercana al punto.
+        Returns ((a,b), dist_mm) o (None, None).
+        """
+        if pt_mm is None or not ring or len(ring) < 2:
+            return None, None
+        thr = float(thresh_mm if thresh_mm is not None else 0.0)
+        if thr <= 0:
+            thr = max(self._snap_thresh_mm() * 2.5, 40.0)
+        thr2 = thr * thr
+        try:
+            px, py = float(pt_mm[0]), float(pt_mm[1])
+        except Exception:
+            return None, None
+        best_seg = None
+        best_d2 = thr2
+        n = len(ring)
+        for i in range(n):
+            try:
+                a = ring[i]
+                b = ring[(i + 1) % n]
+                ax, ay = float(a[0]), float(a[1])
+                bx, by = float(b[0]), float(b[1])
+            except Exception:
+                continue
+            q, d2 = _closest_on_segment_mm(px, py, (ax, ay), (bx, by))
+            if d2 <= best_d2:
+                best_d2 = d2
+                best_seg = ((ax, ay), (bx, by))
+        if best_seg is None:
+            return None, None
+        return best_seg, math.sqrt(best_d2)
+
+    def _begin_poly_major_pick(self, pts, snap_lbl=u""):
+        """Tras cerrar el polígono: espera clic en arista = Major."""
+        self._clear_pick_state(redraw=False)
+        self._clear_acquired_tracks()
+        self._poly_pending_pts = list(pts)
+        self._poly_pending_snap_lbl = snap_lbl or u""
+        self._poly_hover_edge = None
+        self._mark_snap_geo_dirty()
+        self._set_status(
+            u"Polígono listo · clic en una arista para la dirección Principal "
+            u"(barras Major // a la arista). Esc cancela."
+        )
+        self._redraw_canvas()
+
+    def _apply_poly_major_edge(self, edge, snap_lbl=u""):
+        """Confirma paño con Major // arista elegida."""
+        pts = getattr(self, u"_poly_pending_pts", None)
+        if not pts or edge is None:
+            return False
+        d = self._unit_dir_from_edge_mm(edge[0], edge[1])
+        if d is None:
+            self._set_status(u"Arista inválida. Elija otra arista del polígono.")
+            return False
+        lbl = snap_lbl or getattr(self, u"_poly_pending_snap_lbl", u"") or u""
+        pts_copy = list(pts)
+        self._clear_poly_major_pending()
+        self._commit_pano_pts(
+            pts_copy,
+            snap_lbl=lbl,
+            major_dir_mm=d,
+        )
+        return True
+
+    def _set_draw_mode(self, mode):
+        mode = _DRAW_POLY if mode == _DRAW_POLY else _DRAW_RECT
+        prev = getattr(self, u"_draw_mode", _DRAW_RECT)
+        if (
+            prev == mode
+            and not self._has_active_pick()
+            and getattr(self, u"_poly_pending_pts", None) is None
+        ):
+            self._apply_draw_mode_visuals()
+            return
+        # Cambiar de modo cancela pick en curso
+        if prev != mode or self._has_active_pick():
+            self._clear_pick_state(redraw=False)
+            self._clear_poly_major_pending()
+            self._clear_acquired_tracks()
+            self._mark_snap_geo_dirty()
+        self._draw_mode = mode
+        self._apply_draw_mode_visuals()
+        if mode == _DRAW_POLY:
+            self._set_status(
+                u"Modo Polígono: clic = vértice · cierre (1º/Enter) · "
+                u"luego arista = Principal · Retroceso deshace · Esc cancela."
+            )
+        else:
+            self._set_status(
+                u"Modo Rectángulo: 2 clics en esquinas opuestas del paño."
+            )
+        self._redraw_canvas()
+
+    def _apply_draw_mode_visuals(self):
+        """Resalta el botón de modo activo en cabecera del canvas."""
+        mode = getattr(self, u"_draw_mode", _DRAW_RECT)
+        for btn, active in (
+            (getattr(self, u"_ui_btn_draw_rect", None), mode == _DRAW_RECT),
+            (getattr(self, u"_ui_btn_draw_poly", None), mode == _DRAW_POLY),
+        ):
+            if btn is None:
+                continue
+            try:
+                if active:
+                    btn.Background = _brush(u"#1e4a5f", 255)
+                    btn.BorderBrush = _brush(u"#38bdf8", 255)
+                    btn.Foreground = _brush(u"#E8F4F8", 255)
+                    btn.Opacity = 1.0
+                else:
+                    btn.Background = _brush(u"#0a1620", 255)
+                    btn.BorderBrush = _brush(u"#21465C", 255)
+                    btn.Foreground = _brush(u"#95B8CC", 255)
+                    btn.Opacity = 0.92
+            except Exception:
+                try:
+                    btn.Opacity = 1.0 if active else 0.65
+                except Exception:
+                    pass
+
+    def _clear_pick_state(self, redraw=False):
+        self._pick_pts = []
         self._pick_pt1 = None
         self._hover_snap = None
-        if had_pick:
+        if redraw:
+            self._redraw_canvas()
+
+    def _try_finish_poly(self, status_snap=u""):
+        """Cierra el contorno; pasa a elegir arista Major. True si el anillo es válido."""
+        pts = self._normalize_poly_pts_mm(
+            getattr(self, u"_pick_pts", None) or []
+        )
+        if pts is None:
+            self._set_status(
+                u"Polígono incompleto: se necesitan ≥3 vértices distintos."
+            )
+            return False
+        # Área mínima antes de pedir Major
+        area = 0.0
+        try:
+            if shoelace_area_m2 is not None:
+                area = float(shoelace_area_m2(pts))
+        except Exception:
+            area = 0.0
+        if area < 1e-6:
+            self._set_status(u"Polígono demasiado pequeño. Continúe o Esc.")
+            return False
+        self._begin_poly_major_pick(pts, snap_lbl=status_snap or u"")
+        return True
+
+    def _commit_pano_pts(self, pts, snap_lbl=u"", major_dir_mm=None):
+        """Crea un paño en la cara activa a partir de pts mm (anillo abierto)."""
+        if not pts or len(pts) < 3:
+            self._set_status(u"No se creó paño: geometría insuficiente.")
+            self._redraw_canvas()
+            return None
+        area = 0.0
+        try:
+            if shoelace_area_m2 is not None:
+                area = float(shoelace_area_m2(pts))
+        except Exception:
+            area = 0.0
+        if area < 1e-6:
+            self._set_status(u"No se creó paño: área demasiado pequeña.")
+            self._redraw_canvas()
+            return None
+        face = _normalize_face_id(getattr(self, u"_active_face", u"inferior"))
+        seq_map = getattr(self, u"_pano_seq_by_face", None) or {}
+        face_seq = int(seq_map.get(face) or 0) + 1
+        seq_map[face] = face_seq
+        self._pano_seq_by_face = seq_map
+        self._pano_seq += 1
+        pid = u"P{}".format(self._pano_seq)
+        settings = self._tool_default_pano_settings(face)
+        pill = _FACE_PILL.get(face) or u"SUP"
+        pano = {
+            u"id": pid,
+            u"face": face,
+            u"label": u"Paño {0} {1}".format(pill, face_seq),
+            u"pts": list(pts),
+            u"area_m2": area,
+            u"layer_cfg": settings[u"layer_cfg"],
+            u"ahorro_inferior": settings[u"ahorro_inferior"],
+            u"ahorro_superior": settings[u"ahorro_superior"],
+        }
+        if major_dir_mm is not None:
+            try:
+                pano[u"major_dir_mm"] = (
+                    float(major_dir_mm[0]),
+                    float(major_dir_mm[1]),
+                )
+            except Exception:
+                pass
+        self._panos.append(pano)
+        try:
+            self._pano_merge.clear()
+        except Exception:
+            self._pano_merge = set()
+        self._set_face_modeling_toggle(face, True, writeback=False)
+        self._mark_snap_geo_dirty()
+        self._update_create_button()
+        n_face = len(self._panos_for_face(face))
+        major_note = u""
+        if pano.get(u"major_dir_mm") is not None:
+            major_note = u" · Principal por arista"
+        self._activate_pano(
+            pid,
+            clear_merge=True,
+            status=u"{0} creado ({1:.1f} m²){2}{3} · {4} paño(s) {5}.".format(
+                pano[u"label"],
+                area,
+                snap_lbl or u"",
+                major_note,
+                n_face,
+                pill,
+            ),
+        )
+        return pano
+
+    def _cancel_current_pano_pick(self):
+        """Cancela el paño en definición (rect/poly + preview / Major)."""
+        had_pick = self._has_active_pick()
+        had_pending = getattr(self, u"_poly_pending_pts", None) is not None
+        had_acq = bool(getattr(self, u"_acquired_tracks", None)) or bool(
+            getattr(self, u"_ot_points", None)
+        )
+        had = (
+            had_pick
+            or had_pending
+            or self._hover_snap is not None
+            or had_acq
+        )
+        self._clear_pick_state(redraw=False)
+        self._clear_poly_major_pending()
+        self._clear_acquired_tracks()
+        if had_pick or had_pending:
             self._mark_snap_geo_dirty()
         if had:
-            self._set_status(u"Creación de paño cancelada.")
+            if had_pending:
+                self._set_status(u"Polígono cancelado (sin arista Principal).")
+            elif getattr(self, u"_draw_mode", _DRAW_RECT) == _DRAW_POLY:
+                self._set_status(u"Polígono cancelado.")
+            else:
+                self._set_status(u"Creación de paño cancelada.")
+        self._redraw_canvas()
+
+    def _poly_close_thresh_mm(self):
+        thr = self._snap_thresh_mm()
+        if thr <= 0:
+            thr = 50.0
+        return max(float(thr) * float(_POLY_CLOSE_SNAP_MULT), 15.0)
+
+    def _point_near_first_vertex(self, pt):
+        pts = getattr(self, u"_pick_pts", None) or []
+        if not pts or pt is None:
+            return False
+        try:
+            dx = float(pt[0]) - float(pts[0][0])
+            dy = float(pt[1]) - float(pts[0][1])
+        except Exception:
+            return False
+        r = self._poly_close_thresh_mm()
+        return (dx * dx + dy * dy) <= (r * r)
+
+    def _normalize_poly_pts_mm(self, pts):
+        """Limpia vértices duplicados y asegura orientación CCW."""
+        if not pts or len(pts) < 3:
+            return None
+        cleaned = []
+        min_e = float(_POLY_MIN_EDGE_MM)
+        min_e2 = min_e * min_e
+        for p in pts:
+            try:
+                x, y = float(p[0]), float(p[1])
+            except Exception:
+                continue
+            if cleaned:
+                dx = x - cleaned[-1][0]
+                dy = y - cleaned[-1][1]
+                if dx * dx + dy * dy < min_e2:
+                    continue
+            cleaned.append((x, y))
+        if len(cleaned) >= 3:
+            dx = cleaned[0][0] - cleaned[-1][0]
+            dy = cleaned[0][1] - cleaned[-1][1]
+            if dx * dx + dy * dy < min_e2:
+                cleaned = cleaned[:-1]
+        if len(cleaned) < 3:
+            return None
+        if ensure_ccw is not None:
+            try:
+                return ensure_ccw(cleaned)
+            except Exception:
+                pass
+        return cleaned
+
+    def _undo_poly_vertex(self):
+        pts = list(getattr(self, u"_pick_pts", None) or [])
+        if not pts:
+            return
+        pts.pop()
+        self._pick_pts = pts
+        self._sync_pick_pt1_alias()
+        self._clear_acquired_tracks()
+        self._mark_snap_geo_dirty()
+        if not pts:
+            self._set_status(
+                u"Polígono: indique el primer vértice (clic en canvas)."
+            )
+        else:
+            self._set_status(
+                u"Vértice deshecho · {0} punto(s). Clic para añadir · "
+                u"cierre en 1º / Enter (≥3).".format(len(pts))
+            )
+        self._hover_snap = None
         self._redraw_canvas()
 
     def _canvas_to_mm(self, pos):
@@ -7551,40 +9743,99 @@ class AreaReinLosaSketchController(object):
             return None
 
     def _rebuild_snap_geometry(self):
-        verts = []
+        ends = []
+        mids = []
+        ints = []
+        centers = []
         segs = []
         for pts in self._ensure_sketch_polylines_cache() or []:
-            _append_ring_snap(verts, segs, pts, include_midpoints=True)
+            _append_ring_snap(
+                ends, segs, pts, include_midpoints=True, mids=mids, centers=centers
+            )
         for ov in self._overlays or []:
             pts = ov.get(u"pts") or []
             if ov.get(u"kind") == _CTX_GRID or ov.get(u"closed") is False:
-                _append_polyline_snap(verts, segs, pts, include_midpoints=True)
+                _append_polyline_snap(
+                    ends, segs, pts, include_midpoints=True, mids=mids
+                )
             else:
-                _append_ring_snap(verts, segs, pts, include_midpoints=True)
+                _append_ring_snap(
+                    ends, segs, pts, include_midpoints=True, mids=mids, centers=centers
+                )
         try:
-            _append_wall_beam_intersection_snap(verts, self._overlays)
+            _append_wall_beam_intersection_snap(ints, self._overlays)
         except Exception:
             pass
         for pano in self._panos_for_face():
-            _append_ring_snap(verts, segs, pano.get(u"pts") or [], include_midpoints=True)
+            _append_ring_snap(
+                ends,
+                segs,
+                pano.get(u"pts") or [],
+                include_midpoints=True,
+                mids=mids,
+                centers=centers,
+            )
         for ar in self._existing_ars or []:
             for ring in ar.get(u"loops") or []:
-                _append_ring_snap(verts, segs, ring, include_midpoints=True)
+                _append_ring_snap(
+                    ends, segs, ring, include_midpoints=True, mids=mids, centers=centers
+                )
             if not ar.get(u"loops"):
-                _append_ring_snap(verts, segs, ar.get(u"pts") or [], include_midpoints=True)
-        # Guías ortogonales desde punto A (útil para rectángulos)
-        if self._pick_pt1 is not None:
-            ax, ay = float(self._pick_pt1[0]), float(self._pick_pt1[1])
-            span = 50000.0  # 50 m guía
-            segs.append(((ax - span, ay), (ax + span, ay)))
-            segs.append(((ax, ay - span), (ax, ay + span)))
-            verts.append((ax, ay))
-        self._snap_verts = verts
+                _append_ring_snap(
+                    ends,
+                    segs,
+                    ar.get(u"pts") or [],
+                    include_midpoints=True,
+                    mids=mids,
+                    centers=centers,
+                )
+        # Aristas en definición del paño en curso (rect / poly)
+        pick_pts = list(getattr(self, u"_pick_pts", None) or [])
+        if pick_pts:
+            for i, p in enumerate(pick_pts):
+                try:
+                    ends.append((float(p[0]), float(p[1])))
+                except Exception:
+                    continue
+                if i > 0:
+                    try:
+                        a = pick_pts[i - 1]
+                        b = p
+                        segs.append(
+                            (
+                                (float(a[0]), float(a[1])),
+                                (float(b[0]), float(b[1])),
+                            )
+                        )
+                    except Exception:
+                        pass
+        # Guías ortogonales / tracking desde origen de snap del dibujo
+        origin = self._snap_track_origin()
+        if origin is not None:
+            try:
+                ax, ay = float(origin[0]), float(origin[1])
+                span = 50000.0  # 50 m guía
+                segs.append(((ax - span, ay), (ax + span, ay)))
+                segs.append(((ax, ay - span), (ax, ay + span)))
+                ends.append((ax, ay))
+            except Exception:
+                pass
+        self._snap_ends = ends
+        self._snap_mids = mids
+        self._snap_ints = ints
+        self._snap_centers = centers
         self._snap_segs = segs
+        # Unificado legacy (vértices de priorización)
+        self._snap_verts = list(ends) + list(mids) + list(ints) + list(centers)
         try:
-            self._snap_cell_index = _build_snap_cell_index(verts, segs)
+            self._snap_cell_index = _build_snap_typed_index(
+                ends, mids, ints, centers, segs
+            )
         except Exception:
-            self._snap_cell_index = None
+            try:
+                self._snap_cell_index = _build_snap_cell_index(self._snap_verts, segs)
+            except Exception:
+                self._snap_cell_index = None
 
     def _snap_thresh_mm(self):
         xf = self._view_xform
@@ -7598,20 +9849,65 @@ class AreaReinLosaSketchController(object):
         except Exception:
             return 0.0
 
+    def _clear_acquired_tracks(self):
+        self._acquired_tracks = []
+        self._ot_points = []
+        self._snap_guides = None
+
     def _resolve_snap(self, pt_mm):
         if pt_mm is None:
             return None, None
         self._ensure_snap_geometry()
         thresh = self._snap_thresh_mm()
         if thresh <= 0:
+            self._snap_guides = None
             return (float(pt_mm[0]), float(pt_mm[1])), None
-        return _snap_point_mm(
+        acq = getattr(self, u"_acquired_tracks", None) or []
+        ot = getattr(self, u"_ot_points", None) or []
+        result = _snap_point_mm(
             pt_mm,
-            self._snap_verts,
+            getattr(self, u"_snap_verts", None) or [],
             self._snap_segs,
             thresh,
             getattr(self, u"_snap_cell_index", None),
+            track_origin=self._snap_track_origin(),
+            acquired=acq,
+            ends=getattr(self, u"_snap_ends", None),
+            mids=getattr(self, u"_snap_mids", None),
+            ints=getattr(self, u"_snap_ints", None),
+            centers=getattr(self, u"_snap_centers", None),
+            ot_points=ot,
         )
+        # 4-tuple legacy o 5-tuple OSNAP
+        if result is None or len(result) < 3:
+            return (float(pt_mm[0]), float(pt_mm[1])), None
+        snapped = result[0]
+        kind = result[1]
+        guides_hit = result[2]
+        for_ln = result[3] if len(result) > 3 else []
+        for_pt = result[4] if len(result) > 4 else []
+        self._acquired_tracks = _merge_acquired_tracks(
+            list(acq), for_ln, _SNAP_ACQUIRE_MAX
+        )
+        self._ot_points = _merge_ot_points(list(ot), for_pt, _SNAP_ACQUIRE_MAX)
+        center = snapped if snapped is not None else (
+            float(pt_mm[0]),
+            float(pt_mm[1]),
+        )
+        # Guías pegajosas: pistas + trayectorias desde puntos OTRACK
+        tracks = list(self._acquired_tracks)
+        for path in _tracking_paths_from_ot(
+            self._ot_points,
+            last_pt=self._snap_track_origin(),
+            include_polar=False,  # polar solo al snap; no saturar
+        ):
+            tracks.append(path)
+        sticky = _guides_from_tracks_mm(tracks, center)
+        if sticky:
+            self._snap_guides = sticky
+        else:
+            self._snap_guides = guides_hit
+        return snapped, kind
 
     def _clear_snap_overlay(self, cv):
         if cv is None:
@@ -7629,101 +9925,397 @@ class AreaReinLosaSketchController(object):
         except Exception:
             pass
 
+    def _draw_snap_guides(self, cv, guides):
+        """Guías de tracking (rectas de arista / H-V) en overlay."""
+        if cv is None or not guides:
+            return
+        for g in guides:
+            try:
+                p0, p1 = g[0], g[1]
+                a = self._mm_to_px(p0[0], p0[1])
+                b = self._mm_to_px(p1[0], p1[1])
+            except Exception:
+                continue
+            if a is None or b is None:
+                continue
+            try:
+                ln = WpfLine()
+                ln.X1, ln.Y1 = float(a[0]), float(a[1])
+                ln.X2, ln.Y2 = float(b[0]), float(b[1])
+                ln.Stroke = _brush(u"#38bdf8", 150)
+                ln.StrokeThickness = 0.85
+                try:
+                    dashes = DoubleCollection()
+                    dashes.Add(6)
+                    dashes.Add(4)
+                    ln.StrokeDashArray = dashes
+                except Exception:
+                    pass
+                ln.Tag = _SNAP_TAG
+                ln.IsHitTestVisible = False
+                cv.Children.Add(ln)
+            except Exception:
+                pass
+
     def _refresh_snap_overlay(self):
         cv = self._overlay_host()
         if cv is None or self._view_xform is None:
             return
         self._clear_snap_overlay(cv)
         hover = self._hover_snap
-        if hover is None:
+        # Preview dibujo en curso + polígono pendiente de Major
+        pick_pts = list(getattr(self, u"_pick_pts", None) or [])
+        pending_pts = getattr(self, u"_poly_pending_pts", None)
+        if hover is None and not pick_pts and pending_pts is None:
             return
+        xmm = ymm = kind = None
+        if hover is not None:
+            try:
+                xmm, ymm, kind = hover[0], hover[1], hover[2]
+            except Exception:
+                hover = None
+                xmm = ymm = kind = None
+        # Guías de object tracking debajo del marcador / preview
         try:
-            xmm, ymm, kind = hover[0], hover[1], hover[2]
+            self._draw_snap_guides(cv, getattr(self, u"_snap_guides", None))
         except Exception:
+            pass
+
+        # Polígono cerrado: elegir arista Principal
+        if pending_pts is not None and len(pending_pts) >= 3:
+            try:
+                poly = WpfPolygon()
+                pc = PointCollection()
+                for qx, qy in pending_pts:
+                    qpx = self._mm_to_px(qx, qy)
+                    if qpx is None:
+                        continue
+                    pc.Add(WpfPoint(qpx[0], qpx[1]))
+                if pc.Count >= 3:
+                    poly.Points = pc
+                    poly.Fill = _brush(u"#fbbf24", 55)
+                    poly.Stroke = _brush(u"#fbbf24")
+                    poly.StrokeThickness = 1.4
+                    poly.Tag = _SNAP_TAG
+                    poly.IsHitTestVisible = False
+                    cv.Children.Add(poly)
+                n = len(pending_pts)
+                for i in range(n):
+                    a0 = pending_pts[i]
+                    b0 = pending_pts[(i + 1) % n]
+                    a = self._mm_to_px(a0[0], a0[1])
+                    b = self._mm_to_px(b0[0], b0[1])
+                    if a is None or b is None:
+                        continue
+                    is_hov = False
+                    he = getattr(self, u"_poly_hover_edge", None)
+                    if he is not None:
+                        try:
+                            is_hov = (
+                                abs(he[0][0] - float(a0[0])) < 0.5
+                                and abs(he[0][1] - float(a0[1])) < 0.5
+                                and abs(he[1][0] - float(b0[0])) < 0.5
+                                and abs(he[1][1] - float(b0[1])) < 0.5
+                            ) or (
+                                abs(he[0][0] - float(b0[0])) < 0.5
+                                and abs(he[0][1] - float(b0[1])) < 0.5
+                                and abs(he[1][0] - float(a0[0])) < 0.5
+                                and abs(he[1][1] - float(a0[1])) < 0.5
+                            )
+                        except Exception:
+                            is_hov = False
+                    ln = WpfLine()
+                    ln.X1, ln.Y1 = float(a[0]), float(a[1])
+                    ln.X2, ln.Y2 = float(b[0]), float(b[1])
+                    if is_hov:
+                        ln.Stroke = _brush(u"#f59e0b")
+                        ln.StrokeThickness = 3.2
+                    else:
+                        ln.Stroke = _brush(u"#fbbf24", 200)
+                        ln.StrokeThickness = 1.8
+                    ln.Tag = _SNAP_TAG
+                    ln.IsHitTestVisible = False
+                    cv.Children.Add(ln)
+            except Exception:
+                pass
+
+        # Preview dibujo en curso: rectángulo A→B o polilínea multipunto
+        draw_mode = getattr(self, u"_draw_mode", _DRAW_RECT)
+        if pick_pts:
+            try:
+                if (
+                    draw_mode == _DRAW_RECT
+                    and len(pick_pts) >= 1
+                    and hover is not None
+                ):
+                    preview = rect_from_two_points_mm(pick_pts[0], (xmm, ymm))
+                    if preview and len(preview) >= 4:
+                        poly = WpfPolygon()
+                        pc = PointCollection()
+                        for qx, qy in preview:
+                            qpx = self._mm_to_px(qx, qy)
+                            if qpx is None:
+                                continue
+                            pc.Add(WpfPoint(qpx[0], qpx[1]))
+                        if pc.Count >= 3:
+                            poly.Points = pc
+                            poly.Fill = _brush(u"#5BC0DE", 45)
+                            poly.Stroke = _brush(u"#5BC0DE")
+                            poly.StrokeThickness = 0.9
+                            try:
+                                dashes = DoubleCollection()
+                                dashes.Add(5)
+                                dashes.Add(3)
+                                poly.StrokeDashArray = dashes
+                            except Exception:
+                                pass
+                            poly.Tag = _SNAP_TAG
+                            poly.IsHitTestVisible = False
+                            cv.Children.Add(poly)
+                elif draw_mode == _DRAW_POLY:
+                    chain = list(pick_pts)
+                    if hover is not None:
+                        chain.append((xmm, ymm))
+                    nchain = len(chain)
+                    for i in range(max(0, nchain - 1)):
+                        a = self._mm_to_px(chain[i][0], chain[i][1])
+                        b = self._mm_to_px(chain[i + 1][0], chain[i + 1][1])
+                        if a is None or b is None:
+                            continue
+                        ln = WpfLine()
+                        ln.X1, ln.Y1 = float(a[0]), float(a[1])
+                        ln.X2, ln.Y2 = float(b[0]), float(b[1])
+                        is_rubber = hover is not None and i == nchain - 2
+                        ln.Stroke = _brush(
+                            u"#5BC0DE", 220 if not is_rubber else 160
+                        )
+                        ln.StrokeThickness = 1.1 if not is_rubber else 0.9
+                        if is_rubber:
+                            try:
+                                dashes = DoubleCollection()
+                                dashes.Add(5)
+                                dashes.Add(3)
+                                ln.StrokeDashArray = dashes
+                            except Exception:
+                                pass
+                        ln.Tag = _SNAP_TAG
+                        ln.IsHitTestVisible = False
+                        cv.Children.Add(ln)
+                    if len(pick_pts) >= 2 and hover is not None:
+                        a = self._mm_to_px(xmm, ymm)
+                        b = self._mm_to_px(pick_pts[0][0], pick_pts[0][1])
+                        if a is not None and b is not None:
+                            ln = WpfLine()
+                            ln.X1, ln.Y1 = float(a[0]), float(a[1])
+                            ln.X2, ln.Y2 = float(b[0]), float(b[1])
+                            near_close = self._point_near_first_vertex(
+                                (xmm, ymm)
+                            )
+                            ln.Stroke = _brush(
+                                u"#4ade80" if near_close else u"#5BC0DE",
+                                200 if near_close else 100,
+                            )
+                            ln.StrokeThickness = 1.2 if near_close else 0.75
+                            try:
+                                dashes = DoubleCollection()
+                                dashes.Add(4)
+                                dashes.Add(3)
+                                ln.StrokeDashArray = dashes
+                            except Exception:
+                                pass
+                            ln.Tag = _SNAP_TAG
+                            ln.IsHitTestVisible = False
+                            cv.Children.Add(ln)
+                    for i, p in enumerate(pick_pts):
+                        pxy = self._mm_to_px(p[0], p[1])
+                        if pxy is None:
+                            continue
+                        r = 4.5 if i == 0 else 3.5
+                        el = WpfEllipse()
+                        el.Width = r * 2.0
+                        el.Height = r * 2.0
+                        if i == 0:
+                            el.Fill = _brush(u"#4ade80", 210)
+                        else:
+                            el.Fill = _brush(u"#5BC0DE", 200)
+                        el.Stroke = _brush(u"#E8F4F8")
+                        el.StrokeThickness = 0.8
+                        el.Tag = _SNAP_TAG
+                        el.IsHitTestVisible = False
+                        WpfCanvas.SetLeft(el, pxy[0] - r)
+                        WpfCanvas.SetTop(el, pxy[1] - r)
+                        cv.Children.Add(el)
+            except Exception:
+                pass
+        if hover is None:
             return
         pxpy = self._mm_to_px(xmm, ymm)
         if pxpy is None:
             return
         px, py = pxpy
-        # Preview rectángulo A → hover
-        if self._pick_pt1 is not None:
-            try:
-                pts = rect_from_two_points_mm(self._pick_pt1, (xmm, ymm))
-                if pts and len(pts) >= 4:
-                    poly = WpfPolygon()
-                    pc = PointCollection()
-                    for qx, qy in pts:
-                        qpx = self._mm_to_px(qx, qy)
-                        if qpx is None:
-                            continue
-                        pc.Add(WpfPoint(qpx[0], qpx[1]))
-                    if pc.Count >= 3:
-                        poly.Points = pc
-                        poly.Fill = _brush(u"#5BC0DE", 45)
-                        poly.Stroke = _brush(u"#5BC0DE")
-                        poly.StrokeThickness = 1.4
-                        try:
-                            dashes = DoubleCollection()
-                            dashes.Add(5)
-                            dashes.Add(3)
-                            poly.StrokeDashArray = dashes
-                        except Exception:
-                            pass
-                        poly.Tag = _SNAP_TAG
-                        poly.IsHitTestVisible = False
-                        cv.Children.Add(poly)
-            except Exception:
-                pass
-        # Marcador snap
+        # Marcadores OSNAP estilo AutoCAD
         try:
-            if kind == u"vertex":
-                r = 6.0
-                el = WpfEllipse()
-                el.Width = r * 2.0
-                el.Height = r * 2.0
-                el.Fill = _brush(u"#fbbf24", 200)
-                el.Stroke = _brush(u"#E8F4F8")
-                el.StrokeThickness = 1.5
-                el.Tag = _SNAP_TAG
-                el.IsHitTestVisible = False
-                WpfCanvas.SetLeft(el, px - r)
-                WpfCanvas.SetTop(el, py - r)
-                cv.Children.Add(el)
-            elif kind == u"edge":
-                s = 9.0
+            col = _OSNAP_MARKER.get(kind) or u"#95B8CC"
+            s = 7.5
+            if kind in (u"end", u"vertex"):
+                # cuadrado (Endpoint)
+                s = 8.0
                 rect = WpfRectangle()
                 rect.Width = s
                 rect.Height = s
-                rect.Fill = _brush(u"#4ade80", 180)
+                rect.Fill = _brush(col, 200)
                 rect.Stroke = _brush(u"#E8F4F8")
-                rect.StrokeThickness = 1.2
+                rect.StrokeThickness = 0.9
                 rect.Tag = _SNAP_TAG
                 rect.IsHitTestVisible = False
                 WpfCanvas.SetLeft(rect, px - s * 0.5)
                 WpfCanvas.SetTop(rect, py - s * 0.5)
                 cv.Children.Add(rect)
-            else:
-                r = 4.0
+            elif kind == u"mid":
+                # triángulo (Midpoint)
+                poly = WpfPolygon()
+                pc = PointCollection()
+                pc.Add(WpfPoint(px, py - s))
+                pc.Add(WpfPoint(px + s * 0.9, py + s * 0.6))
+                pc.Add(WpfPoint(px - s * 0.9, py + s * 0.6))
+                poly.Points = pc
+                poly.Fill = _brush(col, 200)
+                poly.Stroke = _brush(u"#E8F4F8")
+                poly.StrokeThickness = 0.85
+                poly.Tag = _SNAP_TAG
+                poly.IsHitTestVisible = False
+                cv.Children.Add(poly)
+            elif kind in (u"int", u"app", u"otrack", u"track_x"):
+                # X / cruce (Intersection / proyección / Tracking)
+                thr_ln = 1.8 if kind == u"app" else 1.6
+                for dx0, dy0, dx1, dy1 in (
+                    (-7, -7, 7, 7),
+                    (-7, 7, 7, -7),
+                ):
+                    ln = WpfLine()
+                    ln.X1, ln.Y1, ln.X2, ln.Y2 = (
+                        px + dx0,
+                        py + dy0,
+                        px + dx1,
+                        py + dy1,
+                    )
+                    ln.Stroke = _brush(col)
+                    ln.StrokeThickness = thr_ln
+                    ln.Tag = _SNAP_TAG
+                    ln.IsHitTestVisible = False
+                    cv.Children.Add(ln)
+                # App: tick de extensión en una pata
+                if kind == u"app":
+                    try:
+                        el = WpfEllipse()
+                        el.Width = 4.0
+                        el.Height = 4.0
+                        el.Fill = _brush(col, 220)
+                        el.Stroke = _brush(col)
+                        el.StrokeThickness = 0.5
+                        el.Tag = _SNAP_TAG
+                        el.IsHitTestVisible = False
+                        WpfCanvas.SetLeft(el, px - 2.0)
+                        WpfCanvas.SetTop(el, py - 2.0)
+                        cv.Children.Add(el)
+                    except Exception:
+                        pass
+            elif kind == u"cen":
+                # círculo (Center)
+                r = 5.5
                 el = WpfEllipse()
                 el.Width = r * 2.0
                 el.Height = r * 2.0
-                el.Fill = _brush(u"#95B8CC", 160)
-                el.Stroke = _brush(u"#E8F4F8", 180)
-                el.StrokeThickness = 1.0
+                el.Fill = _brush(col, 40)
+                el.Stroke = _brush(col)
+                el.StrokeThickness = 1.4
                 el.Tag = _SNAP_TAG
                 el.IsHitTestVisible = False
                 WpfCanvas.SetLeft(el, px - r)
                 WpfCanvas.SetTop(el, py - r)
                 cv.Children.Add(el)
-            # cruz
+            elif kind == u"per":
+                # escuadra (Perpendicular)
+                ln1 = WpfLine()
+                ln1.X1, ln1.Y1, ln1.X2, ln1.Y2 = px - 6, py, px + 6, py
+                ln1.Stroke = _brush(col)
+                ln1.StrokeThickness = 1.5
+                ln1.Tag = _SNAP_TAG
+                ln1.IsHitTestVisible = False
+                cv.Children.Add(ln1)
+                ln2 = WpfLine()
+                ln2.X1, ln2.Y1, ln2.X2, ln2.Y2 = px, py, px, py - 8
+                ln2.Stroke = _brush(col)
+                ln2.StrokeThickness = 1.5
+                ln2.Tag = _SNAP_TAG
+                ln2.IsHitTestVisible = False
+                cv.Children.Add(ln2)
+            elif kind == u"par":
+                # // (Parallel)
+                for oxf in (-2.5, 2.5):
+                    ln = WpfLine()
+                    ln.X1, ln.Y1 = px + oxf - 4, py + 6
+                    ln.X2, ln.Y2 = px + oxf + 4, py - 6
+                    ln.Stroke = _brush(col)
+                    ln.StrokeThickness = 1.4
+                    ln.Tag = _SNAP_TAG
+                    ln.IsHitTestVisible = False
+                    cv.Children.Add(ln)
+            elif kind in (u"nea", u"edge"):
+                # rombo (Nearest)
+                poly = WpfPolygon()
+                pc = PointCollection()
+                pc.Add(WpfPoint(px, py - s * 0.7))
+                pc.Add(WpfPoint(px + s * 0.7, py))
+                pc.Add(WpfPoint(px, py + s * 0.7))
+                pc.Add(WpfPoint(px - s * 0.7, py))
+                poly.Points = pc
+                poly.Fill = _brush(col, 120)
+                poly.Stroke = _brush(col)
+                poly.StrokeThickness = 1.0
+                poly.Tag = _SNAP_TAG
+                poly.IsHitTestVisible = False
+                cv.Children.Add(poly)
+            elif kind in (u"ext", u"track", u"polar"):
+                # rombo cian (Extension / Polar)
+                poly = WpfPolygon()
+                pc = PointCollection()
+                pc.Add(WpfPoint(px, py - s))
+                pc.Add(WpfPoint(px + s, py))
+                pc.Add(WpfPoint(px, py + s))
+                pc.Add(WpfPoint(px - s, py))
+                poly.Points = pc
+                poly.Fill = _brush(col, 175)
+                poly.Stroke = _brush(u"#E8F4F8")
+                poly.StrokeThickness = 0.85
+                poly.Tag = _SNAP_TAG
+                poly.IsHitTestVisible = False
+                cv.Children.Add(poly)
+            else:
+                r = 3.5
+                el = WpfEllipse()
+                el.Width = r * 2.0
+                el.Height = r * 2.0
+                el.Fill = _brush(u"#95B8CC", 160)
+                el.Stroke = _brush(u"#E8F4F8", 180)
+                el.StrokeThickness = 0.7
+                el.Tag = _SNAP_TAG
+                el.IsHitTestVisible = False
+                WpfCanvas.SetLeft(el, px - r)
+                WpfCanvas.SetTop(el, py - r)
+                cv.Children.Add(el)
+            # cruz fina de posición
             for dx0, dy0, dx1, dy1 in (
-                (-10, 0, 10, 0),
-                (0, -10, 0, 10),
+                (-9, 0, 9, 0),
+                (0, -9, 0, 9),
             ):
                 ln = WpfLine()
-                ln.X1, ln.Y1, ln.X2, ln.Y2 = px + dx0, py + dy0, px + dx1, py + dy1
-                ln.Stroke = _brush(u"#fbbf24" if kind == u"vertex" else u"#4ade80")
-                ln.StrokeThickness = 1.0
+                ln.X1 = px + dx0
+                ln.Y1 = py + dy0
+                ln.X2 = px + dx1
+                ln.Y2 = py + dy1
+                ln.Stroke = _brush(u"#E8F4F8", 160)
+                ln.StrokeThickness = 0.6
                 ln.Tag = _SNAP_TAG
                 ln.IsHitTestVisible = False
                 cv.Children.Add(ln)
@@ -7785,24 +10377,60 @@ class AreaReinLosaSketchController(object):
         raw = self._canvas_to_mm(pos)
         if raw is None:
             return
+
+        # Hover arista al elegir Major
+        pending = getattr(self, u"_poly_pending_pts", None)
+        if pending is not None:
+            edge, _d = self._hit_ring_edge_mm(raw, pending)
+            prev_e = getattr(self, u"_poly_hover_edge", None)
+            # comparar por coordenadas redondeadas
+            def _ek(e):
+                if e is None:
+                    return None
+                try:
+                    return (
+                        round(e[0][0], 1),
+                        round(e[0][1], 1),
+                        round(e[1][0], 1),
+                        round(e[1][1], 1),
+                    )
+                except Exception:
+                    return None
+
+            if _ek(edge) != _ek(prev_e):
+                self._poly_hover_edge = edge
+                self._refresh_snap_overlay()
+            # sin snap de vértice en esta fase
+            return
+
+        n_acq_before = len(getattr(self, u"_acquired_tracks", None) or [])
         snapped, kind = self._resolve_snap(raw)
         if snapped is None:
             return
-        # Overlay solo con hit de snap o mientras se define el 2º punto
-        if kind is None and self._pick_pt1 is None:
+        n_acq = len(getattr(self, u"_acquired_tracks", None) or [])
+        n_ot = len(getattr(self, u"_ot_points", None) or [])
+        has_acq = n_acq > 0 or n_ot > 0
+        # Overlay: snap, pick en curso, o pistas/puntos OTRACK
+        if kind is None and not self._has_active_pick() and not has_acq:
             if self._hover_snap is not None:
                 self._hover_snap = None
+                self._snap_guides = None
                 self._refresh_snap_overlay()
             return
         new_hover = (snapped[0], snapped[1], kind)
         prev = self._hover_snap
+        force = n_acq != n_acq_before or n_ot != getattr(self, u"_prev_ot_n", -1)
+        self._prev_ot_n = n_ot
         if (
-            prev is not None
+            not force
+            and prev is not None
             and abs(prev[0] - new_hover[0]) < 0.05
             and abs(prev[1] - new_hover[1]) < 0.05
             and prev[2] == new_hover[2]
         ):
-            return
+            # con pick activo el rubberband debe actualizarse
+            if not self._has_active_pick():
+                return
         self._hover_snap = new_hover
         self._refresh_snap_overlay()
 
@@ -7836,7 +10464,22 @@ class AreaReinLosaSketchController(object):
         if raw is None:
             return
 
-        # Ctrl+clic: selección de fusión (no inicia rectángulo de 2 puntos)
+        # Fase 2 polígono: elegir arista Principal (Major // arista)
+        pending = getattr(self, u"_poly_pending_pts", None)
+        if pending is not None:
+            edge, dist = self._hit_ring_edge_mm(raw, pending)
+            if edge is None:
+                self._set_status(
+                    u"Clic sobre una arista del polígono (amarillo) para "
+                    u"definir la dirección Principal. Esc cancela."
+                )
+                return
+            kind = None  # sin snap label obligatorio
+            snap_lbl = getattr(self, u"_poly_pending_snap_lbl", u"") or u""
+            self._apply_poly_major_edge(edge, snap_lbl=snap_lbl)
+            return
+
+        # Ctrl+clic: selección de fusión (no inicia dibujo)
         ctrl = False
         try:
             mods = Keyboard.Modifiers
@@ -7848,7 +10491,7 @@ class AreaReinLosaSketchController(object):
             return
 
         # Clic sin Ctrl sobre un paño (sin pick en curso) → paño activo / cards
-        if self._pick_pt1 is None:
+        if not self._has_active_pick():
             hit = self._hit_pano_at_mm(raw)
             if hit is not None:
                 self._activate_pano(hit.get(u"id"), clear_merge=True)
@@ -7857,13 +10500,77 @@ class AreaReinLosaSketchController(object):
         pt, kind = self._resolve_snap(raw)
         if pt is None:
             return
-        snap_lbl = u""
-        if kind == u"vertex":
-            snap_lbl = u" · snap vértice"
-        elif kind == u"edge":
-            snap_lbl = u" · snap arista"
-        if self._pick_pt1 is None:
-            self._pick_pt1 = pt
+        snap_lbl = _osnap_status_label(kind)
+        mode = getattr(self, u"_draw_mode", _DRAW_RECT)
+
+        # --- Polígono multipunto ---
+        if mode == _DRAW_POLY:
+            pick_pts = list(getattr(self, u"_pick_pts", None) or [])
+            # Cierre: clic cerca del 1er vértice con ≥3 verts
+            if len(pick_pts) >= 3 and self._point_near_first_vertex(pt):
+                self._try_finish_poly(status_snap=snap_lbl)
+                return
+            # Cierre por doble clic (ClickCount)
+            click_count = 1
+            try:
+                click_count = int(e.ClickCount)
+            except Exception:
+                click_count = 1
+            if click_count >= 2 and len(pick_pts) >= 2:
+                # Añadir punto actual salvo si es nulo, luego cerrar
+                if pick_pts:
+                    dx = float(pt[0]) - float(pick_pts[-1][0])
+                    dy = float(pt[1]) - float(pick_pts[-1][1])
+                    if dx * dx + dy * dy >= (
+                        float(_POLY_MIN_EDGE_MM) * float(_POLY_MIN_EDGE_MM)
+                    ):
+                        pick_pts.append((float(pt[0]), float(pt[1])))
+                        self._pick_pts = pick_pts
+                        self._sync_pick_pt1_alias()
+                self._try_finish_poly(status_snap=snap_lbl)
+                return
+            # Nuevo vértice
+            if pick_pts:
+                dx = float(pt[0]) - float(pick_pts[-1][0])
+                dy = float(pt[1]) - float(pick_pts[-1][1])
+                if dx * dx + dy * dy < (
+                    float(_POLY_MIN_EDGE_MM) * float(_POLY_MIN_EDGE_MM)
+                ):
+                    self._set_status(
+                        u"Vértice demasiado cercano al anterior. Elija otro punto."
+                    )
+                    return
+            pick_pts.append((float(pt[0]), float(pt[1])))
+            self._pick_pts = pick_pts
+            self._sync_pick_pt1_alias()
+            self._hover_snap = None
+            self._mark_snap_geo_dirty()
+            n = len(pick_pts)
+            if n == 1:
+                self._set_status(
+                    u"Vértice 1 ({0:.0f}, {1:.0f}) mm{2}. "
+                    u"Siguiente vértice…".format(pt[0], pt[1], snap_lbl)
+                )
+            elif n < 3:
+                self._set_status(
+                    u"Vértice {0} ({1:.0f}, {2:.0f}){3}. "
+                    u"Faltan ≥{4} para cerrar.".format(
+                        n, pt[0], pt[1], snap_lbl, 3 - n
+                    )
+                )
+            else:
+                self._set_status(
+                    u"Vértice {0}{1}. Clic en el 1º (verde), Enter o doble clic "
+                    u"para cerrar · Retroceso deshace.".format(n, snap_lbl)
+                )
+            self._redraw_canvas()
+            return
+
+        # --- Rectángulo 2 puntos (modo principal) ---
+        pick_pts = list(getattr(self, u"_pick_pts", None) or [])
+        if not pick_pts:
+            self._pick_pts = [(float(pt[0]), float(pt[1]))]
+            self._sync_pick_pt1_alias()
             self._hover_snap = None
             self._mark_snap_geo_dirty()
             self._set_status(
@@ -7875,55 +10582,17 @@ class AreaReinLosaSketchController(object):
         # Segundo punto → crear paño
         pts = None
         try:
-            pts = rect_from_two_points_mm(self._pick_pt1, pt)
+            pts = rect_from_two_points_mm(pick_pts[0], pt)
         except Exception:
             pts = None
-        self._pick_pt1 = None
-        self._hover_snap = None
+        self._clear_pick_state(redraw=False)
+        self._clear_acquired_tracks()
         self._mark_snap_geo_dirty()
         if not pts:
             self._set_status(u"No se creó paño: distancia insuficiente.")
             self._redraw_canvas()
             return
-        area = 0.0
-        try:
-            if shoelace_area_m2 is not None:
-                area = float(shoelace_area_m2(pts))
-        except Exception:
-            area = abs((pts[1][0] - pts[0][0]) * (pts[2][1] - pts[0][1])) / 1.0e6
-        face = _normalize_face_id(getattr(self, u"_active_face", u"inferior"))
-        seq_map = getattr(self, u"_pano_seq_by_face", None) or {}
-        face_seq = int(seq_map.get(face) or 0) + 1
-        seq_map[face] = face_seq
-        self._pano_seq_by_face = seq_map
-        self._pano_seq += 1
-        pid = u"P{}".format(self._pano_seq)
-        settings = self._tool_default_pano_settings(face)
-        pill = _FACE_PILL.get(face) or u"SUP"
-        pano = {
-            u"id": pid,
-            u"face": face,
-            u"label": u"Paño {0} {1}".format(pill, face_seq),
-            u"pts": pts,
-            u"area_m2": area,
-            u"layer_cfg": settings[u"layer_cfg"],
-            u"ahorro_inferior": settings[u"ahorro_inferior"],
-            u"ahorro_superior": settings[u"ahorro_superior"],
-        }
-        self._panos.append(pano)
-        self._pano_merge.clear()
-        # Al agregar polígono → activar toggle de malla de esa cara
-        self._set_face_modeling_toggle(face, True, writeback=False)
-        self._mark_snap_geo_dirty()
-        self._update_create_button()
-        n_face = len(self._panos_for_face(face))
-        self._activate_pano(
-            pid,
-            clear_merge=True,
-            status=u"{0} creado ({1:.1f} m²){2} · {3} paño(s) {4}.".format(
-                pano[u"label"], area, snap_lbl, n_face, pill
-            ),
-        )
+        self._commit_pano_pts(pts, snap_lbl)
 
     def _hit_pano_at_mm(self, pt_mm):
         """Paño de la cara activa bajo el punto (último dibujado gana), o None."""
@@ -7948,10 +10617,10 @@ class AreaReinLosaSketchController(object):
         (toque/solape), fusiona automáticamente solo geometría. Si están
         disjuntos, mantiene la selección.
         """
-        # Cancelar pick de 2 puntos pendiente (Ctrl no dibuja)
-        if self._pick_pt1 is not None:
-            self._pick_pt1 = None
-            self._hover_snap = None
+        # Cancelar pick de dibujo pendiente (Ctrl no dibuja)
+        if self._has_active_pick():
+            self._clear_pick_state(redraw=False)
+            self._clear_acquired_tracks()
             self._mark_snap_geo_dirty()
         pano = self._hit_pano_at_mm(pt_mm)
         if pano is None:
@@ -8408,10 +11077,12 @@ class AreaReinLosaSketchController(object):
                     return
         except Exception:
             pass
-        # ElementId: comparar por IntegerValue
+        # ElementId: comparar por Value (Revit 2025+)
         try:
-            tag_iv = int(tag.IntegerValue)
+            tag_iv = _element_id_int(tag)
         except Exception:
+            tag_iv = None
+        if tag_iv is None:
             return
         try:
             for i in range(cmb.Items.Count):
@@ -8419,7 +11090,7 @@ class AreaReinLosaSketchController(object):
                 if it is None or it.Tag is None:
                     continue
                 try:
-                    if int(it.Tag.IntegerValue) == tag_iv:
+                    if _element_id_int(it.Tag) == tag_iv:
                         cmb.SelectedItem = it
                         return
                 except Exception:
@@ -8432,7 +11103,7 @@ class AreaReinLosaSketchController(object):
         if bar_type_id is None:
             return None
         try:
-            tag_iv = int(bar_type_id.IntegerValue)
+            tag_iv = _element_id_int(bar_type_id)
         except Exception:
             try:
                 tag_iv = int(bar_type_id)
@@ -8440,7 +11111,7 @@ class AreaReinLosaSketchController(object):
                 return None
         for dmm, _lab, bt in self._bar_types or []:
             try:
-                if int(bt.Id.IntegerValue) == tag_iv:
+                if _element_id_int(bt.Id) == tag_iv:
                     return int(dmm) if dmm else None
             except Exception:
                 continue
@@ -9636,9 +12307,9 @@ class AreaReinLosaSketchController(object):
             return
 
         # Cambiar de cara: cancelar pick/fusión y mostrar paños de esa cara
-        had_pick = self._pick_pt1 is not None
-        self._pick_pt1 = None
-        self._hover_snap = None
+        had_pick = self._has_active_pick()
+        self._clear_pick_state(redraw=False)
+        self._clear_acquired_tracks()
         if had_pick:
             self._mark_snap_geo_dirty()
         try:
@@ -9685,17 +12356,30 @@ class AreaReinLosaSketchController(object):
         """Fallback global: arista más larga del Sketch (losa)."""
         return direccion_arista_mas_larga(self._curves)
 
-    def _major_direction_for_pano(self, pts):
+    def _major_direction_for_pano(self, pts, pano=None):
         """
-        Major del paño: luz menor (AABB plano-mm → XYZ).
-        Solo si el polígono es degenerado usa arista más larga de la losa.
+        Major del paño:
+        1) ``major_dir_mm`` si el usuario eligió arista (polígono multipunto)
+        2) luz menor AABB (rect / fallback)
+        3) arista más larga de la losa si degenerado
         """
         dir_mm = None
-        try:
-            if span_direction_from_polygon_mm is not None:
-                dir_mm = span_direction_from_polygon_mm(pts)
-        except Exception:
-            dir_mm = None
+        if pano is not None:
+            try:
+                md = pano.get(u"major_dir_mm")
+                if md is not None:
+                    dx, dy = float(md[0]), float(md[1])
+                    ln = math.sqrt(dx * dx + dy * dy)
+                    if ln > 1e-9:
+                        dir_mm = (dx / ln, dy / ln)
+            except Exception:
+                dir_mm = None
+        if dir_mm is None:
+            try:
+                if span_direction_from_polygon_mm is not None:
+                    dir_mm = span_direction_from_polygon_mm(pts)
+            except Exception:
+                dir_mm = None
         if dir_mm is None:
             return self._major_direction()
         return _plane_mm_dir_to_xyz(dir_mm[0], dir_mm[1], self._plane)
@@ -9808,7 +12492,7 @@ class AreaReinLosaSketchController(object):
                     pts_copy.append((float(pt[0]), float(pt[1])))
                 except Exception:
                     continue
-            major = self._major_direction_for_pano(pts_src)
+            major = self._major_direction_for_pano(pts_src, pano=pano)
             major_xyz = None
             if major is not None:
                 try:
@@ -9931,8 +12615,10 @@ class AreaReinLosaSketchController(object):
                 all_pts.extend(ring)
             if not ar.get(u"loops"):
                 all_pts.extend(ar.get(u"pts") or [])
-        if self._pick_pt1 is not None:
-            all_pts.append(self._pick_pt1)
+        for p in getattr(self, u"_pick_pts", None) or []:
+            all_pts.append(p)
+        for p in getattr(self, u"_poly_pending_pts", None) or []:
+            all_pts.append(p)
         if not all_pts:
             try:
                 cv.Children.Clear()
@@ -10047,19 +12733,30 @@ class AreaReinLosaSketchController(object):
                 sum(float(q[1]) for q in pts) / n,
             )
 
-        def _major_symbol_geom(pts):
+        def _major_symbol_geom(pts, major_dir_mm=None):
             """
-            Geometría del símbolo Major (luz menor): dir unitaria, centroide,
+            Geometría del símbolo Major: dir unitaria, centroide,
             half-seg mm y perpendicular unitaria in-plane.
+            ``major_dir_mm`` opcional sobrescribe el cálculo por luz menor.
             """
             if not pts or len(pts) < 3:
                 return None
             dir_mm = None
-            try:
-                if span_direction_from_polygon_mm is not None:
-                    dir_mm = span_direction_from_polygon_mm(pts)
-            except Exception:
-                dir_mm = None
+            if major_dir_mm is not None:
+                try:
+                    dx0 = float(major_dir_mm[0])
+                    dy0 = float(major_dir_mm[1])
+                    L0 = (dx0 * dx0 + dy0 * dy0) ** 0.5
+                    if L0 > 1e-9:
+                        dir_mm = (dx0 / L0, dy0 / L0)
+                except Exception:
+                    dir_mm = None
+            if dir_mm is None:
+                try:
+                    if span_direction_from_polygon_mm is not None:
+                        dir_mm = span_direction_from_polygon_mm(pts)
+                except Exception:
+                    dir_mm = None
             if dir_mm is None:
                 return None
             dx = float(dir_mm[0])
@@ -10257,14 +12954,18 @@ class AreaReinLosaSketchController(object):
             scene.Children.Add(border)
 
         def _add_major_luz_menor_symbol(
-            pts, is_active=False, label_tw=0.0, label_th=0.0
+            pts,
+            is_active=False,
+            label_tw=0.0,
+            label_th=0.0,
+            major_dir_mm=None,
         ):
             """
-            Símbolo Major estilo AR Revit: segmento // luz menor + ticks
+            Símbolo Major estilo AR Revit: segmento // dirección Principal + ticks
             perpendiculares. Desplazado en la perpendicular in-plane para
             no cruzar la tarjeta de info centrada en el paño.
             """
-            g = _major_symbol_geom(pts)
+            g = _major_symbol_geom(pts, major_dir_mm=major_dir_mm)
             if g is None:
                 return
             dx = g[u"dx"]
@@ -10353,7 +13054,7 @@ class AreaReinLosaSketchController(object):
             x2 = cx_i + dx * half
             y2 = cy_i + dy * half
             stroke = _ACTIVE_STROKE if is_active else u"#5BC0DE"
-            thick = 2.4 if is_active else 1.7
+            thick = 1.35 if is_active else 0.95
             alpha = 235 if is_active else 195
 
             def _seg(ax, ay, bx, by, w=None):
@@ -10379,18 +13080,18 @@ class AreaReinLosaSketchController(object):
             # Paños definidos por el usuario (2 puntos → rectángulo / fusionados).
             # Relleno/borde recortados por pasadas + huecos Sketch (Exclude).
             # Grosor = mismo escalado que muros/vigas/pasadas (sw_fn).
-            def _line_w(base=1.2):
+            def _line_w(base=_CANVAS_STROKE_CTX):
                 if sw_fn is not None:
                     try:
                         return float(sw_fn(base))
                     except Exception:
                         pass
                 try:
-                    return float(base) * 0.5
+                    return float(base) * _CANVAS_LINE_SCALE
                 except Exception:
-                    return 0.6
+                    return 0.4
 
-            pano_stroke = _line_w(1.2)
+            pano_stroke = _line_w(_CANVAS_STROKE_CTX)
             try:
                 sketch_holes = (
                     list(loop_polylines[1:])
@@ -10485,6 +13186,7 @@ class AreaReinLosaSketchController(object):
                                 is_active=is_active,
                                 label_tw=ltw,
                                 label_th=lth,
+                                major_dir_mm=pano.get(u"major_dir_mm"),
                             )
                         except Exception:
                             pass
@@ -10500,39 +13202,13 @@ class AreaReinLosaSketchController(object):
             except Exception:
                 pass
 
-            # Punto A pendiente (primer clic)
-            try:
-                if self._pick_pt1 is not None:
-                    px, py = to_px(self._pick_pt1[0], self._pick_pt1[1])
-                    r = 5.0
-                    el = WpfEllipse()
-                    el.Width = r * 2.0
-                    el.Height = r * 2.0
-                    el.Fill = _brush(u"#5BC0DE")
-                    el.Stroke = _brush(u"#E8F4F8")
-                    el.StrokeThickness = 1.5
-                    WpfCanvas.SetLeft(el, px - r)
-                    WpfCanvas.SetTop(el, py - r)
-                    scene.Children.Add(el)
-                    tb = TextBlock()
-                    tb.Text = u"A"
-                    tb.Foreground = _brush(u"#5BC0DE")
-                    tb.FontSize = 11
-                    tb.FontWeight = FontWeights.SemiBold
-                    WpfCanvas.SetLeft(tb, px + 7)
-                    WpfCanvas.SetTop(tb, py - 10)
-                    scene.Children.Add(tb)
-            except Exception:
-                pass
-
-
         hdr = getattr(self, u"_ui_txt_canvas_header", None)
         if hdr is None and self._win is not None:
             hdr = self._win.FindName(u"TxtCanvasHeader")
             self._ui_txt_canvas_header = hdr
         header_text = None
         try:
-            nw, nb, npas = _count_ctx(self._overlays)
+            nw, nb, npas, ncol = _count_ctx(self._overlays)
             npas += int(getattr(self, u"_sketch_holes", 0) or 0)
             face = _normalize_face_id(getattr(self, u"_active_face", u"inferior"))
             n_face = len(self._panos_for_face(face))
@@ -10542,11 +13218,10 @@ class AreaReinLosaSketchController(object):
             act_lbl = u"—"
             if act_p is not None:
                 act_lbl = act_p.get(u"label") or act_p.get(u"id") or u"—"
-            n_ar = len(self._existing_ars or [])
             header_text = (
                 u"PLANTA · {:.0f}×{:.0f} mm · "
                 u"cara {} · {} paño(s) · SUP {} · INF {} · activo {} · "
-                u"AR {} · muros {} · vigas {}"
+                u"muros {} · vigas {} · cols {}"
             ).format(
                 bw,
                 bh,
@@ -10555,9 +13230,9 @@ class AreaReinLosaSketchController(object):
                 n_sup,
                 n_inf,
                 act_lbl,
-                n_ar,
                 nw,
                 nb,
+                ncol,
             )
         except Exception:
             header_text = None
@@ -10588,7 +13263,7 @@ class AreaReinLosaSketchController(object):
             mid_layer_callback=_mid_layer,
             header_tb=hdr,
             header_text=header_text,
-            context_line_scale=0.5,
+            context_line_scale=_CANVAS_LINE_SCALE,
         )
 
         # Snap en mm: solo si paños / pick / overlays invalidaron
@@ -10693,20 +13368,26 @@ class AreaReinLosaSketchController(object):
         # ProgressBar pyRevit (standalone: la UI WPF ya se cerró en Crear).
         pbar = _AreaReinLosaCrearProgress(total)
         pbar.__enter__()
-        job_i = 0
         try:
             tg_name = (
                 u"Arainco: Area Rein. losa (ahorro fierro)"
                 if any_ahorro
                 else u"Arainco: Area Rein. losa (paños)"
             )
-            tg = TransactionGroup(doc, tg_name)
-            tg.Start()
-            try:
+            if transaction_group_scope is None or transaction_scope is None:
+                _mostrar_aviso(
+                    uiapp,
+                    u"No se pudo abrir transacciones pyRevit.",
+                    content=u"Revise armado_muros_txn / pyrevit.revit (Revit 2025+).",
+                )
+                return
+
+            def _run_create_batch():
+                """Cuerpo del TransactionGroup (Assimilate = un solo Undo)."""
+                # Fase 1: Create por job
                 for pano in panos:
                     pts = pano.get(u"pts") or []
                     label = pano.get(u"label") or u"paño"
-                    # Offset hacia adentro solo para curvas de Create; pts UI intactos.
                     if inset_polygon_mm is None:
                         errores.append(
                             u"{0}: no se pudo aplicar inset {1:g} mm "
@@ -10739,7 +13420,6 @@ class AreaReinLosaSketchController(object):
                     ahorro_superior = bool(pano.get(u"ahorro_superior"))
                     ahorro_inferior = bool(pano.get(u"ahorro_inferior"))
 
-                    # Jobs por cara con settings propios del paño
                     create_jobs = _build_pano_create_jobs(
                         pts_ar,
                         layer_cfg,
@@ -10751,11 +13431,10 @@ class AreaReinLosaSketchController(object):
                         errores,
                     )
 
-                    # Fase 1: Create (+ capas). Rollback por job si Create falla.
                     for job in create_jobs:
-                        job_i += 1
+                        job_i[0] += 1
                         pbar.update(
-                            job_i,
+                            job_i[0],
                             label=job.get(u"pbar_label") or label,
                         )
                         curves = _poly_mm_to_curves(job[u"pts"], plane)
@@ -10776,29 +13455,23 @@ class AreaReinLosaSketchController(object):
                                 job.get(u"tx_label") or label
                             )
                         )
-                        t = Transaction(doc, tx_name)
-                        t.Start()
                         try:
-                            ar, err = crear_area_reinforcement(
-                                doc,
-                                floor,
-                                curves,
-                                major,
-                                job[u"layer_cfg"],
-                                area_type_id=area_type_id,
-                                bars=bars,
-                            )
-                            if ar is None:
-                                t.RollBack()
-                                errores.append(
-                                    u"{0}: {1}".format(
-                                        job.get(u"tx_label") or label,
-                                        err or u"error",
-                                    )
+                            with transaction_scope(
+                                doc, tx_name, swallow_outside_host=False
+                            ):
+                                ar, err = crear_area_reinforcement(
+                                    doc,
+                                    floor,
+                                    curves,
+                                    major,
+                                    job[u"layer_cfg"],
+                                    area_type_id=area_type_id,
+                                    bars=bars,
                                 )
-                                continue
-                            # Create committed; post hará RemoveAreaSystem + MRA.
-                            t.Commit()
+                                if ar is None:
+                                    raise _TxnJobSkip(
+                                        err or u"error"
+                                    )
                             _pano_pts = []
                             try:
                                 for _pt in pts or []:
@@ -10811,7 +13484,8 @@ class AreaReinLosaSketchController(object):
                                 {
                                     u"ar_id": ar.Id,
                                     u"tx_label": job.get(u"tx_label") or label,
-                                    u"pbar_label": job.get(u"pbar_label") or label,
+                                    u"pbar_label": job.get(u"pbar_label")
+                                    or label,
                                     u"ahorro": job_ahorro,
                                     u"face": _normalize_face_id(
                                         pano.get(u"face")
@@ -10819,12 +13493,17 @@ class AreaReinLosaSketchController(object):
                                     u"pano_pts": _pano_pts,
                                 }
                             )
+                        except _TxnJobSkip as sk:
+                            errores.append(
+                                u"{0}: {1}".format(
+                                    job.get(u"tx_label") or label,
+                                    _as_unicode(
+                                        getattr(sk, u"message", None)
+                                        or sk
+                                    ),
+                                )
+                            )
                         except Exception as ex:
-                            try:
-                                if t.HasStarted():
-                                    t.RollBack()
-                            except Exception:
-                                pass
                             errores.append(
                                 u"{0}: {1}".format(
                                     job.get(u"tx_label") or label,
@@ -10832,30 +13511,30 @@ class AreaReinLosaSketchController(object):
                                 )
                             )
 
-                # Fase 2: un solo Regenerate para materializar hijos de todos los AR.
+                # Fase 2: un solo Regenerate
                 if pending_post:
-                    t_regen = Transaction(doc, u"Arainco: Area Rein. regenerar")
-                    t_regen.Start()
                     try:
-                        doc.Regenerate()
-                        t_regen.Commit()
+                        with transaction_scope(
+                            doc,
+                            u"Arainco: Area Rein. regenerar",
+                            swallow_outside_host=False,
+                        ):
+                            doc.Regenerate()
                     except Exception as ex_regen:
-                        try:
-                            if t_regen.HasStarted():
-                                t_regen.RollBack()
-                        except Exception:
-                            pass
                         errores.append(
-                            u"Regenerate batch: {0}".format(_as_unicode(ex_regen))
+                            u"Regenerate batch: {0}".format(
+                                _as_unicode(ex_regen)
+                            )
                         )
 
-                # Fase 3: post por AR — RemoveAreaSystem + Show Middle/stamps/tags/MRA.
-                # Create ya committed; si post falla, el AR puede quedar sin anotar.
+                # Fase 3: post por AR
                 for item in pending_post:
-                    job_i += 1
-                    pbar_label = item.get(u"pbar_label") or item.get(u"tx_label")
+                    job_i[0] += 1
+                    pbar_label = item.get(u"pbar_label") or item.get(
+                        u"tx_label"
+                    )
                     pbar.update(
-                        job_i,
+                        job_i[0],
                         label=u"Post {0}".format(pbar_label),
                     )
                     ar = None
@@ -10880,7 +13559,6 @@ class AreaReinLosaSketchController(object):
                         )
                     )
                     free_rebars = []
-                    # Patas L: aristas del paño ∩ outline / shafts / huecos
                     pata_ctx = None
                     try:
                         _ppt = item.get(u"pano_pts") or []
@@ -10900,38 +13578,33 @@ class AreaReinLosaSketchController(object):
                             }
                     except Exception:
                         pata_ctx = None
-                    t = Transaction(doc, tx_post)
-                    t.Start()
-                    # Patas L pueden quedar fuera del host: silenciar warning Revit
                     try:
-                        if attach_rebar_outside_host_swallower is not None:
-                            attach_rebar_outside_host_swallower(t)
-                    except Exception:
-                        pass
-                    try:
-                        (
-                            mra_ok_total,
-                            mra_tipo_aviso_hecho,
-                            tag_ok_total,
-                            tag_familia_aviso_hecho,
-                        ) = _post_create_area_reinforcement(
-                            doc,
-                            ar,
-                            uidoc,
-                            mra_avisos,
-                            mra_ok_total,
-                            mra_tipo_aviso_hecho,
-                            tag_avisos,
-                            tag_ok_total,
-                            tag_familia_aviso_hecho,
-                            tag_map=tag_map,
-                            skip_regenerate=True,
-                            allow_retry_regenerate=True,
-                            out_free_rebars=free_rebars,
-                            pata_ctx=pata_ctx,
-                            pata_avisos=pata_avisos,
-                        )
-                        t.Commit()
+                        with transaction_scope(
+                            doc, tx_post, swallow_outside_host=True
+                        ):
+                            outs = _post_create_area_reinforcement(
+                                doc,
+                                ar,
+                                uidoc,
+                                mra_avisos,
+                                mra_ok_total[0],
+                                mra_tipo_aviso_hecho[0],
+                                tag_avisos,
+                                tag_ok_total[0],
+                                tag_familia_aviso_hecho[0],
+                                tag_map=tag_map,
+                                skip_regenerate=True,
+                                allow_retry_regenerate=True,
+                                out_free_rebars=free_rebars,
+                                pata_ctx=pata_ctx,
+                                pata_avisos=pata_avisos,
+                            )
+                            (
+                                mra_ok_total[0],
+                                mra_tipo_aviso_hecho[0],
+                                tag_ok_total[0],
+                                tag_familia_aviso_hecho[0],
+                            ) = outs
                         if free_rebars:
                             creados.extend(free_rebars)
                         else:
@@ -10944,18 +13617,12 @@ class AreaReinLosaSketchController(object):
                             except Exception:
                                 pass
                     except Exception as ex:
-                        try:
-                            if t.HasStarted():
-                                t.RollBack()
-                        except Exception:
-                            pass
                         errores.append(
                             u"{0}: post {1}".format(
                                 item.get(u"tx_label") or u"paño",
                                 _as_unicode(ex),
                             )
                         )
-                        # AR creado queda en modelo aunque falle el post.
                         try:
                             ar_keep = doc.GetElement(item[u"ar_id"])
                             if ar_keep is not None and isinstance(
@@ -10965,15 +13632,24 @@ class AreaReinLosaSketchController(object):
                         except Exception:
                             pass
 
-                if creados:
-                    tg.Assimilate()
-                else:
-                    tg.RollBack()
+                if not creados:
+                    raise _EmptyCrearBatch()
+
+            # Mutables para closures de contadores
+            job_i = [0]
+            mra_ok_total = [mra_ok_total]
+            mra_tipo_aviso_hecho = [mra_tipo_aviso_hecho]
+            tag_ok_total = [tag_ok_total]
+            tag_familia_aviso_hecho = [tag_familia_aviso_hecho]
+
+            try:
+                with transaction_group_scope(
+                    doc, tg_name, assimilate=True
+                ):
+                    _run_create_batch()
+            except _EmptyCrearBatch:
+                pass
             except Exception as ex:
-                try:
-                    tg.RollBack()
-                except Exception:
-                    pass
                 _mostrar_aviso(
                     uiapp,
                     u"Error en TransactionGroup.",
@@ -10986,6 +13662,11 @@ class AreaReinLosaSketchController(object):
                         finalizar_armadura_conjunto_guid_ejecucion()
                     except Exception:
                         pass
+
+            mra_ok_total = mra_ok_total[0]
+            mra_tipo_aviso_hecho = mra_tipo_aviso_hecho[0]
+            tag_ok_total = tag_ok_total[0]
+            tag_familia_aviso_hecho = tag_familia_aviso_hecho[0]
         finally:
             try:
                 pbar.__exit__(None, None, None)
@@ -10993,18 +13674,10 @@ class AreaReinLosaSketchController(object):
                 pass
 
         if creados:
+            # No dejar armadura seleccionada tras Create
             try:
                 if uidoc is not None:
-                    ids_sel = []
-                    for el in creados:
-                        try:
-                            el2 = doc.GetElement(el.Id)
-                        except Exception:
-                            el2 = el
-                        if el2 is not None:
-                            ids_sel.append(el2.Id)
-                    if ids_sel:
-                        uidoc.Selection.SetElementIds(List[ElementId](ids_sel))
+                    uidoc.Selection.SetElementIds(List[ElementId]())
             except Exception:
                 pass
             # Resumen MRA / etiquetas (soft-fail: no bloquea creación)
@@ -11400,6 +14073,11 @@ def run(revit):
     if plane is None:
         _mostrar_aviso(uiapp, u"No se pudo obtener el plano del Sketch.")
         return
+    try:
+        view_act = uidoc.ActiveView if uidoc is not None else None
+    except Exception:
+        view_act = None
+    plane = _align_plane_xy_to_view(plane, view_act)
 
     try:
         _set_wait_cursor(True)

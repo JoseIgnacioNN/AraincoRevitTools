@@ -1,0 +1,52 @@
+[01:04:46] === Arainco: Pata L en vértice — DIAG ===
+[01:04:55] --- INICIO pata L ---
+[01:04:55] pata_start=False pata_end=True largo_mm=100 dir=(0.000,0.000,1.000)
+[01:04:55] rebar src id=882330
+[01:04:55] active_view «01_LO_CIELO_6°_GENERAL_(ARMADURA INFERIOR)» id=846450
+[01:04:55] --- SNAPSHOT config rebar=882330 ---
+[01:04:55] --- SNAPSHOT IndependentTag rebar=882330 ---
+[01:04:55] pack_tag OK tag=882349 type=465293 «» family=680812 «EST_A_STRUCTURAL REBAR TAG» view=846450 leader=False bar_idx=1 head=(137.109732249,32.3605150088,43.4711286089)
+[01:04:55]   ADD tag id=882349 source=ElementClassFilter(IndependentTag)
+[01:04:55] GetDependentElements[ElementClassFilter(IndependentTag)] count=1
+[01:04:55]   skip duplicate tag id=882349
+[01:04:55] GetDependentElements[ElementCategoryFilter(OST_RebarTags)] count=1
+[01:04:55]   skip duplicate tag id=882349
+[01:04:55] Collector[RebarTags∩IndependentTag] scan=2182 link_match=1
+[01:04:55] snapshot tags RESULT count=1 stats={'skip_mra': 0, 'coll_link_match': 1, 'ok': 1, 'dep_cat': 1, 'skip_pack': 0, 'coll_class_scan': 2182, 'coll_cat_scan': 2182, 'dep_class': 1}
+[01:04:55] snapshot summary: tags=1 mra=1 pres_views=199 hooks=2 params=28 style=Standard
+[01:04:56] --- TX: extend_rebar_pata_l ---
+[01:04:56] nuevo rebar id=882474 avisos_extend=Capturado: 1 etiqueta(s), 1 MRA.
+[01:04:56] nuevo rebar shape candidates=['02']
+[01:04:56] --- TX: apply_rebar_config (tags/MRA/…) ---
+[01:04:56] --- APPLY config → new_rebar=882474 active_view=846450 ---
+[01:04:56] Style omitido: Rebar sin propiedad Style en esta build.
+[01:04:57] presentation applied views≈123
+[01:04:57] --- RECREATE tags n_src=1 new_rebar=882474 active_view=846450 ---
+[01:04:57] Regenerate pre-tag OK
+[01:04:57] recreate[0] family=«EST_A_STRUCTURAL REBAR TAG» seed_type=465293 «» view_origen=846450 src_tag=882349
+[01:04:57] tag[0] target=ACTIVE «01_LO_CIELO_6°_GENERAL_(ARMADURA INFERIOR)» id=846450
+[01:04:57] mid principal: curve#0/2 L=4454.0 mm pos=1 pt=(137.100,32.847,51.447)
+[01:04:57] tag head = mitad tramo principal (offset origen no aplica)
+[01:04:57] rebar shape candidates (nuevo)=['02']
+[01:04:57] familia etiqueta «EST_A_STRUCTURAL REBAR TAG» tipos-keys muestra=['18', '8', 'Espaciamiento', '4', '9', '10', '6', '7', '5', 'Marca - Cantidad - Diametro - Espaciamiento', 'marca - cantidad - diametro - espaciamiento', '09'] n_keys=28
+[01:04:57] tag type RESUELTO por shape «02» → Id=465295 Name=«» familia=«EST_A_STRUCTURAL REBAR TAG» (seed origen=465293)
+[01:04:57] tag[0] create type Id=465295 «» (shape nuevo; familia «EST_A_STRUCTURAL REBAR TAG»)
+[01:04:57] --- CREATE IndependentTag type=465295 view=846450 rebar=882474 ---
+[01:04:57] insert point=(137.1000,32.8471,51.4469) leader=False bar=1
+[01:04:57] tag type «» active=True
+[01:04:57] refs TOTAL n=3 preferred_bar=1 sources=subelement,subelement,Reference(rebar)
+[01:04:58] TagHead post-Create OK=(137.100,32.847,51.447)
+[01:04:58] OK Create tagId=882475 ref#0
+[01:04:58] TagHead FINAL mid principal OK=(137.100,32.847,51.447)
+[01:04:58] verify OK tag=882475 view=«01_LO_CIELO_6°_GENERAL_(ARMADURA INFERIOR)» type=«» orphaned=False
+[01:04:58] recreate[0] SUCCESS id=882475 en vista activa/destino
+[01:04:58] RECREATE done ok=1 err=0
+[01:04:58] --- RECREATE MRA n_src=1 active_view=846450 ---
+[01:04:58] mra[0] target=ACTIVE «01_LO_CIELO_6°_GENERAL_(ARMADURA INFERIOR)» id=846450
+[01:04:58] mra spacing method=barDir×vd dir=(-0.000,-1.000,0.000)
+[01:04:58] mid principal: curve#0/2 L=4454.0 mm pos=1 pt=(137.100,32.847,51.447)
+[01:04:58] mra[0] SUCCESS id=882477 dir=spacing view=«01_LO_CIELO_6°_GENERAL_(ARMADURA INFERIOR)»
+[01:04:58] MRA recreated=1 src=1 errs=[]
+[01:04:58] post-check IndependentTag linked to new rebar: 1
+[01:04:58] APPLY DONE tags 1/1 mra 1/1 errs=[]
+[01:04:58] TX Group Commit/Assimilate OK

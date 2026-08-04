@@ -1,0 +1,60 @@
+[00:57:47] === Arainco: Pata L en vértice — DIAG ===
+[00:57:54] --- INICIO pata L ---
+[00:57:55] pata_start=False pata_end=True largo_mm=100 dir=(0.000,0.000,1.000)
+[00:57:55] rebar src id=882325
+[00:57:55] active_view «01_LO_CIELO_6°_GENERAL_(ARMADURA INFERIOR)» id=846450
+[00:57:55] --- SNAPSHOT config rebar=882325 ---
+[00:57:55] --- SNAPSHOT IndependentTag rebar=882325 ---
+[00:57:55] pack_tag OK tag=882344 type=465293 «» family=680812 «EST_A_STRUCTURAL REBAR TAG» view=846450 leader=False bar_idx=1 head=(131.146804963,41.6050048276,43.4711286089)
+[00:57:55]   ADD tag id=882344 source=ElementClassFilter(IndependentTag)
+[00:57:55] GetDependentElements[ElementClassFilter(IndependentTag)] count=1
+[00:57:55]   skip duplicate tag id=882344
+[00:57:55] GetDependentElements[ElementCategoryFilter(OST_RebarTags)] count=1
+[00:57:55]   skip duplicate tag id=882344
+[00:57:55] Collector[OfClass(IndependentTag)] scan=3689 link_match=1
+[00:57:55]   skip duplicate tag id=882344
+[00:57:55] Collector[OfCategory(OST_RebarTags)] scan=2182 link_match=1
+[00:57:55] snapshot tags RESULT count=1 stats={'skip_mra': 0, 'coll_link_match': 1, 'ok': 1, 'dep_cat': 1, 'skip_pack': 0, 'coll_class_scan': 3689, 'coll_cat_scan': 2182, 'dep_class': 1}
+[00:57:55] snapshot summary: tags=1 mra=1 pres_views=199 hooks=2 params=28 style=Standard
+[00:57:55] --- TX: extend_rebar_pata_l ---
+[00:57:55] nuevo rebar id=882463 avisos_extend=Capturado: 1 etiqueta(s), 1 MRA.
+[00:57:55] nuevo rebar shape candidates=['02']
+[00:57:55] --- TX: apply_rebar_config (tags/MRA/…) ---
+[00:57:55] --- APPLY config → new_rebar=882463 active_view=846450 ---
+[00:57:55] Style omitido: Rebar sin propiedad Style en esta build.
+[00:57:56] presentation applied views≈123
+[00:57:56] --- RECREATE tags n_src=1 new_rebar=882463 active_view=846450 ---
+[00:57:56] Regenerate pre-tag OK
+[00:57:56] recreate[0] family=«EST_A_STRUCTURAL REBAR TAG» seed_type=465293 «» view_origen=846450 src_tag=882344
+[00:57:56] tag[0] target=ACTIVE «01_LO_CIELO_6°_GENERAL_(ARMADURA INFERIOR)» id=846450
+[00:57:56] mid principal: curve#0/2 L=8089.0 mm pos=1 pt=(131.137,42.092,51.447)
+[00:57:56] tag head = mitad tramo principal (offset origen no aplica)
+[00:57:56] rebar shape candidates (nuevo)=['02']
+[00:57:56] familia etiqueta «EST_A_STRUCTURAL REBAR TAG» tipos-keys muestra=['18', '8', 'Espaciamiento', '4', '9', '10', '6', '7', '5', 'Marca - Cantidad - Diametro - Espaciamiento', 'marca - cantidad - diametro - espaciamiento', '09'] n_keys=28
+[00:57:56] tag type RESUELTO por shape «02» → Id=465295 Name=«» familia=«EST_A_STRUCTURAL REBAR TAG» (seed origen=465293)
+[00:57:56] tag[0] create type Id=465295 «» (shape nuevo; familia «EST_A_STRUCTURAL REBAR TAG»)
+[00:57:56] --- CREATE IndependentTag type=465295 view=846450 rebar=882463 ---
+[00:57:57] insert point=(131.1371,42.0916,51.4469) leader=False bar=1
+[00:57:57] tag type «» active=True
+[00:57:57] refs TOTAL n=4 preferred_bar=1 sources=subelement,subelement,subelement,Reference(rebar)
+[00:57:57] TagHead post-Create OK=(131.137,42.092,51.447)
+[00:57:57] OK Create tagId=882464 ref#0
+[00:57:57] TagHead FINAL mid principal OK=(131.137,42.092,51.447)
+[00:57:57] verify OK tag=882464 view=«01_LO_CIELO_6°_GENERAL_(ARMADURA INFERIOR)» type=«» orphaned=False
+[00:57:57] recreate[0] SUCCESS id=882464 en vista activa/destino
+[00:57:57] RECREATE done ok=1 err=0
+[00:57:57] --- RECREATE MRA n_src=1 active_view=846450 ---
+[00:57:57] mra[0] target=ACTIVE «01_LO_CIELO_6°_GENERAL_(ARMADURA INFERIOR)» id=846450
+[00:57:57] mra spacing fallback view.RightDirection
+[00:57:57] mra[0] p_mid=(131.137,42.092,51.447) p_line=(131.137,41.107,51.447)
+[00:57:57] mra Create: some references can't be used with a DimensionStyleType Linear dimension of this direction. References must either appear as points in the view or be linear references which are perpendicular to the dimension line.
+Parameter name: options
+[00:57:57]   | Traceback (most recent call last):
+[00:57:57]   |   File "C:\Users\jinun\CustomRevitExtensions\BIMTools.extension\scripts\rebar_pata_l_vertice.py", line 2783, in _recrear_mra
+[00:57:57]   |     mra = MultiReferenceAnnotation.Create(doc, view.Id, opts)
+[00:57:57]   | Exception: some references can't be used with a DimensionStyleType Linear dimension of this direction. References must either appear as points in the view or be linear references which are perpendicular to the dimension line.
+[00:57:57]   | Parameter name: options
+[00:57:57] MRA recreated=0 src=1 errs=["MRA Create: some references can't be used with a DimensionStyleType Linear dimension of this direction. References must either appear as points in the view or be linear references which are perpendicular to the dimension line.\r\nParameter name: options"]
+[00:57:57] post-check IndependentTag linked to new rebar: 1
+[00:57:57] APPLY DONE tags 1/1 mra 0/1 errs=["MRA Create: some references can't be used with a DimensionStyleType Linear dimension of this direction. References must either appear as points in the view or be linear references which are perpendicular to the dimension line.\r\nParameter name: options"]
+[00:57:57] TX Commit OK

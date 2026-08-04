@@ -143,11 +143,13 @@ except Exception:
     apply_reinforcement_unobscured_in_view = None
 
 from area_rein_losa_sketch import (  # noqa: E402
+    _CANVAS_LINE_SCALE,
     _CTX_GRID,
     _HUD_SCALE_TAG,
     _LAYER_KEYS,
     _SNAP_PX,
     _SNAP_TAG,
+    _SNAP_ACQUIRE_MAX,
     _append_polyline_snap,
     _append_ring_snap,
     _append_wall_beam_intersection_snap,
@@ -156,12 +158,18 @@ from area_rein_losa_sketch import (  # noqa: E402
     _bbox_mm,
     _brush,
     _build_snap_cell_index,
+    _build_snap_typed_index,
     _build_wall_beam_geo_mm,
     _count_ctx,
+    _guides_from_tracks_mm,
     _layer_cfg_for_keys,
     _loop_to_polyline_mm,
+    _merge_acquired_tracks,
+    _merge_ot_points,
     _nivel_losa_como_string,
+    _osnap_status_label,
     _plane_from_curves,
+    _align_plane_xy_to_view,
     _plane_mm_dir_to_xyz,
     _plane_mm_to_xyz,
     _poly_mm_to_curves,
@@ -173,6 +181,7 @@ from area_rein_losa_sketch import (  # noqa: E402
     _resolver_tag_type_id_por_shape,
     _resolver_vista_para_show_middle,
     _snap_point_mm,
+    _tracking_paths_from_ot,
     _vista_ok_para_etiquetas_rebar,
     collect_existing_area_rein_on_floor,
     crear_area_reinforcement,
@@ -1626,6 +1635,9 @@ class SuplesLosaController(object):
         self._snap_cell_index = None
         self._snap_geo_dirty = True
         self._hover_snap = None
+        self._snap_guides = None
+        self._acquired_tracks = []
+        self._ot_points = []
         self._last_snap = None
         self._pick_pt1 = None
         self._draw_mode = _DRAW_IDLE
@@ -1648,7 +1660,9 @@ class SuplesLosaController(object):
         self._crear_kind = None
         self._bar_types = _bar_types_sorted(doc) or []
 
-        overlays, _w, _b = recolectar_contexto_planta(doc, floor, plane)
+        overlays, _w, _b = recolectar_contexto_planta(
+            doc, floor, plane, view=getattr(uidoc, u"ActiveView", None)
+        )
         self._overlays = overlays or []
         self._existing_ars = collect_existing_area_rein_on_floor(doc, floor, plane) or []
         self._build_polylines_cache()
@@ -1660,7 +1674,7 @@ class SuplesLosaController(object):
         self._crear_event = ExternalEvent.Create(self._handler)
         self._crear_pending = False
         self._set_draw_mode(_DRAW_PANO1)
-        nw, nb, npas = _count_ctx(self._overlays)
+        nw, nb, npas, _ncol = _count_ctx(self._overlays)
         self._set_status(
             u"Floor Id {0} · dibuje Paño 1 (2 clics en esquinas opuestas).".format(
                 _element_id_int(floor.Id)
@@ -3455,62 +3469,70 @@ class SuplesLosaController(object):
             return None
 
     def _rebuild_snap_geometry(self):
-        verts, segs = [], []
+        ends, mids, ints, centers, segs = [], [], [], [], []
+
+        def _ring(pts):
+            _append_ring_snap(
+                ends, segs, pts, include_midpoints=True, mids=mids, centers=centers
+            )
+
+        def _poly(pts):
+            _append_polyline_snap(
+                ends, segs, pts, include_midpoints=True, mids=mids
+            )
+
         for pts in self._loop_polylines_mm or []:
-            _append_ring_snap(verts, segs, pts, include_midpoints=True)
+            _ring(pts)
         for ov in self._overlays or []:
             pts = ov.get(u"pts") or []
             if ov.get(u"kind") == _CTX_GRID or ov.get(u"closed") is False:
-                _append_polyline_snap(verts, segs, pts, include_midpoints=True)
+                _poly(pts)
             else:
-                _append_ring_snap(verts, segs, pts, include_midpoints=True)
+                _ring(pts)
         try:
-            _append_wall_beam_intersection_snap(verts, self._overlays)
+            _append_wall_beam_intersection_snap(ints, self._overlays)
         except Exception:
             pass
         for ar in self._existing_ars or []:
             for ring in ar.get(u"loops") or []:
-                _append_ring_snap(verts, segs, ring, include_midpoints=True)
+                _ring(ring)
             if not ar.get(u"loops"):
-                _append_ring_snap(verts, segs, ar.get(u"pts") or [], include_midpoints=True)
+                _ring(ar.get(u"pts") or [])
         for pano in (self._pano1, self._pano2):
             if pano is not None:
-                _append_ring_snap(
-                    verts, segs, pano.get(u"pts") or [], include_midpoints=True
-                )
+                _ring(pano.get(u"pts") or [])
         if self._recorrido is not None:
-            _append_polyline_snap(
-                verts, segs, [self._recorrido[0], self._recorrido[1]], include_midpoints=True
-            )
+            _poly([self._recorrido[0], self._recorrido[1]])
         for item in self._borde_suples or []:
-            _append_ring_snap(
-                verts, segs, item.get(u"pts") or [], include_midpoints=True
-            )
+            _ring(item.get(u"pts") or [])
             rec_i = item.get(u"recorrido")
             if rec_i is not None:
-                _append_polyline_snap(
-                    verts, segs, [rec_i[0], rec_i[1]], include_midpoints=True
-                )
+                _poly([rec_i[0], rec_i[1]])
         if self._borde_poly is not None:
-            _append_ring_snap(
-                verts,
-                segs,
-                self._borde_poly.get(u"pts") or [],
-                include_midpoints=True,
-            )
+            _ring(self._borde_poly.get(u"pts") or [])
         if self._borde_recorrido is not None:
-            _append_polyline_snap(
-                verts,
-                segs,
-                [self._borde_recorrido[0], self._borde_recorrido[1]],
-                include_midpoints=True,
-            )
-        self._snap_verts = verts
+            _poly([self._borde_recorrido[0], self._borde_recorrido[1]])
+        if self._pick_pt1 is not None:
+            ax, ay = float(self._pick_pt1[0]), float(self._pick_pt1[1])
+            span = 50000.0
+            segs.append(((ax - span, ay), (ax + span, ay)))
+            segs.append(((ax, ay - span), (ax, ay + span)))
+            ends.append((ax, ay))
+        self._snap_ends = ends
+        self._snap_mids = mids
+        self._snap_ints = ints
+        self._snap_centers = centers
         self._snap_segs = segs
+        self._snap_verts = list(ends) + list(mids) + list(ints) + list(centers)
         try:
-            self._snap_cell_index = _build_snap_cell_index(verts, segs)
+            self._snap_cell_index = _build_snap_typed_index(
+                ends, mids, ints, centers, segs
+            )
         except Exception:
-            self._snap_cell_index = None
+            try:
+                self._snap_cell_index = _build_snap_cell_index(self._snap_verts, segs)
+            except Exception:
+                self._snap_cell_index = None
 
     def _ensure_snap_geometry(self):
         if not getattr(self, u"_snap_geo_dirty", True):
@@ -3519,6 +3541,10 @@ class SuplesLosaController(object):
             self._rebuild_snap_geometry()
         except Exception:
             self._snap_verts = []
+            self._snap_ends = []
+            self._snap_mids = []
+            self._snap_ints = []
+            self._snap_centers = []
             self._snap_segs = []
             self._snap_cell_index = None
         self._snap_geo_dirty = False
@@ -3541,14 +3567,55 @@ class SuplesLosaController(object):
         self._ensure_snap_geometry()
         thresh = self._snap_thresh_mm()
         if thresh <= 0:
+            self._snap_guides = None
             return (float(pt_mm[0]), float(pt_mm[1])), None
-        return _snap_point_mm(
+        acq = getattr(self, u"_acquired_tracks", None) or []
+        ot = getattr(self, u"_ot_points", None) or []
+        result = _snap_point_mm(
             pt_mm,
-            self._snap_verts,
+            getattr(self, u"_snap_verts", None) or self._snap_verts,
             self._snap_segs,
             thresh,
             getattr(self, u"_snap_cell_index", None),
+            track_origin=getattr(self, u"_pick_pt1", None),
+            acquired=acq,
+            ends=getattr(self, u"_snap_ends", None),
+            mids=getattr(self, u"_snap_mids", None),
+            ints=getattr(self, u"_snap_ints", None),
+            centers=getattr(self, u"_snap_centers", None),
+            ot_points=ot,
         )
+        if result is None or len(result) < 3:
+            return (float(pt_mm[0]), float(pt_mm[1])), None
+        snapped = result[0]
+        kind = result[1]
+        guides_hit = result[2]
+        for_ln = result[3] if len(result) > 3 else []
+        for_pt = result[4] if len(result) > 4 else []
+        try:
+            self._acquired_tracks = _merge_acquired_tracks(
+                list(acq), for_ln, _SNAP_ACQUIRE_MAX
+            )
+            self._ot_points = _merge_ot_points(list(ot), for_pt, _SNAP_ACQUIRE_MAX)
+        except Exception:
+            pass
+        center = snapped if snapped is not None else (
+            float(pt_mm[0]),
+            float(pt_mm[1]),
+        )
+        tracks = list(getattr(self, u"_acquired_tracks", None) or [])
+        try:
+            for path in _tracking_paths_from_ot(
+                getattr(self, u"_ot_points", None) or [],
+                last_pt=getattr(self, u"_pick_pt1", None),
+                include_polar=False,
+            ):
+                tracks.append(path)
+        except Exception:
+            pass
+        sticky = _guides_from_tracks_mm(tracks, center)
+        self._snap_guides = sticky if sticky else guides_hit
+        return snapped, kind
 
     def _clear_snap_overlay(self, cv):
         if cv is None:
@@ -3654,6 +3721,31 @@ class SuplesLosaController(object):
             xmm, ymm, kind = hover[0], hover[1], hover[2]
         except Exception:
             return
+        # Guías de object tracking
+        try:
+            guides = getattr(self, u"_snap_guides", None) or []
+            for g in guides:
+                try:
+                    p0, p1 = g[0], g[1]
+                    a = self._mm_to_px(p0[0], p0[1])
+                    b = self._mm_to_px(p1[0], p1[1])
+                except Exception:
+                    continue
+                if not a or not b:
+                    continue
+                ln = WpfLine()
+                ln.X1, ln.Y1 = float(a[0]), float(a[1])
+                ln.X2, ln.Y2 = float(b[0]), float(b[1])
+                ln.Stroke = _brush(u"#38bdf8", 150)
+                ln.StrokeThickness = 1.0
+                ln.StrokeDashArray = DoubleCollection()
+                ln.StrokeDashArray.Add(6)
+                ln.StrokeDashArray.Add(4)
+                ln.Tag = _SNAP_TAG
+                ln.IsHitTestVisible = False
+                cv.Children.Add(ln)
+        except Exception:
+            pass
         pxpy = self._mm_to_px(xmm, ymm)
         if pxpy is None:
             return
@@ -3683,7 +3775,32 @@ class SuplesLosaController(object):
                 WpfCanvas.SetLeft(rect, px - s * 0.5)
                 WpfCanvas.SetTop(rect, py - s * 0.5)
                 cv.Children.Add(rect)
-            accent = u"#fbbf24" if kind == u"vertex" else u"#4ade80"
+            elif kind in (u"track", u"track_x"):
+                s = 10.0 if kind == u"track_x" else 8.0
+                poly = WpfPolygon()
+                pc = PointCollection()
+                pc.Add(WpfPoint(px, py - s))
+                pc.Add(WpfPoint(px + s, py))
+                pc.Add(WpfPoint(px, py + s))
+                pc.Add(WpfPoint(px - s, py))
+                poly.Points = pc
+                poly.Fill = _brush(
+                    u"#22d3ee" if kind == u"track_x" else u"#38bdf8",
+                    200 if kind == u"track_x" else 175,
+                )
+                poly.Stroke = _brush(u"#E8F4F8")
+                poly.StrokeThickness = 1.2
+                poly.Tag = _SNAP_TAG
+                poly.IsHitTestVisible = False
+                cv.Children.Add(poly)
+            if kind == u"vertex":
+                accent = u"#fbbf24"
+            elif kind == u"edge":
+                accent = u"#4ade80"
+            elif kind in (u"track", u"track_x"):
+                accent = u"#38bdf8"
+            else:
+                accent = u"#95B8CC"
             for dx0, dy0, dx1, dy1 in ((-10, 0, 10, 0), (0, -10, 0, 10)):
                 ln = WpfLine()
                 ln.X1, ln.Y1, ln.X2, ln.Y2 = px + dx0, py + dy0, px + dx1, py + dy1
@@ -3726,16 +3843,22 @@ class SuplesLosaController(object):
         if snapped is None:
             return
         self._last_snap = (snapped, kind)
-        show = kind is not None or self._pick_pt1 is not None
+        n_acq = len(getattr(self, u"_acquired_tracks", None) or [])
+        has_acq = n_acq > 0
+        show = kind is not None or self._pick_pt1 is not None or has_acq
         if not show:
             if self._hover_snap is not None:
                 self._hover_snap = None
+                self._snap_guides = None
                 self._refresh_snap_overlay()
             return
         new_hover = (snapped[0], snapped[1], kind)
         prev = self._hover_snap
+        force = getattr(self, u"_prev_acq_n", -1) != n_acq
+        self._prev_acq_n = n_acq
         if (
-            prev is not None
+            not force
+            and prev is not None
             and abs(prev[0] - new_hover[0]) < 0.05
             and abs(prev[1] - new_hover[1]) < 0.05
             and prev[2] == new_hover[2]
@@ -3750,6 +3873,8 @@ class SuplesLosaController(object):
                 if self._pick_pt1 is not None:
                     self._pick_pt1 = None
                     self._hover_snap = None
+                    self._acquired_tracks = []
+                    self._snap_guides = None
                     self._refresh_snap_overlay()
                     self._set_status(u"Clic cancelado. Reintente.")
                     e.Handled = True
@@ -3795,11 +3920,7 @@ class SuplesLosaController(object):
         pt, kind = self._resolve_snap(raw)
         if pt is None:
             return
-        snap_lbl = u""
-        if kind == u"vertex":
-            snap_lbl = u" · snap vértice"
-        elif kind == u"edge":
-            snap_lbl = u" · snap arista"
+        snap_lbl = _osnap_status_label(kind)
 
         if self._borde_enabled and self._draw_mode == _DRAW_BORDE_POLY:
             if self._pick_pt1 is None:
@@ -3813,6 +3934,8 @@ class SuplesLosaController(object):
                 return
             pts = rect_from_two_points_mm(self._pick_pt1, pt)
             self._pick_pt1 = None
+            self._acquired_tracks = []
+            self._snap_guides = None
             if pts is None:
                 _mostrar_aviso(self._uiapp, u"Polígono demasiado pequeño.")
                 return
@@ -3850,6 +3973,8 @@ class SuplesLosaController(object):
                 return
             pts = rect_from_two_points_mm(self._pick_pt1, pt)
             self._pick_pt1 = None
+            self._acquired_tracks = []
+            self._snap_guides = None
             if pts is None:
                 _mostrar_aviso(self._uiapp, u"Paño demasiado pequeño.")
                 return
@@ -3894,6 +4019,8 @@ class SuplesLosaController(object):
                 return
             p0 = self._pick_pt1
             self._pick_pt1 = None
+            self._acquired_tracks = []
+            self._snap_guides = None
             if math.hypot(pt[0] - p0[0], pt[1] - p0[1]) < 50.0:
                 _mostrar_aviso(self._uiapp, u"Recorrido demasiado corto.")
                 return
@@ -4897,11 +5024,10 @@ class SuplesLosaController(object):
         hdr = self._ui_txt_canvas_header
         header_text = None
         try:
-            nw, nb, _np = _count_ctx(self._overlays)
-            n_ar = len(self._existing_ars or [])
+            nw, nb, _np, ncol = _count_ctx(self._overlays)
             header_text = (
-                u"PLANTA · {:.0f}×{:.0f} mm · AR {} · muros {} · vigas {}"
-            ).format(bw, bh, n_ar, nw, nb)
+                u"PLANTA · {:.0f}×{:.0f} mm · muros {} · vigas {} · cols {}"
+            ).format(bw, bh, nw, nb, ncol)
         except Exception:
             pass
 
@@ -4931,7 +5057,7 @@ class SuplesLosaController(object):
             mid_layer_callback=self._draw_mid_layer,
             header_tb=hdr,
             header_text=header_text,
-            context_line_scale=0.5,
+            context_line_scale=_CANVAS_LINE_SCALE,
         )
         try:
             self._ensure_snap_geometry()
@@ -5017,6 +5143,11 @@ def run(revit):
     if plane is None:
         _mostrar_aviso(uiapp, u"No se pudo obtener el plano del Sketch.")
         return
+    try:
+        view_act = uidoc.ActiveView if uidoc is not None else None
+    except Exception:
+        view_act = None
+    plane = _align_plane_xy_to_view(plane, view_act)
     try:
         ctrl = SuplesLosaController(uiapp, uidoc, doc, floor, outer, loops, plane)
         ctrl.show()
