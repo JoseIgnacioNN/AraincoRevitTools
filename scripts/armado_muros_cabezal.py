@@ -1136,8 +1136,14 @@ def cabezal_concrete_grade_from_ex_cfg(ex_cfg):
 
 def concrete_grade_for_stack(
     walls, cabezal_por_muro_id, extremo, stack_index,
+    segment_ctx=None,
 ):
-    """G del tramo de config cuyo owner es el muro en ``stack_index``."""
+    """
+    G del tramo de config en ``stack_index``.
+
+    Si hay ``segment_ctx``, toma el owner del segmento que contiene ese piso
+    (fuente de verdad de dosificación); si no, la config del muro del stack.
+    """
     try:
         si = int(stack_index)
     except Exception:
@@ -1145,10 +1151,36 @@ def concrete_grade_for_stack(
     wlist = walls or []
     if not (0 <= si < len(wlist)):
         return CABEZAL_CONCRETE_GRADE_DEFAULT
-    try:
-        wid = wall_id_int(wlist[si])
-    except Exception:
-        return CABEZAL_CONCRETE_GRADE_DEFAULT
+    wid = None
+    if segment_ctx:
+        try:
+            wt = segment_ctx.get(u"wall_to_seg") or {}
+            seg_id = wt.get(si)
+            if seg_id is None:
+                try:
+                    seg_id = wt.get(int(si))
+                except Exception:
+                    seg_id = None
+            for seg in (segment_ctx.get(u"segments") or []):
+                try:
+                    if int(seg.get(u"id", -1)) != int(seg_id):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    oi = int(seg.get(u"owner_index", si))
+                except Exception:
+                    oi = si
+                if 0 <= oi < len(wlist):
+                    wid = wall_id_int(wlist[oi])
+                break
+        except Exception:
+            wid = None
+    if wid is None:
+        try:
+            wid = wall_id_int(wlist[si])
+        except Exception:
+            return CABEZAL_CONCRETE_GRADE_DEFAULT
     cfg = (cabezal_por_muro_id or {}).get(wid) or {}
     ex = cfg.get(extremo) if extremo else None
     return cabezal_concrete_grade_from_ex_cfg(ex)
@@ -4397,6 +4429,7 @@ def _empotramiento_max_mm_at_z_joint(
             continue
         g_j = concrete_grade_for_stack(
             walls, cabezal_por_muro_id, extremo, stack_j,
+            segment_ctx=segment_ctx,
         )
         emb = _empotramiento_tabla_mm(_bar_diameter_mm(bt_j), g_j) or 0.0
         if emb > embed_mm:
@@ -4784,6 +4817,7 @@ def _troceo_planificar_seg_jobs_from_fused_line(
                     d_tr = _bar_diameter_mm(bt_tr)
                     g_tr = concrete_grade_for_stack(
                         walls, cabezal_por_muro_id, extremo, stack_ri,
+                        segment_ctx=segment_ctx,
                     )
                     embeds_b.append(
                         _empotramiento_tabla_mm(d_tr, g_tr) or 860.0
@@ -4824,6 +4858,7 @@ def _troceo_planificar_seg_jobs_from_fused_line(
                     d_j = _bar_diameter_mm(bt_j)
                     g_j = concrete_grade_for_stack(
                         walls, cabezal_por_muro_id, extremo, stack_j,
+                        segment_ctx=segment_ctx,
                     )
                     emb = _empotramiento_tabla_mm(d_j, g_j) or 0.0
                     if emb > embed_joint:
@@ -4852,6 +4887,7 @@ def _troceo_planificar_seg_jobs_from_fused_line(
             d_bot = _bar_diameter_mm(bt_bot)
             g_bot = concrete_grade_for_stack(
                 walls, cabezal_por_muro_id, extremo, stack_bot,
+                segment_ctx=segment_ctx,
             )
             embed_bot = _empotramiento_tabla_mm(d_bot, g_bot) or 0.0
             dz_embed_bot = _mm_to_internal(embed_bot) if embed_bot > 0.1 else 0.0
@@ -4890,6 +4926,7 @@ def _troceo_planificar_seg_jobs_from_fused_line(
             d_seg = _bar_diameter_mm(bt_seg)
             g_seg = concrete_grade_for_stack(
                 walls, cabezal_por_muro_id, extremo, stack_si,
+                segment_ctx=segment_ctx,
             )
             pata_eje_mm = _pata_l_eje_sketch_mm_desde_diametro(
                 d_seg, g_seg,
@@ -9088,6 +9125,7 @@ def _aplicar_cabezales_muros_pipeline(
             host_wall = fj[u"wall"]
             g_top = concrete_grade_for_stack(
                 walls, cabezal_por_muro_id, extremo, stack_idx_top,
+                segment_ctx=segment_ctx,
             )
 
             embed_mm = _empotramiento_tabla_mm(d_mm, g_top) or 0.0

@@ -10744,6 +10744,14 @@ class ArmadoMurosPreviewWindow(object):
         except Exception:
             return u"G25"
 
+    def _cabezal_concrete_grade_for_wall(self, wid, extremo):
+        """G del tramo de config: resuelve owner del segmento del muro."""
+        try:
+            ow = self._cabezal_owner_wid_for(wid, extremo)
+        except Exception:
+            ow = wid
+        return self._cabezal_concrete_grade_for_owner_wid(ow, extremo)
+
     def _cabezal_selected_concrete_grades(self, extremo):
         """Lista de G por tramos seleccionados (orden de selección)."""
         out = []
@@ -19111,7 +19119,8 @@ class ArmadoMurosPreviewWindow(object):
                     bt = self.doc.GetElement(bid) if bid is not None else None
                     if bt is not None:
                         long_diam = float(bt.BarNominalDiameter) * 304.8
-                    elev_concrete_grade = self._cabezal_concrete_grade_for_owner_wid(
+                    # G vive en el owner del tramo de config.
+                    elev_concrete_grade = self._cabezal_concrete_grade_for_wall(
                         wid0, active_ex,
                     )
                     # L por muro (stack base→cima) para bandas de empalme.
@@ -19127,7 +19136,7 @@ class ArmadoMurosPreviewWindow(object):
                                     d_w = float(bt_w.BarNominalDiameter) * 304.8
                             except Exception:
                                 d_w = long_diam
-                            g_w = self._cabezal_concrete_grade_for_owner_wid(
+                            g_w = self._cabezal_concrete_grade_for_wall(
                                 wid, active_ex,
                             )
                             try:
