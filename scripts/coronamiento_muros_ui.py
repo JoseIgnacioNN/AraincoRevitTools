@@ -1436,6 +1436,16 @@ __EMPALME__
             concrete_grade=self._concrete_grade,
         )
         if res.get(u"ok"):
+            n_fail = int(res.get(u"n_split_fail", 0) or 0)
+            n_ok = int(res.get(u"n_split_ok", 0) or 0)
+            had_cuts = bool(res.get(u"had_cuts")) or len(cuts) > 0
+            if had_cuts and (n_fail > 0 or n_ok == 0):
+                msgs = u"\n".join(res.get(u"messages") or [])
+                _mostrar_aviso(
+                    self._uiapp,
+                    u"Armadura colocada, pero uno o más empalmes no se generaron.",
+                    msgs or u"Revise cortes y longitud de barra vs traslape.",
+                )
             try:
                 self._win.Close()
             except Exception:
