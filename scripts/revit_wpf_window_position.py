@@ -813,24 +813,14 @@ def _maximize_wpf_window_wpf_fallback(win, left_px, top_px, width_px, height_px,
     )
 
 
-def bind_maximize_wpf_on_secondary_monitor(win, hwnd_revit=None):
-    u"""Si hay monitor secundario (≠ Revit), despliega ``win`` maximizado ahí.
-
-    Retorna True si se enlazó el posicionamiento; False si solo hay un monitor.
-    """
-    if win is None:
+def _bind_fill_wpf_on_work_area(win, left_px, top_px, width_px, height_px, hwnd_ref=None):
+    u"""Preposiciona y llena el área de trabajo al mostrar la ventana (multi-monitor)."""
+    if win is None or width_px is None or height_px is None:
         return False
-    secondary = get_secondary_screen_for_revit(hwnd_revit)
-    if secondary is None:
-        return False
-    area = _screen_work_area_tuple(secondary)
-    if area is None:
-        return False
-    left_px, top_px, width_px, height_px = area
 
     # Crítico: posicionar ANTES de Show() para que WPF no ancle al monitor primario.
     preposition_wpf_window_on_work_area(
-        win, left_px, top_px, width_px, height_px, hwnd_revit,
+        win, left_px, top_px, width_px, height_px, hwnd_ref,
     )
 
     applied = [False]
@@ -839,13 +829,13 @@ def bind_maximize_wpf_on_secondary_monitor(win, hwnd_revit=None):
         if applied[0]:
             return
         if fill_wpf_window_on_work_area_px(
-            win, left_px, top_px, width_px, height_px, hwnd_revit,
+            win, left_px, top_px, width_px, height_px, hwnd_ref,
         ):
             applied[0] = True
             return
         if _wpf_window_hwnd(win):
             if _maximize_wpf_window_wpf_fallback(
-                win, left_px, top_px, width_px, height_px, hwnd_revit,
+                win, left_px, top_px, width_px, height_px, hwnd_ref,
             ):
                 applied[0] = True
 
@@ -861,9 +851,44 @@ def bind_maximize_wpf_on_secondary_monitor(win, hwnd_revit=None):
             pass
     except Exception:
         return _maximize_wpf_window_wpf_fallback(
-            win, left_px, top_px, width_px, height_px, hwnd_revit,
+            win, left_px, top_px, width_px, height_px, hwnd_ref,
         )
     return True
+
+
+def bind_fill_wpf_on_revit_monitor(win, hwnd_revit=None):
+    u"""Despliega ``win`` llenando el área de trabajo del monitor donde corre Revit.
+
+    Retorna True si se enlazó el posicionamiento; False si no hay área usable.
+    """
+    if win is None:
+        return False
+    area = _revit_monitor_work_area(hwnd_revit)
+    if area is None:
+        return False
+    left_px, top_px, width_px, height_px = area
+    return _bind_fill_wpf_on_work_area(
+        win, left_px, top_px, width_px, height_px, hwnd_revit,
+    )
+
+
+def bind_maximize_wpf_on_secondary_monitor(win, hwnd_revit=None):
+    u"""Si hay monitor secundario (≠ Revit), despliega ``win`` maximizado ahí.
+
+    Retorna True si se enlazó el posicionamiento; False si solo hay un monitor.
+    """
+    if win is None:
+        return False
+    secondary = get_secondary_screen_for_revit(hwnd_revit)
+    if secondary is None:
+        return False
+    area = _screen_work_area_tuple(secondary)
+    if area is None:
+        return False
+    left_px, top_px, width_px, height_px = area
+    return _bind_fill_wpf_on_work_area(
+        win, left_px, top_px, width_px, height_px, hwnd_revit,
+    )
 
 
 def position_wpf_window_top_left_at_active_view(win, uidoc, hwnd, match_active_view_width=False):
