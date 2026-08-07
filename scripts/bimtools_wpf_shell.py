@@ -1,5 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Shell WPF reutilizable — copia portable (ver scripts/bimtools_wpf_shell.py)."""
+"""
+Shell WPF reutilizable — tema oscuro BIMTools con cinta blanca nativa.
+
+**Solo para herramientas nuevas.** Las UIs existentes no se migran con este módulo;
+su armonización se hará caso a caso.
+
+Ventana estándar de Windows (sin ``WindowStyle="None"``): la barra de título
+del SO queda visible; el contenido usa la paleta de ``bimtools_ui_tokens``.
+
+Regla: ``.cursor/rules/bimtools-ui.mdc``
+Mockup: ``canvases/bimtools-ui-default-style-mockup.canvas.tsx``
+"""
 
 from __future__ import print_function
 
@@ -20,8 +31,8 @@ from bimtools_ui_tokens import (
     FONT_WEIGHT_TITLE,
     PAD_PANEL,
     PAD_WINDOW,
-    WINDOW_CHROME_TITLE,
     WINDOW_SHOW_IN_TASKBAR,
+    WINDOW_CHROME_TITLE,
 )
 
 _PLACEHOLDER_STYLES = u"__BIMTOOLS_DARK_STYLES__"
@@ -146,6 +157,17 @@ def build_simple_tool_xaml(
     resize_mode=u"CanResize",
     size_to_content_height=False,
 ):
+    """
+    Genera XAML de ventana simple con shell estándar.
+
+    ``title``: título de la herramienta en el cuerpo (TxtTitle), p. ej.
+    ``Arainco: Mi herramienta``. La cinta blanca del SO usa siempre
+    ``WINDOW_CHROME_TITLE`` (``Arainco``).
+
+    ``body_xaml``: contenido del panel central (TextBlock, StackPanel, etc.).
+    ``footer_actions_xaml``: botones alineados a la derecha del footer.
+    ``footer_hint_xaml``: bloque opcional entre el panel y el footer (fila Grid).
+    """
     xaml = _SIMPLE_TOOL_XAML
     xaml = xaml.replace(_PLACEHOLDER_STYLES, styles_xml or u"")
     xaml = xaml.replace(

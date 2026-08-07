@@ -16585,7 +16585,7 @@ class ArmadoMurosPreviewWindow(object):
             pass
 
     def _build_unificado_bulk_mesh_panel(self, ctr, fg_hi, fg_lo):
-        """Body Mallas estilo Machones: chip + Ø/Esp + botones Aplicar; live-edit."""
+        """Body Mallas: chip + Ø/Esp + extremo; live-edit a la selección del canvas."""
         from System.Windows.Controls import StackPanel, Border, TextBlock, Orientation
         from System.Windows import (
             Thickness,
@@ -16632,39 +16632,15 @@ class ArmadoMurosPreviewWindow(object):
         self._bulk_mesh_params_body = body
         outer.Children.Add(body)
 
-        # Botones explícitos (live-edit se mantiene vía SelectionChanged).
-        btn_row = StackPanel()
-        btn_row.Orientation = Orientation.Vertical
-        btn_row.Margin = Thickness(0, 2, 0, 0)
-        btn_row.HorizontalAlignment = HorizontalAlignment.Stretch
-        btn_all = self._build_mesh_apply_button(
-            u"Aplicar a todos los muros",
-            click_handler=self._on_bulk_mesh_apply_all_clicked,
-        )
-        btn_all.ToolTip = (
-            u"Copia Vertical/Horizontal (\u00d8 + Esp.) y extremo superior "
-            u"a todos los muros del stack."
-        )
-        btn_all.Margin = Thickness(0, 0, 0, 6)
-        btn_sel = self._build_mesh_apply_button(
-            u"Aplicar a la selecci\u00f3n",
-            click_handler=self._on_bulk_mesh_apply_selection_clicked,
-        )
-        btn_sel.ToolTip = (
-            u"Copia Vertical/Horizontal (\u00d8 + Esp.) y extremo superior "
-            u"solo a los muros seleccionados en la elevaci\u00f3n."
-        )
-        btn_row.Children.Add(btn_all)
-        btn_row.Children.Add(btn_sel)
-        self._bulk_mesh_btn_apply_all = btn_all
-        self._bulk_mesh_btn_apply_sel = btn_sel
-        self._bulk_mesh_apply_row = btn_row
-        outer.Children.Add(btn_row)
+        # Sin botones Aplicar: Ø/Esp/extremo viven en live-edit sobre la selección.
+        self._bulk_mesh_btn_apply_all = None
+        self._bulk_mesh_btn_apply_sel = None
+        self._bulk_mesh_apply_row = None
 
         hint = TextBlock()
         hint.Text = (
-            u"Ctrl+clic / May\u00fas+clic en elevaci\u00f3n para multi-selecci\u00f3n; "
-            u"los cambios de malla aplican a los muros seleccionados."
+            u"La configuraci\u00f3n del rail se aplica sola a los muros "
+            u"seleccionados en el canvas. Ctrl+clic / May\u00fas+clic para multi-selecci\u00f3n."
         )
         hint.Foreground = pal[u"text_muted"]
         hint.FontSize = 10.0
@@ -16677,16 +16653,28 @@ class ArmadoMurosPreviewWindow(object):
 
         try:
             from System.Windows import RoutedEventHandler as _REH_bulk
+        except Exception:
+            _REH_bulk = None
 
-            for k in (u"ct_md", u"ct_ms", u"ct_id", u"ct_is"):
-                cb = ctr.get(k)
-                if cb is None:
-                    continue
+        def _wire_bulk_cb(cb):
+            if cb is None or _REH_bulk is None:
+                return
+            try:
                 cb.SelectionChanged += _REH_bulk(self._on_bulk_mesh_params_changed)
-                try:
-                    cb.LostFocus += _REH_bulk(self._on_bulk_mesh_params_changed)
-                except Exception:
-                    pass
+            except Exception:
+                pass
+            try:
+                cb.DropDownClosed += _REH_bulk(self._on_bulk_mesh_params_changed)
+            except Exception:
+                pass
+            try:
+                cb.LostFocus += _REH_bulk(self._on_bulk_mesh_params_changed)
+            except Exception:
+                pass
+
+        try:
+            for k in (u"ct_md", u"ct_ms", u"ct_id", u"ct_is"):
+                _wire_bulk_cb(ctr.get(k))
         except Exception:
             pass
 
