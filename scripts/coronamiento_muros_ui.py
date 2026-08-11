@@ -1180,12 +1180,6 @@ __EMPALME__
     def _redraw(self):
         if self._canvas is None:
             return
-        # Siempre relee n/Ø del rail para que etiquetas del canvas sigan los combos.
-        if self._layer_combos:
-            try:
-                self._read_layer_combos()
-            except Exception:
-                pass
         self._clear_canvas()
         w = float(self._canvas.ActualWidth or 0)
         h = float(self._canvas.ActualHeight or 0)
@@ -1255,6 +1249,8 @@ __EMPALME__
         _elev_v_px_per_mm = 10.0 / max(1.0, float(COVER_SUPERIOR_MM))
         cover = float(COVER_SUPERIOR_MM) * _elev_v_px_per_mm
         gap = float(LAYER_CENTERLINE_SPACING_MM) * _elev_v_px_per_mm
+        thick = float(_STROKE_BAR)
+        leg = max(1.0, thick * 0.9)
         flip = self._canvas_flip()
         embed_mm = float(est.get(u"embed_mm") or 0.0)
 
@@ -1317,23 +1313,10 @@ __EMPALME__
                 8,
             )
 
-        layer_ys = []
         for li, ly in enumerate(self._layers):
             y = host_top_y + cover + li * gap
-            layer_ys.append(y)
             color = _LAYER_COLORS[li % len(_LAYER_COLORS)]
-            try:
-                n_bars = int(ly.get(u"n_bars", 2))
-            except Exception:
-                n_bars = 2
-            try:
-                diam_i = int(round(float(ly.get(u"diam_mm", 16))))
-            except Exception:
-                diam_i = 16
-            diam = float(diam_i)
-            # Grosor visual proporcional al Ø (previsualización).
-            thick = max(1.0, min(3.2, 0.9 + diam * 0.06))
-            leg = max(1.0, thick * 0.9)
+            diam = float(ly.get(u"diam_mm", 16))
             lap = traslape_mm_from_diam(diam, self._concrete_grade)
             cuts = (
                 stagger_cuts_for_layer(self._cuts_mm, li, main, lap)
@@ -1384,31 +1367,6 @@ __EMPALME__
                     self._add_text(
                         x_at(c) - 8, host_top_y - 16, u"C{0}".format(ci + 1), _CUT, 9
                     )
-            # Etiqueta n×Ø viva (rail → canvas)
-            spec_txt = u"{0}Ø{1}".format(n_bars, diam_i)
-            x_lbl = (min(x_start, x_end) + max(x_start, x_end)) * 0.5 - 14
-            # Derecha del tramo si hay espacio; si no, en el centro de la barra.
-            x_right = max(x_start, x_end) + 6
-            if x_right + 42 < float(wx1) - 4:
-                x_lbl = x_right
-            y_lbl = y - 11
-            self._add_text(x_lbl, y_lbl, spec_txt, color, 10)
-
-        # Espaciamiento entre capas (valor de layout entre ejes)
-        if len(layer_ys) >= 2:
-            sep_mm = int(round(float(LAYER_CENTERLINE_SPACING_MM)))
-            for i in range(len(layer_ys) - 1):
-                y_mid = 0.5 * (layer_ys[i] + layer_ys[i + 1])
-                x_sep = min(hx0 - 2, bar_x0 - 4)
-                if x_sep < float(wx0) + 2:
-                    x_sep = float(wx0) + 2
-                self._add_text(
-                    x_sep,
-                    y_mid - 6,
-                    u"{0}".format(sep_mm),
-                    u"#64748b",
-                    8,
-                )
 
         foot = (
             u"L≈{0} mm (empotro+voladizo+1 pata)".format(
@@ -1478,16 +1436,6 @@ __EMPALME__
             concrete_grade=self._concrete_grade,
         )
         if res.get(u"ok"):
-            n_fail = int(res.get(u"n_split_fail", 0) or 0)
-            n_ok = int(res.get(u"n_split_ok", 0) or 0)
-            had_cuts = bool(res.get(u"had_cuts")) or len(cuts) > 0
-            if had_cuts and (n_fail > 0 or n_ok == 0):
-                msgs = u"\n".join(res.get(u"messages") or [])
-                _mostrar_aviso(
-                    self._uiapp,
-                    u"Armadura colocada, pero uno o más empalmes no se generaron.",
-                    msgs or u"Revise cortes y longitud de barra vs traslape.",
-                )
             try:
                 self._win.Close()
             except Exception:

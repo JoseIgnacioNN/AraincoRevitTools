@@ -1,23 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-Transacciones anidables para Armado Muros v3 (Revit 2025+ / pyRevit).
+Transacciones anidables para Armado Muros v3.
 
 Si el documento ya está en una Transaction abierta, abre ``SubTransaction``
 (rollback local barato). Si no, abre ``Transaction`` completa.
 
-Preferir los context managers nativos de pyRevit::
-
-    with transaction_group_scope(doc, u"Arainco: …", assimilate=True):
-        with transaction_scope(doc, u"Arainco: …"):
-            ...
-
-``transaction_group_scope`` → ``revit.TransactionGroup`` (Assimilate = un Undo).
-``transaction_scope`` → ``revit.Transaction`` (SubTransaction si ya hay txn;
-excepción → RollBack limpio).
-
 ``batch_mutation_scope`` agrupa muchas mutaciones en una sola SubTransaction/
 Transaction; mientras está activo, ``TxnScope`` anidados son no-op (evita
 O(rebars) SubTransactions en el post-proceso de mallas).
+
+Uso típico: envolver un lote en una Transaction y dejar que las operaciones
+por rebar usen estas helpers → un solo commit de documento.
 
 También adjunta un ``IFailuresPreprocessor`` que silencia warnings conocidos
 de rebar completamente fuera del host (evita el diálogo de Revit al Commit).
@@ -32,7 +25,6 @@ from Autodesk.Revit.DB import (
     IFailuresPreprocessor,
     SubTransaction,
     Transaction,
-    TransactionGroup,
 )
 
 _KIND_TXN = u"txn"
@@ -196,164 +188,10 @@ def attach_rebar_outside_host_swallower(txn):
         return False
 
 
-def _pyrevit_revit():
-    """Módulo ``pyrevit.revit`` (Transaction / TransactionGroup nativos)."""
-    from pyrevit import revit as _rv
-
-    return _rv
-
-
-def _underlying_autodesk_txn(pyrevit_txn):
-    """``DB.Transaction`` / ``DB.SubTransaction`` bajo el wrapper pyRevit."""
-    if pyrevit_txn is None:
-        return None
-    for attr in (u"_rvtxn", u"Transaction", u"transaction"):
-        try:
-            obj = getattr(pyrevit_txn, attr, None)
-        except Exception:
-            obj = None
-        if obj is not None:
-            return obj
-    return None
-
-
-def attach_swallower_to_pyrevit_txn(pyrevit_txn):
-    """Adjunta el swallower al ``DB.Transaction`` del context manager pyRevit."""
-    return attach_rebar_outside_host_swallower(
-        _underlying_autodesk_txn(pyrevit_txn),
-    )
-
-
 def doc_is_modifiable(doc):
     try:
         return bool(doc.IsModifiable)
     except Exception:
-        return False
-
-
-class transaction_group_scope(object):
-    """
-    ``with revit.TransactionGroup(name, doc, assimilate=True)``.
-
-    Excepción → ``RollBack`` del grupo (documento no queda bloqueado).
-    Sin excepción + ``assimilate`` → un solo paso Deshacer.
-    """
-
-    def __init__(self, doc, name, assimilate=True):
-        self._doc = doc
-        self._name = name
-        self._assimilate = bool(assimilate)
-        self._cm = None
-        self._tg = None
-        self._owns_fallback = False
-
-    def __enter__(self):
-        _rv = None
-        try:
-            _rv = _pyrevit_revit()
-        except Exception:
-            _rv = None
-        if _rv is not None:
-            self._cm = _rv.TransactionGroup(
-                self._name, self._doc, assimilate=self._assimilate,
-            )
-            return self._cm.__enter__()
-        self._tg = TransactionGroup(self._doc, self._name)
-        self._tg.Start()
-        self._owns_fallback = True
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        if self._cm is not None:
-            return self._cm.__exit__(exc_type, exc, tb)
-        if not self._owns_fallback or self._tg is None:
-            return False
-        try:
-            if exc_type is not None:
-                try:
-                    self._tg.RollBack()
-                except Exception:
-                    pass
-            else:
-                try:
-                    if self._assimilate:
-                        self._tg.Assimilate()
-                    else:
-                        self._tg.Commit()
-                except Exception:
-                    try:
-                        self._tg.RollBack()
-                    except Exception:
-                        pass
-                    raise
-        finally:
-            try:
-                self._tg.Dispose()
-            except Exception:
-                pass
-            self._tg = None
-            self._owns_fallback = False
-        return False
-
-
-class transaction_scope(object):
-    """
-    ``with revit.Transaction(name, doc)`` + swallower de rebar fuera de host.
-
-    Si el documento ya es modificable → ``SubTransaction`` (pyRevit nested).
-    Excepción → ``RollBack`` (pyRevit / respaldo Autodesk). Fallo de Commit
-    en el respaldo → ``RollBack`` y se re-lanza.
-    """
-
-    def __init__(self, doc, name, swallow_outside_host=True):
-        self._doc = doc
-        self._name = name
-        self._swallow = bool(swallow_outside_host)
-        self._cm = None
-        self._fallback = None
-        self._owns_fallback = False
-
-    def __enter__(self):
-        _rv = None
-        try:
-            _rv = _pyrevit_revit()
-        except Exception:
-            _rv = None
-        if _rv is not None:
-            self._cm = _rv.Transaction(self._name, self._doc)
-            entered = self._cm.__enter__()
-            if self._swallow:
-                try:
-                    attach_swallower_to_pyrevit_txn(entered)
-                except Exception:
-                    pass
-            return entered
-        handle = start_transaction(self._doc, self._name)
-        if handle is None:
-            raise Exception(
-                u"No se pudo abrir transacción: {0}".format(self._name),
-            )
-        self._fallback = handle
-        self._owns_fallback = True
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        if self._cm is not None:
-            return self._cm.__exit__(exc_type, exc, tb)
-        if not self._owns_fallback:
-            return False
-        try:
-            if exc_type is not None:
-                rollback_transaction(self._fallback)
-            else:
-                try:
-                    commit_transaction(self._fallback)
-                except Exception:
-                    rollback_transaction(self._fallback)
-                    raise
-        finally:
-            self._fallback = None
-            self._owns_fallback = False
         return False
 
 
@@ -522,33 +360,10 @@ class TxnScope(object):
     ``Commit`` / ``RollBack`` / ``HasStarted`` de ``Transaction``.
 
     Bajo ``batch_mutation_scope``, el handle es no-op (sin SubTxn anidada).
-
-    También usable como context manager (commit / rollback automático)::
-
-        with TxnScope(doc, u\"Arainco: …\") as t:
-            ...
     """
 
     def __init__(self, doc, name):
         self.handle = start_transaction(doc, name)
-
-    def __enter__(self):
-        if self.handle is None:
-            raise Exception(u"No se pudo abrir transacción.")
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        if self.handle is None:
-            return False
-        if exc_type is not None:
-            self.rollback()
-        else:
-            try:
-                self.commit()
-            except Exception:
-                self.rollback()
-                raise
-        return False
 
     def has_started(self):
         return self.handle is not None

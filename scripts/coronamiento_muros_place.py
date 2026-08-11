@@ -15,12 +15,11 @@ Helpers internos (crear capa, stamp post-split, divide, etiquetas/visibilidad)
 abren sus propias Transaction / TxnScope. El flujo ``place_coronamiento_wall``
 las agrupa en un ``TransactionGroup`` con ``Assimilate`` para un solo Undo.
 
-U libre + empalmes: CreateFromCurves sin forzar shape; tras split, extremos
-«02» e intermedios «01» (misma regla que 56 / ``dividir_rebar_punto_shapes``).
-Sin empalme, se marca shape U «03» al crear.
+U libre + empalmes: shape U «03»; tras split, extremos «02» e intermedios «01»
+(misma regla que 56 / ``dividir_rebar_punto_shapes``).
 
-Empotrado + empalmes: CreateFromCurves sin forzar shape; tras split, tramos
-sin pata «01» y el último (extremo libre con pata) «02». Sin empalme: shape L «02».
+Empotrado + empalmes: shape L «02»; tras split, tramos sin pata «01» y el
+último (extremo libre con pata) «02» (orden centerline embed→libre).
 """
 
 from __future__ import print_function
@@ -362,13 +361,11 @@ def _apply_empotrado_empalme_shapes(doc, rebar_id_ints):
     return u"Shapes: {0}".format(u" · ".join(names))
 
 
-def _cuts_main_to_centerline_mm(rebar, cuts_main_mm, main_ref_mm=None):
+def _cuts_main_to_centerline_mm(rebar, cuts_main_mm):
     """
     Cortes UI (mm sobre el vano horizontal) → mm desde el inicio de la centerline.
 
-    Misma convención que 56: distancia acumulada sobre la polilínea.
-    Escala el tramo de referencia de la UI al tramo horizontal real de la barra
-    (el más largo) para tolerar holguras de recubrimiento / shape.
+    Misma convención que 56: distancia acumulada sobre la polilínea (pata + vano + pata).
     """
     cuts = []
     for c in cuts_main_mm or []:
@@ -410,113 +407,9 @@ def _cuts_main_to_centerline_mm(rebar, cuts_main_mm, main_ref_mm=None):
         offset_ft += lengths[i]
     try:
         offset_mm = float(internal_to_mm(offset_ft))
-        main_len_mm = float(internal_to_mm(best))
     except Exception:
         offset_mm = offset_ft * 304.8
-        main_len_mm = best * 304.8
-    scale = 1.0
-    try:
-        ref = float(main_ref_mm) if main_ref_mm is not None else 0.0
-    except Exception:
-        ref = 0.0
-    if ref > 1.0 and main_len_mm > 1.0:
-        scale = main_len_mm / ref
-    out = []
-    lo = offset_mm + 1.0
-    hi = offset_mm + max(2.0, main_len_mm - 1.0)
-    for c in cuts:
-        s = offset_mm + float(c) * scale
-        if hi > lo:
-            if s < lo:
-                s = lo
-            elif s > hi:
-                s = hi
-        out.append(s)
-    return out
-
-
-def _assign_shape_txn(doc, rebar, shape_name, txn_name=None):
-    """Asigna shape en transacción propia. Returns (ok, msg)."""
-    if doc is None or rebar is None or not shape_name:
-        return False, u"Parámetros incompletos."
-    name = txn_name or _TXN_CREATE
-    t = Transaction(doc, name)
-    t.Start()
-    try:
-        ok, msg = _set_rebar_shape_name(doc, rebar, shape_name)
-        try:
-            doc.Regenerate()
-        except Exception:
-            pass
-        t.Commit()
-        return bool(ok), msg or u""
-    except Exception as ex:
-        try:
-            t.RollBack()
-        except Exception:
-            pass
-        return False, _as_unicode(ex)
-
-
-def _call_divide_rebar_at_cuts(
-    divide_fn,
-    doc,
-    rebar,
-    cuts_cl,
-    concrete_grade=None,
-    view=None,
-    lap_mode=None,
-    place_lap_dims=True,
-    lap_dim_prefer_above=True,
-):
-    """
-    Invoca divide_rebar_at_cuts con degradado de kwargs (API 56).
-
-    Returns:
-        (ok, msg, ids_new, meta)
-    """
-    if divide_fn is None or rebar is None or not cuts_cl:
-        return False, u"Sin divide / cortes.", None, None
-    try:
-        return divide_fn(
-            doc,
-            rebar,
-            cuts_cl,
-            concrete_grade=concrete_grade,
-            view=view,
-            lap_mode=lap_mode,
-            place_lap_dims=place_lap_dims,
-            lap_dim_prefer_above=lap_dim_prefer_above,
-        )
-    except TypeError:
-        pass
-    except Exception as ex:
-        return False, _as_unicode(ex), None, None
-    try:
-        return divide_fn(
-            doc,
-            rebar,
-            cuts_cl,
-            concrete_grade=concrete_grade,
-            view=view,
-            lap_mode=lap_mode,
-            place_lap_dims=place_lap_dims,
-        )
-    except TypeError:
-        pass
-    except Exception as ex:
-        return False, _as_unicode(ex), None, None
-    try:
-        return divide_fn(
-            doc,
-            rebar,
-            cuts_cl,
-            concrete_grade=concrete_grade,
-            view=view,
-            lap_mode=lap_mode,
-        )
-    except Exception as ex:
-        return False, _as_unicode(ex), None, None
+    return [offset_mm + c for c in cuts]
 
 
 def _active_view(uidoc):
@@ -1117,9 +1010,6 @@ def place_coronamiento_wall(
         u"main_mm": 0.0,
         u"n_tags": 0,
         u"n_tags_fail": 0,
-        u"n_split_ok": 0,
-        u"n_split_fail": 0,
-        u"had_cuts": False,
     }
     if doc is None or wall is None or not isinstance(wall, Wall):
         result[u"messages"].append(u"Muro no válido.")
@@ -1137,7 +1027,6 @@ def place_coronamiento_wall(
     result[u"exceeds_12m"] = bool(est[u"exceeds_12m"])
     main_mm = float(est[u"main_mm"])
     cuts_ref = list(cuts_ref_mm or [])
-    result[u"had_cuts"] = len(cuts_ref) > 0
     lap_mode = to_dividir_lap_mode(lap_mode_ui)
 
     divide_fn = None
@@ -1189,12 +1078,6 @@ def place_coronamiento_wall(
                 )
                 continue
 
-            # Shape completa se aplica solo si NO hay split: SetRebarShapeId
-            # (03) antes del divide suele invalidar centerline/eligibilidad 56.
-            lap_mm = traslape_mm_from_diam(diam_mm, grade)
-            layer_cuts_main = stagger_cuts_for_layer(cuts_ref, li, main_mm, lap_mm)
-            will_split = bool(layer_cuts_main) and divide_fn is not None
-
             rb = None
             t = Transaction(doc, _TXN_CREATE)
             t.Start()
@@ -1212,14 +1095,13 @@ def place_coronamiento_wall(
                 )
                 if rb is not None:
                     _stamp_layer(rb, li)
-                    if not will_split:
-                        ok_sh, err_sh = _assign_u_libre_shape_03(doc, rb)
-                        if not ok_sh and err_sh:
-                            result[u"messages"].append(
-                                u"Capa {0}: shape «{1}» no aplicada ({2}).".format(
-                                    li + 1, _COR_U_SHAPE, err_sh
-                                )
+                    ok_sh, err_sh = _assign_u_libre_shape_03(doc, rb)
+                    if not ok_sh and err_sh:
+                        result[u"messages"].append(
+                            u"Capa {0}: shape «{1}» no aplicada ({2}).".format(
+                                li + 1, _COR_U_SHAPE, err_sh
                             )
+                        )
                     t.Commit()
                 else:
                     t.RollBack()
@@ -1237,20 +1119,15 @@ def place_coronamiento_wall(
                 )
                 continue
 
+            lap_mm = traslape_mm_from_diam(diam_mm, grade)
+            layer_cuts_main = stagger_cuts_for_layer(cuts_ref, li, main_mm, lap_mm)
             final_ids = []
 
-            if will_split:
-                try:
-                    doc.Regenerate()
-                except Exception:
-                    pass
-                cuts_cl = _cuts_main_to_centerline_mm(
-                    rb, layer_cuts_main, main_ref_mm=main_mm
-                )
+            if layer_cuts_main and divide_fn is not None:
+                cuts_cl = _cuts_main_to_centerline_mm(rb, layer_cuts_main)
                 # Cotas de traslape solo 1ª y 2ª capa; siempre sobre las barras.
                 place_dims = int(li) in (0, 1)
-                ok_div, msg_div, ids_new, _meta = _call_divide_rebar_at_cuts(
-                    divide_fn,
+                ok_div, msg_div, ids_new, _meta = divide_fn(
                     doc,
                     rb,
                     cuts_cl,
@@ -1277,27 +1154,14 @@ def place_coronamiento_wall(
                         result[u"messages"].append(
                             u"Capa {0}: {1}".format(li + 1, sh_msg)
                         )
-                    result[u"n_split_ok"] = int(result.get(u"n_split_ok", 0) or 0) + 1
                 else:
                     iv = _element_id_int(rb.Id)
                     if iv is not None:
                         final_ids.append(iv)
-                    ok_sh, err_sh = _assign_shape_txn(
-                        doc, rb, _COR_U_SHAPE, _TXN_CREATE
-                    )
-                    if not ok_sh and err_sh:
-                        result[u"messages"].append(
-                            u"Capa {0}: shape «{1}» no aplicada ({2}).".format(
-                                li + 1, _COR_U_SHAPE, err_sh
-                            )
-                        )
                     result[u"messages"].append(
                         u"Capa {0}: creada sin split ({1}).".format(
                             li + 1, msg_div or u"cortes no válidos"
                         )
-                    )
-                    result[u"n_split_fail"] = (
-                        int(result.get(u"n_split_fail", 0) or 0) + 1
                     )
             else:
                 iv = _element_id_int(rb.Id)
@@ -1400,9 +1264,6 @@ def place_coronamiento_empotrado(
         u"n_tags": 0,
         u"n_tags_fail": 0,
         u"geom_mode": _GEOM_EMPOTRADO,
-        u"n_split_ok": 0,
-        u"n_split_fail": 0,
-        u"had_cuts": False,
     }
     if doc is None or host is None or not isinstance(host, Wall):
         result[u"messages"].append(u"Muro host no válido.")
@@ -1435,7 +1296,6 @@ def place_coronamiento_empotrado(
     result[u"exceeds_12m"] = bool(est[u"exceeds_12m"])
     main_mm = float(est[u"main_mm"])
     cuts_ref = list(cuts_ref_mm or [])
-    result[u"had_cuts"] = len(cuts_ref) > 0
     lap_mode = to_dividir_lap_mode(lap_mode_ui)
 
     divide_fn = None
@@ -1492,11 +1352,9 @@ def place_coronamiento_empotrado(
                 host, overhang_mm, diam_mm=diam_mm, concrete_grade=grade
             )
             main_li = float(est_li[u"main_mm"])
-            main_for_cuts = main_li if main_li > 1.0 else main_mm
             layer_cuts_main = stagger_cuts_for_layer(
-                cuts_ref, li, main_for_cuts, lap_mm
+                cuts_ref, li, main_li if main_li > 1.0 else main_mm, lap_mm
             )
-            will_split = bool(layer_cuts_main) and divide_fn is not None
 
             layer_created = 0
             for spec in specs:
@@ -1538,15 +1396,13 @@ def place_coronamiento_empotrado(
                     )
                     if rb is not None:
                         _stamp_layer(rb, li)
-                        # Shape 02 solo sin empalme; con split, tras divide.
-                        if not will_split:
-                            ok_sh, err_sh = _assign_empotrado_shape_02(doc, rb)
-                            if not ok_sh and err_sh:
-                                result[u"messages"].append(
-                                    u"Capa {0} ({1}): shape «{2}» no aplicada ({3}).".format(
-                                        li + 1, side, _COR_EMP_SHAPE, err_sh
-                                    )
+                        ok_sh, err_sh = _assign_empotrado_shape_02(doc, rb)
+                        if not ok_sh and err_sh:
+                            result[u"messages"].append(
+                                u"Capa {0} ({1}): shape «{2}» no aplicada ({3}).".format(
+                                    li + 1, side, _COR_EMP_SHAPE, err_sh
                                 )
+                            )
                         t.Commit()
                     else:
                         t.RollBack()
@@ -1569,17 +1425,10 @@ def place_coronamiento_empotrado(
                     continue
 
                 final_ids = []
-                if will_split:
-                    try:
-                        doc.Regenerate()
-                    except Exception:
-                        pass
-                    cuts_cl = _cuts_main_to_centerline_mm(
-                        rb, layer_cuts_main, main_ref_mm=main_for_cuts
-                    )
+                if layer_cuts_main and divide_fn is not None:
+                    cuts_cl = _cuts_main_to_centerline_mm(rb, layer_cuts_main)
                     place_dims = int(li) in (0, 1)
-                    ok_div, msg_div, ids_new, _meta = _call_divide_rebar_at_cuts(
-                        divide_fn,
+                    ok_div, msg_div, ids_new, _meta = divide_fn(
                         doc,
                         rb,
                         cuts_cl,
@@ -1601,29 +1450,14 @@ def place_coronamiento_empotrado(
                             result[u"messages"].append(
                                 u"Capa {0} ({1}): {2}".format(li + 1, side, sh_msg)
                             )
-                        result[u"n_split_ok"] = (
-                            int(result.get(u"n_split_ok", 0) or 0) + 1
-                        )
                     else:
                         iv = _element_id_int(rb.Id)
                         if iv is not None:
                             final_ids.append(iv)
-                        ok_sh, err_sh = _assign_shape_txn(
-                            doc, rb, _COR_EMP_SHAPE, _TXN_CREATE
-                        )
-                        if not ok_sh and err_sh:
-                            result[u"messages"].append(
-                                u"Capa {0} ({1}): shape «{2}» no aplicada ({3}).".format(
-                                    li + 1, side, _COR_EMP_SHAPE, err_sh
-                                )
-                            )
                         result[u"messages"].append(
                             u"Capa {0} ({1}): creada sin split ({2}).".format(
                                 li + 1, side, msg_div or u"cortes no válidos"
                             )
-                        )
-                        result[u"n_split_fail"] = (
-                            int(result.get(u"n_split_fail", 0) or 0) + 1
                         )
                 else:
                     iv = _element_id_int(rb.Id)

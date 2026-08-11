@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
-"""UI WPF — Vistas por Usuario (shell visual alineado a Elevación Eje)."""
+"""UI WPF — Vistas por Usuario."""
 
 from __future__ import print_function
+
+import weakref
 
 try:
     unicode
@@ -17,38 +19,22 @@ clr.AddReference("RevitAPI")
 clr.AddReference("RevitAPIUI")
 clr.AddReference("System")
 
-from System import AppDomain, EventHandler
-from System.Windows import (
-    CornerRadius,
-    FontWeights,
-    HorizontalAlignment,
-    RoutedEventHandler,
-    Thickness,
-    VerticalAlignment,
-)
+from System import EventHandler
+from System.Windows import FontWeights, RoutedEventHandler, Thickness
 from System.Windows.Controls import (
-    Border,
     Button,
     CheckBox,
     ComboBoxItem,
-    Orientation,
     SelectionChangedEventHandler,
-    StackPanel,
-    TextBlock,
 )
-from System.Windows.Input import Cursors, MouseButtonEventHandler
+from System.Windows.Input import Cursors
 from System.Windows.Markup import XamlReader
-from System.Windows.Media import Brushes, Color, SolidColorBrush
+from System.Windows.Media import Brushes, SolidColorBrush, Color
 from Autodesk.Revit.UI import IExternalEventHandler, ExternalEvent, TaskDialog
 from Autodesk.Revit.DB import FilteredElementCollector, Level
 
 from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
-from bimtools_wpf_shell import build_simple_tool_xaml
-from revit_wpf_window_position import (
-    bind_center_wpf_on_revit_monitor,
-    position_wpf_window_center_on_monitor,
-    revit_main_hwnd,
-)
+from revit_wpf_window_position import revit_main_hwnd
 
 from vistas_por_usuario.constants import TRANSACTION_TITLE, VIEW_SCALE_RATIOS
 from vistas_por_usuario import singleton
@@ -61,9 +47,11 @@ from vistas_por_usuario.people import (
 
 _DIALOG_TITLE = TRANSACTION_TITLE
 _WINDOW_TITLE = u"Arainco: Vistas por usuario"
-_DEFAULT_VIEW_SCALE = 50
-_APPDOMAIN_EVENT_KEY = u"Arainco_VistasPorUsuario_ExtEvent"
-_APPDOMAIN_HANDLER_KEY = u"Arainco_VistasPorUsuario_Handler"
+
+_STATUS_IDLE = u"idle"
+_STATUS_BUSY = u"busy"
+_STATUS_OK = u"ok"
+_STATUS_ERR = u"err"
 
 _BRUSH_SEG_ON_BG = SolidColorBrush(Color.FromArgb(0x24, 0x5B, 0xB8, 0xD4))
 _BRUSH_SEG_ON_BD = SolidColorBrush(Color.FromRgb(0x5B, 0xB8, 0xD4))
@@ -71,99 +59,27 @@ _BRUSH_SEG_OFF_BG = SolidColorBrush(Color.FromRgb(0x07, 0x10, 0x18))
 _BRUSH_SEG_OFF_BD = SolidColorBrush(Color.FromRgb(0x1E, 0x33, 0x44))
 _BRUSH_FG_HI = SolidColorBrush(Color.FromRgb(0xE8, 0xF4, 0xF8))
 _BRUSH_FG_MID = SolidColorBrush(Color.FromRgb(0x95, 0xB8, 0xCC))
-_BRUSH_ROW_HOVER = SolidColorBrush(Color.FromArgb(0x28, 0x5B, 0xC0, 0xDE))
-
-_BODY_XAML = u"""
-<StackPanel>
-  <!-- 1. Modelador -->
-  <TextBlock Text="Modelador" Foreground="#95B8CC" FontSize="11" FontWeight="SemiBold"
-             Margin="0,0,0,4"/>
-  <ComboBox x:Name="CmbUsuario" Style="{StaticResource Combo}" IsEditable="False"
-            Margin="0,0,0,8"/>
-  <Grid Margin="0,0,0,14">
-    <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="*"/>
-      <ColumnDefinition Width="Auto"/>
-    </Grid.ColumnDefinitions>
-    <Border x:Name="ChipClasificacion" Grid.Column="0" Padding="7,3"
-            Background="#245BB8D4" BorderBrush="#4D5BB8D4" BorderThickness="1"
-            CornerRadius="10" HorizontalAlignment="Left" VerticalAlignment="Center">
-      <StackPanel Orientation="Horizontal">
-        <TextBlock Text="Clasificación" Foreground="#64748b" FontSize="10"
-                   VerticalAlignment="Center" Margin="0,0,8,0"/>
-        <TextBlock x:Name="TxtCodigo" Text="—" Foreground="#E8F4F8" FontSize="11"
-                   FontFamily="Consolas" FontWeight="SemiBold" VerticalAlignment="Center"/>
-      </StackPanel>
-    </Border>
-    <Button x:Name="BtnGestionarPersonas" Grid.Column="1"
-            Content="Personas" Padding="6,1" MinWidth="0" FontSize="11"
-            Style="{StaticResource BtnSelectOutline}"
-            VerticalAlignment="Center" HorizontalAlignment="Right"
-            ToolTip="Gestionar directorio de personas"/>
-  </Grid>
-
-  <!-- 2. Niveles -->
-  <Grid Margin="0,0,0,8">
-    <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="*"/>
-      <ColumnDefinition Width="Auto"/>
-    </Grid.ColumnDefinitions>
-    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-      <TextBlock Text="Niveles" Foreground="#95B8CC" FontSize="11" FontWeight="SemiBold"
-                 VerticalAlignment="Center"/>
-      <TextBlock x:Name="TxtNivelCount" Margin="10,0,0,0" VerticalAlignment="Center"
-                 Foreground="#64748b" FontSize="11" Text="0 de 0 seleccionados"/>
-    </StackPanel>
-    <StackPanel Grid.Column="1" Orientation="Horizontal">
-      <Button x:Name="BtnSelAll" Content="Seleccionar todo" Margin="0,0,6,0"
-              Style="{StaticResource BtnSelectOutline}" MinWidth="120" Padding="8,2"
-              ToolTip="Marcar todos los niveles"/>
-      <Button x:Name="BtnSelNone" Content="Ninguno"
-              Style="{StaticResource BtnSelectOutline}" MinWidth="72" Padding="8,2"
-              ToolTip="Desmarcar todos los niveles"/>
-    </StackPanel>
-  </Grid>
-  <Border Background="#050E18" BorderBrush="#21465C" BorderThickness="1"
-          CornerRadius="4" MaxHeight="280">
-    <ScrollViewer VerticalScrollBarVisibility="Auto"
-                  HorizontalScrollBarVisibility="Disabled"
-                  Padding="2,2">
-      <StackPanel x:Name="PanelNiveles"/>
-    </ScrollViewer>
-  </Border>
-
-  <!-- 3. Escala -->
-  <TextBlock Margin="0,14,0,6" Text="Escala de vista"
-             Foreground="#95B8CC" FontSize="11" FontWeight="SemiBold"/>
-  <WrapPanel x:Name="PanelEscala" Orientation="Horizontal"/>
-  <TextBlock Margin="0,8,0,0" Foreground="#64748b" FontSize="10" TextWrapping="Wrap"
-             Text="También crea plantillas y tipos Detail/Sección del modelador."/>
-</StackPanel>
-"""
-
-_FOOTER_ACTIONS_XAML = u"""
-<Button x:Name="BtnCancelar" Content="Cerrar" Margin="0,0,8,0"
-        Style="{StaticResource BtnSelectOutline}" MinWidth="100"/>
-<Button x:Name="BtnIniciar" Content="Crear vistas"
-        Style="{StaticResource BtnPrimary}" MinWidth="150"
-        ToolTip="Crear el conjunto 02_TRABAJO para el modelador seleccionado"/>
-"""
+_BRUSH_FG_LO = SolidColorBrush(Color.FromRgb(0x64, 0x74, 0x8B))
+_BRUSH_INFO = SolidColorBrush(Color.FromRgb(0x38, 0xBD, 0xF8))
+_BRUSH_WARN = SolidColorBrush(Color.FromRgb(0xFB, 0xBF, 0x24))
+_BRUSH_OK = SolidColorBrush(Color.FromRgb(0x4A, 0xDE, 0x80))
+_BRUSH_ERR = SolidColorBrush(Color.FromRgb(0xF8, 0x71, 0x71))
+_BRUSH_STATUS_INFO_BG = SolidColorBrush(Color.FromArgb(0x14, 0x38, 0xBD, 0xF8))
+_BRUSH_STATUS_BUSY_BG = SolidColorBrush(Color.FromArgb(0x1A, 0xFB, 0xBF, 0x24))
+_BRUSH_STATUS_OK_BG = SolidColorBrush(Color.FromArgb(0x14, 0x4A, 0xDE, 0x80))
+_BRUSH_STATUS_ERR_BG = SolidColorBrush(Color.FromArgb(0x14, 0xF8, 0x71, 0x71))
+_BRUSH_STATUS_INFO_BD = SolidColorBrush(Color.FromArgb(0x4D, 0x38, 0xBD, 0xF8))
+_BRUSH_STATUS_BUSY_BD = SolidColorBrush(Color.FromArgb(0x59, 0xFB, 0xBF, 0x24))
+_BRUSH_STATUS_OK_BD = SolidColorBrush(Color.FromArgb(0x4D, 0x4A, 0xDE, 0x80))
+_BRUSH_STATUS_ERR_BD = SolidColorBrush(Color.FromArgb(0x4D, 0xF8, 0x71, 0x71))
+_BRUSH_TRANSPARENT = Brushes.Transparent
 
 
 def _collect_levels_sorted(doc):
-    """Niveles del documento ordenados por elevación."""
+    """Niveles del documento ordenados por elevación (sin importar service/crear_vistas)."""
     levels = list(FilteredElementCollector(doc).OfClass(Level))
     levels.sort(key=lambda lv: lv.Elevation)
     return levels
-
-
-def _as_unicode(text):
-    if text is None:
-        return u""
-    try:
-        return unicode(text)
-    except NameError:
-        return str(text)
 
 
 def mostrar_aviso(uiapp, instruction, content=u"", ok_text=u"Entendido"):
@@ -197,84 +113,165 @@ def mostrar_aviso(uiapp, instruction, content=u"", ok_text=u"Entendido"):
         pass
 
 
-def _attach_revit_owner(win, uiapp):
-    if win is None or uiapp is None:
-        return
-    try:
-        from System.Windows.Interop import WindowInteropHelper
+XAML = u"""
+<Window
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Arainco"
+    Width="520"
+    SizeToContent="Height"
+    MinWidth="480"
+    MaxHeight="820"
+    WindowStartupLocation="Manual"
+    Background="#071018"
+    FontFamily="Segoe UI"
+    FontSize="12"
+    ShowInTaskbar="False">
+  <Window.Resources>
+""" + BIMTOOLS_DARK_STYLES_XML + u"""
+    <Style x:Key="Lbl" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="#95B8CC"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Margin" Value="0,0,0,4"/>
+    </Style>
+    <Style x:Key="BtnLink" TargetType="Button">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Foreground" Value="#5BB8D4"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="HorizontalAlignment" Value="Left"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <TextBlock x:Name="LinkText" Text="{TemplateBinding Content}"
+                       Foreground="{TemplateBinding Foreground}"
+                       FontSize="{TemplateBinding FontSize}"
+                       VerticalAlignment="Center"/>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="LinkText" Property="Opacity" Value="0.85"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </Window.Resources>
+  <Border Background="#071018" BorderBrush="#21465C" BorderThickness="1" Padding="18">
+    <Grid>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
 
-        hwnd = revit_main_hwnd(uiapp)
-        if hwnd is not None:
-            WindowInteropHelper(win).Owner = hwnd
-    except Exception:
-        pass
+      <StackPanel Grid.Row="0" Margin="0,0,0,12">
+        <TextBlock Text="__TITLE__" FontSize="18" FontWeight="Bold" Foreground="#E8F4F8"/>
+        <TextBlock Text="Plantas Cielo/Piso por nivel · plantillas y tipos Detail/Sección · clasificación 02_TRABAJO"
+                   Foreground="#95B8CC" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"/>
+      </StackPanel>
 
+      <StackPanel Grid.Row="1">
+        <!-- Modelador + Escala -->
+        <Border Background="#0a1620" BorderBrush="#21465C" BorderThickness="1"
+                CornerRadius="4" Padding="12" Margin="0,0,0,10">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="1.45*"/>
+              <ColumnDefinition Width="10"/>
+              <ColumnDefinition Width="0.95*"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+              <TextBlock Text="Modelador" Style="{StaticResource Lbl}"/>
+              <ComboBox x:Name="CmbUsuario" Style="{StaticResource Combo}" IsEditable="False"/>
+              <Border x:Name="ChipClasificacion" Margin="0,8,0,0" Padding="6,4"
+                      Background="#245BB8D4" BorderBrush="#595BB8D4" BorderThickness="1"
+                      CornerRadius="4" HorizontalAlignment="Left">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Text="Clasificación" Foreground="#64748b" FontSize="10"
+                             VerticalAlignment="Center" Margin="0,0,8,0"/>
+                  <TextBlock x:Name="TxtCodigo" Text="—" Foreground="#E8F4F8" FontSize="11"
+                             FontFamily="Consolas" VerticalAlignment="Center"/>
+                </StackPanel>
+              </Border>
+              <Button x:Name="BtnGestionarPersonas"
+                      Content="Gestionar directorio de personas…"
+                      Style="{StaticResource BtnLink}" Margin="0,8,0,0"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+              <TextBlock Text="Escala" Style="{StaticResource Lbl}"/>
+              <WrapPanel x:Name="PanelEscala" Orientation="Horizontal"/>
+            </StackPanel>
+          </Grid>
+        </Border>
 
-def _prepare_window(win, uiapp):
-    if win is None:
-        return
-    try:
-        hwnd = revit_main_hwnd(uiapp)
-        bind_center_wpf_on_revit_monitor(win, hwnd)
-        position_wpf_window_center_on_monitor(win, hwnd)
-    except Exception:
-        pass
-    _attach_revit_owner(win, uiapp)
+        <!-- Niveles -->
+        <Border Background="#0a1620" BorderBrush="#21465C" BorderThickness="1"
+                CornerRadius="4" Padding="12" Margin="0,0,0,10">
+          <StackPanel>
+            <Grid Margin="0,0,0,6">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="Niveles" Style="{StaticResource Lbl}" Margin="0,0,8,0"
+                           VerticalAlignment="Center"/>
+                <Border Background="#245BB8D4" BorderBrush="#4D5BB8D4" BorderThickness="1"
+                        CornerRadius="10" Padding="7,2" VerticalAlignment="Center">
+                  <TextBlock x:Name="TxtNivelCount" Text="0 / 0" Foreground="#5BB8D4"
+                             FontSize="10" FontWeight="SemiBold"/>
+                </Border>
+              </StackPanel>
+              <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button x:Name="BtnSelAll" Content="Todos" Style="{StaticResource BtnSelectOutline}"
+                        Padding="10,4" Margin="0,0,6,0"/>
+                <Button x:Name="BtnSelNone" Content="Ninguno" Style="{StaticResource BtnSelectOutline}"
+                        Padding="10,4"/>
+              </StackPanel>
+            </Grid>
+            <Border BorderBrush="#1e3344" BorderThickness="1" CornerRadius="4"
+                    Background="#071018" Padding="4,2">
+              <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="PanelNiveles"/>
+              </ScrollViewer>
+            </Border>
+          </StackPanel>
+        </Border>
+      </StackPanel>
 
-
-def _build_xaml():
-    return build_simple_tool_xaml(
-        title=_WINDOW_TITLE,
-        styles_xml=BIMTOOLS_DARK_STYLES_XML,
-        body_xaml=_BODY_XAML,
-        footer_actions_xaml=_FOOTER_ACTIONS_XAML,
-        width=520,
-        resize_mode=u"CanResizeWithGrip",
-        size_to_content_height=True,
-    )
-
-
-def _pin_external_event(ext_event, handler):
-    """Mantener vivos ExternalEvent/handler tras cerrar la UI WPF."""
-    try:
-        AppDomain.CurrentDomain.SetData(_APPDOMAIN_EVENT_KEY, ext_event)
-        AppDomain.CurrentDomain.SetData(_APPDOMAIN_HANDLER_KEY, handler)
-    except Exception:
-        pass
-
-
-def _unpin_external_event():
-    try:
-        AppDomain.CurrentDomain.SetData(_APPDOMAIN_EVENT_KEY, None)
-        AppDomain.CurrentDomain.SetData(_APPDOMAIN_HANDLER_KEY, None)
-    except Exception:
-        pass
-
-
-def _style_crear_button(btn, enabled):
-    """CTA primario visible; deshabilitado se ve claramente apagado."""
-    if btn is None:
-        return
-    try:
-        btn.IsEnabled = bool(enabled)
-    except Exception:
-        pass
-    try:
-        if enabled:
-            btn.Opacity = 1.0
-            btn.Background = SolidColorBrush(Color.FromRgb(0x5B, 0xC0, 0xDE))
-            btn.Foreground = SolidColorBrush(Color.FromRgb(0x0A, 0x1A, 0x2F))
-            btn.BorderBrush = SolidColorBrush(Color.FromRgb(0x87, 0xD9, 0xEE))
-        else:
-            btn.Opacity = 0.38
-            btn.Background = SolidColorBrush(Color.FromRgb(0x1E, 0x33, 0x44))
-            btn.Foreground = SolidColorBrush(Color.FromRgb(0x64, 0x74, 0x8B))
-            btn.BorderBrush = SolidColorBrush(Color.FromRgb(0x21, 0x46, 0x5C))
-    except Exception:
-        try:
-            btn.Opacity = 1.0 if enabled else 0.4
-        except Exception:
-            pass
+      <StackPanel Grid.Row="2" Margin="0,2,0,0">
+        <Border x:Name="BorderResumen" Background="#145BB8D4" BorderBrush="#595BB8D4"
+                BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="0,0,0,10">
+          <TextBlock x:Name="TxtResumen" Foreground="#95B8CC" FontSize="11"
+                     TextWrapping="Wrap"/>
+        </Border>
+        <Border x:Name="BorderEstado" Background="Transparent" BorderBrush="Transparent"
+                BorderThickness="1" CornerRadius="4" Padding="0,0,0,0" Margin="0,0,0,10">
+          <TextBlock x:Name="TxtEstado" Text="Listo para crear el conjunto 02_TRABAJO."
+                     Foreground="#64748b" FontSize="11" TextWrapping="Wrap"/>
+        </Border>
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="10"/>
+            <ColumnDefinition Width="*"/>
+          </Grid.ColumnDefinitions>
+          <Button x:Name="BtnCancelar" Grid.Column="0" Content="Cancelar"
+                  Style="{StaticResource BtnSelectOutline}"
+                  Padding="16,9" MinWidth="110"/>
+          <Button x:Name="BtnIniciar" Grid.Column="2" Content="Crear vistas"
+                  Style="{StaticResource BtnPrimary}" HorizontalAlignment="Stretch"
+                  Padding="12,9"/>
+        </Grid>
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>
+""".replace(u"__TITLE__", _WINDOW_TITLE)
 
 
 class _LevelCheck(object):
@@ -284,18 +281,15 @@ class _LevelCheck(object):
 
 
 class _CreateUserViewsHandler(IExternalEventHandler):
-    """Ejecuta la creación en el hilo de Revit (UI ya cerrada)."""
-
-    def __init__(self):
+    def __init__(self, window_ref):
+        self._window_ref = window_ref
         self.request = None
-        self.uiapp_for_dialog = None
 
     def Execute(self, uiapp):
+        win = self._window_ref()
         req = self.request
         self.request = None
-        host = self.uiapp_for_dialog or uiapp
-        if req is None:
-            _unpin_external_event()
+        if win is None or req is None:
             return
 
         from vistas_por_usuario.service import (
@@ -305,33 +299,39 @@ class _CreateUserViewsHandler(IExternalEventHandler):
             validate_user_views_not_exist,
         )
 
-        try:
-            uidoc = uiapp.ActiveUIDocument
-            if uidoc is None:
-                mostrar_aviso(host, u"No hay documento activo.")
-                return
+        uidoc = uiapp.ActiveUIDocument
+        if uidoc is None:
+            mostrar_aviso(uiapp, u"No hay documento activo.")
+            win._finish_create(False, u"No hay documento activo.")
+            return
 
-            doc = uidoc.Document
+        doc = uidoc.Document
+        try:
             ok, msg = validate_user_views_not_exist(doc, req.usuario_code)
             if not ok:
-                mostrar_aviso(host, msg)
+                mostrar_aviso(uiapp, msg)
+                win._finish_create(False, msg)
                 return
 
             result = create_user_views(doc, req)
             instruction, content = format_success_dialog(
                 result, req.usuario_display, req.usuario_code
             )
-            mostrar_aviso(host, instruction, content, ok_text=u"Entendido")
+            mostrar_aviso(uiapp, instruction, content, ok_text=u"Entendido")
+            win._finish_create(
+                True,
+                u"Completado: {} vista(s) creada(s).".format(len(result.created)),
+            )
         except VistasPorUsuarioError as ex:
-            mostrar_aviso(host, str(ex))
+            mostrar_aviso(uiapp, str(ex))
+            win._finish_create(False, str(ex))
         except Exception as ex:
             mostrar_aviso(
-                host,
+                uiapp,
                 u"Error al crear vistas.",
                 content=u"{}".format(ex),
             )
-        finally:
-            _unpin_external_event()
+            win._finish_create(False, u"Error: {}".format(ex))
 
     def GetName(self):
         return TRANSACTION_TITLE
@@ -344,31 +344,26 @@ class VistasPorUsuarioWindow(object):
         self._revit = revit_app
         self._level_checks = []
         self._scale_buttons = []
-        self._scale_ratio = int(_DEFAULT_VIEW_SCALE)
+        self._scale_ratio = 100
         self._busy = False
         self._usuario_map = {}
 
-        self._create_handler = _CreateUserViewsHandler()
+        self._create_handler = _CreateUserViewsHandler(weakref.ref(self))
         self._create_event = ExternalEvent.Create(self._create_handler)
 
-        self._win = XamlReader.Parse(_build_xaml())
+        self._win = XamlReader.Parse(XAML)
         self._cmb_usuario = self._win.FindName("CmbUsuario")
         self._panel_escala = self._win.FindName("PanelEscala")
         self._txt_codigo = self._win.FindName("TxtCodigo")
         self._panel_niveles = self._win.FindName("PanelNiveles")
         self._txt_nivel_count = self._win.FindName("TxtNivelCount")
-        self._txt_subtitle = self._win.FindName("TxtSubtitle")
-        self._txt_status = self._win.FindName("TxtStatus")
+        self._txt_resumen = self._win.FindName("TxtResumen")
+        self._border_estado = self._win.FindName("BorderEstado")
+        self._txt_estado = self._win.FindName("TxtEstado")
         self._btn_iniciar = self._win.FindName("BtnIniciar")
         self._btn_cancelar = self._win.FindName("BtnCancelar")
         btn_all = self._win.FindName("BtnSelAll")
         btn_none = self._win.FindName("BtnSelNone")
-
-        if self._txt_subtitle is not None:
-            try:
-                self._txt_subtitle.Text = u"Plantas Cielo/Piso · 02_TRABAJO"
-            except Exception:
-                pass
 
         self._fill_usuarios()
         self._fill_escalas()
@@ -425,7 +420,8 @@ class VistasPorUsuarioWindow(object):
             self._cmb_usuario.SelectedIndex = sel_idx
         else:
             self._set_status(
-                u"No hay modeladores en personas.json ni lista de respaldo."
+                _STATUS_ERR,
+                u"No hay modeladores en personas.json ni lista de respaldo.",
             )
 
     def _on_gestionar_personas(self, _sender, _e):
@@ -486,16 +482,20 @@ class VistasPorUsuarioWindow(object):
     def _fill_escalas(self):
         self._panel_escala.Children.Clear()
         self._scale_buttons = []
-        self._scale_ratio = int(_DEFAULT_VIEW_SCALE)
+        self._scale_ratio = 100
         for ratio in VIEW_SCALE_RATIOS:
             btn = Button()
             btn.Content = u"1:{}".format(ratio)
             btn.Tag = ratio
             btn.Margin = Thickness(0, 0, 4, 4)
-            btn.Padding = Thickness(8, 6, 8, 6)
+            btn.Padding = Thickness(6, 6, 6, 6)
             btn.MinWidth = 52
             btn.FontSize = 12
             btn.Cursor = Cursors.Hand
+            try:
+                btn.Style = self._win.FindResource("BtnSelectOutline")
+            except Exception:
+                pass
             btn.Click += RoutedEventHandler(self._on_scale_click)
             self._panel_escala.Children.Add(btn)
             self._scale_buttons.append(btn)
@@ -505,7 +505,7 @@ class VistasPorUsuarioWindow(object):
         try:
             self._scale_ratio = int(sender.Tag)
         except Exception:
-            self._scale_ratio = int(_DEFAULT_VIEW_SCALE)
+            self._scale_ratio = 100
         self._apply_scale_button_styles()
         self._refresh_form_state()
 
@@ -534,102 +534,18 @@ class VistasPorUsuarioWindow(object):
         levels = _collect_levels_sorted(self._doc)
         for lv in levels:
             try:
-                name = _as_unicode(lv.Name or u"")
+                name = str(lv.Name or u"")
             except Exception:
                 name = u"?"
-
             cb = CheckBox()
-            try:
-                cb.Content = u""
-            except Exception:
-                cb.Content = None
+            cb.Content = name
             cb.IsChecked = True
-            cb.Margin = Thickness(0, 0, 0, 0)
-            cb.Padding = Thickness(0, 0, 0, 0)
-            cb.Cursor = Cursors.Hand
-            cb.VerticalAlignment = VerticalAlignment.Center
-            cb.VerticalContentAlignment = VerticalAlignment.Center
-            cb.HorizontalAlignment = HorizontalAlignment.Left
+            cb.Foreground = Brushes.White
+            cb.Margin = Thickness(0, 4, 0, 4)
             cb.Tag = lv
-
-            label = TextBlock()
-            label.Text = name
-            label.FontSize = 12
-            label.Margin = Thickness(8, 0, 0, 0)
-            label.Padding = Thickness(0, 0, 0, 0)
-            label.VerticalAlignment = VerticalAlignment.Center
-            label.Cursor = Cursors.Hand
-            try:
-                label.Foreground = _BRUSH_FG_HI
-            except Exception:
-                pass
-
-            row_panel = StackPanel()
-            row_panel.Orientation = Orientation.Horizontal
-            row_panel.VerticalAlignment = VerticalAlignment.Center
-            row_panel.Children.Add(cb)
-            row_panel.Children.Add(label)
-
-            border = Border()
-            border.Background = Brushes.Transparent
-            border.CornerRadius = CornerRadius(2)
-            border.Padding = Thickness(6, 3, 6, 3)
-            border.Margin = Thickness(0, 0, 0, 0)
-            border.Cursor = Cursors.Hand
-            border.Child = row_panel
-            border.Tag = lv
-
-            def _make_toggle(checkbox):
-                def _on_row_down(sender, args):
-                    try:
-                        src = args.OriginalSource
-                    except Exception:
-                        src = None
-                    if isinstance(src, CheckBox):
-                        return
-                    try:
-                        checkbox.IsChecked = not bool(checkbox.IsChecked)
-                        if args is not None:
-                            args.Handled = True
-                    except Exception:
-                        pass
-
-                return _on_row_down
-
-            try:
-                border.MouseLeftButtonDown += MouseButtonEventHandler(
-                    _make_toggle(cb)
-                )
-            except Exception:
-                pass
-
-            def _make_hover(b):
-                def _enter(sender, args):
-                    try:
-                        b.Background = _BRUSH_ROW_HOVER
-                    except Exception:
-                        pass
-
-                def _leave(sender, args):
-                    try:
-                        b.Background = Brushes.Transparent
-                    except Exception:
-                        pass
-
-                return _enter, _leave
-
-            enter, leave = _make_hover(border)
-            try:
-                from System.Windows.Input import MouseEventHandler
-
-                border.MouseEnter += MouseEventHandler(enter)
-                border.MouseLeave += MouseEventHandler(leave)
-            except Exception:
-                pass
-
             cb.Checked += RoutedEventHandler(self._on_level_changed)
             cb.Unchecked += RoutedEventHandler(self._on_level_changed)
-            self._panel_niveles.Children.Add(border)
+            self._panel_niveles.Children.Add(cb)
             self._level_checks.append(_LevelCheck(lv, cb))
 
     def _on_level_changed(self, _sender, _e):
@@ -656,7 +572,7 @@ class VistasPorUsuarioWindow(object):
         try:
             return int(self._scale_ratio)
         except Exception:
-            return int(_DEFAULT_VIEW_SCALE)
+            return 100
 
     def _get_selected_levels(self):
         out = []
@@ -668,13 +584,37 @@ class VistasPorUsuarioWindow(object):
                 continue
         return out
 
-    def _set_status(self, text):
-        if self._txt_status is None:
+    def _set_status(self, kind, text):
+        if self._txt_estado is None:
             return
-        try:
-            self._txt_status.Text = _as_unicode(text or u"")
-        except Exception:
-            pass
+        self._txt_estado.Text = unicode(text or u"")
+        if self._border_estado is None:
+            return
+        if kind == _STATUS_BUSY:
+            self._border_estado.Background = _BRUSH_STATUS_BUSY_BG
+            self._border_estado.BorderBrush = _BRUSH_STATUS_BUSY_BD
+            self._border_estado.Padding = Thickness(10, 8, 10, 8)
+            self._txt_estado.Foreground = _BRUSH_WARN
+        elif kind == _STATUS_OK:
+            self._border_estado.Background = _BRUSH_STATUS_OK_BG
+            self._border_estado.BorderBrush = _BRUSH_STATUS_OK_BD
+            self._border_estado.Padding = Thickness(10, 8, 10, 8)
+            self._txt_estado.Foreground = _BRUSH_OK
+        elif kind == _STATUS_ERR:
+            self._border_estado.Background = _BRUSH_STATUS_ERR_BG
+            self._border_estado.BorderBrush = _BRUSH_STATUS_ERR_BD
+            self._border_estado.Padding = Thickness(10, 8, 10, 8)
+            self._txt_estado.Foreground = _BRUSH_ERR
+        elif kind == _STATUS_IDLE and text and not text.startswith(u"Listo"):
+            self._border_estado.Background = _BRUSH_STATUS_INFO_BG
+            self._border_estado.BorderBrush = _BRUSH_STATUS_INFO_BD
+            self._border_estado.Padding = Thickness(10, 8, 10, 8)
+            self._txt_estado.Foreground = _BRUSH_INFO
+        else:
+            self._border_estado.Background = _BRUSH_TRANSPARENT
+            self._border_estado.BorderBrush = _BRUSH_TRANSPARENT
+            self._border_estado.Padding = Thickness(0)
+            self._txt_estado.Foreground = _BRUSH_FG_LO
 
     def _refresh_form_state(self):
         if self._busy:
@@ -688,78 +628,91 @@ class VistasPorUsuarioWindow(object):
         total = len(self._level_checks)
         n = len(levels)
         if self._txt_nivel_count is not None:
-            if total <= 0:
-                self._txt_nivel_count.Text = u"0 de 0 seleccionados"
-            else:
-                self._txt_nivel_count.Text = u"{0} de {1} seleccionados".format(
-                    n, total
-                )
+            self._txt_nivel_count.Text = u"{0} / {1}".format(n, total)
 
         scale = self._get_selected_scale()
+        if self._txt_resumen is not None:
+            if not code:
+                self._txt_resumen.Text = (
+                    u"Seleccione un modelador para ver el resumen de creación."
+                )
+            elif n == 0:
+                self._txt_resumen.Text = (
+                    u"Seleccione al menos un nivel. Se crearán plantas Cielo/Piso, "
+                    u"plantillas 02_TRABAJO, tipos Detail/Sección y filtro de sección."
+                )
+            else:
+                name = unicode(display or code)
+                plantas = n * 2
+                self._txt_resumen.Text = (
+                    u"Para {0} ({1}) a 1:{2}: {3} plantas (Cielo+Piso) · "
+                    u"plantillas 02_TRABAJO · tipos Detail/Sección · filtro de sección."
+                ).format(name, code, scale, plantas)
+
         can_run = bool(code) and n > 0
-        _style_crear_button(self._btn_iniciar, can_run)
+        if self._btn_iniciar is not None:
+            self._btn_iniciar.IsEnabled = can_run
 
         if not code:
-            self._set_status(u"Seleccione un modelador.")
-        elif n == 0:
-            self._set_status(u"Seleccione al menos un nivel.")
-        else:
-            name = unicode(display or code)
-            plantas = n * 2
             self._set_status(
-                u"{0} ({1}) · 1:{2} · {3} plantas".format(
-                    name, code, scale, plantas
-                )
+                _STATUS_ERR,
+                u"Seleccione un modelador (o agréguelo en el directorio de personas).",
+            )
+        elif n == 0:
+            self._set_status(
+                _STATUS_ERR,
+                u"Seleccione al menos un nivel para continuar.",
+            )
+        else:
+            self._set_status(
+                _STATUS_IDLE,
+                u"Listo para crear el conjunto 02_TRABAJO.",
             )
 
-    def _on_iniciar(self, sender, args):
-        if self._busy:
-            return
+    def _finish_create(self, success, status_text):
+        self._busy = False
+        self._refresh_form_state()
+        kind = _STATUS_OK if success else _STATUS_ERR
+        self._set_status(kind, status_text)
 
+    def _on_iniciar(self, sender, args):
         code, display = self._get_selected_usuario()
         if not code:
-            self._set_status(u"Seleccione un modelador.")
+            self._set_status(_STATUS_ERR, u"Seleccione un modelador.")
             mostrar_aviso(self._revit, u"Seleccione un modelador.")
             return
 
         levels = self._get_selected_levels()
         if not levels:
-            self._set_status(u"Seleccione al menos un nivel.")
+            self._set_status(_STATUS_ERR, u"Seleccione al menos un nivel.")
             mostrar_aviso(self._revit, u"Seleccione al menos un nivel.")
             return
 
         from vistas_por_usuario.service import VistasPorUsuarioRequest
 
         scale = self._get_selected_scale()
-        req = VistasPorUsuarioRequest(code, scale, list(levels), display)
+        req = VistasPorUsuarioRequest(code, scale, levels, display)
 
         self._busy = True
-        _style_crear_button(self._btn_iniciar, False)
-
+        if self._btn_iniciar is not None:
+            self._btn_iniciar.IsEnabled = False
+        self._set_status(_STATUS_BUSY, u"Creando vistas… no cierre Revit.")
         self._create_handler.request = req
-        self._create_handler.uiapp_for_dialog = self._revit
-        _pin_external_event(self._create_event, self._create_handler)
-        try:
-            self._create_event.Raise()
-        except Exception as ex:
-            self._busy = False
-            _unpin_external_event()
-            self._refresh_form_state()
-            mostrar_aviso(
-                self._revit,
-                u"No se pudo iniciar la creación.",
-                content=u"{}".format(ex),
-            )
-            return
-
-        # Cerrar UI de inmediato; Execute usa el snapshot (sin controles WPF).
-        try:
-            self._win.Close()
-        except Exception:
-            pass
+        self._create_event.Raise()
 
     def show(self):
-        _prepare_window(self._win, self._revit)
+        try:
+            from System.Windows.Interop import WindowInteropHelper
+            from revit_wpf_window_position import (
+                position_wpf_window_top_left_at_active_view,
+            )
+
+            hwnd = revit_main_hwnd(self._revit)
+            if hwnd:
+                WindowInteropHelper(self._win).Owner = hwnd
+            position_wpf_window_top_left_at_active_view(self._win, self._uidoc, hwnd)
+        except Exception:
+            pass
         singleton.register(self._win)
         self._win.Show()
 

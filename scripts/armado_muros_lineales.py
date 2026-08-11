@@ -956,7 +956,7 @@ def _tamano_lote_ejecucion(n_items, lote_legacy):
         return max(1, int(lote_legacy))
     except Exception:
         return 1
-# Rutina unificada bajo TransactionGroup asimilado (un Deshacer).
+# Una sola Transaction de documento para cabezal + mallas + etiquetas (Deshacer único).
 # Los pasos internos usan TxnScope → SubTransaction cuando el padre ya está abierto.
 TXN_ARMADO_MUROS_UNIFICADO = u"Arainco: Armado Muros v3"
 TXN_MALLAS_EN_MUROS = u"Arainco: Mallas en muros"
@@ -1557,66 +1557,8 @@ def _get_default_area_reinforcement_type_id(document):
         n = _element_id_int(eid)
         return n is not None and n >= 0
 
-    # 1) Tipo por defecto del documento (sin barrer el modelo).
     try:
-        default_id = document.GetDefaultElementTypeId(
-            ElementTypeGroup.AreaReinforcementType,
-        )
-        if _valid_id(default_id):
-            t = document.GetElement(default_id)
-            if t and _is_area_reinforcement_type(t):
-                return default_id
-            if t is not None:
-                return default_id
-    except Exception:
-        pass
-
-    # 2) OfClass + WhereElementIsElementType (filtro nativo C#).
-    try:
-        first = (
-            FilteredElementCollector(document)
-            .OfClass(AreaReinforcementType)
-            .WhereElementIsElementType()
-            .FirstElement()
-        )
-        if first is not None and _is_area_reinforcement_type(first):
-            return first.Id
-        if first is not None:
-            return first.Id
-    except Exception:
-        try:
-            rt = clr.GetClrType(AreaReinforcementType)
-            first = (
-                FilteredElementCollector(document)
-                .OfClass(rt)
-                .WhereElementIsElementType()
-                .FirstElement()
-            )
-            if first is not None:
-                return first.Id
-        except Exception:
-            pass
-
-    # 3) Categoría OST_AreaRein solo tipos.
-    try:
-        first = (
-            FilteredElementCollector(document)
-            .OfCategory(BuiltInCategory.OST_AreaRein)
-            .WhereElementIsElementType()
-            .FirstElement()
-        )
-        if first is not None and _is_area_reinforcement_type(first):
-            return first.Id
-    except Exception:
-        pass
-
-    # 4) Instancia → GetTypeId (último recurso).
-    try:
-        for elem in (
-            FilteredElementCollector(document)
-            .OfCategory(BuiltInCategory.OST_AreaRein)
-            .WhereElementIsNotElementType()
-        ):
+        for elem in FilteredElementCollector(document).OfCategory(BuiltInCategory.OST_AreaRein):
             if elem is None:
                 continue
             try:
@@ -1631,19 +1573,47 @@ def _get_default_area_reinforcement_type_id(document):
     except Exception:
         pass
 
+    try:
+        default_id = document.GetDefaultElementTypeId(ElementTypeGroup.AreaReinforcementType)
+        if _valid_id(default_id):
+            t = document.GetElement(default_id)
+            if t and _is_area_reinforcement_type(t):
+                return default_id
+            if t is not None:
+                return default_id
+    except Exception:
+        pass
+
+    try:
+        for elem in (FilteredElementCollector(document)
+                     .OfCategory(BuiltInCategory.OST_AreaRein)
+                     .WhereElementIsElementType()):
+            if elem and _is_area_reinforcement_type(elem):
+                return elem.Id
+    except Exception:
+        pass
+
+    try:
+        for elem in FilteredElementCollector(document).OfClass(AreaReinforcementType):
+            if elem and _is_area_reinforcement_type(elem):
+                return elem.Id
+    except Exception:
+        try:
+            rt = clr.GetClrType(AreaReinforcementType)
+            for elem in FilteredElementCollector(document).OfClass(rt):
+                if elem and _is_area_reinforcement_type(elem):
+                    return elem.Id
+        except Exception:
+            pass
+
     return None
 
 
 def _primer_bar_type_id(doc):
     try:
-        first = (
-            FilteredElementCollector(doc)
-            .OfClass(RebarBarType)
-            .WhereElementIsElementType()
-            .FirstElement()
-        )
-        if first is not None:
-            return first.Id
+        for elem in FilteredElementCollector(doc).OfClass(RebarBarType):
+            if elem:
+                return elem.Id
     except Exception:
         pass
     return None
@@ -3700,40 +3670,50 @@ def asignar_rebar_cover_a_muros(doc, walls, errores=None):
         return 0
     n_ok = 0
     from armado_muros_txn import TxnScope
+    trans = TxnScope(doc, u"Arainco: Armado muros — Rebar Cover")
+    if not trans.HasStarted():
+        if errores is not None:
+            errores.append(u"Rebar Cover: no se pudo abrir transacción.")
+        return 0
     try:
-        with TxnScope(doc, u"Arainco: Armado muros — Rebar Cover") as trans:
-            for wall in walls or []:
-                if wall is None:
-                    continue
-                ok, err_wall = asignar_rebar_cover_a_muro(
-                    wall, cover_ext_int, cover_other,
-                )
-                if ok:
-                    n_ok += 1
-                    # Aviso parcial (p. ej. otras caras) — no cuenta como fallo duro.
-                    if err_wall and errores is not None:
-                        try:
-                            wid = _wall_id_int(wall) or 0
-                        except Exception:
-                            wid = 0
-                        errores.append(
-                            u"Muro {0}: Rebar Cover aviso — {1}.".format(
-                                wid, err_wall,
-                            ),
-                        )
-                elif errores is not None and err_wall:
+        for wall in walls or []:
+            if wall is None:
+                continue
+            ok, err_wall = asignar_rebar_cover_a_muro(
+                wall, cover_ext_int, cover_other,
+            )
+            if ok:
+                n_ok += 1
+                # Aviso parcial (p. ej. otras caras) — no cuenta como fallo duro.
+                if err_wall and errores is not None:
                     try:
                         wid = _wall_id_int(wall) or 0
                     except Exception:
                         wid = 0
                     errores.append(
-                        u"Muro {0}: Rebar Cover — {1}.".format(wid, err_wall),
+                        u"Muro {0}: Rebar Cover aviso — {1}.".format(
+                            wid, err_wall,
+                        ),
                     )
+            elif errores is not None and err_wall:
+                try:
+                    wid = _wall_id_int(wall) or 0
+                except Exception:
+                    wid = 0
+                errores.append(
+                    u"Muro {0}: Rebar Cover — {1}.".format(wid, err_wall),
+                )
+        try:
+            doc.Regenerate()
+        except Exception:
+            pass
+        trans.Commit()
+    except Exception as ex:
+        if trans.HasStarted():
             try:
-                doc.Regenerate()
+                trans.RollBack()
             except Exception:
                 pass
-    except Exception as ex:
         if errores is not None:
             errores.append(u"Rebar Cover (lote): {0}".format(ex))
         return n_ok
@@ -5363,8 +5343,7 @@ def _crear_armado_muros_unificado_impl(
     Cuerpo del flujo unificado (cabezal, mallas, etiquetas).
 
     Si ``within_parent_transaction_group`` es True, el llamador ya abrió
-    el ``TransactionGroup`` / ``Transaction`` ``Arainco: Armado Muros v3``
-    (pasos internos = SubTransaction).
+    la ``Transaction`` ``Arainco: Armado Muros v3`` (pasos internos = SubTransaction).
 
     ProgressBar pyRevit (solo Revit 2024 + IronPython 2): una barra con fases
     Cover → Coronamiento → Cabezal → Mallas → Etiquetas → Visibilidad.
@@ -5616,10 +5595,9 @@ def crear_armado_muros_unificado(
        cabezal/coronamiento con unobscured ON.
     9) Color rojo en vista activa si largo total de barra > 12 m.
 
-    ``revit.TransactionGroup`` asimilado + ``revit.Transaction`` (pyRevit):
-    un solo paso Deshacer. Excepción al crear geometría/etiquetas →
-    RollBack limpio del grupo (documento no bloqueado).
-    Pasos internos = ``SubTransaction`` vía ``TxnScope`` bajo la txn padre.
+    Una sola ``Transaction`` ``Arainco: Armado Muros v3`` (un paso Deshacer).
+    Los lotes internos usan ``TxnScope`` → ``SubTransaction`` (rollback local);
+    no se abren ``TransactionGroup`` anidados.
 
     ProgressBar (Revit 2024 + IronPython 2): fases Cover → Coronamiento →
     Cabezal → Mallas → Etiquetas → Visibilidad.
@@ -5629,9 +5607,11 @@ def crear_armado_muros_unificado(
     cover_n = 0
     embed_resumen = None
     conjunto_guid = None
-    flujo_ok = False
 
-    from armado_muros_txn import transaction_group_scope, transaction_scope
+    from armado_muros_txn import TxnScope
+
+    outer = None
+    flujo_ok = False
 
     try:
         try:
@@ -5644,27 +5624,22 @@ def crear_armado_muros_unificado(
             iniciar_armadura_eje_ejecucion(uidoc=uidoc)
         except Exception:
             pass
-
-        # Grupo asimilado: un Undo. Excepción → RollBack del grupo.
-        with transaction_group_scope(
-            doc, TXN_ARMADO_MUROS_UNIFICADO, assimilate=True,
-        ):
-            with transaction_scope(doc, TXN_ARMADO_MUROS_UNIFICADO):
-                ok, errores, cover_n, embed_resumen = (
-                    _crear_armado_muros_unificado_impl(
-                        doc,
-                        walls,
-                        params_por_muro_id,
-                        area_type_id,
-                        aplicar_malla_cb,
-                        cabezal_por_muro_id,
-                        uidoc=uidoc,
-                        malla_activo_por_muro_id=malla_activo_por_muro_id,
-                        within_parent_transaction_group=True,
-                        coronamiento_cfg=coronamiento_cfg,
-                        coronamiento_por_muro_id=coronamiento_por_muro_id,
-                    )
-                )
+        outer = TxnScope(doc, TXN_ARMADO_MUROS_UNIFICADO)
+        if not outer.HasStarted():
+            raise Exception(u"No se pudo abrir la transacción de Armado Muros v3.")
+        ok, errores, cover_n, embed_resumen = _crear_armado_muros_unificado_impl(
+            doc,
+            walls,
+            params_por_muro_id,
+            area_type_id,
+            aplicar_malla_cb,
+            cabezal_por_muro_id,
+            uidoc=uidoc,
+            malla_activo_por_muro_id=malla_activo_por_muro_id,
+            within_parent_transaction_group=True,
+            coronamiento_cfg=coronamiento_cfg,
+            coronamiento_por_muro_id=coronamiento_por_muro_id,
+        )
         flujo_ok = True
     except Exception as ex:
         errores.append(u"Armado Muros (transacción): {0}".format(ex))
@@ -5680,6 +5655,23 @@ def crear_armado_muros_unificado(
             finalizar_armadura_eje_ejecucion()
         except Exception:
             pass
+        if outer is not None and outer.HasStarted():
+            try:
+                if flujo_ok:
+                    outer.Commit()
+                else:
+                    outer.RollBack()
+            except Exception as ex_txn:
+                try:
+                    if outer.HasStarted():
+                        outer.RollBack()
+                except Exception:
+                    pass
+                if flujo_ok:
+                    flujo_ok = False
+                    errores.append(
+                        u"Armado Muros (commit transacción): {0}".format(ex_txn),
+                    )
 
     if flujo_ok and uidoc is not None:
         _refrescar_vista_fin_flujo(doc, uidoc)

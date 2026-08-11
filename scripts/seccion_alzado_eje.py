@@ -8,17 +8,9 @@ Respaldo de desarrollo en ``BIMTools.extension/scripts/``.
 Tras editar aquí, sincronice con
 ``02_SeccionAlzadoEje.pushbutton/scripts/``.
 
-Orientación del corte (planta): sección **paralela al eje** (mirada
-perpendicular al Grid). Sentido estable (independiente de p0→p1):
-
-1. Orientar el eje en sentido canónico (componente dominante ≥ 0):
-   horizontal-ish → +X; vertical-ish → +Y.
-2. Mirada = 90° antihorario (CCW) a ese eje canónico.
-
-Resultado de referencia (planta, Norte arriba):
-- Vertical: mira izquierda (−X).
-- Horizontal: mira arriba (+Y).
-- Diagonales: paralelas al Grid; misma regla CCW sobre eje canónico.
+Orientación del corte (planta): perpendicular al eje, 90° antihorario respecto
+al trazo del Grid (punto 0 → punto 1). Equivale al lado izquierdo de la línea
+del eje según la convención de la herramienta.
 """
 
 from __future__ import print_function
@@ -280,9 +272,10 @@ def _direccion_eje_y_origen(grid):
 
 def direccion_corte_desde_eje(axis_dir):
     """
-    Dirección de corte (BasisZ): 90° CCW al eje en planta (legado).
+    Dirección de corte (BasisZ de la sección): 90° CCW al eje en planta.
 
-    Preferir ``direccion_corte_estable`` para orientación anclada al mundo.
+    Regla visual: el alzado mira hacia el lado izquierdo del trazo del eje
+    (de inicio a fin).
     """
     if axis_dir is None:
         return None
@@ -290,56 +283,6 @@ def direccion_corte_desde_eje(axis_dir):
     if horiz is None:
         return None
     return _vector_unitario(XYZ(-horiz.Y, horiz.X, 0.0))
-
-
-def _eje_canonico_planta(axis_dir):
-    """
-    Dirección del eje en planta con sentido canónico (componente dominante >= 0).
-
-    - |X| ≥ |Y| → forzar X ≥ 0 (apunta a la derecha).
-    - |Y| > |X| → forzar Y ≥ 0 (apunta arriba).
-    """
-    if axis_dir is None:
-        return None
-    horiz = _vector_unitario(XYZ(axis_dir.X, axis_dir.Y, 0.0))
-    if horiz is None:
-        return None
-    try:
-        ax = abs(float(horiz.X))
-        ay = abs(float(horiz.Y))
-        hx = float(horiz.X)
-        hy = float(horiz.Y)
-    except Exception:
-        return horiz
-    if ax >= ay:
-        if hx < 0.0:
-            return _vector_unitario(XYZ(-hx, -hy, 0.0))
-    else:
-        if hy < 0.0:
-            return _vector_unitario(XYZ(-hx, -hy, 0.0))
-    return horiz
-
-
-def direccion_corte_estable(axis_dir):
-    """
-    Dirección de corte (BasisZ): perpendicular al eje (sección paralela al Grid).
-
-    Algoritmo (referencia visual ejes 44/45/46/47):
-      1. Eje canónico (componente dominante positiva).
-      2. Mirada = 90° CCW en planta → (−Y, X) del eje canónico.
-
-    Ejemplos:
-      - Vertical → mira −X (izquierda).
-      - Horizontal → mira +Y (arriba).
-      - Diagonal / o \\ → paralela al Grid, sentido CCW canónico.
-
-    Independiente del sentido p0→p1 del Grid.
-    """
-    canon = _eje_canonico_planta(axis_dir)
-    if canon is None:
-        return None
-    # 90° antihorario en planta respecto al eje canónico.
-    return _vector_unitario(XYZ(-canon.Y, canon.X, 0.0))
 
 
 def _construir_transform(origen, dir_corte):
@@ -392,11 +335,6 @@ def _union_bbox(a, b):
     return out
 
 
-def bbox_modelo_documento(document):
-    """Unión de bounding boxes de categorías estructurales / arquitectónicas."""
-    return _bbox_modelo(document)
-
-
 def _bbox_modelo(document):
     """Unión de bounding boxes de categorías estructurales / arquitectónicas."""
     merged = None
@@ -432,58 +370,25 @@ def _bbox_modelo(document):
     return merged
 
 
-def recopilar_nombres_vistas(document, excluir_id=None):
-    """Set de nombres de vista en minúsculas (para reutilizar en un lote)."""
+def _nombre_unico_vista(view, document, nombre_base):
     existentes = set()
-    if document is None:
-        return existentes
-    try:
-        excl_iv = excluir_id.IntegerValue if excluir_id is not None else None
-    except Exception:
-        excl_iv = None
     for v in FilteredElementCollector(document).OfClass(View):
         try:
-            if v is None:
-                continue
-            if excl_iv is not None and v.Id.IntegerValue == excl_iv:
+            if v is None or v.Id == view.Id:
                 continue
             n = v.Name
             if n:
                 existentes.add(_as_unicode(n).strip().lower())
         except Exception:
             continue
-    return existentes
-
-
-def _nombre_unico_vista(view, document, nombre_base, nombres_existentes=None):
-    """
-    Asigna un nombre único a ``view``.
-
-    Si se pasa ``nombres_existentes`` (set mutable), se reutiliza y se actualiza
-    (evita re-recolectar todas las vistas en cada creación).
-    """
-    if nombres_existentes is None:
-        try:
-            excl = view.Id if view is not None else None
-        except Exception:
-            excl = None
-        existentes = recopilar_nombres_vistas(document, excluir_id=excl)
-    else:
-        existentes = nombres_existentes
     cand = _as_unicode(nombre_base).strip()
     if not cand:
         cand = u"Sección"
-    base = cand
     k = 0
     while cand.lower() in existentes:
         k += 1
-        cand = u"{0} ({1})".format(base, k)
+        cand = u"{0} ({1})".format(nombre_base, k)
     view.Name = cand
-    try:
-        existentes.add(cand.lower())
-    except Exception:
-        pass
-    return cand
 
 
 def _aplicar_far_clip_offset_mm(view, mm):
@@ -540,23 +445,9 @@ def _extents_seccion_desde_puntos(tr, pts, margen_mm, far_clip_mm):
     return tr, (-xabs, xabs, -yabs, yabs, -near_clip, far_clip)
 
 
-def crear_seccion_alzado(
-    document,
-    grid,
-    vft_id,
-    far_clip_mm=_FAR_CLIP_OFFSET_MM,
-    nombre_vista=None,
-    bbox_modelo=None,
-    nombres_vistas=None,
-    desactivar_crop=True,
-):
+def crear_seccion_alzado(document, grid, vft_id, far_clip_mm=_FAR_CLIP_OFFSET_MM):
     """
     Crea una ``ViewSection`` de alzado a partir del ``Grid`` indicado.
-
-    ``nombre_vista``: nombre base opcional; por defecto ``ALZ. {eje}``.
-    ``bbox_modelo``: bbox precalculado (evita reescanear el modelo en lotes).
-    ``nombres_vistas``: set mutable de nombres existentes (minúsculas).
-    ``desactivar_crop``: si False, deja el crop activo (útil para collectors).
 
     Returns:
         (ViewSection, None) o (None, mensaje_error)
@@ -572,7 +463,7 @@ def crear_seccion_alzado(
     if axis_dir is None:
         return None, _as_unicode(origen)
 
-    dir_corte = direccion_corte_estable(axis_dir)
+    dir_corte = direccion_corte_desde_eje(axis_dir)
     if dir_corte is None:
         return None, u"No se pudo calcular la orientación del corte."
 
@@ -580,7 +471,7 @@ def crear_seccion_alzado(
     if tr is None:
         return None, u"No se pudo construir la orientación de la sección."
 
-    bb = bbox_modelo if bbox_modelo is not None else _bbox_modelo(document)
+    bb = _bbox_modelo(document)
     if bb is None:
         return None, u"No se pudo obtener la extensión del modelo para dimensionar la sección."
 
@@ -600,16 +491,10 @@ def crear_seccion_alzado(
     except Exception as ex:
         return None, u"CreateSection falló: {0}".format(_as_unicode(ex))
 
-    if desactivar_crop:
-        try:
-            vs.CropBoxActive = False
-        except Exception:
-            pass
-    else:
-        try:
-            vs.CropBoxActive = True
-        except Exception:
-            pass
+    try:
+        vs.CropBoxActive = False
+    except Exception:
+        pass
     try:
         vs.CropBoxVisible = False
     except Exception:
@@ -617,14 +502,9 @@ def crear_seccion_alzado(
 
     _aplicar_far_clip_offset_mm(vs, far_clip_mm)
 
-    if nombre_vista:
-        label = _as_unicode(nombre_vista).strip()
-    else:
-        label = u"ALZ. {0}".format(nombre_eje)
-    if not label:
-        label = u"ALZ. {0}".format(nombre_eje)
+    label = u"ALZ. {0}".format(nombre_eje)
     try:
-        _nombre_unico_vista(vs, document, label, nombres_existentes=nombres_vistas)
+        _nombre_unico_vista(vs, document, label)
     except Exception:
         pass
 

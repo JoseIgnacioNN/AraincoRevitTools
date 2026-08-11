@@ -1,19 +1,8 @@
 # -*- coding: utf-8 -*-
 u"""Visibilidad de armadura en vistas 3D (equivalente a «View Unobscured» en Revit)."""
 
-from Autodesk.Revit.DB import (
-    BuiltInCategory,
-    ElementCategoryFilter,
-    FilteredElementCollector,
-    View,
-    View3D,
-)
-from Autodesk.Revit.DB.Structure import (
-    AreaReinforcement,
-    PathReinforcement,
-    Rebar,
-    RebarInSystem,
-)
+from Autodesk.Revit.DB import FilteredElementCollector, View, View3D
+from Autodesk.Revit.DB.Structure import AreaReinforcement, Rebar, RebarInSystem
 
 
 def iter_document_view3d_non_template(doc):
@@ -33,8 +22,7 @@ def iter_document_view3d_non_template(doc):
 
 def collect_reinforcement_in_view(doc, view):
     u"""
-    Recoge ``Rebar``, ``RebarInSystem``, ``AreaReinforcement`` y
-    ``PathReinforcement`` visibles en ``view``.
+    Recoge ``Rebar``, ``RebarInSystem`` y ``AreaReinforcement`` visibles en ``view``.
 
     Usa ``FilteredElementCollector(doc, view.Id)`` — solo esa vista, no el documento.
     """
@@ -48,7 +36,7 @@ def collect_reinforcement_in_view(doc, view):
     out = []
     seen = set()
     view_id = view.Id
-    for cls in (Rebar, RebarInSystem, AreaReinforcement, PathReinforcement):
+    for cls in (Rebar, RebarInSystem, AreaReinforcement):
         try:
             elems = (
                 FilteredElementCollector(doc, view_id)
@@ -82,13 +70,13 @@ def collect_reinforcement_in_view(doc, view):
 def _resolve_reinforcement_element(doc, ref):
     if ref is None:
         return None
-    if isinstance(ref, (AreaReinforcement, PathReinforcement, Rebar, RebarInSystem)):
+    if isinstance(ref, (AreaReinforcement, Rebar, RebarInSystem)):
         return ref
     try:
         ref = doc.GetElement(ref)
     except Exception:
         ref = None
-    if isinstance(ref, (AreaReinforcement, PathReinforcement, Rebar, RebarInSystem)):
+    if isinstance(ref, (AreaReinforcement, Rebar, RebarInSystem)):
         return ref
     return None
 
@@ -144,85 +132,6 @@ def summarize_reinforcement_unobscured_in_view(doc, refuerzos, view):
     }
 
 
-def _element_id_key(eid):
-    if eid is None:
-        return None
-    try:
-        return int(eid.IntegerValue)
-    except AttributeError:
-        try:
-            return int(eid.Value)
-        except Exception:
-            return None
-    except Exception:
-        return None
-
-
-def _iter_system_reinforcement_bar_children(doc, system_rein):
-    u"""
-    ``RebarInSystem`` / ``Rebar`` hijos de ``AreaReinforcement`` o ``PathReinforcement``.
-
-    Tras ``Regenerate``: ``GetRebarInSystemIds`` y, si hace falta,
-    ``GetDependentElements`` (p. ej. cuando HostStructuralRebar genera ``Rebar``).
-    """
-    if doc is None or system_rein is None:
-        return
-    seen = set()
-    try:
-        sys_ids = system_rein.GetRebarInSystemIds()
-    except Exception:
-        sys_ids = None
-    if sys_ids is not None:
-        try:
-            n = int(sys_ids.Count)
-        except Exception:
-            n = 0
-        for i in range(n):
-            try:
-                rid = sys_ids[i]
-                key = _element_id_key(rid)
-                if key is None or key in seen:
-                    continue
-                child = doc.GetElement(rid)
-                if isinstance(child, (RebarInSystem, Rebar)):
-                    seen.add(key)
-                    yield child
-            except Exception:
-                continue
-    for cat, cls in (
-        (BuiltInCategory.OST_RebarInSystem, RebarInSystem),
-        (BuiltInCategory.OST_Rebar, Rebar),
-    ):
-        try:
-            dep = system_rein.GetDependentElements(ElementCategoryFilter(cat))
-        except Exception:
-            dep = None
-        if dep is None:
-            continue
-        try:
-            nd = int(dep.Count)
-        except Exception:
-            nd = 0
-        for i in range(nd):
-            try:
-                rid = dep[i]
-                key = _element_id_key(rid)
-                if key is None or key in seen:
-                    continue
-                child = doc.GetElement(rid)
-                if isinstance(child, cls):
-                    seen.add(key)
-                    yield child
-            except Exception:
-                continue
-
-
-def _iter_area_reinforcement_bar_children(doc, area_rein):
-    u"""Compat: mismos hijos que ``_iter_system_reinforcement_bar_children``."""
-    for child in _iter_system_reinforcement_bar_children(doc, area_rein):
-        yield child
-
-
 def _apply_visibility_to_element(ref, doc, view, unobscured, solid_in_view):
     applied = False
     try:
@@ -231,21 +140,28 @@ def _apply_visibility_to_element(ref, doc, view, unobscured, solid_in_view):
     except Exception:
         pass
     _set_solid_in_view(ref, view, solid_in_view)
-    if isinstance(ref, (AreaReinforcement, PathReinforcement)):
-        for child in _iter_system_reinforcement_bar_children(doc, ref):
-            try:
-                child.SetUnobscuredInView(view, unobscured)
-            except Exception:
-                pass
-            _set_solid_in_view(child, view, solid_in_view)
+    if isinstance(ref, AreaReinforcement):
+        try:
+            ids = ref.GetRebarInSystemIds()
+        except Exception:
+            ids = None
+        if ids:
+            for rid in ids:
+                child = doc.GetElement(rid)
+                if child is None:
+                    continue
+                try:
+                    child.SetUnobscuredInView(view, unobscured)
+                except Exception:
+                    pass
+                _set_solid_in_view(child, view, solid_in_view)
     return applied
 
 
 def apply_reinforcement_unobscured_in_view(doc, refuerzos, view, unobscured=True, solid_in_view=None):
     u"""
     ``SetUnobscuredInView`` + ``SetSolidInView`` para ``AreaReinforcement``,
-    ``PathReinforcement``, ``Rebar`` o ``RebarInSystem`` **solo** en la vista
-    indicada (nunca en otras).
+    ``Rebar`` o ``RebarInSystem`` **solo** en la vista indicada (nunca en otras).
 
     ``unobscured``: ``True`` para activar View Unobscured; ``False`` para quitarlo.
     ``solid_in_view``: si es ``None``, sigue el mismo valor que ``unobscured``.

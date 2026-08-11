@@ -290,22 +290,8 @@ def unir_solidos_hormigon(elementos, view=None):
       1. Un cuerpo representativo por elemento.
       2. Todos los sólidos de instancia.
       3. Unión greedy omitiendo piezas conflictivas.
-
-    Extrae geometría una sola vez (reps + all solids del mismo pase).
     """
-    options = crear_options_geometria(view)
-    reps = []
-    all_solids = []
-    for el in elementos or []:
-        if el is None:
-            continue
-        sols = _filtrar_solidos_utiles(obtener_solidos_elemento(el, options))
-        if not sols:
-            continue
-        all_solids.extend(sols)
-        rep = _solido_mayor_volumen(sols)
-        if rep is not None:
-            reps.append(rep)
+    reps = _solidos_representantes_por_elemento(elementos, view)
     if not reps:
         return None
 
@@ -313,6 +299,7 @@ def unir_solidos_hormigon(elementos, view=None):
     if merged is not None:
         return merged
 
+    all_solids = _solidos_todos_elementos(elementos, view)
     if all_solids:
         merged = _unir_solidos_lista(all_solids)
         if merged is not None:

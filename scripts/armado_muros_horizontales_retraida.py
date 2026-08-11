@@ -214,11 +214,7 @@ def _resolver_rebar_shape_06(doc):
             pass
     if found is None:
         try:
-            for sh in (
-                FilteredElementCollector(doc)
-                .OfClass(RebarShape)
-                .WhereElementIsElementType()
-            ):
+            for sh in FilteredElementCollector(doc).OfClass(RebarShape):
                 if _shape_key_matches_06(_shape_label(sh)):
                     found = sh
                     break
@@ -274,11 +270,7 @@ def _resolver_hook_stirrup_tie_135(doc):
         tol_deg = 2.0
         stirrup_cands = []
         try:
-            for ht in (
-                FilteredElementCollector(doc)
-                .OfClass(RebarHookType)
-                .WhereElementIsElementType()
-            ):
+            for ht in FilteredElementCollector(doc).OfClass(RebarHookType):
                 name = u""
                 try:
                     name = (ht.Name or u"").lower()
