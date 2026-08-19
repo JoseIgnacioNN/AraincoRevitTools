@@ -6,7 +6,10 @@ __author__ = u"BIMTools"
 __doc__ = (
     u"Solo en vistas de planta. Lista los ejes (Grids), permite seleccionar "
     u"uno o varios y crea una sección Building Section por cada eje marcado, "
-    u"con la escala elegida."
+    u"con la escala elegida. Hereda los filtros de la plantilla y aplica un "
+    u"filtro Armadura_Eje a cada vista; si la plantilla rige los filtros, "
+    u"la edita para permitir un filtro distinto por vista. Fija Detail Level "
+    u"Coarse en la plantilla de las vistas creadas."
 )
 
 import os
@@ -54,23 +57,16 @@ import bimtools_paths
 
 bimtools_paths.set_pushbutton_dir(_pushbutton_dir)
 
-# --- Validación acceso corporativo (RECURSOS COMPARTIDOS) ---
+# --- Validacion acceso corporativo (prod: bootstrap junto al boton) ---
+# === BEGIN BIZARDS_PROD_PORTABLE_BOOTSTRAP (prod_builder) ===
 import os as _os_ac
 import sys as _sys_ac
 
-_tab_ac = _os_ac.path.dirname(_os_ac.path.abspath(__file__))
-for _iac in range(16):
-    if _os_ac.path.basename(_tab_ac).endswith(u".tab"):
-        break
-    _parent_ac = _os_ac.path.dirname(_tab_ac)
-    if _parent_ac == _tab_ac:
-        _tab_ac = None
-        break
-    _tab_ac = _parent_ac
-if _tab_ac and _tab_ac not in _sys_ac.path:
-    _sys_ac.path.insert(0, _tab_ac)
+_pb_ac = _os_ac.path.dirname(_os_ac.path.abspath(__file__))
+if _pb_ac and _pb_ac not in _sys_ac.path:
+    _sys_ac.path.insert(0, _pb_ac)
 import bimtools_access_bootstrap as _bimtools_access
-
+# === END BIZARDS_PROD_PORTABLE_BOOTSTRAP (prod_builder) ===
 if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
     try:
         _mod = imp.load_source(_MAIN_MODULE_ID, _module_path)
