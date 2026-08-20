@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Mockup · Guía rubber-band (estilo selección Windows)</title>
+<style>
+  :root {
+    --bg: #0b1220;
+    --panel: #111827;
+    --card: #0f172a;
+    --border: #334155;
+    --fg: #e2e8f0;
+    --mid: #94a3b8;
+    --lo: #64748b;
+    --accent: #38bdf8;
+    --marquee: #0ea5e9;
+    --sup: #22d3ee;
+    --inf: #f87171;
+    --ok: #34d399;
+    --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: var(--fg);
+    background:
+      radial-gradient(900px 420px at 10% -10%, #1e3a5f55, transparent 55%),
+      radial-gradient(700px 360px at 100% 0%, #0f766e33, transparent 50%),
+      var(--bg);
+  }
+  .wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 20px 18px 36px;
+  }
+  h1 {
+    margin: 0 0 6px;
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .lead {
+    margin: 0 0 16px;
+    color: var(--mid);
+    font-size: 0.88rem;
+    line-height: 1.45;
+    max-width: 58ch;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 14px;
+    align-items: start;
+  }
+  @media (max-width: 820px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+  .stage {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 18px 40px #00000044;
+  }
+  .stage-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    background: #0b1324;
+  }
+  .stage-bar strong { font-size: 0.82rem; }
+  .stage-bar span {
+    font-size: 0.75rem;
+    color: var(--mid);
+  }
+  .chip {
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid #1d4ed8;
+    background: #172554;
+    color: #93c5fd;
+  }
+  .chip.drag {
+    border-color: #0e7490;
+    background: #083344;
+    color: #67e8f9;
+  }
+  .canvas-host {
+    position: relative;
+    background: #0a1628;
+    cursor: crosshair;
+    user-select: none;
+    touch-action: none;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    vertical-align: top;
+  }
+  /* Marquee CSS: misma idea que el rectángulo de selección de Windows
+     (borde segmentado + relleno azul semitransparente). */
+  .marquee {
+    position: absolute;
+    pointer-events: none;
+    border: 1px dashed var(--marquee);
+    background: rgba(14, 165, 233, 0.12);
+    box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.15) inset;
+    display: none;
+    z-index: 5;
+  }
+  .marquee.on { display: block; }
+  .hud {
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    right: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    pointer-events: none;
+    z-index: 6;
+  }
+  .pill {
+    font-size: 0.7rem;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: #0b1220cc;
+    border: 1px solid #334155;
+    color: var(--mid);
+  }
+  .pill strong { color: var(--fg); font-weight: 600; }
+  .side {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 13px;
+  }
+  .card h2 {
+    margin: 0 0 8px;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--lo);
+  }
+  .card p, .card li {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--mid);
+    line-height: 1.45;
+  }
+  .card ul {
+    margin: 0;
+    padding-left: 1.1rem;
+  }
+  .card li + li { margin-top: 4px; }
+  .status-line {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 0.72rem;
+    color: #a5f3fc;
+    background: #082f49;
+    border: 1px solid #0e7490;
+    border-radius: 6px;
+    padding: 8px 10px;
+    min-height: 2.6em;
+    white-space: pre-wrap;
+  }
+  .btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  button {
+    appearance: none;
+    border: 1px solid #475569;
+    background: #1e293b;
+    color: var(--fg);
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 7px 12px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  button:hover { border-color: #94a3b8; background: #334155; }
+  button.primary {
+    border-color: #0891b2;
+    background: #0e7490;
+  }
+  button.primary:hover { background: #06b6d4; color: #042f2e; }
+  .legend {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 10px;
+    align-items: center;
+    font-size: 0.78rem;
+    color: var(--mid);
+  }
+  .sw {
+    width: 18px;
+    height: 12px;
+    border-radius: 2px;
+  }
+  .sw.conc { background: #47556966; border: 1px solid #94a3b8; }
+  .sw.sup { background: var(--sup); }
+  .sw.inf { background: var(--inf); }
+  .sw.mq {
+    background: rgba(14, 165, 233, 0.18);
+    border: 1px dashed var(--marquee);
+  }
+  .sw.hit { background: #34d39955; border: 1px solid var(--ok); }
+  .note {
+    margin-top: 12px;
+    font-size: 0.75rem;
+    color: var(--lo);
+    line-height: 1.4;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Mockup · guía marquee (clic 1 → mover → clic 2)</h1>
+    <p class="lead">
+      Aspecto del marquee de selección de Windows (rectángulo segmentado + relleno),
+      pero <b>sin mantener el botón pulsado</b>: el 1.er clic fija el ancla; al <b>mover el cursor</b>
+      el área crece como preview; el 2.º clic confirma. Esto es solo mock HTML — aún no en Armado Vigas.
+    </p>
+
+    <div class="grid">
+      <section class="stage">
+        <div class="stage-bar">
+          <div>
+            <strong>Sección CONF · mock</strong>
+            <span> · 20×56 cm · 4 barras 1ª capa</span>
+          </div>
+          <span class="chip" id="modeChip">LISTO</span>
+        </div>
+        <div class="canvas-host" id="host">
+          <canvas id="cv" width="720" height="420"></canvas>
+          <div class="marquee" id="marquee" aria-hidden="true"></div>
+          <div class="hud">
+            <span class="pill">Ancla: <strong id="hudAnchor">—</strong></span>
+            <span class="pill">Hover: <strong id="hudHover">—</strong></span>
+            <span class="pill">Área: <strong id="hudSize">—</strong></span>
+          </div>
+        </div>
+      </section>
+
+      <aside class="side">
+        <div class="card">
+          <h2>Cómo probar</h2>
+          <ul>
+            <li><b>1.er clic</b> en una barra = ancla (suelte el botón; no hace falta mantenerlo).</li>
+            <li><b>Mover el cursor</b> = el marquee se genera y sigue la punta (preview).</li>
+            <li><b>2.º clic</b> en otra columna → estribo E(i–j).</li>
+            <li><b>2.º clic</b> en la misma columna → traba T[i].</li>
+            <li><b>Esc</b> o clic vacío cancela el preview.</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h2>Estado</h2>
+          <div class="status-line" id="status">Esperando primer clic en una barra…</div>
+          <div class="btns" style="margin-top:10px">
+            <button type="button" class="primary" id="btnClear">Limpiar draft</button>
+            <button type="button" id="btnReset">Reset demo</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Leyenda</h2>
+          <div class="legend">
+            <span class="sw conc"></span><span>Hormigón / estribo peri</span>
+            <span class="sw sup"></span><span>Barras SUP (1ª capa)</span>
+            <span class="sw inf"></span><span>Barras INF (1ª capa)</span>
+            <span class="sw mq"></span><span>Marquee (guía Windows)</span>
+            <span class="sw hit"></span><span>Columnas bajo el marquee</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Draft mock</h2>
+          <p id="draftList" style="font-family:ui-monospace,Consolas,monospace;font-size:0.72rem;color:#a5f3fc">
+            (vacío)
+          </p>
+        </div>
+      </aside>
+    </div>
+
+    <p class="note">
+      Visual = marquee Windows; interacción = <b>clic → mover (botón libre) → clic</b>, no press-and-drag.
+      Cuando lo apruebes, se portará a WPF en Armado Vigas (04).
+    </p>
+  </div>
+
+<script>
+(function () {
+  const cv = document.getElementById("cv");
+  const host = document.getElementById("host");
+  const mq = document.getElementById("marquee");
+  const statusEl = document.getElementById("status");
+  const chip = document.getElementById("modeChip");
+  const hudAnchor = document.getElementById("hudAnchor");
+  const hudHover = document.getElementById("hudHover");
+  const hudSize = document.getElementById("hudSize");
+  const draftList = document.getElementById("draftList");
+
+  // Geometría de sección (coords canvas CSS → se mapean con escala)
+  const W = cv.width;
+  const H = cv.height;
+  const sec = { x: 160, y: 48, w: 400, h: 300 }; // hormigón
+  const nBars = 4;
+  const padX = 42;
+  const ySup = sec.y + 36;
+  const yInf = sec.y + sec.h - 36;
+  const x0 = sec.x + padX;
+  const x1 = sec.x + sec.w - padX;
+
+  function barX(i) {
+    if (nBars <= 1) return (x0 + x1) * 0.5;
+    return x0 + (x1 - x0) * (i / (nBars - 1));
+  }
+
+  const bars = [];
+  for (let i = 0; i < nBars; i++) {
+    bars.push({
+      i,
+      sup: { x: barX(i), y: ySup },
+      inf: { x: barX(i), y: yInf },
+    });
+  }
+
+  const state = {
+    /** Tras el 1.er clic: preview activo sin mantener el botón. */
+    preview: false,
+    origin: null,      // {x,y} ancla del 1.er clic
+    cursor: null,      // {x,y} punta actual
+    anchorBar: null,   // índice | null
+    hoverBar: null,
+    pairs: [],         // {a,b} estribos
+    ties: [],          // índices traba
+  };
+
+  function setStatus(msg) {
+    statusEl.textContent = msg;
+  }
+
+  function updateDraft() {
+    const bits = [];
+    state.pairs.forEach((p) => bits.push(`E(${p.a}–${p.b})`));
+    state.ties.forEach((t) => bits.push(`T[${t}]`));
+    draftList.textContent = bits.length ? bits.join(" · ") : "(vacío)";
+  }
+
+  function cssScale() {
+    const r = cv.getBoundingClientRect();
+    return { sx: W / r.width, sy: H / r.height, rect: r };
+  }
+
+  function eventToCanvas(ev) {
+    const { sx, sy, rect } = cssScale();
+    return {
+      x: (ev.clientX - rect.left) * sx,
+      y: (ev.clientY - rect.top) * sy,
+    };
+  }
+
+  const SNAP_R = 22;
+
+  function nearestBar(pt) {
+    let best = null;
+    let bestD = SNAP_R;
+    for (const b of bars) {
+      for (const end of [b.sup, b.inf]) {
+        const d = Math.hypot(pt.x - end.x, pt.y - end.y);
+        if (d < bestD) {
+          bestD = d;
+          best = b.i;
+        }
+      }
+    }
+    return best;
+  }
+
+  function columnsInMarquee(x0m, y0m, x1m, y1m) {
+    const L = Math.min(x0m, x1m);
+    const R = Math.max(x0m, x1m);
+    const T = Math.min(y0m, y1m);
+    const B = Math.max(y0m, y1m);
+    const hit = [];
+    for (const b of bars) {
+      const cx = b.sup.x;
+      const cyMid = (b.sup.y + b.inf.y) * 0.5;
+      // Columna “tocada” si el marquee cruza el eje vertical de la columna en Y
+      // y contiene la X (con un poco de tolerancia), estilo selección de iconos.
+      if (cx >= L - 4 && cx <= R + 4 && !(B < Math.min(b.sup.y, b.inf.y) || T > Math.max(b.sup.y, b.inf.y))) {
+        hit.push(b.i);
+      } else if (cx >= L - 4 && cx <= R + 4 && T <= cyMid && B >= cyMid) {
+        if (hit.indexOf(b.i) < 0) hit.push(b.i);
+      }
+    }
+    return hit;
+  }
+
+  function placeMarquee(ox, oy, cx, cy) {
+    const { sx, sy, rect } = cssScale();
+    // Marquee en coords CSS (overlay absoluto sobre el host)
+    const left = Math.min(ox, cx) / sx;
+    const top = Math.min(oy, cy) / sy;
+    const w = Math.abs(cx - ox) / sx;
+    const h = Math.abs(cy - oy) / sy;
+    mq.style.left = left + "px";
+    mq.style.top = top + "px";
+    mq.style.width = Math.max(1, w) + "px";
+    mq.style.height = Math.max(1, h) + "px";
+    mq.classList.add("on");
+    hudSize.textContent = Math.round(Math.abs(cx - ox)) + "×" + Math.round(Math.abs(cy - oy)) + " px";
+  }
+
+  function hideMarquee() {
+    mq.classList.remove("on");
+    hudSize.textContent = "—";
+  }
+
+  function draw() {
+    const c = cv.getContext("2d");
+    c.clearRect(0, 0, W, H);
+
+    // fondo sutil
+    c.fillStyle = "#0a1628";
+    c.fillRect(0, 0, W, H);
+
+    // hormigón
+    c.fillStyle = "rgba(71,85,105,0.35)";
+    c.strokeStyle = "#94a3b8";
+    c.lineWidth = 1.5;
+    c.fillRect(sec.x, sec.y, sec.w, sec.h);
+    c.strokeRect(sec.x, sec.y, sec.w, sec.h);
+
+    // estribo perimetral mock
+    c.strokeStyle = "rgba(52,211,153,0.75)";
+    c.lineWidth = 2.2;
+    c.setLineDash([]);
+    const m = 14;
+    c.strokeRect(sec.x + m, sec.y + m, sec.w - 2 * m, sec.h - 2 * m);
+
+    // marquee hit highlight (columnas en el rectángulo)
+    let mqCols = [];
+    if (state.preview && state.origin && state.cursor) {
+      mqCols = columnsInMarquee(
+        state.origin.x, state.origin.y,
+        state.cursor.x, state.cursor.y
+      );
+    }
+
+    // draft estribos / trabas
+    state.pairs.forEach((p) => {
+      const a = Math.min(p.a, p.b);
+      const b = Math.max(p.a, p.b);
+      const xa = bars[a].sup.x;
+      const xb = bars[b].sup.x;
+      const yt = ySup;
+      const yb = yInf;
+      const pad = 10;
+      c.strokeStyle = "rgba(52,211,153,0.9)";
+      c.fillStyle = "rgba(52,211,153,0.08)";
+      c.lineWidth = 2;
+      c.setLineDash([]);
+      c.fillRect(xa - pad, yt - pad, xb - xa + 2 * pad, yb - yt + 2 * pad);
+      c.strokeRect(xa - pad, yt - pad, xb - xa + 2 * pad, yb - yt + 2 * pad);
+      c.fillStyle = "#a5f3fc";
+      c.font = "600 12px Segoe UI";
+      c.fillText("E(" + a + "–" + b + ")", xa - pad + 4, yt - pad - 6);
+    });
+    state.ties.forEach((ti) => {
+      const b = bars[ti];
+      c.strokeStyle = "rgba(251,146,60,0.95)";
+      c.lineWidth = 2.4;
+      c.setLineDash([]);
+      c.beginPath();
+      c.moveTo(b.sup.x, b.sup.y);
+      c.lineTo(b.inf.x, b.inf.y);
+      c.stroke();
+      c.fillStyle = "#fdba74";
+      c.font = "600 12px Segoe UI";
+      c.fillText("T[" + ti + "]", b.sup.x + 8, (b.sup.y + b.inf.y) * 0.5);
+    });
+
+    // columnas resaltadas bajo marquee
+    mqCols.forEach((i) => {
+      const b = bars[i];
+      c.strokeStyle = "rgba(52,211,153,0.55)";
+      c.lineWidth = 1.5;
+      c.setLineDash([4, 3]);
+      c.beginPath();
+      c.moveTo(b.sup.x, b.sup.y);
+      c.lineTo(b.inf.x, b.inf.y);
+      c.stroke();
+      c.setLineDash([]);
+    });
+
+    // barras
+    bars.forEach((b) => {
+      const isA = state.anchorBar === b.i;
+      const isH = state.hoverBar === b.i;
+      drawDot(c, b.sup.x, b.sup.y, "#22d3ee", isA, isH);
+      drawDot(c, b.inf.x, b.inf.y, "#f87171", isA, isH);
+      c.fillStyle = "#64748b";
+      c.font = "11px Segoe UI";
+      c.fillText(String(b.i), b.sup.x - 3, b.sup.y - 14);
+    });
+
+    // ancla: cruz en origen del marquee (primer clic)
+    if (state.preview && state.origin) {
+      const o = state.origin;
+      c.strokeStyle = "#fbbf24";
+      c.lineWidth = 1.4;
+      c.setLineDash([]);
+      c.beginPath();
+      c.moveTo(o.x - 6, o.y);
+      c.lineTo(o.x + 6, o.y);
+      c.moveTo(o.x, o.y - 6);
+      c.lineTo(o.x, o.y + 6);
+      c.stroke();
+    }
+  }
+
+  function drawDot(c, x, y, color, isA, isH) {
+    const r = isA ? 9 : isH ? 8 : 6.5;
+    c.beginPath();
+    c.arc(x, y, r, 0, Math.PI * 2);
+    c.fillStyle = color;
+    c.fill();
+    c.strokeStyle = isA ? "#fbbf24" : isH ? "#fff" : "#0f172a";
+    c.lineWidth = isA ? 2.2 : 1.2;
+    c.stroke();
+    if (isA) {
+      c.beginPath();
+      c.arc(x, y, r + 4, 0, Math.PI * 2);
+      c.strokeStyle = "rgba(251,191,36,0.7)";
+      c.lineWidth = 1.2;
+      c.setLineDash([3, 2]);
+      c.stroke();
+      c.setLineDash([]);
+    }
+  }
+
+  function beginPreview(pt, barIdx) {
+    state.preview = true;
+    state.origin = { x: pt.x, y: pt.y };
+    state.cursor = { x: pt.x, y: pt.y };
+    state.anchorBar = barIdx;
+    chip.textContent = "PREVIEW";
+    chip.classList.add("drag");
+    placeMarquee(pt.x, pt.y, pt.x, pt.y);
+    hudAnchor.textContent = barIdx != null ? "[" + barIdx + "]" : "libre";
+    setStatus(
+      "Ancla [" + (barIdx != null ? barIdx : "—") +
+      "] fijada · mueva el cursor (sin mantener clic) · 2.º clic cierra"
+    );
+    draw();
+  }
+
+  function updatePreview(pt) {
+    if (!state.preview || !state.origin) return;
+    state.cursor = pt;
+    state.hoverBar = nearestBar(pt);
+    hudHover.textContent = state.hoverBar != null ? "[" + state.hoverBar + "]" : "—";
+    placeMarquee(state.origin.x, state.origin.y, pt.x, pt.y);
+
+    const cols = columnsInMarquee(
+      state.origin.x, state.origin.y, pt.x, pt.y
+    );
+    if (state.anchorBar != null && state.hoverBar != null && state.hoverBar !== state.anchorBar) {
+      setStatus(
+        "Preview E(" +
+          Math.min(state.anchorBar, state.hoverBar) +
+          "–" +
+          Math.max(state.anchorBar, state.hoverBar) +
+          ") · 2.º clic confirma · cols: [" +
+          cols.join(",") +
+          "]"
+      );
+    } else if (state.anchorBar != null && state.hoverBar === state.anchorBar) {
+      setStatus("Preview T[" + state.anchorBar + "] · 2.º clic confirma traba · cols: [" + cols.join(",") + "]");
+    } else {
+      setStatus(
+        "Preview marquee · mueva el cursor · 2.º clic en columna · cols: [" +
+          (cols.join(",") || "—") +
+          "]"
+      );
+    }
+    draw();
+  }
+
+  function confirmClose(pt) {
+    if (!state.preview) return;
+    state.cursor = pt;
+    const hover = nearestBar(pt);
+    const cols = columnsInMarquee(
+      state.origin.x, state.origin.y, pt.x, pt.y
+    );
+    const a = state.anchorBar;
+    let b = hover;
+    if (b == null && cols.length) {
+      if (a != null) {
+        const others = cols.filter((c) => c !== a);
+        b = others.length ? others[others.length - 1] : cols[cols.length - 1];
+      } else {
+        b = cols[cols.length - 1];
+      }
+    }
+
+    if (a != null && b != null) {
+      if (a === b) {
+        if (state.ties.indexOf(a) < 0) state.ties.push(a);
+        setStatus("Traba T[" + a + "] confirmada (2.º clic misma columna).");
+      } else {
+        const pair = { a: Math.min(a, b), b: Math.max(a, b) };
+        const exists = state.pairs.some((p) => p.a === pair.a && p.b === pair.b);
+        if (!exists) state.pairs.push(pair);
+        setStatus("Estribo E(" + pair.a + "–" + pair.b + ") confirmado.");
+      }
+    } else if (cols.length >= 2) {
+      const pair = { a: cols[0], b: cols[cols.length - 1] };
+      if (pair.a !== pair.b) {
+        const exists = state.pairs.some((p) => p.a === pair.a && p.b === pair.b);
+        if (!exists) state.pairs.push(pair);
+        setStatus("Estribo E(" + pair.a + "–" + pair.b + ") por columnas del marquee.");
+      }
+    } else {
+      setStatus("2.º clic incompleto (sin 2ª columna). Preview cancelado.");
+    }
+
+    clearPreview(false);
+    updateDraft();
+    draw();
+  }
+
+  function clearPreview(announce) {
+    state.preview = false;
+    state.origin = null;
+    state.cursor = null;
+    state.anchorBar = null;
+    state.hoverBar = null;
+    hideMarquee();
+    chip.textContent = "LISTO";
+    chip.classList.remove("drag");
+    hudAnchor.textContent = "—";
+    hudHover.textContent = "—";
+    if (announce) setStatus("Preview cancelado (Esc / clic vacío).");
+    draw();
+  }
+
+  // Clic: 1.º ancla / 2.º cierra — sin mantener botón ni pointer capture.
+  host.addEventListener("click", (ev) => {
+    const pt = eventToCanvas(ev);
+    const bi = nearestBar(pt);
+
+    if (state.preview) {
+      // Clic vacío fuera de sección → cancelar
+      const inSec =
+        pt.x >= sec.x && pt.x <= sec.x + sec.w &&
+        pt.y >= sec.y && pt.y <= sec.y + sec.h;
+      if (bi == null && !inSec) {
+        clearPreview(true);
+        return;
+      }
+      // 2.º clic: confirmar (snap o columnas del marquee)
+      if (bi == null) {
+        const cols = columnsInMarquee(
+          state.origin.x, state.origin.y, pt.x, pt.y
+        );
+        if (cols.length < 1) {
+          clearPreview(true);
+          return;
+        }
+      }
+      confirmClose(pt);
+      return;
+    }
+
+    // 1.er clic: ancla en barra (botón se suelta libremente)
+    if (bi == null) {
+      setStatus("1.er clic en una barra para anclar el marquee.");
+      return;
+    }
+    beginPreview(pt, bi);
+  });
+
+  host.addEventListener("pointermove", (ev) => {
+    const pt = eventToCanvas(ev);
+    if (state.preview) {
+      updatePreview(pt);
+      return;
+    }
+    const h = nearestBar(pt);
+    if (h !== state.hoverBar) {
+      state.hoverBar = h;
+      hudHover.textContent = h != null ? "[" + h + "]" : "—";
+      draw();
+    }
+  });
+
+  window.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && state.preview) {
+      clearPreview(true);
+    }
+  });
+
+  document.getElementById("btnClear").addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    state.pairs = [];
+    state.ties = [];
+    clearPreview(false);
+    updateDraft();
+    setStatus("Draft limpio.");
+  });
+
+  document.getElementById("btnReset").addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    state.pairs = [];
+    state.ties = [];
+    clearPreview(false);
+    updateDraft();
+    setStatus("Demo reseteada. 1.er clic ancla · mueva cursor · 2.º clic cierra.");
+  });
+
+  window.addEventListener("resize", () => {
+    if (state.preview && state.origin && state.cursor) {
+      placeMarquee(state.origin.x, state.origin.y, state.cursor.x, state.cursor.y);
+    }
+    draw();
+  });
+
+  updateDraft();
+  draw();
+  setStatus("Esperando: 1.er clic en barra (suelte) → mueva cursor → 2.º clic.");
+})();
+</script>
+</body>
+</html>

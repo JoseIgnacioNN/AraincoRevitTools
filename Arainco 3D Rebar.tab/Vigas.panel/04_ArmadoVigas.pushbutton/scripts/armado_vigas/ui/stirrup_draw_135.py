@@ -1,0 +1,89 @@
+# -*- coding: utf-8 -*-
+# === BIZARDS_OBFUSCATED_MODULE ===
+# Modulo de produccion ofuscado (no es codigo fuente legible).
+# Generado por prod_builder — no editar.
+# Decoder portable: CPython 3 + IronPython/pyRevit (str/bytes indexing).
+from __future__ import print_function
+import base64 as _b64
+import zlib as _zlib
+
+
+def _biz_ord(x):
+    # int (Py3 bytes) o char (Py2/IronPython str)
+    return x if isinstance(x, int) else ord(x)
+
+
+def _biz_xor_decode(payload, key):
+    klen = len(key)
+    out = [_biz_ord(payload[i]) ^ _biz_ord(key[i % klen]) for i in range(len(payload))]
+    try:
+        return bytes(bytearray(out))
+    except Exception:
+        return "".join(chr(v) for v in out)
+
+
+_K = _b64.b64decode("Qml6YXJkcy5Ub29sLlByb2QuT2JmdXNjYXRpb24udjE=")
+_P = _b64.b64decode(
+"""
+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
+scDfpfPYuO/HKrEHtWuN3wd3pOmWbdUJVCw=
+""".replace("\n", "").replace("\r", "")
+)
+_P = _biz_xor_decode(_P, _K)
+_SRC = _zlib.decompress(_P)
+if not isinstance(_SRC, str):
+    _SRC = _SRC.decode("utf-8")
+exec(compile(_SRC, 'stirrup_draw_135.py', "exec"), globals())
