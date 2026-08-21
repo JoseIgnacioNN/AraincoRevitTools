@@ -1,14 +1,12 @@
 # -*- coding: utf-8 -*-
-"""
-Crear Area Reinforcement RPS ? entrada pyRevit (copia portable).
-
-Todo el c?digo vive en ``<pushbutton>/scripts/``. Copie solo esta carpeta
-.pushbutton; no depende de BIMTools.extension ni de rutas externas.
-"""
+"""Crear Area Reinforcement — entrada pyRevit; lógica en scripts/area_reinforcement_losa.py."""
 
 __title__ = "Crear Area\nReinf. RPS"
 __author__ = "BIMTools"
-__doc__ = "Abre la interfaz de Area Reinforcement Losa para crear mallas en losas."
+__doc__ = (
+    "Abre la interfaz de Area Reinforcement Losa para crear mallas en losas "
+    "y losas de cimentación."
+)
 
 import os
 import sys
@@ -17,100 +15,72 @@ import imp
 import clr
 
 clr.AddReference("RevitAPIUI")
-
 from Autodesk.Revit.UI import TaskDialog
 
-_DIALOG_TITLE = u"Arainco: Malla en Losa"
+_TOOL_DIALOG_TITLE = u"Arainco: Malla en Losa"
 _MAIN_MODULE = "area_reinforcement_losa.py"
-_REQUIRED_MODULES = (
-    _MAIN_MODULE,
-    "area_reinforcement_losa_instruction_dialog.py",
-    "bimtools_paths.py",
-    "bimtools_ui_tokens.py",
-    "bimtools_wpf_shell.py",
-    "bimtools_wpf_dark_theme.py",
-    "bimtools_instruction_dialog.py",
-    "revit_wpf_window_position.py",
-    "conjunto_guid.py",
-)
-_MODULES_TO_PURGE = (
-    "area_reinforcement_losa",
-    "area_reinforcement_losa_instruction_dialog",
-    "bimtools_paths",
-    "bimtools_ui_tokens",
-    "bimtools_wpf_shell",
-    "bimtools_wpf_dark_theme",
-    "bimtools_instruction_dialog",
-    "revit_wpf_window_position",
-    "conjunto_guid",
-)
+_MAIN_MODULE_ID = "area_reinforcement_losa"
 
 
-def _scripts_dir(pushbutton_dir):
-    """?nica fuente: ``<pushbutton>/scripts/`` (sin fallback externo)."""
-    return os.path.abspath(os.path.join(pushbutton_dir, "scripts"))
+def _find_module(start_dir):
+    cursor = start_dir
+    for _ in range(10):
+        candidate = os.path.join(cursor, "scripts", _MAIN_MODULE)
+        if os.path.isfile(candidate):
+            return candidate
+        parent = os.path.dirname(cursor)
+        if parent == cursor:
+            break
+        cursor = parent
+    return None
 
 
-def _missing_modules(scripts_dir):
-    missing = []
-    for name in _REQUIRED_MODULES:
-        if not os.path.isfile(os.path.join(scripts_dir, name)):
-            missing.append(name)
-    return missing
-
-
-def _ensure_scripts_on_path(scripts_dir):
-    if scripts_dir and scripts_dir not in sys.path:
-        sys.path.insert(0, scripts_dir)
-
-
-def _purge_modules():
-    for mod_name in _MODULES_TO_PURGE:
-        try:
-            if mod_name in sys.modules:
-                del sys.modules[mod_name]
-        except Exception:
-            pass
+def _pin_scripts_first(scripts_dir):
+    """Deja scripts/ de la extensión delante de copias locales de otros pushbuttons."""
+    if not scripts_dir:
+        return
+    try:
+        while scripts_dir in sys.path:
+            sys.path.remove(scripts_dir)
+    except Exception:
+        pass
+    sys.path.insert(0, scripts_dir)
 
 
 _pushbutton_dir = os.path.dirname(os.path.abspath(__file__))
-_scripts_dir = _scripts_dir(_pushbutton_dir)
-_missing = _missing_modules(_scripts_dir)
+_module_path = _find_module(_pushbutton_dir)
 
-if _missing:
+if not _module_path:
     TaskDialog.Show(
-        _DIALOG_TITLE,
-        u"Paquete portable incompleto. Faltan en scripts/:\n\n- {0}".format(
-            u"\n- ".join(_missing)
-        ),
+        _TOOL_DIALOG_TITLE,
+        u"No se encontró scripts/{0}".format(_MAIN_MODULE),
     )
-    raise Exception(u"Paquete portable incompleto: {0}".format(u", ".join(_missing)))
+    raise Exception(u"No se encontró scripts/{0}".format(_MAIN_MODULE))
 
-_ensure_scripts_on_path(_scripts_dir)
-_purge_modules()
+_scripts_dir = os.path.dirname(_module_path)
+_pin_scripts_first(_scripts_dir)
+import bimtools_paths
 
-try:
-    import bimtools_paths
+bimtools_paths.set_pushbutton_dir(_pushbutton_dir)
 
-    bimtools_paths.set_pushbutton_dir(_pushbutton_dir)
-except Exception:
-    pass
+# --- Validacion acceso corporativo (prod: bootstrap junto al boton) ---
+# === BEGIN BIZARDS_PROD_PORTABLE_BOOTSTRAP (prod_builder) ===
+import os as _os_ac
+import sys as _sys_ac
 
-if _pushbutton_dir not in sys.path:
-    sys.path.insert(0, _pushbutton_dir)
+_pb_ac = _os_ac.path.dirname(_os_ac.path.abspath(__file__))
+if _pb_ac and _pb_ac not in _sys_ac.path:
+    _sys_ac.path.insert(0, _pb_ac)
 import bimtools_access_bootstrap as _bimtools_access
+# === END BIZARDS_PROD_PORTABLE_BOOTSTRAP (prod_builder) ===
 if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
+    _pin_scripts_first(_scripts_dir)
     try:
-        _module_path = os.path.join(_scripts_dir, _MAIN_MODULE)
-        _mod = imp.load_source("area_reinforcement_losa", _module_path)
+        _mod = imp.load_source(_MAIN_MODULE_ID, _module_path)
         _mod.run(__revit__, close_on_finish=True)
     except Exception as ex:
-        try:
-            msg = unicode(ex)
-        except NameError:
-            msg = str(ex)
         TaskDialog.Show(
-            _DIALOG_TITLE,
-            u"Error al ejecutar la herramienta:\n\n{}".format(msg),
+            _TOOL_DIALOG_TITLE,
+            u"Error ejecutando la rutina:\n{0}".format(ex),
         )
         raise

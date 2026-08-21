@@ -176,7 +176,8 @@
 
     <div class="intro">
         <strong>Area Rein. losa (Sketch)</strong> permite seleccionar una losa
-        (<code>Floor</code>), ver su planta a escala real en un canvas y dibujar
+        o una losa de cimentación (<code>Floor</code> / Structural Foundation
+        slab), ver su planta a escala real en un canvas y dibujar
         <strong>paños</strong> (polígonos) por cara — inferior y superior —
         para crear <code>AreaReinforcement</code> con dirección principal =
         luz menor del paño, diámetro, espaciado y opción de
@@ -186,8 +187,8 @@
     <h2>1. Requisitos</h2>
     <ul>
         <li>Proyecto de Revit (no family document).</li>
-        <li><strong>Vista de planta activa</strong> (<code>ViewPlan</code>). No funciona en alzado, sección, 3D, lámina ni plantilla.</li>
-        <li>Losa con boceto válido (<code>Floor.SketchId</code> / Profile).</li>
+        <li><strong>Vista de planta activa</strong> (<code>ViewPlan</code>, incluida planta de cimentación). No funciona en alzado, sección, 3D, lámina ni plantilla.</li>
+        <li>Losa o losa de cimentación (Structural Foundation slab) con boceto válido (<code>Floor.SketchId</code> / Profile) o cara horizontal con perímetro cerrado.</li>
         <li>Tipos de <code>AreaReinforcement</code> y <code>RebarBarType</code> en el proyecto.</li>
         <li>Acceso corporativo BIMTools (unidad de incidencias / JSON de permiso).</li>
     </ul>
@@ -197,7 +198,9 @@
     <div class="step">
         <span class="step-num">1</span>
         <strong>Seleccionar la losa</strong> — Al lanzar la herramienta, elija un
-        <code>Floor</code> en el modelo (o use la selección previa si es una losa).
+        <code>Floor</code> o una losa de cimentación (Structural Foundation slab)
+        en el modelo (o use la selección previa si ya es un host válido).
+        No aplica a zapatas aisladas ni a muros de cimentación.
     </div>
     <div class="step">
         <span class="step-num">2</span>

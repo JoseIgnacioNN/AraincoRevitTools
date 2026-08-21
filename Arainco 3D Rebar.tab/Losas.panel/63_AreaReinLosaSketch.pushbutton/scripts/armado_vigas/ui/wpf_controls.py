@@ -1,0 +1,98 @@
+# -*- coding: utf-8 -*-
+# === BIZARDS_OBFUSCATED_MODULE ===
+# Modulo de produccion ofuscado (no es codigo fuente legible).
+# Generado por prod_builder — no editar.
+# Decoder portable: CPython 3 + IronPython/pyRevit (str/bytes indexing).
+from __future__ import print_function
+import base64 as _b64
+import zlib as _zlib
+
+
+def _biz_ord(x):
+    # int (Py3 bytes) o char (Py2/IronPython str)
+    return x if isinstance(x, int) else ord(x)
+
+
+def _biz_xor_decode(payload, key):
+    klen = len(key)
+    out = [_biz_ord(payload[i]) ^ _biz_ord(key[i % klen]) for i in range(len(payload))]
+    try:
+        return bytes(bytearray(out))
+    except Exception:
+        return "".join(chr(v) for v in out)
+
+
+_K = _b64.b64decode("Qml6YXJkcy5Ub29sLlByb2QuT2JmdXNjYXRpb24udjE=")
+_P = _b64.b64decode(
+"""
+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
+A4PPpel1tp/FW9EC+hl1gsH4/w==
+""".replace("\n", "").replace("\r", "")
+)
+_P = _biz_xor_decode(_P, _K)
+_SRC = _zlib.decompress(_P)
+if not isinstance(_SRC, str):
+    _SRC = _SRC.decode("utf-8")
+exec(compile(_SRC, 'wpf_controls.py', "exec"), globals())
