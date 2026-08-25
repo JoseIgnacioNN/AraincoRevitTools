@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Arainco: Armado vigas</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #5BC0DE;
+            --accent-dim: #95B8CC;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: 920px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.75em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 32px;
+        }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        code {
+            background: #0E1B32;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 1px 6px;
+            font-size: 0.92em;
+            color: var(--text);
+        }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            text-align: left;
+            color: var(--text-dim);
+            font-size: 0.95em;
+        }
+        th { color: var(--text); background: #0E1B32; }
+        .note {
+            color: var(--muted);
+            font-size: 0.95em;
+            border-top: 1px solid var(--border);
+            margin-top: 36px;
+            padding-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Arainco: Armado vigas</h1>
+    <div class="intro">
+        Diseña y coloca armadura longitudinal, estribos, laterales y confinamiento en un lote
+        de vigas de hormigón. La herramienta abre un canvas de alzado y sección con pestañas
+        <strong>SUP</strong>, <strong>INF</strong>, <strong>LAT</strong>, <strong>CONF</strong>
+        y tarjeta <strong>SUPLE</strong> para apoyos y tramos especiales.
+    </div>
+
+    <h2>Requisitos</h2>
+    <ul>
+        <li>Revit 2024–2026 con plantilla / proyecto Arainco.</li>
+        <li>Vista activa donde las vigas tengan el eje paralelo al plano de la vista (alzado o sección).</li>
+        <li>Elementos con material estructural de hormigón (<code>Concrete</code>).</li>
+        <li>Tipos de barra, estribos y parámetros Arainco disponibles en el proyecto.</li>
+    </ul>
+
+    <h2>Uso</h2>
+    <ol>
+        <li>Ejecute la herramienta desde el panel <strong>3D Rebar</strong>.</li>
+        <li>Lea el aviso inicial y pulse <strong>Aceptar</strong>.</li>
+        <li>Seleccione vigas de hormigón y apoyos relacionados (columnas, muros y/o losas).</li>
+        <li>Finalice la selección con la cinta de Revit o pulse Esc para cancelar.</li>
+        <li>Configure capas, diámetros, dosificación de estribos y toggles del rail por tramo.</li>
+        <li>Revise la vista previa en alzado y la sección transversal.</li>
+        <li>Pulse <strong>Colocar</strong> para generar Rebar en el modelo (un solo deshacer por lote).</li>
+    </ol>
+
+    <h2>Reglas de negocio</h2>
+    <table>
+        <tr><th>Ámbito</th><th>Comportamiento</th></tr>
+        <tr>
+            <td>Selección inicial</td>
+            <td>Vigas (<code>Structural Framing</code>), columnas, muros y losas de hormigón.
+                Las losas aportan contexto en el canvas; no se arman como vigas.</td>
+        </tr>
+        <tr>
+            <td>Longitudinales SUP / INF</td>
+            <td>2–8 barras por capa, 1–3 capas, diámetros 12–32 mm. Extremos auto, empotramiento o pata L. El Major Segment de Revit es siempre el tramo más largo (eje de viga), nunca la pata L.</td>
+        </tr>
+        <tr>
+            <td>Empalmes</td>
+            <td>Según dosificación G25/G35/G45 y longitud máxima de barra (12 m). Alternancia por capa.</td>
+        </tr>
+        <tr>
+            <td>Estribos</td>
+            <td>Zonas Ext/Cent (o único) con separación 50–400 mm. En sección se modela lo dibujado en CONF: perimetral, pares E y trabas, sin duplicar el perimetral. En la vista activa, presentación <strong>First and Last</strong> del conjunto.</td>
+        </tr>
+        <tr>
+            <td>Laterales</td>
+            <td>Barras en caras del alma según dosificación LAT y recubrimiento del modelo. Con <strong>n = 1</strong>, una barra centrada en el canto (layout <strong>Single</strong>); con n &gt; 1, reparto Fixed Number entre extremos.</td>
+        </tr>
+        <tr>
+            <td>SUPLE</td>
+            <td>Refuerzos superior e inferior en apoyos o tramos adyacentes cuando aplica.</td>
+        </tr>
+        <tr>
+            <td>Parámetros escritos</td>
+            <td>Marca Arainco, ubicación de armadura y metadatos de conjunto según plantilla.</td>
+        </tr>
+    </table>
+
+    <h2>Notas y avisos</h2>
+    <ul>
+        <li>Solo puede haber una ventana de la herramienta abierta; si ya está en ejecución, se enfoca la existente.</li>
+        <li>Las vigas no paralelas a la vista activa se excluyen de la selección.</li>
+        <li>Elementos que no sean de hormigón no son seleccionables.</li>
+        <li>La colocación agrupa transacciones en un solo paso de deshacer (<strong>Arainco: Armado vigas</strong>).</li>
+        <li>Use el botón <strong>Manual</strong> en la ventana para volver a abrir este documento.</li>
+    </ul>
+
+    <p class="note">Arainco · Herramienta del panel 3D Rebar</p>
+</body>
+</html>
