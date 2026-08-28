@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Arainco: Mallas en muros</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #5BC0DE;
+            --accent-dim: #95B8CC;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: 920px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.75em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 32px;
+        }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        .step {
+            background: var(--bg-panel);
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin: 10px 0;
+            border: 1px solid var(--border);
+        }
+        .step-num {
+            display: inline-block;
+            background: var(--accent);
+            color: var(--bg-dark);
+            width: 24px;
+            height: 24px;
+            text-align: center;
+            line-height: 24px;
+            border-radius: 50%;
+            font-weight: bold;
+            font-size: 0.9em;
+            margin-right: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 0.9em;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 10px 12px;
+            text-align: left;
+        }
+        th {
+            background: var(--bg-panel);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        td { color: var(--text-dim); }
+        .tip {
+            background: rgba(91, 192, 222, 0.1);
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            padding: 12px;
+            margin: 12px 0;
+            color: var(--text-dim);
+        }
+        .warn {
+            background: rgba(251, 191, 36, 0.08);
+            border: 1px solid #fbbf24;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 12px 0;
+            color: var(--text-dim);
+        }
+    </style>
+</head>
+<body>
+    <h1>Arainco: Mallas en muros</h1>
+
+    <div class="intro">
+        <p>
+            Crea Area Reinforcement (cara exterior e interior) en los muros
+            seleccionados, con vista de elevación apilada para revisar Ø y
+            espaciamiento. El extremo superior de las barras verticales
+            (empotramiento o pata L) se elige en la interfaz; no depende de
+            una evaluación automática de colisión.
+        </p>
+    </div>
+
+    <h2>Requisitos</h2>
+    <ul>
+        <li>Documento de proyecto / plantilla Arainco con armadura configurada.</li>
+        <li>Revit 2024–2026.</li>
+        <li>Selección previa de uno o más muros válidos (o selección al abrir).</li>
+        <li>Vista adecuada para etiquetar malla tras la creación (según el flujo de la herramienta).</li>
+    </ul>
+
+    <h2>Uso</h2>
+    <div class="step">
+        <span class="step-num">1</span>
+        Seleccione los muros y ejecute <strong>Mallas en muro</strong>.
+    </div>
+    <div class="step">
+        <span class="step-num">2</span>
+        Elija la <strong>dosificación del hormigón</strong> (G25, G35 o G45) en el
+        rail; define las tablas de traslape/empotramiento y pata L para todo el lote.
+    </div>
+    <div class="step">
+        <span class="step-num">3</span>
+        Revise el resumen del lote y use las pestañas <strong>VERT</strong> /
+        <strong>HOR</strong> del rail para configurar cada orientación.
+    </div>
+    <div class="step">
+        <span class="step-num">4</span>
+        En <strong>Extremo superior</strong> elija Empotramiento, Gancho 90º o Sin Cambios.
+        En <strong>Extremo inferior sin fundación</strong> elija Empotramiento,
+        Gancho 90º o Sin Cambios. Ambas decisiones son por muro y se aplican al crear.
+    </div>
+    <div class="step">
+        <span class="step-num">5</span>
+        Revise la elevación apilada. Seleccione muros con clic, Ctrl+clic,
+        Mayús+clic o <strong>marquee</strong> (arrastre un rectángulo sobre
+        los fustes o el vacío del alzado). Ctrl+arrastre añade; Mayús+arrastre
+        extiende el rango desde el ancla.
+        Pulse <strong>Crear mallas</strong>. Use el botón verde <strong>Manual</strong>
+        en el pie de la ventana para abrir esta ayuda.
+    </div>
+
+    <h2>Reglas de negocio</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Ámbito</th>
+                <th>Comportamiento</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Dosificación hormigón</td>
+                <td>
+                    <strong>G25</strong> (por defecto), <strong>G35</strong> o
+                    <strong>G45</strong> en el rail. Afecta L(Ø) de empotramiento
+                    vertical, patas L y referencias del alzado (tablas BIMTools).
+                </td>
+            </tr>
+            <tr>
+                <td>Cabeza (verticales)</td>
+                <td>
+                    Según la UI: <strong>Empotramiento</strong> estira L(Ø);
+                    <strong>Gancho 90º</strong> retrae 25+Ø/2 y añade gancho;
+                    <strong>Sin Cambios</strong> solo retrae. Sin evaluación de colisión.
+                </td>
+            </tr>
+            <tr>
+                <td>Pie sin fundación</td>
+                <td>
+                    Según la UI: <strong>Empotramiento</strong> estira L(Ø);
+                    <strong>Gancho 90º</strong> retrae 25+Ø/2 + gancho;
+                    <strong>Sin Cambios</strong> no muta el pie.
+                </td>
+            </tr>
+            <tr>
+                <td>Pie con fundación</td>
+                <td>
+                    Sigue la lógica de fundación unida (sondeo): colisión →
+                    estira; sin colisión → 25+Ø/2 (y pata según reglas de pie).
+                    La UI de “pie sin fundación” no aplica a estos muros.
+                </td>
+            </tr>
+            <tr>
+                <td>Horizontales</td>
+                <td>
+                    Retraída en extremos (inicio 25+Ø/2, fin 25 mm) y forma
+                    según el motor de mallas.
+                </td>
+            </tr>
+            <tr>
+                <td>Perímetro AR (uniones)</td>
+                <td>
+                    El boceto de malla incluye muros unidos en extremos (L/T)
+                    detectados por intersección de ejes (<strong>p_join</strong>,
+                    mismo criterio que Armado Muros v3). No se incorporan muros
+                    apilados arriba/abajo ni prolongaciones longitudinales paralelas.
+                </td>
+            </tr>
+            <tr>
+                <td>Selección en el alzado</td>
+                <td>
+                    Clic en un fuste selecciona ese muro. Ctrl+clic añade o
+                    quita. Mayús+clic selecciona el rango desde el ancla.
+                    Arrastrar un rectángulo (marquee) sobre los fustes o el
+                    vacío del alzado selecciona los muros intersectados;
+                    Ctrl+arrastre une a la selección; Mayús+arrastre extiende
+                    el rango. El rail aplica la configuración al lote
+                    seleccionado.
+                </td>
+            </tr>
+            <tr>
+                <td>Alcance</td>
+                <td>
+                    Solo mallas (Area Reinforcement). No crea cabezal
+                    Inicio/Término ni fases de coronamiento de Armado Muros v3.
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="tip">
+        Valores por defecto: extremo superior <strong>Empotramiento</strong>;
+        pie sin fundación <strong>Sin Cambios</strong>. Puede cambiarlos por muro
+        o copiarlos al aplicar la configuración masiva desde el muro primario.
+    </div>
+
+    <h2>Notas / avisos</h2>
+    <div class="warn">
+        <ul>
+            <li>
+                Si el resultado de cabeza o pie no coincide con lo esperado,
+                revise los chips activos antes de volver a crear; la herramienta
+                no infiere el extremo por geometría de otros muros.
+            </li>
+            <li>
+                El pie con fundación unida sí puede estirar o retraer según
+                colisión con la fundación; eso es independiente del extremo
+                superior y del chip de pie sin fundación.
+            </li>
+            <li>
+                No sustituye a la herramienta de cabezal (extremos Inicio/Fin).
+            </li>
+        </ul>
+    </div>
+</body>
+</html>

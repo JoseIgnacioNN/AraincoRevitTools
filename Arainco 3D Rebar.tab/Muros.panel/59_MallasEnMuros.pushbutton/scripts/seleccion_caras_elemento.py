@@ -69,6 +69,8 @@ CNd/jICGStg8Ckw=
 )
 _P = _biz_xor_decode(_P, _K)
 _SRC = _zlib.decompress(_P)
-if not isinstance(_SRC, str):
+# type(u"") = unicode en Py2/IronPython, str en Py3. No usar isinstance(..., str):
+# en IronPython zlib devuelve str (bytes UTF-8) y compile() lo leeria como cp1252.
+if not isinstance(_SRC, type(u"")):
     _SRC = _SRC.decode("utf-8")
 exec(compile(_SRC, 'seleccion_caras_elemento.py', "exec"), globals())
