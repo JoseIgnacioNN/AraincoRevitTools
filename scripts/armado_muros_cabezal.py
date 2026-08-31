@@ -2,8 +2,8 @@
 """
 Cabezal de muro — barras verticales en extremos (inicio / fin de LocationCurve).
 
-Por extremo: 1–8 capas empurradas en profundidad (longitudinal; punta libre);
-encuentro L: hasta 6 en núcleo (+ post). 2–4 barras por capa repartidas en el
+Por extremo: 1–25 capas empurradas en profundidad (longitudinal; punta libre);
+encuentro L: hasta 25 en núcleo (+ post). 2–4 barras por capa repartidas en el
 espesor con ``SetLayoutAsFixedNumber`` (misma lógica que multicapa).
 
 Cantidad (``n_bars``) y diámetro (``bar_type_id``) por capa (cada capa es
@@ -223,12 +223,12 @@ except Exception:
     stamp_cabezal_longitudinal_rebar = None
     stamp_confinamiento_rebar = None
 
-CABEZAL_MAX_CAPAS = 8  # punta libre / extremo libre
-CABEZAL_MAX_CAPAS_ENCUENTRO = 6  # núcleo encuentro L (sin post)
+CABEZAL_MAX_CAPAS = 25  # punta libre / extremo libre
+CABEZAL_MAX_CAPAS_ENCUENTRO = 25  # núcleo encuentro L (sin post)
 CABEZAL_MIN_CAPAS = 1
 # Capas post-encuentro (host, opt-in) + tope de lista layers.
 CABEZAL_MAX_POST_CAPAS = 4
-CABEZAL_MAX_CAPAS_TOTAL = 10
+CABEZAL_MAX_CAPAS_TOTAL = 29  # 25 núcleo + 4 post
 CABEZAL_MIN_BARRAS_POR_CAPA = 2
 CABEZAL_MAX_BARRAS_POR_CAPA = 4
 CABEZAL_COVER_MM = 25.0
@@ -239,6 +239,7 @@ CABEZAL_MAX_BARRA_COMERCIAL_MM = 12000.0
 # Separación entre ejes de capas sucesivas (desde cara cabezal hacia interior).
 CABEZAL_LAYER_PITCH_MM = 150.0
 CABEZAL_LAYER_PITCH_MIN_MM = 28.0
+CABEZAL_LAYER_PITCH_MAX_MM = 2000.0
 CABEZAL_EXTREMO_INICIO = u"inicio"
 CABEZAL_EXTREMO_FIN = u"fin"
 CABEZAL_EXTREMOS = (CABEZAL_EXTREMO_INICIO, CABEZAL_EXTREMO_FIN)
@@ -256,8 +257,35 @@ CABEZAL_CONFINEMENT_ENC_FIBER = u"enc_fiber"
 CABEZAL_CONFINEMENT_ENC_FIBER_PERP = u"enc_fiber_perp"
 CABEZAL_CONFINEMENT_ENC_FIBER_CROSS = u"enc_fiber_cross"
 CABEZAL_TIE_LAYER_INDEX = 1
-# Escenarios T1/T2/T3: 2..8 (punta) / núcleo encuentro; hasta total con post (≤10).
-CABEZAL_CONFINEMENT_SCENARIO_CAPAS = (2, 3, 4, 5, 6, 7, 8, 9, 10)
+# Escenarios T1/T2/T3: 2..MAX (punta / núcleo / total con post).
+CABEZAL_CONFINEMENT_SCENARIO_CAPAS = tuple(
+    range(2, CABEZAL_MAX_CAPAS_TOTAL + 1)
+)
+
+
+def cabezal_layer_spacing_mm(ex_cfg=None, raw=None):
+    """Paso c/c entre capas (mm). Default 150; clamp [MIN, MAX]."""
+    v = None
+    if raw is not None:
+        try:
+            s = unicode(raw).strip().replace(u",", u".")
+            if s:
+                v = float(s)
+        except Exception:
+            v = None
+    if v is None and ex_cfg and isinstance(ex_cfg, dict):
+        try:
+            cand = ex_cfg.get(u"layer_spacing_mm")
+            if cand is not None:
+                v = float(cand)
+        except Exception:
+            v = None
+    if v is None or v != v or v <= 0:
+        v = float(CABEZAL_LAYER_PITCH_MM)
+    return max(
+        float(CABEZAL_LAYER_PITCH_MIN_MM),
+        min(float(CABEZAL_LAYER_PITCH_MAX_MM), float(v)),
+    )
 
 
 def cabezal_post_encuentro_activo(ex_cfg):
@@ -442,7 +470,7 @@ def cabezal_confinement_layout_spec(n_capas, conf_type, n_capas_encuentro=None):
     """
     Índices de capa para estribo perimetral y trabas según escenario.
 
-    Extremo libre (2..8 capas):
+    Extremo libre (2..25 capas):
       2 capas — Tipo 1: trabas [1]; Tipo 2/3: estribo [0, 1].
       3+ capas — Tipo 1: trabas [1 .. n-1]; Tipo 2/3: estribo [0, n-1]
         + trabas interiores [1 .. n-2].
@@ -869,7 +897,12 @@ def _cached_rebar_bar_types(doc):
     if cached is not None:
         return cached
     try:
-        rts = list(FilteredElementCollector(doc).OfClass(RebarBarType))
+        # OfClass + WhereElementIsElementType: filtro nativo C#.
+        rts = list(
+            FilteredElementCollector(doc)
+            .OfClass(RebarBarType)
+            .WhereElementIsElementType()
+        )
     except Exception:
         rts = []
     _REBAR_BAR_TYPES_CACHE[key] = rts
@@ -1102,6 +1135,85 @@ def default_cabezal_confinement_config(n_capas=None):
     }
 
 
+# Dosificación de hormigón (tablas traslape/empalme/pata). G25 por defecto.
+CABEZAL_CONCRETE_GRADES = (u"G25", u"G35", u"G45")
+CABEZAL_CONCRETE_GRADE_DEFAULT = u"G25"
+
+
+def normalize_cabezal_concrete_grade(grade):
+    """``G25`` / ``G35`` / ``G45``; inválido o vacío → G25."""
+    if grade is None:
+        return CABEZAL_CONCRETE_GRADE_DEFAULT
+    try:
+        s = unicode(grade).strip().upper()
+    except Exception:
+        try:
+            s = str(grade).strip().upper()
+        except Exception:
+            return CABEZAL_CONCRETE_GRADE_DEFAULT
+    if s in CABEZAL_CONCRETE_GRADES:
+        return s
+    return CABEZAL_CONCRETE_GRADE_DEFAULT
+
+
+def cabezal_concrete_grade_from_ex_cfg(ex_cfg):
+    if not ex_cfg or not isinstance(ex_cfg, dict):
+        return CABEZAL_CONCRETE_GRADE_DEFAULT
+    return normalize_cabezal_concrete_grade(ex_cfg.get(u"concrete_grade"))
+
+
+def concrete_grade_for_stack(
+    walls, cabezal_por_muro_id, extremo, stack_index,
+    segment_ctx=None,
+):
+    """
+    G del tramo de config en ``stack_index``.
+
+    Si hay ``segment_ctx``, toma el owner del segmento que contiene ese piso
+    (fuente de verdad de dosificación); si no, la config del muro del stack.
+    """
+    try:
+        si = int(stack_index)
+    except Exception:
+        si = 0
+    wlist = walls or []
+    if not (0 <= si < len(wlist)):
+        return CABEZAL_CONCRETE_GRADE_DEFAULT
+    wid = None
+    if segment_ctx:
+        try:
+            wt = segment_ctx.get(u"wall_to_seg") or {}
+            seg_id = wt.get(si)
+            if seg_id is None:
+                try:
+                    seg_id = wt.get(int(si))
+                except Exception:
+                    seg_id = None
+            for seg in (segment_ctx.get(u"segments") or []):
+                try:
+                    if int(seg.get(u"id", -1)) != int(seg_id):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    oi = int(seg.get(u"owner_index", si))
+                except Exception:
+                    oi = si
+                if 0 <= oi < len(wlist):
+                    wid = wall_id_int(wlist[oi])
+                break
+        except Exception:
+            wid = None
+    if wid is None:
+        try:
+            wid = wall_id_int(wlist[si])
+        except Exception:
+            return CABEZAL_CONCRETE_GRADE_DEFAULT
+    cfg = (cabezal_por_muro_id or {}).get(wid) or {}
+    ex = cfg.get(extremo) if extremo else None
+    return cabezal_concrete_grade_from_ex_cfg(ex)
+
+
 def default_cabezal_extremo_config():
     return {
         u"layers": [
@@ -1119,6 +1231,7 @@ def default_cabezal_extremo_config():
         u"troceo_auto_geom": False,
         u"armado_activo": True,
         u"segment_bar_type_ids": {},
+        u"concrete_grade": CABEZAL_CONCRETE_GRADE_DEFAULT,
         u"confinement": default_cabezal_confinement_config(),
     }
 
@@ -1928,6 +2041,7 @@ def _normalize_cabezal_extremo_layers(ex_cfg, n_tramos=1):
         encuentro=is_enc_l,
         n_capas_encuentro=n_enc_conf if post_on else None,
     )
+    ex_cfg[u"layer_spacing_mm"] = cabezal_layer_spacing_mm(ex_cfg)
     return layers
 
 
@@ -2853,13 +2967,13 @@ def _fila_y_normalizada_en_zona_util(row_index):
     return float(ri) / 3.0
 
 
-def _cabezal_layer_pitch_mm(thickness_mm, n_capas, cover_mm=None):
+def _cabezal_layer_pitch_mm(thickness_mm, n_capas, cover_mm=None, requested_mm=None):
     """Paso entre capas (mm) a lo largo del espesor; comprime si no caben."""
     e_mm = max(float(thickness_mm or 200.0), 50.0)
     c_mm = max(0.0, float(cover_mm if cover_mm is not None else CABEZAL_COVER_MM))
     usable_mm = max(40.0, e_mm - 2.0 * c_mm)
     n = max(1, int(n_capas))
-    pitch = float(CABEZAL_LAYER_PITCH_MM)
+    pitch = cabezal_layer_spacing_mm(raw=requested_mm)
     if n > 1:
         need = float(n - 1) * pitch
         if need > usable_mm * 0.88:
@@ -3822,6 +3936,16 @@ NO_COLLISION_RETRACT_BASE_MM = 25.0
 FOUNDATION_PROBE_BASE_MM = 100.0
 FOUNDATION_STRETCH_RESTA_MM = 50.0
 TROCEO_EMPALME_POLICY_BASE = u"base"
+# AppDomain: alinear XY de líneas del mismo (extremo, capa) antes de fusionar
+# (Capas Adicionales / stacks con extremos no colineales al mm).
+_APPDOMAIN_FUSE_ALIGN_XY = u"Arainco_Cabezal_FuseAlignXY"
+# AppDomain legacy: True → cabeza siempre empotramiento L(Ø) (sin sonda).
+_APPDOMAIN_SKIP_TOP_EMBED_COLLISION = u"Arainco_Cabezal_SkipTopEmbedCollision"
+# AppDomain Capas: terminación cabeza forzada — ``empotramiento`` | ``pata_l``.
+# None / ausente → sondeo de colisión (Armado Muros v3).
+_APPDOMAIN_TOP_TERMINATION = u"Arainco_Cabezal_TopTermination"
+TOP_TERMINATION_EMPOTRAMIENTO = u"empotramiento"
+TOP_TERMINATION_PATA_L = u"pata_l"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -4332,7 +4456,11 @@ def _empotramiento_max_mm_at_z_joint(
             bt_j = fallback_bar_type
         if bt_j is None:
             continue
-        emb = _empotramiento_tabla_mm(_bar_diameter_mm(bt_j)) or 0.0
+        g_j = concrete_grade_for_stack(
+            walls, cabezal_por_muro_id, extremo, stack_j,
+            segment_ctx=segment_ctx,
+        )
+        emb = _empotramiento_tabla_mm(_bar_diameter_mm(bt_j), g_j) or 0.0
         if emb > embed_mm:
             embed_mm = emb
     if embed_mm < 1e-6:
@@ -4514,7 +4642,20 @@ def _z_cut_vertical_bar_plane(bx, by, z_lo, z_hi, plane, tol_ft):
     nx = float(n.X)
     ny = float(n.Y)
     z_int = oz - (nx * (float(bx) - ox) + ny * (float(by) - oy)) / nz
-    if z_int <= float(z_lo) + tt or z_int >= float(z_hi) - tt:
+    z_lo_f = float(z_lo)
+    z_hi_f = float(z_hi)
+    if z_int <= z_lo_f + tt or z_int >= z_hi_f - tt:
+        # Capas / fuse-align: si el plano cae justo en el borde (Z-base),
+        # empujar 2 mm hacia el interior para que el split no se descarte.
+        if _fuse_align_xy_enabled():
+            try:
+                inset = max(tt * 2.0, float(_mm_to_internal(2.0)))
+            except Exception:
+                inset = tt * 2.0
+            if z_int <= z_lo_f + tt and (z_lo_f + inset) < (z_hi_f - tt):
+                return z_lo_f + inset
+            if z_int >= z_hi_f - tt and (z_hi_f - inset) > (z_lo_f + tt):
+                return z_hi_f - inset
         return None
     return z_int
 
@@ -4629,6 +4770,16 @@ def _troceo_planificar_seg_jobs_from_fused_line(
 
     extremo = fj.get(u"extremo") or CABEZAL_EXTREMO_INICIO
     layer_index = int(fj.get(u"layer_index", 0))
+    # Paridad A/B: preferir índice de sello (enum) para continuar el stack GUID
+    # (capas nuevas con offset). Si no hay enum, usa layer_index local.
+    try:
+        _parity_li = fj.get(u"enum_layer_index")
+        if _parity_li is not None:
+            _parity_li = int(_parity_li)
+        else:
+            _parity_li = int(layer_index)
+    except Exception:
+        _parity_li = int(layer_index)
 
     try:
         d_mm = _bar_diameter_mm(fj[u"bar_type"])
@@ -4652,7 +4803,27 @@ def _troceo_planificar_seg_jobs_from_fused_line(
             merged.append(w)
         ref_walls_job = merged
 
-    use_a = (int(layer_index) % 2 == 0)
+    use_a = (int(_parity_li) % 2 == 0)
+    # Opt-out / forzado de alternancia A/B (herramientas vía AppDomain):
+    # False / 0 → todas las capas usan planos A
+    # "force_b" / 2 → todas las capas usan planos B (empalme con empotramiento)
+    # True / None → paridad por capa (pares=A, impares=B)
+    try:
+        from System import AppDomain as _AD
+
+        _alt = _AD.CurrentDomain.GetData(u"Arainco_Cabezal_Empalme_Alternancia")
+        if _alt is False or _alt == 0 or _alt == u"0":
+            use_a = True
+        elif (
+            _alt == 2
+            or _alt == u"2"
+            or _alt == u"force_b"
+            or _alt == u"b"
+            or _alt == u"B"
+        ):
+            use_a = False
+    except Exception:
+        pass
     cut_planes = []
     cut_policies = []
     if ref_walls_job:
@@ -4673,7 +4844,13 @@ def _troceo_planificar_seg_jobs_from_fused_line(
                     if bt_tr is None:
                         bt_tr = fj[u"bar_type"]
                     d_tr = _bar_diameter_mm(bt_tr)
-                    embeds_b.append(_empotramiento_tabla_mm(d_tr) or 860.0)
+                    g_tr = concrete_grade_for_stack(
+                        walls, cabezal_por_muro_id, extremo, stack_ri,
+                        segment_ctx=segment_ctx,
+                    )
+                    embeds_b.append(
+                        _empotramiento_tabla_mm(d_tr, g_tr) or 860.0
+                    )
                 cut_planes, cut_policies = build_wall_b_cut_planes_embeds(
                     ref_walls_job, curve_tol, embeds_b,
                 )
@@ -4708,7 +4885,11 @@ def _troceo_planificar_seg_jobs_from_fused_line(
                     if bt_j is None:
                         bt_j = fj[u"bar_type"]
                     d_j = _bar_diameter_mm(bt_j)
-                    emb = _empotramiento_tabla_mm(d_j) or 0.0
+                    g_j = concrete_grade_for_stack(
+                        walls, cabezal_por_muro_id, extremo, stack_j,
+                        segment_ctx=segment_ctx,
+                    )
+                    emb = _empotramiento_tabla_mm(d_j, g_j) or 0.0
                     if emb > embed_joint:
                         embed_joint = emb
                 dz_joint = _mm_to_internal(embed_joint) if embed_joint > 0.1 else 0.0
@@ -4733,7 +4914,11 @@ def _troceo_planificar_seg_jobs_from_fused_line(
             if bt_bot is None:
                 bt_bot = fj[u"bar_type"]
             d_bot = _bar_diameter_mm(bt_bot)
-            embed_bot = _empotramiento_tabla_mm(d_bot) or 0.0
+            g_bot = concrete_grade_for_stack(
+                walls, cabezal_por_muro_id, extremo, stack_bot,
+                segment_ctx=segment_ctx,
+            )
+            embed_bot = _empotramiento_tabla_mm(d_bot, g_bot) or 0.0
             dz_embed_bot = _mm_to_internal(embed_bot) if embed_bot > 0.1 else 0.0
             retract_ft = _mm_to_internal(_retract_mm_sin_colision(d_bot))
             s0_z = seg_list[0][0]
@@ -4768,7 +4953,13 @@ def _troceo_planificar_seg_jobs_from_fused_line(
                 cabezal_por_muro_id, walls, extremo, stack_si, layer_index,
             )
             d_seg = _bar_diameter_mm(bt_seg)
-            pata_eje_mm = _pata_l_eje_sketch_mm_desde_diametro(d_seg) or 0.0
+            g_seg = concrete_grade_for_stack(
+                walls, cabezal_por_muro_id, extremo, stack_si,
+                segment_ctx=segment_ctx,
+            )
+            pata_eje_mm = _pata_l_eje_sketch_mm_desde_diametro(
+                d_seg, g_seg,
+            ) or 0.0
             pata_ft_seg = _mm_to_internal(pata_eje_mm) if pata_eje_mm > 0.1 else 0.0
             want_bot = (si == 0 and (has_fund or reverted_bot) and pata_ft_seg > 1e-12)
             want_top = (si == n_seg - 1 and reverted_top and pata_ft_seg > 1e-12)
@@ -4793,6 +4984,7 @@ def _troceo_planificar_seg_jobs_from_fused_line(
                     fj.get(u"enum_layer_index", layer_index) or layer_index,
                 ),
                 u"extremo": extremo,
+                u"concrete_grade": g_seg,
                 u"fusion_key": u"fj_{0}".format(fj_idx),
                 u"seg_index": int(si),
                 u"n_segments": int(n_seg),
@@ -4807,18 +4999,149 @@ def _troceo_planificar_seg_jobs_from_fused_line(
 # Fusión colineal
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _align_line_jobs_xy_for_stack_fusion(line_jobs):
+    """
+    Misma XY por (extremo, layer_index) usando el muro de Z más baja.
+    Permite fusionar el stack aunque los extremos no coincidan al mm
+    (largos distintos / desfaces). También unifica espesor de fusión.
+    """
+    groups = {}
+    order = []
+    for job in list(line_jobs or []):
+        if job is None:
+            continue
+        extremo = job.get(u"extremo") or CABEZAL_EXTREMO_INICIO
+        try:
+            li = int(job.get(u"layer_index", 0))
+        except Exception:
+            li = 0
+        key = (extremo, li)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(job)
+    out = []
+    for key in order:
+        g = groups.get(key) or []
+        if not g:
+            continue
+        try:
+            g_sorted = sorted(
+                g,
+                key=lambda j: float(j[u"p_lo"].Z),
+            )
+        except Exception:
+            g_sorted = list(g)
+        ref = g_sorted[0]
+        try:
+            rx = float(ref[u"p_lo"].X)
+            ry = float(ref[u"p_lo"].Y)
+        except Exception:
+            out.extend(g)
+            continue
+        for job in g:
+            try:
+                lo = job[u"p_lo"]
+                hi = job[u"p_hi"]
+                j = dict(job)
+                j[u"p_lo"] = XYZ(rx, ry, float(lo.Z))
+                j[u"p_hi"] = XYZ(rx, ry, float(hi.Z))
+                j[u"thickness_mm"] = 0.0
+                out.append(j)
+            except Exception:
+                out.append(job)
+    return out
+
+
+def _fuse_align_xy_enabled():
+    try:
+        from System import AppDomain as _AD
+
+        v = _AD.CurrentDomain.GetData(_APPDOMAIN_FUSE_ALIGN_XY)
+        if v is True or v == 1 or v == u"1":
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _skip_top_embed_collision_enabled():
+    """True → cabeza: siempre +L(Ø), sin sonda (legacy Capas)."""
+    try:
+        from System import AppDomain as _AD
+
+        v = _AD.CurrentDomain.GetData(_APPDOMAIN_SKIP_TOP_EMBED_COLLISION)
+        if v is True or v == 1 or v == u"1":
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _top_termination_override():
+    """
+    Override de terminación en cabeza (sin sonda de colisión).
+
+    Returns:
+        ``TOP_TERMINATION_EMPOTRAMIENTO`` | ``TOP_TERMINATION_PATA_L`` | None
+        (None = comportamiento v3 con sonda).
+    """
+    try:
+        from System import AppDomain as _AD
+
+        v = _AD.CurrentDomain.GetData(_APPDOMAIN_TOP_TERMINATION)
+    except Exception:
+        v = None
+    if v is not None:
+        try:
+            s = unicode(v).strip().lower()
+        except Exception:
+            try:
+                s = str(v).strip().lower()
+            except Exception:
+                s = u""
+        if s in (
+            TOP_TERMINATION_EMPOTRAMIENTO,
+            u"embed",
+            u"empotrar",
+            u"1",
+            u"true",
+        ):
+            return TOP_TERMINATION_EMPOTRAMIENTO
+        if s in (
+            TOP_TERMINATION_PATA_L,
+            u"pata",
+            u"pata-l",
+            u"l",
+            u"2",
+        ):
+            return TOP_TERMINATION_PATA_L
+    if _skip_top_embed_collision_enabled():
+        return TOP_TERMINATION_EMPOTRAMIENTO
+    return None
+
+
 def _fuse_colinear_cabezal_lines(line_jobs):
     """
     Fusión colineal: agrupa por (XY, extremo, capa, espesor muro mm) y extiende
     el intervalo Z al rango combinado ``[min(Z), max(Z)]``.
     Solo fusiona líneas de muros con el mismo espesor nominal.
     Acumula muros con ``troceo_por_muro`` para planos de corte.
+
+    Con ``Arainco_Cabezal_FuseAlignXY``: alinea XY por (extremo, capa) para
+    poder trocear stacks Capas aunque los extremos no sean colineales.
     """
     if not line_jobs:
         return []
+    jobs_in = list(line_jobs)
+    if _fuse_align_xy_enabled():
+        try:
+            jobs_in = _align_line_jobs_xy_for_stack_fusion(jobs_in)
+        except Exception:
+            jobs_in = list(line_jobs)
     buckets = {}
     key_order = []
-    for job in line_jobs:
+    for job in jobs_in:
         p_lo = job[u"p_lo"]
         p_hi = job[u"p_hi"]
         xf = round(float(p_lo.X), _XY_KEY_DECIMALS)
@@ -5171,7 +5494,7 @@ def _cabezal_stirrup_envelope_from_line_jobs_ft(
                 wall, extremo, li, bar_type,
                 job.get(u"conf_type") or bar_type,
                 layer_spacing_mm=float(
-                    ex_cfg.get(u"layer_spacing_mm") or CABEZAL_LAYER_PITCH_MM,
+                    cabezal_layer_spacing_mm(ex_cfg),
                 ),
                 doc=doc, ex_cfg=ex_cfg,
             )
@@ -5475,7 +5798,7 @@ def _cabezal_stirrup_envelope_encuentro_fiber_ft(
         if cabezal_post_encuentro_activo(ex_cfg):
             n_tot = cabezal_effective_n_capas(ex_cfg)
             layer_spacing_mm = float(
-                ex_cfg.get(u"layer_spacing_mm") or CABEZAL_LAYER_PITCH_MM,
+                cabezal_layer_spacing_mm(ex_cfg),
             )
             pad_mm = (
                 float(conf.get(u"stirrup_diam_mm") or CABEZAL_STIRRUP_DIAM_MM) * 0.5
@@ -5530,7 +5853,7 @@ def _cabezal_stirrup_envelope_encuentro_fiber_ft(
     )
     pad_ft = _mm_to_internal(pad_mm)
     layer_spacing_mm = float(
-        ex_cfg.get(u"layer_spacing_mm") or CABEZAL_LAYER_PITCH_MM,
+        cabezal_layer_spacing_mm(ex_cfg),
     )
     layers = cabezal_active_layers(ex_cfg)
     n_capas = len(layers) if layers else cabezal_effective_n_capas(ex_cfg)
@@ -5621,7 +5944,7 @@ def _cabezal_stirrup_envelope_ft(
         return None, None, None, None, u"Sin geometría longitudinal del muro."
 
     layer_spacing_mm = float(
-        ex_cfg.get(u"layer_spacing_mm") or CABEZAL_LAYER_PITCH_MM,
+        cabezal_layer_spacing_mm(ex_cfg),
     )
     conf = normalize_cabezal_confinement(
         ex_cfg.get(u"confinement"), ex_cfg.get(u"n_capas"),
@@ -5726,7 +6049,11 @@ def _resolve_cabezal_stirrup_hook_135(doc):
         u"Stirrup/Tie - 135 deg. ",
     )
     try:
-        for ht in FilteredElementCollector(doc).OfClass(RebarHookType):
+        for ht in (
+            FilteredElementCollector(doc)
+            .OfClass(RebarHookType)
+            .WhereElementIsElementType()
+        ):
             try:
                 nm = u"{0}".format(ht.Name or u"").strip()
             except Exception:
@@ -6086,7 +6413,11 @@ def _find_cabezal_confinement_rebar_shape(doc, nombre):
     match_digits = None
     found = None
     try:
-        shapes = FilteredElementCollector(doc).OfClass(RebarShape)
+        shapes = (
+            FilteredElementCollector(doc)
+            .OfClass(RebarShape)
+            .WhereElementIsElementType()
+        )
     except Exception:
         cache[dkey] = None
         return None
@@ -6433,7 +6764,7 @@ def _cabezal_tie_layer_geometry_ft(
     cover_ft = _mm_to_internal(CABEZAL_COVER_MM)
 
     layer_spacing_mm = float(
-        ex_cfg.get(u"layer_spacing_mm") or CABEZAL_LAYER_PITCH_MM,
+        cabezal_layer_spacing_mm(ex_cfg),
     )
     conf = normalize_cabezal_confinement(
         ex_cfg.get(u"confinement"),
@@ -6901,7 +7232,7 @@ def _cabezal_tie_across_layers_geometry_ft(
     dist_eje_cara = espesor_ft * 0.5
 
     layer_spacing_mm = float(
-        ex_cfg.get(u"layer_spacing_mm") or CABEZAL_LAYER_PITCH_MM,
+        cabezal_layer_spacing_mm(ex_cfg),
     )
     conf = normalize_cabezal_confinement(
         ex_cfg.get(u"confinement"), ex_cfg.get(u"n_capas"),
@@ -8684,7 +9015,7 @@ def _aplicar_cabezales_muros_pipeline(
                     )
                     continue
                 layer_spacing_mm = float(
-                    ex_cfg.get(u"layer_spacing_mm") or CABEZAL_LAYER_PITCH_MM,
+                    cabezal_layer_spacing_mm(ex_cfg),
                 )
                 geom = _wall_longitudinal_at_extremo(wall, extremo)
                 normal_muro = geom[u"normal_muro"] if geom else XYZ.BasisY
@@ -8821,17 +9152,28 @@ def _aplicar_cabezales_muros_pipeline(
                 bar_type_top = fj[u"bar_type"]
             d_mm = _bar_diameter_mm(bar_type_top)
             host_wall = fj[u"wall"]
+            g_top = concrete_grade_for_stack(
+                walls, cabezal_por_muro_id, extremo, stack_idx_top,
+                segment_ctx=segment_ctx,
+            )
 
-            embed_mm = _empotramiento_tabla_mm(d_mm) or 0.0
+            embed_mm = _empotramiento_tabla_mm(d_mm, g_top) or 0.0
             dz_embed_ft = _mm_to_internal(embed_mm) if embed_mm > 0.1 else 0.0
             retract_mm = _retract_mm_sin_colision(d_mm)
             dz_retract_ft = _mm_to_internal(retract_mm) if retract_mm > 0.1 else 0.0
 
             if dz_embed_ft > 1e-12:
-                collides = _embed_collides_wall_solids_upward(
-                    doc, bx, by, z_top, dz_embed_ft, d_mm,
-                    walls, host_wall.Id, geom_opts,
-                )
+                # Capas (AppDomain): forzar empotramiento o pata L sin sonda.
+                top_mode = _top_termination_override()
+                if top_mode == TOP_TERMINATION_EMPOTRAMIENTO:
+                    collides = True
+                elif top_mode == TOP_TERMINATION_PATA_L:
+                    collides = False
+                else:
+                    collides = _embed_collides_wall_solids_upward(
+                        doc, bx, by, z_top, dz_embed_ft, d_mm,
+                        walls, host_wall.Id, geom_opts,
+                    )
                 if collides:
                     old_hi = fj[u"p_hi"]
                     fj[u"p_hi"] = XYZ(float(old_hi.X), float(old_hi.Y),

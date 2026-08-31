@@ -11,6 +11,9 @@ Requisitos:
 - Rango PISO: corte y tope al nivel asociado +1500 mm; fondo y profundidad Unlimited
   solo si el nivel asociado es el de menor elevación del proyecto; resto de PISO:
   fondo y profundidad al nivel asociado −1500 mm.
+- Rango CIELO: corte al nivel asociado +1000 mm; tope al nivel superior +300 mm
+  (o asociado +4000 mm si no hay nivel usable); fondo y profundidad de vista al
+  nivel asociado +0 mm (la profundidad no puede coincidir con el tope).
 - Parámetros de instancia: Clasificacion, Section Filter, Subclasificacion, Zona.
 - Una sola transacción «Crear Vistas de Revisión»: SubTransactions por vista (crear+rango),
   Regenerate, SubTransactions por vista (parámetros), Commit final.
@@ -648,21 +651,202 @@ def _is_lowest_project_level(level, levels_sorted):
         return False
 
 
-def _level_above(level, levels_sorted):
+# Holgura mínima entre planos (pies internos vía mm). Revit exige
+# Top ≥ Cut > Bottom ≥ View Depth; 1 mm evita igualdad rechazada en algunas versiones.
+_VIEW_RANGE_MIN_GAP_MM = 1.0
+
+
+def _plane_elevation(level, offset):
+    return float(level.Elevation) + float(offset)
+
+
+def _set_view_plane(vr, plane, level_id, offset):
+    vr.SetLevelId(plane, level_id)
+    try:
+        is_unlim = level_id == PlanViewRange.Unlimited
+    except Exception:
+        is_unlim = False
+    if is_unlim:
+        try:
+            vr.SetOffset(plane, 0.0)
+        except Exception:
+            pass
+        return
+    vr.SetOffset(plane, float(offset))
+
+
+def _eid_is_valid(eid):
+    if eid is None:
+        return False
+    try:
+        if eid == ElementId.InvalidElementId:
+            return False
+    except Exception:
+        pass
+    try:
+        return int(eid.Value) > 0
+    except Exception:
+        try:
+            return int(eid.IntegerValue) > 0
+        except Exception:
+            return False
+
+
+def _vft_default_template_param(vft):
+    if vft is None:
+        return None
+    try:
+        p = vft.get_Parameter(BuiltInParameter.DEFAULT_VIEW_TEMPLATE)
+        if p is not None and not p.IsReadOnly:
+            return p
+    except Exception:
+        pass
+    try:
+        p = vft.LookupParameter(u"View Template applied to new views")
+        if p is not None and not p.IsReadOnly:
+            return p
+    except Exception:
+        pass
+    return None
+
+
+def _get_vft_default_template_id(vft):
+    try:
+        if hasattr(vft, "DefaultTemplateId"):
+            tid = vft.DefaultTemplateId
+            if _eid_is_valid(tid):
+                return tid
+    except Exception:
+        pass
+    p = _vft_default_template_param(vft)
+    if p is None:
+        return None
+    try:
+        return p.AsElementId()
+    except Exception:
+        return None
+
+
+def _set_vft_default_template_id(vft, eid):
+    try:
+        if hasattr(vft, "DefaultTemplateId"):
+            vft.DefaultTemplateId = eid
+            return True
+    except Exception:
+        pass
+    p = _vft_default_template_param(vft)
+    if p is None:
+        return False
+    try:
+        p.Set(eid)
+        return True
+    except Exception:
+        return False
+
+
+def _detach_view_template(view):
+    """Quita la plantilla para poder editar el rango de vista."""
+    if view is None:
+        return
+    invalid = ElementId.InvalidElementId
+    try:
+        tid = view.ViewTemplateId
+        if _eid_is_valid(tid):
+            view.ViewTemplateId = invalid
+    except Exception:
+        pass
+    try:
+        p = view.get_Parameter(BuiltInParameter.VIEW_TEMPLATE_ID)
+        if p is not None and not p.IsReadOnly:
+            p.Set(invalid)
+    except Exception:
+        pass
+
+
+def _create_plan_view(doc, vft, level_id, view_name=None):
+    """
+    ViewPlan.Create sin la plantilla por defecto del tipo.
+
+    Structural Plan (Cielo) suele tener plantilla RCP; al crear una planta
+    estructural (mira hacia abajo) Revit aplica un rango invertido y lanza
+    «Plan view range is not valid» ya en Create, antes de SetViewRange.
+    """
+    old_tid = _get_vft_default_template_id(vft)
+    paused = False
+    invalid = ElementId.InvalidElementId
+    try:
+        if _eid_is_valid(old_tid):
+            paused = _set_vft_default_template_id(vft, invalid)
+        try:
+            view = ViewPlan.Create(doc, vft.Id, level_id)
+        except Exception as ex:
+            label = view_name or u""
+            raise Exception(
+                u'No se pudo crear la planta «{}»: {}'.format(label, ex)
+            )
+        _detach_view_template(view)
+        return view
+    finally:
+        if paused and old_tid is not None:
+            try:
+                _set_vft_default_template_id(vft, old_tid)
+            except Exception:
+                pass
+
+
+def _commit_view_range(view, vr):
+    try:
+        view.SetViewRange(vr)
+    except Exception as ex:
+        vname = u""
+        try:
+            vname = view.Name or u""
+        except Exception:
+            pass
+        raise Exception(
+            u'Rango de vista no válido en «{}»: {}'.format(vname, ex)
+        )
+
+
+def _level_above(level, levels_sorted, min_delta=None):
     """
     Siguiente nivel por encima de `level` en la lista ordenada por elevación.
-    Devuelve None si `level` es el más alto.
+    Si `min_delta` (pies internos) se indica, exige Elevation > level + min_delta.
+    Devuelve None si `level` es el más alto (o no hay ninguno lo bastante alto).
     """
+    if level is None or not levels_sorted:
+        return None
     tol = 1e-4  # pies — tolerancia para comparar elevación
+    try:
+        extra = float(min_delta) if min_delta is not None else 0.0
+    except Exception:
+        extra = 0.0
+    threshold = float(level.Elevation) + max(tol, extra)
     for i, lv in enumerate(levels_sorted):
         if lv.Id == level.Id:
             j = i + 1
             while j < len(levels_sorted):
-                if levels_sorted[j].Elevation > level.Elevation + tol:
-                    return levels_sorted[j]
+                try:
+                    if float(levels_sorted[j].Elevation) > threshold:
+                        return levels_sorted[j]
+                except Exception:
+                    pass
                 j += 1
             return None
     return None
+
+
+def _level_above_for_cielo(level, levels_sorted, offset_cut, offset_top_on_upper):
+    """
+    Nivel superior usable como Top de Cielo: Top (nivel + 300 mm) debe quedar
+    por encima del Cut (asociado + 1000 mm). Omite niveles intermedios demasiado
+    cercanos (p. ej. NPT / cara superior de losa).
+    """
+    gap = _mm_to_internal(_VIEW_RANGE_MIN_GAP_MM)
+    min_delta = float(offset_cut) - float(offset_top_on_upper) + gap
+    if min_delta < 1e-4:
+        min_delta = 1e-4
+    return _level_above(level, levels_sorted, min_delta=min_delta)
 
 
 def _apply_view_range_piso(
@@ -675,34 +859,130 @@ def _apply_view_range_piso(
     """
     Vistas tipo Piso (Structural Plan Piso), nivel asociado = GenLevel de la vista.
 
-    Común: Cut / Top = nivel asociado + 1500 mm.
+    Común: Cut = nivel asociado + 1500 mm; Top = Cut + 1 mm (Revit exige Top ≥ Cut).
 
     Si is_lowest_project_level: Bottom y View Depth = Unlimited (PlanViewRange.Unlimited).
     Si no: mismo criterio anterior al modo unlimited — Bottom y View Depth al nivel
     asociado con offset −1500 mm.
     """
+    _detach_view_template(view)
     vr = view.GetViewRange()
     lid = assoc_level.Id
+    gap = _mm_to_internal(_VIEW_RANGE_MIN_GAP_MM)
+    cut_off = float(offset_pos_1500)
 
-    vr.SetLevelId(PlanViewPlane.CutPlane, lid)
-    vr.SetOffset(PlanViewPlane.CutPlane, offset_pos_1500)
-
-    vr.SetLevelId(PlanViewPlane.TopClipPlane, lid)
-    vr.SetOffset(PlanViewPlane.TopClipPlane, offset_pos_1500)
+    _set_view_plane(vr, PlanViewPlane.CutPlane, lid, cut_off)
+    _set_view_plane(vr, PlanViewPlane.TopClipPlane, lid, cut_off + gap)
 
     if is_lowest_project_level:
         unlim = PlanViewRange.Unlimited
-        vr.SetLevelId(PlanViewPlane.BottomClipPlane, unlim)
-        vr.SetOffset(PlanViewPlane.BottomClipPlane, 0.0)
-        vr.SetLevelId(PlanViewPlane.ViewDepthPlane, unlim)
-        vr.SetOffset(PlanViewPlane.ViewDepthPlane, 0.0)
+        # View Depth primero: Bottom Unlimited exige profundidad ≤ fondo.
+        _set_view_plane(vr, PlanViewPlane.ViewDepthPlane, unlim, 0.0)
+        _set_view_plane(vr, PlanViewPlane.BottomClipPlane, unlim, 0.0)
     else:
-        vr.SetLevelId(PlanViewPlane.BottomClipPlane, lid)
-        vr.SetOffset(PlanViewPlane.BottomClipPlane, offset_neg_1500)
-        vr.SetLevelId(PlanViewPlane.ViewDepthPlane, lid)
-        vr.SetOffset(PlanViewPlane.ViewDepthPlane, offset_neg_1500)
+        _set_view_plane(vr, PlanViewPlane.BottomClipPlane, lid, offset_neg_1500)
+        _set_view_plane(vr, PlanViewPlane.ViewDepthPlane, lid, offset_neg_1500)
 
-    view.SetViewRange(vr)
+    _commit_view_range(view, vr)
+
+
+def _plan_looks_up(view):
+    """True si la planta mira hacia arriba (RCP / CeilingPlan)."""
+    try:
+        z = float(view.ViewDirection.Z)
+        if z > 0.1:
+            return True
+        if z < -0.1:
+            return False
+    except Exception:
+        pass
+    try:
+        if str(view.ViewType) == "CeilingPlan":
+            return True
+    except Exception:
+        pass
+    try:
+        vft = view.Document.GetElement(view.GetTypeId())
+        if vft is not None and vft.ViewFamily == ViewFamily.CeilingPlan:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _gen_level_id_and_elevation(view, assoc_level):
+    try:
+        gen = view.GenLevel
+        if gen is not None:
+            return gen.Id, float(gen.Elevation)
+    except Exception:
+        pass
+    return assoc_level.Id, float(assoc_level.Elevation)
+
+
+def _cielo_top_offset_from_assoc(
+    assoc_elev, level_above, offset_cut, offset_top_300, offset_fallback
+):
+    """Desfase de Top respecto al nivel asociado (un solo LevelId en el rango)."""
+    gap = _mm_to_internal(_VIEW_RANGE_MIN_GAP_MM)
+    cut_z = float(assoc_elev) + float(offset_cut)
+    if level_above is not None:
+        top_z = float(level_above.Elevation) + float(offset_top_300)
+        if top_z > cut_z + gap:
+            return top_z - float(assoc_elev)
+    fb = float(offset_fallback)
+    if float(assoc_elev) + fb > cut_z + gap:
+        return fb
+    return float(offset_cut) + gap
+
+
+def _write_view_range_same_level(view, level_id, top_off, cut_off, bot_off, depth_off):
+    """
+    Escribe un rango con los cuatro planos en el mismo nivel.
+
+    Primero abre el Top (desfase alto) para que SetLevelId no deje Top < Cut.
+    Si depth_off <= bot_off: planta que mira hacia abajo.
+    Si depth_off >= top_off: planta que mira hacia arriba (RCP).
+    """
+    _detach_view_template(view)
+    gap = _mm_to_internal(_VIEW_RANGE_MIN_GAP_MM)
+    top_off = float(top_off)
+    cut_off = float(cut_off)
+    bot_off = float(bot_off)
+    depth_off = float(depth_off)
+    if top_off < cut_off + gap:
+        top_off = cut_off + gap
+
+    vr = view.GetViewRange()
+    hi = max(top_off, depth_off, cut_off) + _mm_to_internal(2000.0)
+    try:
+        top_lid = vr.GetLevelId(PlanViewPlane.TopClipPlane)
+        if top_lid != PlanViewRange.Unlimited:
+            vr.SetOffset(PlanViewPlane.TopClipPlane, hi)
+    except Exception:
+        pass
+
+    _set_view_plane(vr, PlanViewPlane.TopClipPlane, level_id, hi)
+    _set_view_plane(vr, PlanViewPlane.CutPlane, level_id, cut_off)
+
+    if depth_off <= bot_off + 1e-9:
+        try:
+            d_lid = vr.GetLevelId(PlanViewPlane.ViewDepthPlane)
+            if d_lid != PlanViewRange.Unlimited:
+                vr.SetOffset(
+                    PlanViewPlane.ViewDepthPlane,
+                    min(depth_off, bot_off) - _mm_to_internal(500.0),
+                )
+        except Exception:
+            pass
+        _set_view_plane(vr, PlanViewPlane.ViewDepthPlane, level_id, depth_off)
+        _set_view_plane(vr, PlanViewPlane.BottomClipPlane, level_id, bot_off)
+    else:
+        _set_view_plane(vr, PlanViewPlane.BottomClipPlane, level_id, bot_off)
+        _set_view_plane(vr, PlanViewPlane.ViewDepthPlane, level_id, depth_off)
+
+    _set_view_plane(vr, PlanViewPlane.TopClipPlane, level_id, top_off)
+    _commit_view_range(view, vr)
 
 
 def _apply_view_range_cielo(
@@ -714,40 +994,63 @@ def _apply_view_range_cielo(
     offset_fallback_top_depth_4000,
 ):
     """
-    Vistas tipo Cielo:
-    - Cut: nivel asociado + 1000 mm
-    - Top y View Depth: nivel superior + 300 mm
-    Si no hay nivel superior: mismo nivel asociado + 4000 mm (respaldo).
+    Vistas tipo Cielo.
 
-    ForgeTypeId (p. ej. UnitTypeId.Millimeters) se usa en la capa de unidades
-    para convertir los valores de diseño (mm) a doubles internos; el
-    PlanViewRange no almacena ForgeTypeId en cada offset, solo el valor ya
-    convertido a pies respecto al LevelId configurado por plano.
+    Todos los planos se anclan al nivel asociado (el Top del nivel superior se
+    expresa como desfase). Así se evita «Plan view range is not valid» al mezclar
+    LevelId distintos.
+
+    Planta hacia abajo: View Depth = Bottom (asociado + 0).
+    Planta hacia arriba (RCP): View Depth = Top.
     """
-    vr = view.GetViewRange()
-    assoc_lid = assoc_level.Id
+    _detach_view_template(view)
+    lid, assoc_elev = _gen_level_id_and_elevation(view, assoc_level)
+    cut_off = float(offset_cut_1000)
+    top_off = _cielo_top_offset_from_assoc(
+        assoc_elev,
+        level_above,
+        cut_off,
+        offset_top_depth_300,
+        offset_fallback_top_depth_4000,
+    )
+    looks_up = _plan_looks_up(view)
 
-    vr.SetLevelId(PlanViewPlane.CutPlane, assoc_lid)
-    vr.SetOffset(PlanViewPlane.CutPlane, offset_cut_1000)
-
-    if level_above is not None:
-        up_lid = level_above.Id
-        vr.SetLevelId(PlanViewPlane.TopClipPlane, up_lid)
-        vr.SetOffset(PlanViewPlane.TopClipPlane, offset_top_depth_300)
-        vr.SetLevelId(PlanViewPlane.ViewDepthPlane, up_lid)
-        vr.SetOffset(PlanViewPlane.ViewDepthPlane, offset_top_depth_300)
+    if looks_up:
+        attempts = (
+            (top_off, cut_off, 0.0, top_off),
+            (top_off, cut_off, cut_off, top_off),
+            (top_off, cut_off, 0.0, 0.0),
+        )
     else:
-        vr.SetLevelId(PlanViewPlane.TopClipPlane, assoc_lid)
-        vr.SetOffset(PlanViewPlane.TopClipPlane, offset_fallback_top_depth_4000)
-        vr.SetLevelId(PlanViewPlane.ViewDepthPlane, assoc_lid)
-        vr.SetOffset(PlanViewPlane.ViewDepthPlane, offset_fallback_top_depth_4000)
+        attempts = (
+            (top_off, cut_off, 0.0, 0.0),
+            (top_off, cut_off, 0.0, top_off),
+            (top_off, cut_off, cut_off, top_off),
+        )
 
-    # No indicado en requisitos: se ancla el fondo al nivel asociado sin offset
-    # para acotar el volumen visible de forma estable.
-    vr.SetLevelId(PlanViewPlane.BottomClipPlane, assoc_lid)
-    vr.SetOffset(PlanViewPlane.BottomClipPlane, 0.0)
+    last_ex = None
+    for top_a, cut_a, bot_a, dep_a in attempts:
+        try:
+            _write_view_range_same_level(view, lid, top_a, cut_a, bot_a, dep_a)
+            return
+        except Exception as ex:
+            last_ex = ex
 
-    view.SetViewRange(vr)
+    vname = u""
+    try:
+        vname = view.Name or u""
+    except Exception:
+        pass
+    raise Exception(
+        u'Rango de vista no válido en «{}» (Cielo, looks_up={}, '
+        u'top={:.1f} mm, cut={:.1f} mm): {}'.format(
+            vname,
+            looks_up,
+            top_off * 304.8,
+            cut_off * 304.8,
+            last_ex,
+        )
+    )
 
 
 def main(doc=None):
@@ -857,7 +1160,7 @@ def main(doc=None):
                             nm=name_piso,
                             lowest=piso_lowest,
                         ):
-                            vp = ViewPlan.Create(doc, vft_piso.Id, lev.Id)
+                            vp = _create_plan_view(doc, vft_piso, lev.Id, nm)
                             vp.Name = nm
                             _apply_view_range_piso(
                                 vp,
@@ -877,14 +1180,16 @@ def main(doc=None):
                     if key_cielo in used:
                         skipped.append(name_cielo + " (Cielo — ya existía)")
                     else:
-                        lvl_up = _level_above(level, levels)
+                        lvl_up = _level_above_for_cielo(
+                            level, levels, off_cut_cielo, off_top_depth
+                        )
 
                         def _make_cielo(
                             lev=level,
                             lup=lvl_up,
                             nm=name_cielo,
                         ):
-                            vc = ViewPlan.Create(doc, vft_cielo.Id, lev.Id)
+                            vc = _create_plan_view(doc, vft_cielo, lev.Id, nm)
                             vc.Name = nm
                             _apply_view_range_cielo(
                                 vc,

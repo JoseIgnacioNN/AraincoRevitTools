@@ -17,6 +17,7 @@ from armado_vigas.domain.layers import (
     layer_bar_count,
 )
 from armado_vigas.domain.tramos import build_bar_runs, build_tramos, sort_beams
+from armado_vigas.domain.bar_ends import session_curve_end_modes
 from armado_vigas.geometry.longitudinales import (
     build_longitudinal_guides_for_run,
     build_suple_superior_guides,
@@ -707,6 +708,10 @@ def place_guide_as_rebar_set(document, guide, host, n_bars, rex_mm=0.0):
                 pass
             return 0, err_pata, None
         rb = rb_nuevo
+        if n_bars > 1:
+            _ensure_inferior_array_inward(
+                rb, document, es_inf, v_dir, face_ref, face_min_s, face_max_s
+            )
 
     try:
         qty = int(_rebar_cantidad_posiciones(rb))
@@ -730,11 +735,11 @@ _FT_TO_MM = 304.8
 
 def _guide_line_length_mm(line):
     if line is None:
-        return 0
+        return 0.0
     try:
-        return int(round(float(line.Length) * _FT_TO_MM))
+        return float(line.Length) * _FT_TO_MM
     except Exception:
-        return 0
+        return 0.0
 
 
 def _guide_audit_label(guide):
@@ -751,8 +756,8 @@ def _guide_audit_label(guide):
 
 
 def _append_guide_if_over_limit(violations, guide, max_mm):
-    length_mm = _guide_line_length_mm(guide.get(u"line"))
-    if length_mm > int(max_mm or MAX_BAR_MM):
+    length_mm = float(_guide_line_length_mm(guide.get(u"line")) or 0.0)
+    if length_mm > float(max_mm or MAX_BAR_MM):
         violations.append({
             u"label": _guide_audit_label(guide),
             u"length_mm": length_mm,
@@ -775,6 +780,10 @@ def find_longitudinal_guides_over_limit(document, session, max_mm=MAX_BAR_MM):
     violations = []
 
     for es_inf in (False, True):
+        if es_inf and not bool(getattr(session, u"placeInf", True)):
+            continue
+        if (not es_inf) and not bool(getattr(session, u"placeSup", True)):
+            continue
         tramos = (
             (session.tramos_inf if es_inf else session.tramos_sup)
             or build_tramos(
@@ -815,6 +824,10 @@ def find_longitudinal_guides_over_limit(document, session, max_mm=MAX_BAR_MM):
                 if es_inf
                 else beam_layer_diam_sup(ref_beam, 1)
             )
+            face = u"inf" if es_inf else u"sup"
+            b0 = sorted_beams[run_indices[0]] if run_indices else None
+            b1 = sorted_beams[run_indices[-1]] if run_indices else b0
+            em0, em1 = session_curve_end_modes(session, face, b0, b1)
             guides, _av, _lap = build_longitudinal_guides_for_run(
                 document,
                 chain,
@@ -827,31 +840,36 @@ def find_longitudinal_guides_over_limit(document, session, max_mm=MAX_BAR_MM):
                 rex_mm=rex_mm,
                 rebar_bar_type=resolve_bar_type_mm(document, diam_face),
                 split_empalme=session.split_empalme,
+                end_mode_start=em0,
+                end_mode_end=em1,
+                session=session,
             )
             for guide in guides or []:
                 _append_guide_if_over_limit(violations, guide, max_mm)
 
-    beam_candidates = list(session.framing_elements or [])
-    ref_sup = resolve_ref_beam_for_chain(
-        beam_candidates, domain_by_id, es_cara_inferior=False
-    )
-    rex_suple = 10.0
-    if ref_sup is not None:
-        rex_suple = float(ref_sup.get(u"estExtDiam") or 10)
-    diam_suple_sup = 16
-    if ref_sup is not None:
-        ensure_beam_layers(ref_sup)
-        diam_suple_sup = int(ref_sup.get(u"diamSupleSup") or ref_sup.get(u"diamSup") or 16)
-    suple_sup_guides, _sup_av = build_suple_superior_guides(
-        document,
-        sorted_beams,
-        domain_by_id,
-        ids_sel,
-        rex_mm=rex_suple,
-        rebar_bar_type=resolve_bar_type_mm(document, diam_suple_sup),
-    )
-    for guide in suple_sup_guides or []:
-        _append_guide_if_over_limit(violations, guide, max_mm)
+    if bool(getattr(session, u"placeSup", True)):
+        beam_candidates = list(session.framing_elements or [])
+        ref_sup = resolve_ref_beam_for_chain(
+            beam_candidates, domain_by_id, es_cara_inferior=False
+        )
+        rex_suple = 10.0
+        if ref_sup is not None:
+            rex_suple = float(ref_sup.get(u"estExtDiam") or 10)
+        diam_suple_sup = 16
+        if ref_sup is not None:
+            ensure_beam_layers(ref_sup)
+            diam_suple_sup = int(ref_sup.get(u"diamSupleSup") or ref_sup.get(u"diamSup") or 16)
+        suple_sup_guides, _sup_av = build_suple_superior_guides(
+            document,
+            sorted_beams,
+            domain_by_id,
+            ids_sel,
+            rex_mm=rex_suple,
+            rebar_bar_type=resolve_bar_type_mm(document, diam_suple_sup),
+            session=session,
+        )
+        for guide in suple_sup_guides or []:
+            _append_guide_if_over_limit(violations, guide, max_mm)
 
     return violations
 
@@ -886,6 +904,10 @@ def colocar_armadura_longitudinal(document, session):
     lap_jobs_all = []
 
     for es_inf in (False, True):
+        if es_inf and not bool(getattr(session, u"placeInf", True)):
+            continue
+        if (not es_inf) and not bool(getattr(session, u"placeSup", True)):
+            continue
         tramos = (
             (session.tramos_inf if es_inf else session.tramos_sup)
             or build_tramos(
@@ -932,6 +954,10 @@ def colocar_armadura_longitudinal(document, session):
                 if es_inf
                 else beam_layer_diam_sup(ref_beam, 1)
             )
+            face = u"inf" if es_inf else u"sup"
+            b0 = sorted_beams[run_indices[0]] if run_indices else None
+            b1 = sorted_beams[run_indices[-1]] if run_indices else b0
+            em0, em1 = session_curve_end_modes(session, face, b0, b1)
             guides, av, lap_mm = build_longitudinal_guides_for_run(
                 document,
                 chain,
@@ -944,6 +970,9 @@ def colocar_armadura_longitudinal(document, session):
                 rex_mm=rex_mm,
                 rebar_bar_type=resolve_bar_type_mm(document, diam_face),
                 split_empalme=session.split_empalme,
+                end_mode_start=em0,
+                end_mode_end=em1,
+                session=session,
             )
             if lap_mm and lap_mm > 0:
                 lap_val = float(lap_mm)
@@ -961,9 +990,32 @@ def colocar_armadura_longitudinal(document, session):
                 if es_suple_inf:
                     n_bars = max(1, int(guide_ref.get(u"nSupleInf") or 2))
                 elif es_suple_sup:
-                    n_bars = max(1, int(guide_ref.get(u"nSupleSup") or 2))
+                    try:
+                        n_bars = max(
+                            1,
+                            int(
+                                guide.get(u"n_bars")
+                                or guide_ref.get(u"nSupleSup")
+                                or 2
+                            ),
+                        )
+                    except Exception:
+                        n_bars = 2
                 else:
                     n_bars = layer_bar_count(guide_ref, layer_num, es_inf)
+                    try:
+                        from armado_vigas.domain.tramo_armado import (
+                            tramo_layer_bar_count,
+                        )
+
+                        tr = guide.get(u"tramo")
+                        if tr is not None:
+                            face_tag = u"inf" if es_inf else u"sup"
+                            n_bars = tramo_layer_bar_count(
+                                session, face_tag, tr, layer_num, es_inf, guide_ref
+                            )
+                    except Exception:
+                        pass
                 host = _pick_host_for_line(
                     guide.get(u"line"),
                     beam_candidates,
@@ -1012,7 +1064,7 @@ def colocar_armadura_longitudinal(document, session):
                         )
                     )
 
-            if lap_mm and float(lap_mm) > 0 and len(run_tramos) > 1 and run_rebar_map:
+            if len(run_tramos) > 1 and run_rebar_map:
                 bar_type_face = resolve_bar_type_mm(document, diam_face)
                 lap_jobs_all.extend(
                     build_lap_jobs_for_empalme_run(
@@ -1028,74 +1080,100 @@ def colocar_armadura_longitudinal(document, session):
                         lap_mm,
                         run_rebar_map,
                         domain_by_id=domain_by_id,
+                        session=session,
                     )
                 )
 
     # Suple superior — extremos 25 % + fusión consecutiva (independiente de tramos Tn)
-    ref_sup = resolve_ref_beam_for_chain(
-        beam_candidates, domain_by_id, es_cara_inferior=False
-    )
-    rex_suple = 10.0
-    if ref_sup is not None:
-        rex_suple = float(ref_sup.get(u"estExtDiam") or 10)
-    diam_suple_sup = 16
-    if ref_sup is not None:
-        ensure_beam_layers(ref_sup)
-        diam_suple_sup = int(ref_sup.get(u"diamSupleSup") or ref_sup.get(u"diamSup") or 16)
-    suple_sup_guides, sup_av = build_suple_superior_guides(
-        document,
-        sorted_beams,
-        domain_by_id,
-        ids_sel,
-        rex_mm=rex_suple,
-        rebar_bar_type=resolve_bar_type_mm(document, diam_suple_sup),
-    )
-    avisos.extend(sup_av or [])
-    fallback_host_sup = _pick_host(beam_candidates)
-    for guide in suple_sup_guides or []:
-        layer_num = int(guide.get(u"layer") or 1)
-        guide_ref = guide.get(u"ref_beam") or ref_sup or {}
-        n_bars = max(1, int(guide_ref.get(u"nSupleSup") or 2))
-        host = _pick_host_for_line(
-            guide.get(u"line"),
-            beam_candidates,
-            fallback_host_sup,
+    if bool(getattr(session, u"placeSup", True)):
+        ref_sup = resolve_ref_beam_for_chain(
+            beam_candidates, domain_by_id, es_cara_inferior=False
         )
-        if host is None:
-            avisos.append(
-                u"Suple sup. capa {0}: sin host para la barra.".format(layer_num)
-            )
-            continue
-        qty, err, rb = place_guide_as_rebar_set(
+        rex_suple = 10.0
+        if ref_sup is not None:
+            rex_suple = float(ref_sup.get(u"estExtDiam") or 10)
+        diam_suple_sup = 16
+        if ref_sup is not None:
+            ensure_beam_layers(ref_sup)
+            diam_suple_sup = int(ref_sup.get(u"diamSupleSup") or ref_sup.get(u"diamSup") or 16)
+        suple_sup_guides, sup_av = build_suple_superior_guides(
             document,
-            guide,
-            host,
-            n_bars,
+            sorted_beams,
+            domain_by_id,
+            ids_sel,
             rex_mm=rex_suple,
+            rebar_bar_type=resolve_bar_type_mm(document, diam_suple_sup),
+            session=session,
         )
-        if qty > 0:
-            n_total += qty
-            if rb is not None:
-                rebars_creados.append(rb)
-                rebars_sup.append(rb)
+        avisos.extend(sup_av or [])
+        fallback_host_sup = _pick_host(beam_candidates)
+        for guide in suple_sup_guides or []:
+            layer_num = int(guide.get(u"layer") or 1)
+            guide_ref = guide.get(u"ref_beam") or ref_sup or {}
+            try:
+                n_bars = max(
+                    1,
+                    int(
+                        guide.get(u"n_bars")
+                        or guide_ref.get(u"nSupleSup")
+                        or 2
+                    ),
+                )
+            except Exception:
+                n_bars = 2
+            # Bar type por Ø de este tramo (puede diferir entre apoyos).
+            try:
+                d_g = int(guide.get(u"diam_mm") or diam_suple_sup or 16)
+            except Exception:
+                d_g = diam_suple_sup
+            if d_g != diam_suple_sup:
                 try:
-                    rebar_layer_by_id[int(rb.Id.IntegerValue)] = layer_num
+                    # Reemplaza bar type del guide si place usa diam_mm interno.
+                    guide[u"diam_mm"] = d_g
                 except Exception:
                     pass
-        elif err:
-            avisos.append(u"Suple sup. capa {0}: {1}".format(layer_num, err))
+            host = _pick_host_for_line(
+                guide.get(u"line"),
+                beam_candidates,
+                fallback_host_sup,
+            )
+            if host is None:
+                avisos.append(
+                    u"Suple sup. capa {0}: sin host para la barra.".format(layer_num)
+                )
+                continue
+            qty, err, rb = place_guide_as_rebar_set(
+                document,
+                guide,
+                host,
+                n_bars,
+                rex_mm=rex_suple,
+            )
+            if qty > 0:
+                n_total += qty
+                if rb is not None:
+                    rebars_creados.append(rb)
+                    rebars_sup.append(rb)
+                    try:
+                        rebar_layer_by_id[int(rb.Id.IntegerValue)] = layer_num
+                    except Exception:
+                        pass
+            elif err:
+                avisos.append(u"Suple sup. capa {0}: {1}".format(layer_num, err))
 
     lap_sup = lap_face_mm.get(False)
     lap_inf = lap_face_mm.get(True)
     if lap_sup and lap_inf:
         avisos.insert(
             0,
-            u"Traslape sup: {0:.0f} mm · inf: {1:.0f} mm.".format(lap_sup, lap_inf),
+            u"Traslape sup: {0:.0f} mm · inf: {1:.0f} mm.".format(
+                float(lap_sup), float(lap_inf)
+            ),
         )
     elif lap_sup:
-        avisos.insert(0, u"Traslape sup @ empalme: {0:.0f} mm.".format(lap_sup))
+        avisos.insert(0, u"Traslape sup @ empalme: {0:.0f} mm.".format(float(lap_sup)))
     elif lap_inf:
-        avisos.insert(0, u"Traslape inf @ empalme: {0:.0f} mm.".format(lap_inf))
+        avisos.insert(0, u"Traslape inf @ empalme: {0:.0f} mm.".format(float(lap_inf)))
 
     return n_total, avisos, rebars_creados, {
         u"sup": rebars_sup,

@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Mockup · Dosificación en rail lateral</title>
+<style>
+  :root {
+    --bg: #071018;
+    --panel: #0b1620;
+    --card: #0f1c28;
+    --border: #21465c;
+    --fg: #e2e8f0;
+    --mid: #94a3b8;
+    --lo: #64748b;
+    --sup: #22d3ee;
+    --inf: #fb7185;
+    --lat: #a78bfa;
+    --conf: #fbbf24;
+    --ok: #4ade80;
+    --g25: #38bdf8;
+    --g35: #a78bfa;
+    --g45: #f472b6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: var(--fg);
+    background:
+      radial-gradient(900px 380px at 10% 0%, #0e3a4d44, transparent 55%),
+      radial-gradient(700px 320px at 100% 0%, #312e8144, transparent 50%),
+      var(--bg);
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 18px 16px 40px; }
+  h1 { margin: 0 0 6px; font-size: 1.12rem; font-weight: 700; letter-spacing: -0.02em; }
+  .lead { margin: 0 0 16px; color: var(--mid); font-size: 0.86rem; line-height: 1.45; max-width: 72ch; }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 14px;
+    align-items: start;
+  }
+  @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+
+  .app {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    min-height: 520px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 16px 36px #00000055;
+  }
+  @media (max-width: 720px) { .app { grid-template-columns: 1fr; } }
+
+  .canvas {
+    border-right: 1px solid var(--border);
+    padding: 12px 14px;
+    background: linear-gradient(#0a1822, #09141c);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .canvas h2 {
+    margin: 0;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--lo);
+  }
+  .elev {
+    flex: 1;
+    min-height: 220px;
+    border: 1px solid #1e3a4c;
+    border-radius: 8px;
+    background:
+      repeating-linear-gradient(90deg, transparent 0 39px, #122838 39px 40px),
+      #0a1520;
+    position: relative;
+    padding: 28px 20px 40px;
+  }
+  .beam {
+    height: 52px;
+    margin: 18px 40px 0 56px;
+    border: 1.5px solid #5bb8d4;
+    border-radius: 3px;
+    background: #0c1a26cc;
+    position: relative;
+  }
+  .beam::after {
+    content: attr(data-label);
+    position: absolute; inset: 0; display: grid; place-items: center;
+    font-size: 0.72rem; color: var(--lo);
+  }
+  .bar-line {
+    position: absolute;
+    left: 56px; right: 40px;
+    height: 2px;
+    top: 22px;
+    background: var(--sup);
+    opacity: 0.85;
+  }
+  .lap-badge {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    border: 1px solid;
+    white-space: nowrap;
+  }
+  .status-line {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.72rem;
+    color: #a5f3fc;
+    background: #082f49;
+    border: 1px solid #0e7490;
+    border-radius: 6px;
+    padding: 8px 10px;
+    line-height: 1.45;
+  }
+
+  /* —— Rail —— */
+  .rail {
+    background: #09131c;
+    padding: 10px 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 520px;
+  }
+  .rail-top {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--lo);
+    font-weight: 700;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+  }
+  .card.accent-sup { border-color: #155e75; }
+  .card.accent-grade { border-color: #4c1d95; box-shadow: inset 0 0 0 1px #5b21b633; }
+  .card-h {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 8px;
+  }
+  .card-h strong {
+    font-size: 0.82rem; font-weight: 650; color: var(--fg);
+  }
+  .pill {
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid;
+  }
+  .pill.viga { color: #fde68a; border-color: #ca8a0444; background: #42200666; }
+  .pill.lote { color: #c4b5fd; border-color: #6d28d944; background: #2e106566; }
+  .meta {
+    background: #0E1B32;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 0.74rem;
+    color: var(--mid);
+    line-height: 1.4;
+  }
+
+  /* Dosificación controls */
+  .seg {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+  }
+  .seg button {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: #0a1520;
+    color: var(--mid);
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 700;
+    padding: 7px 4px;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  .seg button:hover { border-color: #3b7a96; color: var(--fg); }
+  .seg button.active.g25 { border-color: var(--g25); background: #0c4a6e; color: #e0f2fe; }
+  .seg button.active.g35 { border-color: var(--g35); background: #4c1d95; color: #ede9fe; }
+  .seg button.active.g45 { border-color: var(--g45); background: #9d174d; color: #fce7f3; }
+
+  .combo-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    align-items: end;
+  }
+  select.dosif {
+    width: 100%;
+    border: 1px solid var(--border);
+    background: #0a1520;
+    color: var(--fg);
+    font: inherit;
+    font-size: 0.84rem;
+    font-weight: 650;
+    padding: 7px 8px;
+    border-radius: 5px;
+  }
+  .lbl {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--lo);
+    margin-bottom: 4px;
+  }
+
+  .tabs {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 3px;
+  }
+  .tabs button {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: #0a1520;
+    color: var(--mid);
+    font: inherit;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 7px 2px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .tabs button.active-sup { border-color: var(--sup); color: #ecfeff; background: #083344; }
+  .tabs button.active-inf { border-color: var(--inf); color: #fff1f2; background: #4c0519; }
+  .tabs button.active-lat { border-color: var(--lat); color: #f5f3ff; background: #2e1065; }
+  .tabs button.active-conf { border-color: var(--conf); color: #fffbeb; background: #422006; }
+
+  .field-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr;
+    gap: 8px;
+  }
+  .field label {
+    display: block;
+    font-size: 0.68rem;
+    color: var(--lo);
+    margin-bottom: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .field .fake {
+    border: 1px solid var(--border);
+    background: #0a1520;
+    border-radius: 5px;
+    padding: 7px 8px;
+    font-size: 0.8rem;
+    font-weight: 650;
+    color: var(--fg);
+  }
+  .hint {
+    margin-top: 8px;
+    font-size: 0.72rem;
+    color: var(--lo);
+    line-height: 1.35;
+  }
+  .mini-table {
+    margin-top: 8px;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.7rem;
+  }
+  .mini-table th, .mini-table td {
+    border: 1px solid #1e3a4c;
+    padding: 4px 6px;
+    text-align: left;
+  }
+  .mini-table th { color: var(--lo); font-weight: 650; background: #0a1520; }
+  .mini-table td { color: var(--mid); }
+  .mini-table tr.hi td { color: #f5f3ff; background: #2e106555; font-weight: 700; }
+
+  .strip-dosif {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 6px;
+    border: 1px solid #4c1d95aa;
+    border-radius: 5px;
+    background: #1e1b4b55;
+  }
+  .strip-dosif span {
+    font-size: 0.68rem;
+    color: var(--mid);
+    white-space: nowrap;
+  }
+
+  .side { display: flex; flex-direction: column; gap: 10px; }
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 13px;
+  }
+  .panel h2 {
+    margin: 0 0 8px;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--lo);
+  }
+  .opts { display: flex; flex-direction: column; gap: 6px; }
+  label.opt {
+    display: flex; gap: 8px; align-items: flex-start;
+    padding: 9px 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: #0a1520; cursor: pointer;
+  }
+  label.opt:hover { border-color: #3b7a96; }
+  label.opt.active { border-color: var(--lat); background: #1e1b4b55; }
+  label.opt input { margin-top: 2px; }
+  label.opt strong { display: block; font-size: 0.8rem; color: var(--fg); }
+  label.opt span { display: block; font-size: 0.72rem; color: var(--mid); margin-top: 2px; line-height: 1.35; }
+  .rec {
+    display: inline-block;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    color: #0b1220;
+    background: var(--ok);
+    border-radius: 3px;
+    padding: 1px 5px;
+    margin-left: 6px;
+    vertical-align: 1px;
+  }
+  .panel ul { margin: 0; padding-left: 1.1rem; font-size: 0.8rem; color: var(--mid); line-height: 1.45; }
+  .panel li + li { margin-top: 4px; }
+  .note { margin-top: 12px; font-size: 0.74rem; color: var(--lo); line-height: 1.4; }
+  code { font-size: 0.9em; color: #c4b5fd; }
+  .toolbar-note {
+    font-size: 0.72rem;
+    color: var(--lo);
+    border: 1px dashed #334155;
+    border-radius: 6px;
+    padding: 7px 9px;
+    line-height: 1.4;
+  }
+  .toolbar-note.strike { opacity: 0.65; text-decoration: line-through; text-decoration-color: #fb7185; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Mockup · Dosificación del hormigón en el rail lateral</h1>
+    <p class="lead">
+      Hoy el combo <code>G25 / G35 / G45</code> vive en la <b>barra inferior</b> de la ventana
+      (<code>CmbDosificacionHormigon</code>). Es preferencia de <b>sesión/lote</b> y alimenta
+      traslape, empotramiento y pata L. Este mock explora cómo llevarlo al
+      <b>rail de sección</b> (siempre visible junto a Config / SUP·INF·LAT·CONF).
+    </p>
+
+    <div class="grid">
+      <section class="app">
+        <div class="canvas">
+          <h2>Alzado (preview) · reacciona a la dosificación</h2>
+          <div class="elev" id="elev">
+            <div class="lap-badge" id="lapBadge">½ traslape · —</div>
+            <div class="bar-line"></div>
+            <div class="beam" data-label="Silueta viga · emp / tras dependen de G"></div>
+          </div>
+          <div class="status-line" id="status">—</div>
+          <div class="toolbar-note" id="toolbarNote">
+            Barra inferior actual: Dosificación [G25 ▾] · (se mantiene o se mueve al rail según variante)
+          </div>
+        </div>
+
+        <aside class="rail" id="rail">
+          <div class="rail-top">Rail · sección</div>
+          <!-- filled by JS -->
+        </aside>
+      </section>
+
+      <aside class="side">
+        <div class="panel">
+          <h2>Variante de integración</h2>
+          <div class="opts" id="opts">
+            <label class="opt active" data-v="a">
+              <input type="radio" name="v" value="a" checked/>
+              <div>
+                <strong>A · En «Configuración viga» <span class="rec">RECOM.</span></strong>
+                <span>Segmented G25|G35|G45 bajo la meta de viga. Global, siempre visible, sin ocupar pestaña.</span>
+              </div>
+            </label>
+            <label class="opt" data-v="b">
+              <input type="radio" name="v" value="b"/>
+              <div>
+                <strong>B · Franja compacta sobre tabs</strong>
+                <span>Strip “Hormigón · G__” entre header y SUP/INF/LAT/CONF.</span>
+              </div>
+            </label>
+            <label class="opt" data-v="c">
+              <input type="radio" name="v" value="c"/>
+              <div>
+                <strong>C · Card dedicada + tabla rápida</strong>
+                <span>Bloque “Dosificación” con sample traslape/pata para el Ø activo (pedagógico).</span>
+              </div>
+            </label>
+            <label class="opt" data-v="d">
+              <input type="radio" name="v" value="d"/>
+              <div>
+                <strong>D · Solo en LAT/CONF (disperso)</strong>
+                <span>Control dentro de laterales/confinamiento. Menos descubrible; no recomendado.</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Parámetros demo</h2>
+          <div class="lbl">Ø de referencia (tabla)</div>
+          <div class="seg" id="diamSeg">
+            <button type="button" data-d="12">ø12</button>
+            <button type="button" data-d="16" class="active g25">ø16</button>
+            <button type="button" data-d="20">ø20</button>
+          </div>
+          <p class="hint" style="margin-top:10px">
+            Valores de tabla de demostración (ilustrativos). En producción se leen de
+            <code>bimtools_rebar_hook_lengths</code> vía <code>concrete_lengths.py</code>.
+          </p>
+        </div>
+
+        <div class="panel">
+          <h2>Convenciones al implementar</h2>
+          <ul>
+            <li>Alcance: <b>sesión / lote</b> (no por tramo ni por viga).</li>
+            <li>Cambiar G → <code>session.set_concrete_grade</code> + redraw (igual que hoy).</li>
+            <li>Si se mueve al rail, retirar o dejar sync el combo del footer XAML.</li>
+            <li>Cabecera de alzado ya muestra el grado: mantener coherencia.</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+
+    <p class="note">
+      Archivo: <code>scripts/armado_vigas/ui/mock_rail_dosificacion.html</code> —
+      solo mock. La implementación real tocaría <code>rail_cards.py</code>
+      (<code>build_config_viga_header</code> / <code>populate_section_rail</code>)
+      y opcionalmente el footer en <code>xaml.py</code>.
+    </p>
+  </div>
+
+<script>
+(function () {
+  // Tablas demo (mm) — solo mock
+  var TABLES = {
+    G25: { 12: { lap: 450, hook: 150, emp: 450 }, 16: { lap: 600, hook: 180, emp: 600 }, 20: { lap: 750, hook: 220, emp: 750 } },
+    G35: { 12: { lap: 380, hook: 140, emp: 380 }, 16: { lap: 520, hook: 160, emp: 520 }, 20: { lap: 650, hook: 200, emp: 650 } },
+    G45: { 12: { lap: 320, hook: 120, emp: 320 }, 16: { lap: 450, hook: 150, emp: 450 }, 20: { lap: 560, hook: 180, emp: 560 } },
+  };
+
+  var state = {
+    variant: "a",
+    grade: "G35",
+    diam: 16,
+    tab: "sup", // sup | inf | lat | conf
+  };
+
+  var names = {
+    a: "A · en Configuración viga",
+    b: "B · franja sobre tabs",
+    c: "C · card + tabla",
+    d: "D · solo LAT/CONF",
+  };
+
+  function row() {
+    return (TABLES[state.grade] || TABLES.G25)[state.diam] || TABLES.G25[16];
+  }
+
+  function gradeClass(g) {
+    return String(g || "").toLowerCase();
+  }
+
+  function setGrade(g) {
+    state.grade = g;
+    render();
+  }
+
+  function dosifSegHtml(id) {
+    return (
+      '<div class="seg" data-seg="' +
+      id +
+      '">' +
+      ["G25", "G35", "G45"]
+        .map(function (g) {
+          var act =
+            g === state.grade
+              ? " active " + gradeClass(g)
+              : "";
+          return (
+            '<button type="button" class="' +
+            act.trim() +
+            '" data-g="' +
+            g +
+            '">' +
+            g +
+            "</button>"
+          );
+        })
+        .join("") +
+      "</div>"
+    );
+  }
+
+  function configHeader(includeDosif) {
+    var dosifBlock = "";
+    if (includeDosif) {
+      dosifBlock =
+        '<div style="margin-top:10px">' +
+        '<div class="lbl">Dosificación del hormigón · lote</div>' +
+        dosifSegHtml("hdr") +
+        '<div class="hint">Global · actualiza traslape, empotramiento y pata L</div>' +
+        "</div>";
+    }
+    return (
+      '<div class="card">' +
+      '<div class="card-h">' +
+      "<strong>Configuración viga</strong>" +
+      '<span class="pill viga">VIGA</span>' +
+      "</div>" +
+      '<div class="meta">Viga 1 · B-101 · 30×70 · 5.4 m · lote 2</div>' +
+      dosifBlock +
+      "</div>"
+    );
+  }
+
+  function stripDosif() {
+    return (
+      '<div class="strip-dosif">' +
+      "<span>Hormigón</span>" +
+      dosifSegHtml("strip") +
+      "</div>"
+    );
+  }
+
+  function cardDosifFull() {
+    var t = row();
+    var grades = ["G25", "G35", "G45"];
+    var rows = grades
+      .map(function (g) {
+        var r = TABLES[g][state.diam];
+        var hi = g === state.grade ? ' class="hi"' : "";
+        return (
+          "<tr" +
+          hi +
+          "><td>" +
+          g +
+          "</td><td>" +
+          r.lap +
+          "</td><td>" +
+          r.hook +
+          "</td><td>" +
+          r.emp +
+          "</td></tr>"
+        );
+      })
+      .join("");
+    return (
+      '<div class="card accent-grade">' +
+      '<div class="card-h">' +
+      "<strong>Dosificación</strong>" +
+      '<span class="pill lote">LOTE</span>' +
+      "</div>" +
+      dosifSegHtml("card") +
+      '<table class="mini-table">' +
+      "<thead><tr><th>G</th><th>Traslap.</th><th>Pata L</th><th>Emp.</th></tr></thead>" +
+      "<tbody>" +
+      rows +
+      "</tbody></table>" +
+      '<div class="hint">Sample ø' +
+      state.diam +
+      " · mm (demo). Fila resaltada = activa.</div>" +
+      "</div>"
+    );
+  }
+
+  function tabsHtml() {
+    var tabs = [
+      { id: "sup", lab: "SUP" },
+      { id: "inf", lab: "INF" },
+      { id: "lat", lab: "LAT" },
+      { id: "conf", lab: "CONF" },
+    ];
+    return (
+      '<div class="tabs">' +
+      tabs
+        .map(function (t) {
+          var act =
+            state.tab === t.id ? " active-" + t.id : "";
+          return (
+            '<button type="button" class="' +
+            act.trim() +
+            '" data-tab="' +
+            t.id +
+            '">' +
+            t.lab +
+            "</button>"
+          );
+        })
+        .join("") +
+      "</div>"
+    );
+  }
+
+  function faceCard() {
+    var isSup = state.tab === "sup";
+    var name = isSup ? "SUP" : "INF";
+    var ac = isSup ? "accent-sup" : "";
+    return (
+      '<div class="card ' +
+      ac +
+      '">' +
+      '<div class="card-h">' +
+      "<strong>Armadura " +
+      name +
+      "</strong>" +
+      '<span class="pill" style="color:' +
+      (isSup ? "var(--sup)" : "var(--inf)") +
+      ";border-color:currentColor;background:#0b1624\">Tn</span>" +
+      "</div>" +
+      '<div class="field-grid">' +
+      '<div class="field"><label>capas</label><div class="fake">2</div></div>' +
+      '<div class="field"><label>C1 n · ø</label><div class="fake">3 · ø' +
+      state.diam +
+      "</div></div>" +
+      "</div>" +
+      '<div class="hint">Empalmes / patas usan tablas de <b>' +
+      state.grade +
+      "</b>.</div>" +
+      "</div>"
+    );
+  }
+
+  function latCard(withDosif) {
+    var extra = "";
+    if (withDosif) {
+      extra =
+        '<div style="margin-top:10px">' +
+        '<div class="lbl">Dosificación · lote</div>' +
+        dosifSegHtml("lat") +
+        "</div>";
+    }
+    return (
+      '<div class="card">' +
+      '<div class="card-h">' +
+      "<strong>Laterales</strong>" +
+      '<span class="pill lote">LAT</span>' +
+      "</div>" +
+      '<div class="field-grid">' +
+      '<div class="field"><label>n</label><div class="fake">3</div></div>' +
+      '<div class="field"><label>ø</label><div class="fake">ø10</div></div>' +
+      "</div>" +
+      extra +
+      '<div class="hint">n/ø de alma · clear H/ceil(H/200).</div>' +
+      "</div>"
+    );
+  }
+
+  function confCard(withDosif) {
+    var extra = "";
+    if (withDosif) {
+      extra =
+        '<div style="margin-top:10px">' +
+        '<div class="lbl">Dosificación · lote</div>' +
+        dosifSegHtml("conf") +
+        "</div>";
+    }
+    return (
+      '<div class="card">' +
+      '<div class="card-h">' +
+      "<strong>Confinamiento</strong>" +
+      '<span class="pill viga">CONF</span>' +
+      "</div>" +
+      '<div class="field"><label>modo</label><div class="fake">Ext + Cent</div></div>' +
+      extra +
+      '<div class="hint">Preview estribos 135° · sección.</div>' +
+      "</div>"
+    );
+  }
+
+  function bodyByTab(withDosifInLatConf) {
+    if (state.tab === "sup" || state.tab === "inf") return faceCard();
+    if (state.tab === "lat") return latCard(withDosifInLatConf);
+    return confCard(withDosifInLatConf);
+  }
+
+  function renderRail() {
+    var html = [];
+    html.push('<div class="rail-top">Rail · sección</div>');
+
+    var v = state.variant;
+    if (v === "a") {
+      html.push(configHeader(true));
+      html.push(tabsHtml());
+      html.push(bodyByTab(false));
+    } else if (v === "b") {
+      html.push(configHeader(false));
+      html.push(stripDosif());
+      html.push(tabsHtml());
+      html.push(bodyByTab(false));
+    } else if (v === "c") {
+      html.push(configHeader(false));
+      html.push(tabsHtml());
+      html.push(cardDosifFull());
+      html.push(bodyByTab(false));
+    } else {
+      // D
+      html.push(configHeader(false));
+      html.push(tabsHtml());
+      html.push(bodyByTab(true));
+    }
+
+    document.getElementById("rail").innerHTML = html.join("");
+
+    // wire grade buttons
+    document.querySelectorAll("[data-g]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        setGrade(btn.getAttribute("data-g"));
+      });
+    });
+    document.querySelectorAll("[data-tab]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        state.tab = btn.getAttribute("data-tab");
+        render();
+      });
+    });
+  }
+
+  function renderElev() {
+    var t = row();
+    var half = Math.round(t.lap * 0.5);
+    var badge = document.getElementById("lapBadge");
+    badge.textContent =
+      "½ traslape ø" + state.diam + " · " + half + " mm · " + state.grade;
+    badge.style.borderColor =
+      state.grade === "G25"
+        ? "var(--g25)"
+        : state.grade === "G35"
+        ? "var(--g35)"
+        : "var(--g45)";
+    badge.style.color = badge.style.borderColor;
+    badge.style.background = "#0b1624ee";
+
+    document.getElementById("status").textContent =
+      "Dosificación " +
+      state.grade +
+      " · traslape " +
+      t.lap +
+      " mm · pata L " +
+      t.hook +
+      " mm · emp " +
+      t.emp +
+      " mm · ø" +
+      state.diam +
+      "\nvariante " +
+      names[state.variant] +
+      " · pestaña " +
+      state.tab.toUpperCase();
+
+    var note = document.getElementById("toolbarNote");
+    if (state.variant === "a" || state.variant === "b" || state.variant === "c") {
+      note.className = "toolbar-note strike";
+      note.textContent =
+        "Barra inferior: Dosificación [legacy] — se retiraría del footer y quedaría solo en rail (" +
+        state.variant.toUpperCase() +
+        ")";
+    } else {
+      note.className = "toolbar-note";
+      note.textContent =
+        "Barra inferior actual: Dosificación [G25 ▾] · en variante D el rail es secundario / redundante";
+    }
+  }
+
+  function renderDiamSeg() {
+    document.querySelectorAll("#diamSeg button").forEach(function (b) {
+      var d = parseInt(b.getAttribute("data-d"), 10);
+      b.className = d === state.diam ? "active " + gradeClass(state.grade) : "";
+    });
+  }
+
+  function renderOpts() {
+    document.querySelectorAll("label.opt").forEach(function (el) {
+      el.classList.toggle("active", el.getAttribute("data-v") === state.variant);
+      var input = el.querySelector("input");
+      if (input) input.checked = el.getAttribute("data-v") === state.variant;
+    });
+  }
+
+  function render() {
+    renderOpts();
+    renderDiamSeg();
+    renderRail();
+    renderElev();
+  }
+
+  document.getElementById("opts").addEventListener("click", function (ev) {
+    var lab = ev.target.closest("label.opt");
+    if (!lab) return;
+    state.variant = lab.getAttribute("data-v");
+    render();
+  });
+
+  document.getElementById("diamSeg").addEventListener("click", function (ev) {
+    var b = ev.target.closest("button[data-d]");
+    if (!b) return;
+    state.diam = parseInt(b.getAttribute("data-d"), 10);
+    render();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

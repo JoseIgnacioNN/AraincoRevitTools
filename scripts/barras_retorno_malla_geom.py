@@ -144,23 +144,47 @@ def empotramiento_mm_from_diam(diam_mm, concrete_grade=None):
     return traslape_mm_from_diam(diam_mm, concrete_grade)
 
 
-def pata_mm_from_diam(diam_mm):
-    """Longitud aproximada de pata 90º (eje) — tabla gancho o mínimo."""
+def pata_mm_from_diam(diam_mm, concrete_grade=None, bar_type=None):
+    """
+    Longitud de **eje** para pata 90º (tabla BIMTools − Ø/2).
+
+    Usa el nominal del ``RebarBarType`` cuando se entrega y la dosificación G25/G35/G45.
+    Sin compensación de eje, Revit suele reportar ~tabla + Ø/2 (p. ej. 330 en vez de 320).
+    """
     d = clamp_diam_mm(diam_mm)
+    grade = normalize_concrete_grade(concrete_grade) if concrete_grade is not None else None
+    d_nom = float(d)
+    if bar_type is not None:
+        try:
+            import armado_muros_coronamiento as cor
+
+            resolved = cor._nominal_diameter_bar_type_mm(bar_type, d)
+            if resolved is not None and float(resolved) > 0.1:
+                d_nom = float(resolved)
+        except Exception:
+            pass
+    try:
+        import armado_muros_cabezal as cabezal
+
+        leje = cabezal._pata_l_eje_sketch_mm_desde_diametro(d_nom, grade)
+        if leje is not None and float(leje) > 0.1:
+            return max(PATA_MIN_MM, float(leje))
+    except Exception:
+        pass
     try:
         from bimtools_rebar_hook_lengths import (
             hook_length_mm_from_nominal_diameter_mm,
             pata_eje_curve_loop_mm_desde_tabla_mm,
         )
 
-        tab = hook_length_mm_from_nominal_diameter_mm(d, None)
+        tab = hook_length_mm_from_nominal_diameter_mm(d_nom, grade)
         if tab is not None and float(tab) > 0:
-            eje = pata_eje_curve_loop_mm_desde_tabla_mm(float(tab), float(d))
+            eje = pata_eje_curve_loop_mm_desde_tabla_mm(float(tab), float(d_nom))
             if eje is not None and float(eje) > 0:
                 return max(PATA_MIN_MM, float(eje))
     except Exception:
         pass
-    return max(PATA_MIN_MM, 12.0 * float(d))
+    return max(PATA_MIN_MM, 12.0 * float(d_nom))
 
 
 def long_bar_length_mm(wall_length_mm, margin_end_mm=None):

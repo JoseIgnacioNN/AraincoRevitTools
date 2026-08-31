@@ -2,8 +2,8 @@
 """
 Helpers compartidos en scripts/ (legado): expone ``_sheet_revision_display`` para otras herramientas.
 
-La herramienta ``04_ExportarLaminasPDFDWG.pushbutton`` usa su copia local autocontenida;
-no cargar este módulo desde el pushbutton.
+La herramienta Exportar Láminas vive en el paquete ``exportar_laminas/``.
+No cargar este módulo desde ese botón.
 """
 
 import re

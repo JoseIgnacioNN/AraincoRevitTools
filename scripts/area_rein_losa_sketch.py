@@ -3,9 +3,10 @@
 Arainco: Area Rein. losa (Sketch) — herramienta nueva.
 
 Flujo:
-  1. Pick Floor
-  2. Contorno desde ``Floor.SketchId`` → ``Sketch.Profile`` (loop exterior)
-  3. Detectar AreaReinforcement existentes en el Floor (visualización)
+  1. Pick Floor (losa o losa de cimentación / Structural Foundation slab)
+  2. Contorno desde ``Floor.SketchId`` → ``Sketch.Profile`` (loop exterior);
+     respaldo: cara horizontal de mayor área si no hay Sketch
+  3. Detectar AreaReinforcement existentes en el host (visualización)
   4. UI WPF (planta a escala real): tabs Superior / Inferior; paños por cara
      (2 clics → rectángulo). Sin polígonos en una cara → no se crea AR ahí.
      — clic en paño = activo; cards de la cara activa mutan por paño
@@ -20,7 +21,8 @@ Flujo:
        Show Middle + IndependentTag EST_A_STRUCTURAL REBAR TAG_FLOOR
        (tipo = RebarShape, fallback «01») + MRA «Recorrido Barras» en cada Rebar
 
-Solo vistas de planta (``ViewPlan``; no alzado, sección, 3D ni plantilla).
+Solo vistas de planta (``ViewPlan``, incl. Structural Foundation Plan;
+no alzado, sección, 3D ni plantilla).
 Independiente de ``area_reinforcement_losa`` / Malla en losa existente.
 Revit 2024+ | IronPython (pyRevit).
 """
@@ -1018,17 +1020,69 @@ def _unregister_singleton():
 
 
 # ---------------------------------------------------------------------------
+# Host losa (Floor + Structural Foundation slab)
+# ---------------------------------------------------------------------------
+
+
+def _es_host_losa(elem):
+    """
+    Host válido para Area Reinforcement de esta herramienta.
+
+    En la API, ``Floor`` cubre losas (``OST_Floors``) y losas de cimentación
+    (Structural Foundation slab, ``OST_StructuralFoundation``). Las zapatas
+    aisladas (``FamilyInstance``) y los muros de cimentación no son ``Floor``.
+    """
+    if elem is None:
+        return False
+    try:
+        return isinstance(elem, Floor)
+    except Exception:
+        return False
+
+
+def _es_losa_cimentacion(elem, document=None):
+    """True si el Floor es Foundation Slab (categoría o ``FloorType.IsFoundationSlab``)."""
+    if not _es_host_losa(elem):
+        return False
+    try:
+        cid = _category_id_int(elem)
+        if cid == int(BuiltInCategory.OST_StructuralFoundation):
+            return True
+    except Exception:
+        pass
+    try:
+        doc = document
+        if doc is None:
+            doc = getattr(elem, u"Document", None)
+        tid = elem.GetTypeId()
+        if doc is None or tid is None or tid == ElementId.InvalidElementId:
+            return False
+        ft = doc.GetElement(tid)
+        return bool(getattr(ft, u"IsFoundationSlab", False))
+    except Exception:
+        return False
+
+
+def _host_losa_label(floor, document=None):
+    """Texto corto para estado/UI: «Losa Id N» o «Losa de cimentación Id N»."""
+    fid = _element_id_int(floor.Id) if floor is not None else None
+    kind = (
+        u"Losa de cimentación"
+        if _es_losa_cimentacion(floor, document)
+        else u"Losa"
+    )
+    if fid is None:
+        return kind
+    return u"{0} Id {1}".format(kind, fid)
+
+
+# ---------------------------------------------------------------------------
 # Geometría Sketch
 # ---------------------------------------------------------------------------
 
 
-def obtener_loops_sketch(floor, document):
-    """
-    Devuelve lista de loops: cada loop es ``list`` de ``Curve``.
-    Índice 0 = perímetro exterior; resto = huecos.
-    """
-    if floor is None or document is None or not isinstance(floor, Floor):
-        return None
+def _loops_from_floor_sketch_profile(floor, document):
+    """Loops desde ``Floor.SketchId`` → ``Sketch.Profile``, o ``None``."""
     try:
         sketch_id = floor.SketchId
         if sketch_id is None or sketch_id == ElementId.InvalidElementId:
@@ -1061,6 +1115,22 @@ def obtener_loops_sketch(floor, document):
         return loops if loops else None
     except Exception:
         return None
+
+
+def obtener_loops_sketch(floor, document):
+    """
+    Devuelve lista de loops: cada loop es ``list`` de ``Curve``.
+    Índice 0 = perímetro exterior; resto = huecos.
+
+    Preferencia: ``Floor.SketchId`` → ``Sketch.Profile``.
+    Respaldo: cara horizontal de mayor área (p. ej. losa de cimentación sin Sketch).
+    """
+    if floor is None or document is None or not _es_host_losa(floor):
+        return None
+    loops = _loops_from_floor_sketch_profile(floor, document)
+    if loops:
+        return loops
+    return _loops_from_floor_horizontal_face(floor)
 
 
 def _plane_from_curves(curves):
@@ -4088,6 +4158,79 @@ def _loops_from_planar_face(face):
     return loops
 
 
+def _curveloop_to_cloned_curves(curve_loop):
+    """``CurveLoop`` → lista de ``Curve`` clonadas (bound)."""
+    curves = []
+    if curve_loop is None:
+        return curves
+    try:
+        for c in curve_loop:
+            if c is None:
+                continue
+            try:
+                if not c.IsBound:
+                    continue
+            except Exception:
+                pass
+            try:
+                curves.append(c.Clone())
+            except Exception:
+                curves.append(c)
+    except Exception:
+        return []
+    return curves
+
+
+def _loops_from_floor_horizontal_face(floor):
+    """
+    Respaldo de contorno: loops de la cara horizontal de mayor área.
+
+    Útil en losas de cimentación (u otras ``Floor``) sin ``SketchId`` válido.
+    Índice 0 = perímetro; resto = huecos.
+    """
+    if floor is None:
+        return None
+    solids = _ctx_element_solids(floor)
+    if not solids:
+        return None
+    best_face = None
+    best_area = -1.0
+    for solid in solids:
+        try:
+            for face in solid.Faces:
+                if not isinstance(face, PlanarFace):
+                    continue
+                try:
+                    fn = face.FaceNormal
+                    fl = math.sqrt(
+                        float(fn.X) ** 2 + float(fn.Y) ** 2 + float(fn.Z) ** 2
+                    )
+                    if fl < 1e-12:
+                        continue
+                    if abs(float(fn.Z) / fl) < 0.95:
+                        continue
+                except Exception:
+                    continue
+                try:
+                    area = float(face.Area)
+                except Exception:
+                    area = 0.0
+                if area > best_area:
+                    best_area = area
+                    best_face = face
+        except Exception:
+            continue
+    raw_loops = _loops_from_planar_face(best_face)
+    if not raw_loops:
+        return None
+    out = []
+    for cl in raw_loops:
+        curves = _curveloop_to_cloned_curves(cl)
+        if curves:
+            out.append(curves)
+    return out if out else None
+
+
 def _curveloop_to_pts_mm(curve_loop, sketch_plane):
     if curve_loop is None or sketch_plane is None:
         return None
@@ -5779,7 +5922,7 @@ def _aplicar_mra_barras_area_reinforcement(
 
 
 def _vista_es_planta(view):
-    """True si la vista activa es planta (``ViewPlan``) y no plantilla."""
+    """True si la vista activa es planta (``ViewPlan``, incl. cimentación) y no plantilla."""
     if view is None:
         return False
     try:
@@ -6544,7 +6687,7 @@ def _host_losa_de_area_reinforcement(document, area_rein):
         host = document.GetElement(hid)
     except Exception:
         return None
-    return host if isinstance(host, Floor) else None
+    return host if _es_host_losa(host) else None
 
 
 def _nivel_losa_como_string(document, floor):
@@ -7557,16 +7700,15 @@ def _post_create_area_reinforcement(
 
 
 # ---------------------------------------------------------------------------
-# Selección Floor
+# Selección Floor / losa de cimentación
 # ---------------------------------------------------------------------------
 
 
 class _FloorSelectionFilter(ISelectionFilter):
+    """Permite pick de losas y losas de cimentación; excluye zapatas y muros de cimentación."""
+
     def AllowElement(self, elem):
-        try:
-            return isinstance(elem, Floor)
-        except Exception:
-            return False
+        return _es_host_losa(elem)
 
     def AllowReference(self, reference, point):
         return True
@@ -7578,7 +7720,7 @@ def _pick_floor(uidoc, doc, uiapp):
         ids = list(uidoc.Selection.GetElementIds())
         for eid in ids:
             el = doc.GetElement(eid)
-            if isinstance(el, Floor):
+            if _es_host_losa(el):
                 return el
     except Exception:
         pass
@@ -7586,16 +7728,21 @@ def _pick_floor(uidoc, doc, uiapp):
         ref = uidoc.Selection.PickObject(
             ObjectType.Element,
             _FloorSelectionFilter(),
-            u"Seleccione una losa (Floor)",
+            u"Seleccione una losa o losa de cimentación (Structural Foundation slab)",
         )
         if ref is None:
             return None
         el = doc.GetElement(ref.ElementId)
-        if isinstance(el, Floor):
+        if _es_host_losa(el):
             return el
     except Exception:
         return None
-    _mostrar_aviso(uiapp, u"El elemento seleccionado no es una losa (Floor).")
+    _mostrar_aviso(
+        uiapp,
+        u"El elemento seleccionado no es una losa ni una losa de cimentación.",
+        content=u"Seleccione un Floor o un Structural Foundation slab. "
+        u"Las zapatas aisladas y los muros de cimentación no aplican.",
+    )
     return None
 
 
@@ -8093,7 +8240,7 @@ __STYLES__
                    Foreground="#E8F4F8" FontSize="18" FontWeight="Bold"/>
         <TextBlock x:Name="TxtSubtitle" Margin="0,6,0,0" Foreground="#95B8CC"
                    FontSize="11" TextWrapping="Wrap"
-                   Text="Contorno desde Sketch del Floor · planta a escala real."/>
+                   Text="Contorno desde Sketch de la losa o losa de cimentación · planta a escala real."/>
       </StackPanel>
 
       <Grid Grid.Row="1">
@@ -8300,17 +8447,16 @@ class AreaReinLosaSketchController(object):
         self._sync_cards_from_active()
         self._update_create_button()
         n_ar = len(self._existing_ars or [])
+        host_lbl = _host_losa_label(floor, doc)
         if n_ar > 0:
             self._set_status(
-                u"Floor Id {0} · {1} Area Rein. existentes · dibuje paños "
-                u"(Rectángulo o Polígono).".format(
-                    _element_id_int(floor.Id), n_ar
-                )
+                u"{0} · {1} Area Rein. existentes · dibuje paños "
+                u"(Rectángulo o Polígono).".format(host_lbl, n_ar)
             )
         else:
             self._set_status(
-                u"Floor Id {0} · Rectángulo (2 clics) o Polígono (varios vértices).".format(
-                    _element_id_int(floor.Id)
+                u"{0} · Rectángulo (2 clics) o Polígono (varios vértices).".format(
+                    host_lbl
                 )
             )
 
@@ -8631,13 +8777,12 @@ class AreaReinLosaSketchController(object):
                 pass
 
         try:
-            fid = _element_id_int(self._floor.Id)
             sub = win.FindName(u"TxtSubtitle")
             if sub is not None:
                 sub.Text = (
-                    u"Floor Id {0} · paños por 2 puntos en canvas · "
+                    u"{0} · paños por 2 puntos en canvas · "
                     u"planta a escala real."
-                ).format(fid)
+                ).format(_host_losa_label(self._floor, self._doc))
             hint = win.FindName(u"TxtHint")
             if hint is not None:
                 _ahorro_hint = (
@@ -14048,7 +14193,8 @@ def run(revit):
         _mostrar_aviso(
             uiapp,
             u"Esta herramienta solo funciona en vistas de planta.",
-            content=u"Abra una planta (ViewPlan) y vuelva a ejecutar.",
+            content=u"Abra una planta (ViewPlan) o una planta de cimentación "
+            u"(Structural Foundation Plan) y vuelva a ejecutar.",
         )
         return
 
@@ -14063,8 +14209,10 @@ def run(revit):
     if not loops:
         _mostrar_aviso(
             uiapp,
-            u"La losa no tiene Sketch válido.",
-            content=u"Se requiere Floor.SketchId con Profile (loop exterior).",
+            u"No se pudo obtener el contorno de la losa.",
+            content=u"Se requiere Sketch (Profile) o una cara horizontal con "
+            u"perímetro cerrado. Aplica a losas y losas de cimentación "
+            u"(Structural Foundation slab).",
         )
         return
 

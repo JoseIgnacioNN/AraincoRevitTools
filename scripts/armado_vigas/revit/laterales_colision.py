@@ -2,9 +2,13 @@
 """
 Colisiones de barras laterales — mismas reglas que longitudinales sup/inf.
 
-``geometria_empotramiento_extremos`` vía :func:`aplicar_colision_extremos_fibra`:
-sonda 50 mm, empotramiento en muro/obstáculo, refinamiento en **columna** (+ pata L),
-extremo libre con pata L.
+Orden (idéntico al post-fusión / pre-troceo de ``longitudinales``):
+
+1. Estirón por **columna** ``+(dim/2 − 25 mm)`` + pata L
+2. Estirón por **viga no //** a la vista ``+(ancho/2 − 25 mm)`` + pata L
+3. Estirón por **muro no //** ``+(espesor/2 − 25 mm)`` + pata L
+4. **Muro //** a la vista → empotramiento según Ø (sin pata L)
+5. Extremos libres restantes: sonda 50 mm (empotramiento / pata L / columna)
 
 La colisión se resuelve sobre el **eje longitudinal** de la cadena (antes del
 desplazamiento a la cara del alma); los metadatos alimentan la polilínea L al colocar.
@@ -13,6 +17,11 @@ desplazamiento a la cara del alma); los metadatos alimentan la polilínea L al c
 from __future__ import division
 
 from armado_vigas.geometry.colision_fibras import aplicar_colision_extremos_fibra
+from armado_vigas.geometry.longitudinales import (
+    _apply_emp_after_parallel_wall,
+    _apply_pata_l_after_beam_stretch,
+    _apply_pre_troceo_wall_retract,
+)
 
 try:
     from Autodesk.Revit.DB import Line
@@ -33,6 +42,8 @@ def build_lateral_collision_ctx(session, chain, diam_mm):
         u"axis_line": None,
         u"meta_inicio": None,
         u"meta_fin": None,
+        u"stretch_meta": None,
+        u"emp_meta": None,
     }
 
 
@@ -146,7 +157,10 @@ def prepare_lateral_axis_collision(
 
 def apply_lateral_collision_rules(document, line, collision_ctx):
     """
-    Mismo recorte de extremos que fibras sup/inf (columna vs muro vía sonda).
+    Misma resolución de extremos que longitudinales SUP/INF:
+
+    - post-fusión: estirón col/viga/muro no// (+ pata L) y emp. muro //
+    - luego sonda en extremos no marcados (columna / muro / libre)
 
     Returns:
         ``(line, meta_inicio, meta_fin)`` — ``line`` es ``None`` si inválida.
@@ -156,19 +170,81 @@ def apply_lateral_collision_rules(document, line, collision_ctx):
     if document is None:
         return line, None, None
 
+    ids_sel = collision_ctx.get(u"ids_seleccion")
+    chain = collision_ctx.get(u"chain_elements")
+    try:
+        diam_mm = float(collision_ctx.get(u"diam_mm") or 16)
+    except Exception:
+        diam_mm = 16.0
+    if diam_mm <= 1e-9:
+        diam_mm = 16.0
+
+    avisos = collision_ctx.get(u"avisos")
+
+    # 1–4) Estirón no// / emp. muro // (reutiliza pipeline de longitudinales).
+    work = line
+    stretch_meta = {u"start": None, u"end": None, u"applied": False}
+    emp_meta = {u"start": None, u"end": None, u"applied": False}
+    try:
+        work, stretch_meta, emp_meta = _apply_pre_troceo_wall_retract(
+            document,
+            line,
+            ids_sel,
+            chain,
+            avisos=avisos if isinstance(avisos, list) else None,
+        )
+    except Exception:
+        work = line
+        stretch_meta = {u"start": None, u"end": None, u"applied": False}
+        emp_meta = {u"start": None, u"end": None, u"applied": False}
+
+    if work is None:
+        work = line
+
+    stretch_s = bool(stretch_meta and stretch_meta.get(u"start"))
+    stretch_e = bool(stretch_meta and stretch_meta.get(u"end"))
+    emp_s = bool(emp_meta and emp_meta.get(u"start"))
+    emp_e = bool(emp_meta and emp_meta.get(u"end"))
+    # No anular estirón/pata L o emp. muro // con la sonda.
+    res_i = not stretch_s and not emp_s
+    res_f = not stretch_e and not emp_e
+
+    # 5) Sonda / extremos libres en extremos aún abiertos.
+    meta_i = None
+    meta_f = None
+    line_out = work
     try:
         line_out, meta_i, meta_f = aplicar_colision_extremos_fibra(
             document,
-            line,
-            collision_ctx.get(u"ids_seleccion"),
-            collision_ctx.get(u"chain_elements"),
-            collision_ctx.get(u"diam_mm"),
+            work,
+            ids_sel,
+            chain,
+            diam_mm,
+            resolver_inicio=res_i,
+            resolver_fin=res_f,
         )
-        if line_out is not None:
-            return line_out, meta_i, meta_f
-        return None, meta_i, meta_f
     except Exception:
-        return line, None, None
+        line_out, meta_i, meta_f = work, None, None
+
+    if line_out is None:
+        line_out = work
+
+    try:
+        meta_i, meta_f = _apply_pata_l_after_beam_stretch(
+            line_out, meta_i, meta_f, stretch_meta, diam_mm
+        )
+    except Exception:
+        pass
+    try:
+        line_out, meta_i, meta_f = _apply_emp_after_parallel_wall(
+            line_out, meta_i, meta_f, emp_meta, diam_mm
+        )
+    except Exception:
+        pass
+
+    collision_ctx[u"stretch_meta"] = stretch_meta
+    collision_ctx[u"emp_meta"] = emp_meta
+    return line_out, meta_i, meta_f
 
 
 def prioritize_lateral_hosts(document, hosts_try, line, collision_ctx):

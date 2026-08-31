@@ -45,8 +45,44 @@ _PLACEHOLDER_MIN_HEIGHT = u"__SHELL_MIN_HEIGHT__"
 _PLACEHOLDER_RESIZE = u"__SHELL_RESIZE__"
 _PLACEHOLDER_SIZE_TO_CONTENT = u"__SHELL_SIZE_TO_CONTENT__"
 _PLACEHOLDER_BODY = u"__SHELL_BODY__"
+_PLACEHOLDER_BODY_ROW = u"__SHELL_BODY_ROW__"
 _PLACEHOLDER_FOOTER_HINT = u"__SHELL_FOOTER_HINT__"
 _PLACEHOLDER_FOOTER_ACTIONS = u"__SHELL_FOOTER_ACTIONS__"
+_PLACEHOLDER_FOOTER_LEADING = u"__SHELL_FOOTER_LEADING__"
+_PLACEHOLDER_FOOTER_BLOCK = u"__SHELL_FOOTER_BLOCK__"
+
+_FOOTER_TWO_COL = u"""      <Grid Grid.Row="3" Margin="0,14,0,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock x:Name="TxtStatus" Grid.Column="0" VerticalAlignment="Center"
+                   Foreground="{fg_muted}" FontSize="{font_status}"
+                   TextWrapping="Wrap" Margin="0,0,12,0"/>
+        <StackPanel Grid.Column="1" Orientation="Horizontal"
+                    HorizontalAlignment="Right" VerticalAlignment="Center">
+          __SHELL_FOOTER_ACTIONS__
+        </StackPanel>
+      </Grid>""".format(fg_muted=FG_MUTED, font_status=FONT_SIZE_STATUS)
+
+_FOOTER_THREE_COL = u"""      <Grid Grid.Row="3" Margin="0,14,0,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0" Orientation="Horizontal"
+                    VerticalAlignment="Center" Margin="0,0,12,0">
+          __SHELL_FOOTER_LEADING__
+        </StackPanel>
+        <TextBlock x:Name="TxtStatus" Grid.Column="1" VerticalAlignment="Center"
+                   Foreground="{fg_muted}" FontSize="{font_status}"
+                   TextWrapping="Wrap" Margin="0,0,12,0"/>
+        <StackPanel Grid.Column="2" Orientation="Horizontal"
+                    HorizontalAlignment="Right" VerticalAlignment="Center">
+          __SHELL_FOOTER_ACTIONS__
+        </StackPanel>
+      </Grid>""".format(fg_muted=FG_MUTED, font_status=FONT_SIZE_STATUS)
 
 _SIMPLE_TOOL_XAML = u"""
 <Window
@@ -72,7 +108,7 @@ __BIMTOOLS_DARK_STYLES__
     <Grid>
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/>
-        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="__SHELL_BODY_ROW__"/>
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
@@ -94,19 +130,7 @@ __BIMTOOLS_DARK_STYLES__
 
       __SHELL_FOOTER_HINT__
 
-      <Grid Grid.Row="3" Margin="0,14,0,0">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*"/>
-          <ColumnDefinition Width="Auto"/>
-        </Grid.ColumnDefinitions>
-        <TextBlock x:Name="TxtStatus" Grid.Column="0" VerticalAlignment="Center"
-                   Foreground="{fg_muted}" FontSize="{font_status}"
-                   TextWrapping="Wrap" Margin="0,0,12,0"/>
-        <StackPanel Grid.Column="1" Orientation="Horizontal"
-                    HorizontalAlignment="Right">
-          __SHELL_FOOTER_ACTIONS__
-        </StackPanel>
-      </Grid>
+      __SHELL_FOOTER_BLOCK__
     </Grid>
   </Border>
 </Window>
@@ -125,8 +149,6 @@ __BIMTOOLS_DARK_STYLES__
     bg_panel=BG_PANEL,
     corner_panel=CORNER_PANEL,
     pad_panel=PAD_PANEL,
-    fg_muted=FG_MUTED,
-    font_status=FONT_SIZE_STATUS,
 )
 
 
@@ -149,6 +171,7 @@ def build_simple_tool_xaml(
     styles_xml,
     body_xaml,
     footer_actions_xaml=u"",
+    footer_leading_xaml=u"",
     footer_hint_xaml=u"",
     width=520,
     min_width=0,
@@ -166,6 +189,9 @@ def build_simple_tool_xaml(
 
     ``body_xaml``: contenido del panel central (TextBlock, StackPanel, etc.).
     ``footer_actions_xaml``: botones alineados a la derecha del footer.
+    ``footer_leading_xaml``: botones a la izquierda (p. ej. Manual);
+    si hay contenido, el footer pasa a tres columnas
+    (leading | TxtStatus | acciones).
     ``footer_hint_xaml``: bloque opcional entre el panel y el footer (fila Grid).
     """
     xaml = _SIMPLE_TOOL_XAML
@@ -200,11 +226,28 @@ def build_simple_tool_xaml(
 
     if size_to_content_height:
         xaml = xaml.replace(_PLACEHOLDER_SIZE_TO_CONTENT, u"Height")
+        xaml = xaml.replace(_PLACEHOLDER_BODY_ROW, u"Auto")
     else:
         xaml = xaml.replace(u' SizeToContent="__SHELL_SIZE_TO_CONTENT__"', u"")
+        body_row = u"*"
+        try:
+            if not (height and int(height) > 0):
+                body_row = u"Auto"
+        except Exception:
+            body_row = u"Auto"
+        xaml = xaml.replace(_PLACEHOLDER_BODY_ROW, body_row)
 
     xaml = xaml.replace(_PLACEHOLDER_BODY, body_xaml or u"")
-    xaml = xaml.replace(_PLACEHOLDER_FOOTER_ACTIONS, footer_actions_xaml or u"")
+    if footer_leading_xaml and footer_leading_xaml.strip():
+        footer = _FOOTER_THREE_COL.replace(
+            _PLACEHOLDER_FOOTER_LEADING, footer_leading_xaml,
+        )
+    else:
+        footer = _FOOTER_TWO_COL
+    footer = footer.replace(
+        _PLACEHOLDER_FOOTER_ACTIONS, footer_actions_xaml or u"",
+    )
+    xaml = xaml.replace(_PLACEHOLDER_FOOTER_BLOCK, footer)
 
     if footer_hint_xaml and footer_hint_xaml.strip():
         hint = (

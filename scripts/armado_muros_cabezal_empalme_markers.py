@@ -150,13 +150,17 @@ def _lap_length_ft_for_empalme_pair(
     bar_type_a=None,
     bar_type_b=None,
     concrete_grade=None,
+    concrete_grade_a=None,
+    concrete_grade_b=None,
 ):
-    """Longitud del detail de traslape: mayor L entre las dos barras (ø mayor)."""
+    """Longitud del detail de traslape: mayor L entre las dos barras (ø / G)."""
+    ga = concrete_grade_a if concrete_grade_a is not None else concrete_grade
+    gb = concrete_grade_b if concrete_grade_b is not None else concrete_grade
     la = _lap_length_ft_from_rebar(
-        document, rebar_id_a, bar_type_hint=bar_type_a, concrete_grade=concrete_grade,
+        document, rebar_id_a, bar_type_hint=bar_type_a, concrete_grade=ga,
     )
     lb = _lap_length_ft_from_rebar(
-        document, rebar_id_b, bar_type_hint=bar_type_b, concrete_grade=concrete_grade,
+        document, rebar_id_b, bar_type_hint=bar_type_b, concrete_grade=gb,
     )
     return la if la >= lb else lb
 
@@ -195,17 +199,27 @@ def _build_empalme_pairs_from_seg_jobs(seg_jobs):
                 z_joint = float(j_hi.get(u"zs", 0.0))
             except Exception:
                 continue
+            # Preferir enum (sello GUID / Capas offset); cotas solo en capas 0 y 1 absolutas.
+            try:
+                li_stamp = j_lo.get(u"enum_layer_index")
+                if li_stamp is None:
+                    li_stamp = j_lo.get(u"layer_index", 0)
+                li_stamp = int(li_stamp or 0)
+            except Exception:
+                li_stamp = 0
             pairs.append({
                 u"ra": ra,
                 u"rb": rb,
                 u"bar_type_a": j_lo.get(u"bar_type"),
                 u"bar_type_b": j_hi.get(u"bar_type"),
+                u"concrete_grade_a": j_lo.get(u"concrete_grade"),
+                u"concrete_grade_b": j_hi.get(u"concrete_grade"),
                 u"bx": float(j_lo.get(u"bx", 0.0)),
                 u"by": float(j_lo.get(u"by", 0.0)),
                 u"z_joint": z_joint,
                 u"wall": j_lo.get(u"wall"),
                 u"extremo": j_lo.get(u"extremo"),
-                u"layer_index": int(j_lo.get(u"layer_index", 0) or 0),
+                u"layer_index": li_stamp,
                 u"vec_long": j_lo.get(u"vec_long"),
                 u"normal_muro": j_lo.get(u"normal_muro"),
             })
@@ -476,6 +490,8 @@ def colocar_marcadores_empalme_cabezal(document, view, seg_jobs):
                 rb,
                 bar_type_a=spec.get(u"bar_type_a"),
                 bar_type_b=spec.get(u"bar_type_b"),
+                concrete_grade_a=spec.get(u"concrete_grade_a"),
+                concrete_grade_b=spec.get(u"concrete_grade_b"),
             )
             if dz < _mm_to_internal(50.0):
                 dz = _mm_to_internal(50.0)

@@ -6,9 +6,9 @@ Familia ``EST_A_STRUCTURAL REBAR TAG_HORIZONTAL``: el tipo de etiqueta se resuel
 por nombre del ``RebarShape`` de cada barra (p. ej. «03», «02»), igual que en
 ``enfierrado_shaft_hashtag`` / Armado muros cabezal.
 
-Las cabeceras superiores se alinean hacia arriba en la vista; las inferiores hacia
-abajo (dirección opuesta), con margen exterior al hormigón y sin solapar otras
-etiquetas (p. ej. confinamiento).
+Posición de cabeceras respecto a las barras en la vista de alzado/sección:
+  - **Superiores**: arriba de las barras (``+View.UpDirection``)
+  - **Inferiores**: abajo de las barras (``−View.UpDirection``)
 """
 
 from __future__ import print_function
@@ -16,15 +16,24 @@ from __future__ import print_function
 import clr
 
 clr.AddReference("RevitAPI")
-from Autodesk.Revit.DB import FilteredElementCollector, IndependentTag, XYZ
+from Autodesk.Revit.DB import (
+    ElementId,
+    ElementOwnerViewFilter,
+    ExclusionFilter,
+    FilteredElementCollector,
+    IndependentTag,
+    XYZ,
+)
+from Autodesk.Revit.DB.Structure import MultiplanarOption, Rebar
 
 LONGITUDINAL_REBAR_TAG_FAMILY = u"EST_A_STRUCTURAL REBAR TAG_HORIZONTAL"
 
-_TAG_ALIGN_EXTRA_FT = 0.04
-_TAG_OUTSIDE_FT = 0.35
-_TAG_INF_CLEARANCE_MM = 80.0
+# Separación mínima cabecera ↔ barra a lo largo de View.Up (mm / ft).
+_TAG_BAR_CLEARANCE_MM = 95.0
+_TAG_ALIGN_EXTRA_FT = 0.05
 _TAG_NUDGE_STEP_MM = 28.0
 _TAG_NUDGE_MAX_STEPS = 48
+_TAG_OVERLAP_CLEARANCE_MM = 50.0
 
 try:
     from enfierrado_shaft_hashtag import etiquetar_rebars_creados_en_vista
@@ -35,7 +44,6 @@ try:
     from geometria_viga_cara_superior_detalle import (
         _alinear_etiquetas_rebar_mismo_lote,
         _collect_independent_tags_for_rebar_lote,
-        _framing_host_desde_lote_rebars,
         _proyectar_vector_en_plano_perp_normal,
         _separar_etiquetas_rebar_solapadas_lote,
         _tags_overlap_with_clearance,
@@ -45,7 +53,6 @@ try:
 except Exception:
     _alinear_etiquetas_rebar_mismo_lote = None
     _collect_independent_tags_for_rebar_lote = None
-    _framing_host_desde_lote_rebars = None
     _proyectar_vector_en_plano_perp_normal = None
     _separar_etiquetas_rebar_solapadas_lote = None
     _tags_overlap_with_clearance = None
@@ -83,118 +90,203 @@ def _mm_to_ft(mm):
         return 0.0
 
 
-def _view_vdir(view):
+def _eid_int(eid):
+    try:
+        return int(eid.IntegerValue)
+    except Exception:
+        try:
+            return int(eid)
+        except Exception:
+            return None
+
+
+def _view_up_in_plane(view):
+    """``View.UpDirection`` proyectado en el plano de la vista (arriba en pantalla)."""
     if view is None:
         return None
     try:
-        return _vec_normalize_xyz(view.ViewDirection)
-    except Exception:
-        return None
-
-
-def _perp_exterior_viga_en_vista(view, es_cara_inferior):
-    """
-    Eje «exterior» en el plano de la vista: sup = ``UpDirection``; inf = opuesto.
-    """
-    vdir = _view_vdir(view)
-    if vdir is None:
-        return None
-    try:
         up = view.UpDirection
+        vdir = view.ViewDirection
     except Exception:
-        up = None
+        return None
     if up is None:
         return None
-    perp = None
-    if _proyectar_vector_en_plano_perp_normal is not None:
-        perp = _vec_normalize_xyz(
-            _proyectar_vector_en_plano_perp_normal(up, vdir)
-        )
-    if perp is None:
-        return None
-    if es_cara_inferior:
+    if _proyectar_vector_en_plano_perp_normal is not None and vdir is not None:
         try:
-            perp = XYZ(-float(perp.X), -float(perp.Y), -float(perp.Z))
+            p = _proyectar_vector_en_plano_perp_normal(up, vdir)
+            if p is not None and _vec_normalize_xyz is not None:
+                p = _vec_normalize_xyz(p)
+            if p is not None:
+                return p
         except Exception:
             pass
-    return perp
-
-
-def _beam_half_depth_along_perp_ft(document, rebar_ids, perp):
-    """Semicanto de la viga medido a lo largo de ``perp`` (margen extra inf)."""
-    if document is None or perp is None:
-        return _mm_to_ft(120.0)
-    host = None
-    if _framing_host_desde_lote_rebars is not None:
+    if _vec_normalize_xyz is not None:
         try:
-            host = _framing_host_desde_lote_rebars(document, rebar_ids)
+            return _vec_normalize_xyz(up)
         except Exception:
-            host = None
-    if host is None:
-        return _mm_to_ft(120.0)
+            pass
+    return up
+
+
+def _side_axis_for_face(view, es_cara_inferior):
+    """
+    Eje unitario hacia el lado donde debe ir la etiqueta:
+
+    - SUP → arriba en la vista
+    - INF → abajo en la vista
+    """
+    up = _view_up_in_plane(view)
+    if up is None:
+        return None
+    if not es_cara_inferior:
+        return up
     try:
-        bb = host.get_BoundingBox(None)
-        if bb is None:
-            return _mm_to_ft(120.0)
-        c = (bb.Min + bb.Max) * 0.5
-        mn = bb.Min
-        mx = bb.Max
-        corners = (
-            XYZ(mn.X, mn.Y, mn.Z),
-            XYZ(mx.X, mn.Y, mn.Z),
-            XYZ(mn.X, mx.Y, mn.Z),
-            XYZ(mx.X, mx.Y, mn.Z),
-            XYZ(mn.X, mn.Y, mx.Z),
-            XYZ(mx.X, mn.Y, mx.Z),
-            XYZ(mn.X, mx.Y, mx.Z),
-            XYZ(mx.X, mx.Y, mx.Z),
-        )
-        scalars = [float(_vec_dot(p.Subtract(c), perp)) for p in corners]
-        span = max(scalars) - min(scalars)
-        if span < 1e-9:
-            return _mm_to_ft(120.0)
-        return 0.5 * float(span) + _mm_to_ft(_TAG_INF_CLEARANCE_MM)
+        return XYZ(-float(up.X), -float(up.Y), -float(up.Z))
     except Exception:
-        return _mm_to_ft(120.0)
+        return None
+
+
+def _rebar_mid_point(document, rebar_or_id):
+    """Punto representativo de la barra (eje / bbox) para medir «arriba/abajo»."""
+    if document is None or rebar_or_id is None:
+        return None
+    rb = rebar_or_id
+    if not isinstance(rb, Rebar):
+        try:
+            rb = document.GetElement(rebar_or_id)
+        except Exception:
+            rb = None
+    if rb is None or not isinstance(rb, Rebar):
+        return None
+    try:
+        curves = rb.GetCenterlineCurves(
+            False, False, False, MultiplanarOption.IncludeOnlyPlanarCurves, 0
+        )
+        if curves and curves.Count > 0:
+            c0 = curves[0]
+            return c0.Evaluate(0.5, True)
+    except Exception:
+        pass
+    try:
+        curves = rb.GetCenterlineCurves(False, False, False)
+        if curves and len(list(curves)) > 0:
+            c0 = list(curves)[0]
+            return c0.Evaluate(0.5, True)
+    except Exception:
+        pass
+    try:
+        bb = rb.get_BoundingBox(None)
+        if bb is not None:
+            return (bb.Min + bb.Max) * 0.5
+    except Exception:
+        pass
+    return None
+
+
+def _tag_tagged_element_id(tag):
+    if tag is None:
+        return None
+    try:
+        ids = tag.GetTaggedLocalElementIds()
+        if ids is not None:
+            for eid in ids:
+                if eid is not None:
+                    return eid
+    except Exception:
+        pass
+    try:
+        refs = tag.GetTaggedReferences()
+        if refs is not None:
+            for ref in refs:
+                try:
+                    return ref.ElementId
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return None
+
+
+def _dot(a, b):
+    if a is None or b is None:
+        return 0.0
+    if _vec_dot is not None:
+        try:
+            return float(_vec_dot(a, b))
+        except Exception:
+            pass
+    try:
+        return (
+            float(a.X) * float(b.X)
+            + float(a.Y) * float(b.Y)
+            + float(a.Z) * float(b.Z)
+        )
+    except Exception:
+        return 0.0
 
 
 def _other_independent_tags_in_view(document, view, exclude_tags):
+    """
+    IndependentTag **owned** by the view (``ElementOwnerViewFilter``, C# API).
+
+    Exclusión de tags recién creados vía ``ExclusionFilter`` cuando hay ids.
+    """
     if document is None or view is None:
         return []
     try:
         vid = view.Id
     except Exception:
         return []
-    skip = set()
+    skip_ids = []
     for tg in exclude_tags or []:
         if tg is None:
             continue
         try:
-            skip.add(int(tg.Id.IntegerValue))
+            skip_ids.append(tg.Id)
         except Exception:
             pass
-    out = []
     try:
         coll = (
             FilteredElementCollector(document)
             .OfClass(IndependentTag)
             .WhereElementIsNotElementType()
-            .ToElements()
+            .WherePasses(ElementOwnerViewFilter(vid))
         )
+        if skip_ids:
+            try:
+                from System.Collections.Generic import List
+
+                id_list = List[ElementId]()
+                for eid in skip_ids:
+                    if eid is not None and eid != ElementId.InvalidElementId:
+                        id_list.Add(eid)
+                if id_list.Count > 0:
+                    coll = coll.WherePasses(ExclusionFilter(id_list))
+            except Exception:
+                # Fallback: excluir en Python (misma semántica).
+                skip_iv = set()
+                for eid in skip_ids:
+                    try:
+                        v = getattr(eid, u"Value", None)
+                        skip_iv.add(int(v if v is not None else eid.IntegerValue))
+                    except Exception:
+                        pass
+                out = []
+                for el in coll:
+                    if el is None:
+                        continue
+                    try:
+                        v = getattr(el.Id, u"Value", None)
+                        iv = int(v if v is not None else el.Id.IntegerValue)
+                    except Exception:
+                        continue
+                    if iv in skip_iv:
+                        continue
+                    out.append(el)
+                return out
+        return list(coll)
     except Exception:
         return []
-    for el in coll or []:
-        if el is None or not isinstance(el, IndependentTag):
-            continue
-        try:
-            if int(el.Id.IntegerValue) in skip:
-                continue
-            if el.OwnerViewId != vid:
-                continue
-        except Exception:
-            continue
-        out.append(el)
-    return out
 
 
 def _tag_overlaps_any(tag, others, view, clearance_mm):
@@ -211,64 +303,15 @@ def _tag_overlaps_any(tag, others, view, clearance_mm):
     return False
 
 
-def _alinear_cabeceras_exterior_viga(
-    document, view, rebar_ids, es_cara_inferior,
-):
-    """Alinea cabeceras en una fila común hacia el exterior del hormigón en la vista."""
-    if (
-        document is None
-        or view is None
-        or not rebar_ids
-        or _collect_independent_tags_for_rebar_lote is None
-    ):
-        return
-    perp = _perp_exterior_viga_en_vista(view, es_cara_inferior)
-    if perp is None:
-        return
-    tags = _collect_independent_tags_for_rebar_lote(document, view, rebar_ids)
-    if not tags:
-        return
-    extra_ft = float(_TAG_ALIGN_EXTRA_FT) + float(_TAG_OUTSIDE_FT)
-    if es_cara_inferior:
-        extra_ft += _beam_half_depth_along_perp_ft(document, rebar_ids, perp)
-    projs = []
-    for tag in tags:
-        try:
-            head = tag.TagHeadPosition
-            projs.append((tag, head, float(_vec_dot(head, perp))))
-        except Exception:
-            continue
-    if not projs:
-        return
-    try:
-        ref_s = max(s for _, _, s in projs) + extra_ft
-    except Exception:
-        return
-    for tag, head, s0 in projs:
-        try:
-            shift = ref_s - s0
-            tag.TagHeadPosition = XYZ(
-                head.X + shift * perp.X,
-                head.Y + shift * perp.Y,
-                head.Z + shift * perp.Z,
-            )
-        except Exception:
-            continue
-    try:
-        document.Regenerate()
-    except Exception:
-        pass
-
-
-def _empujar_etiquetas_fuera_de_otras(document, view, tags, perp):
-    """Desplaza cabeceras aún más en ``perp`` mientras solapen otras etiquetas."""
-    if not tags or perp is None:
+def _empujar_etiquetas_fuera_de_otras(document, view, tags, side_axis):
+    """Desplaza cabeceras en ``side_axis`` mientras solapen otras etiquetas."""
+    if not tags or side_axis is None:
         return
     others = _other_independent_tags_in_view(document, view, tags)
     if not others:
         return
     step_ft = _mm_to_ft(_TAG_NUDGE_STEP_MM)
-    clr_mm = float(_TAG_INF_CLEARANCE_MM)
+    clr_mm = float(_TAG_OVERLAP_CLEARANCE_MM)
     for tg in tags:
         if tg is None:
             continue
@@ -278,9 +321,9 @@ def _empujar_etiquetas_fuera_de_otras(document, view, tags, perp):
             try:
                 h = tg.TagHeadPosition
                 tg.TagHeadPosition = XYZ(
-                    h.X + step_ft * perp.X,
-                    h.Y + step_ft * perp.Y,
-                    h.Z + step_ft * perp.Z,
+                    h.X + step_ft * side_axis.X,
+                    h.Y + step_ft * side_axis.Y,
+                    h.Z + step_ft * side_axis.Z,
                 )
             except Exception:
                 break
@@ -290,57 +333,146 @@ def _empujar_etiquetas_fuera_de_otras(document, view, tags, perp):
                 pass
 
 
-def _corregir_etiquetas_inferiores_viga(document, view, rebar_ids):
+def _posicionar_etiquetas_lado_barras(
+    document, view, rebar_ids, es_cara_inferior,
+):
     """
-    Refuerzo para capa inferior: dirección explícita hacia abajo en la vista,
-    margen al canto y separación de otras etiquetas (confinamiento, etc.).
+    Coloca cada cabecera **sobre** (SUP) o **bajo** (INF) la barra etiquetada.
+
+    1. Eje = ± ``View.UpDirection`` en plano de vista.
+    2. Por etiqueta: ``dot(head, axis) >= dot(barra, axis) + holgura``.
+    3. Alinea todas las cabeceras del lado en una fila exterior común.
     """
+    if document is None or view is None or not rebar_ids:
+        return
+    if _collect_independent_tags_for_rebar_lote is None:
+        return
+    side = _side_axis_for_face(view, es_cara_inferior)
+    if side is None:
+        return
+    tags = _collect_independent_tags_for_rebar_lote(document, view, rebar_ids)
+    if not tags:
+        return
+
+    clear_ft = _mm_to_ft(_TAG_BAR_CLEARANCE_MM)
+    allowed = set()
+    for rid in rebar_ids:
+        k = _eid_int(rid)
+        if k is not None:
+            allowed.add(k)
+
+    projs = []
+    for tag in tags:
+        if tag is None:
+            continue
+        try:
+            head = tag.TagHeadPosition
+        except Exception:
+            continue
+        if head is None:
+            continue
+
+        bar_pt = None
+        tid = _tag_tagged_element_id(tag)
+        if tid is not None:
+            tk = _eid_int(tid)
+            if allowed and tk is not None and tk not in allowed:
+                continue
+            bar_pt = _rebar_mid_point(document, tid)
+        if bar_pt is None and rebar_ids:
+            # Respaldo: punto de primera barra del lote.
+            bar_pt = _rebar_mid_point(document, rebar_ids[0])
+        if bar_pt is None:
+            continue
+
+        bar_s = _dot(bar_pt, side)
+        head_s = _dot(head, side)
+        min_s = bar_s + clear_ft
+        if head_s < min_s - 1e-9:
+            shift = min_s - head_s
+            try:
+                head = XYZ(
+                    head.X + shift * side.X,
+                    head.Y + shift * side.Y,
+                    head.Z + shift * side.Z,
+                )
+                tag.TagHeadPosition = head
+                head_s = min_s
+            except Exception:
+                pass
+        projs.append((tag, head, head_s))
+
+    if not projs:
+        return
+
+    # Fila común: la más exterior del lote + margen.
+    try:
+        ref_s = max(s for _, _, s in projs) + float(_TAG_ALIGN_EXTRA_FT)
+    except Exception:
+        return
+    for tag, head, s0 in projs:
+        try:
+            shift = ref_s - s0
+            if abs(shift) < 1e-12:
+                continue
+            tag.TagHeadPosition = XYZ(
+                head.X + shift * side.X,
+                head.Y + shift * side.Y,
+                head.Z + shift * side.Z,
+            )
+        except Exception:
+            continue
+    try:
+        document.Regenerate()
+    except Exception:
+        pass
+
+
+def _corregir_etiquetas_cara(
+    document, view, rebar_ids, es_cara_inferior,
+):
+    """Alinea lote + fuerza lado de las barras + empuja solapes con otras etiq."""
     if not rebar_ids:
         return
-    _alinear_cabeceras_exterior_viga(
-        document, view, rebar_ids, es_cara_inferior=True,
+    # Alineado por normal de cara (si disponible).
+    if _alinear_etiquetas_rebar_mismo_lote is not None:
+        try:
+            _alinear_etiquetas_rebar_mismo_lote(
+                document, view, rebar_ids, es_cara_inferior=es_cara_inferior,
+            )
+        except Exception:
+            pass
+    # Regla de negocio Armado vigas: SUP arriba / INF abajo de las barras.
+    _posicionar_etiquetas_lado_barras(
+        document, view, rebar_ids, es_cara_inferior,
     )
     if _separar_etiquetas_rebar_solapadas_lote is not None:
         try:
             _separar_etiquetas_rebar_solapadas_lote(
-                document, view, rebar_ids, es_cara_inferior=True,
+                document, view, rebar_ids, es_cara_inferior=es_cara_inferior,
             )
         except Exception:
             pass
-    perp = _perp_exterior_viga_en_vista(view, es_cara_inferior=True)
-    if perp is None or _collect_independent_tags_for_rebar_lote is None:
-        return
-    tags = _collect_independent_tags_for_rebar_lote(document, view, rebar_ids)
-    _empujar_etiquetas_fuera_de_otras(document, view, tags, perp)
+    # Tras separar (a veces mueve a lo largo del eje), reponer lado de barras.
+    _posicionar_etiquetas_lado_barras(
+        document, view, rebar_ids, es_cara_inferior,
+    )
+    side = _side_axis_for_face(view, es_cara_inferior)
+    if side is not None and _collect_independent_tags_for_rebar_lote is not None:
+        tags = _collect_independent_tags_for_rebar_lote(document, view, rebar_ids)
+        _empujar_etiquetas_fuera_de_otras(document, view, tags, side)
+        # Último pase: no dejar etiquetas "del lado equivocado" tras el nudge.
+        _posicionar_etiquetas_lado_barras(
+            document, view, rebar_ids, es_cara_inferior,
+        )
 
 
 def _align_longitudinal_tags_by_side(document, view, rebar_ids, es_cara_inferior):
     if not rebar_ids:
         return
-    if es_cara_inferior:
-        if _alinear_etiquetas_rebar_mismo_lote is not None:
-            try:
-                _alinear_etiquetas_rebar_mismo_lote(
-                    document, view, rebar_ids, es_cara_inferior=True,
-                )
-            except Exception:
-                pass
-        _corregir_etiquetas_inferiores_viga(document, view, rebar_ids)
-        return
-    if _alinear_etiquetas_rebar_mismo_lote is not None:
-        try:
-            _alinear_etiquetas_rebar_mismo_lote(
-                document, view, rebar_ids, es_cara_inferior=False,
-            )
-        except Exception:
-            pass
-    if _separar_etiquetas_rebar_solapadas_lote is not None:
-        try:
-            _separar_etiquetas_rebar_solapadas_lote(
-                document, view, rebar_ids, es_cara_inferior=False,
-            )
-        except Exception:
-            pass
+    _corregir_etiquetas_cara(
+        document, view, rebar_ids, es_cara_inferior=es_cara_inferior,
+    )
 
 
 def _align_longitudinal_tags_sup_inf(document, view, rebars_by_side):
@@ -348,16 +480,16 @@ def _align_longitudinal_tags_sup_inf(document, view, rebars_by_side):
         return
     sup_ids = _rebar_element_ids(rebars_by_side.get(u"sup"))
     inf_ids = _rebar_element_ids(rebars_by_side.get(u"inf"))
+    # SUP primero (arriba); INF después (abajo).
     _align_longitudinal_tags_by_side(document, view, sup_ids, es_cara_inferior=False)
     _align_longitudinal_tags_by_side(document, view, inf_ids, es_cara_inferior=True)
 
 
 def realinear_longitudinales_inf_tras_confinamiento(document, view, rebars_by_side):
-    """Tras etiquetar confinamiento, vuelve a empujar las inferiores hacia abajo."""
+    """Tras confinamiento: reponer lados SUP/INF de las longitudinales."""
     if document is None or view is None or not rebars_by_side:
         return
-    inf_ids = _rebar_element_ids(rebars_by_side.get(u"inf"))
-    _corregir_etiquetas_inferiores_viga(document, view, inf_ids)
+    _align_longitudinal_tags_sup_inf(document, view, rebars_by_side)
 
 
 def etiquetar_longitudinales_en_vista(
@@ -371,7 +503,10 @@ def etiquetar_longitudinales_en_vista(
     Crea ``IndependentTag`` por barra longitudinal en ``view``.
 
     ``rebars_by_side``: opcional, ``{"sup": [...], "inf": [...]}``; si se indica,
-    tras crear las etiquetas alinea cabeceras sup/inf hacia lados opuestos del hormigón.
+    tras crear las etiquetas:
+
+    - cabeceras SUP → **arriba** de las barras
+    - cabeceras INF → **abajo** de las barras
 
     Returns:
         ``(n_etiquetas, avisos, err)`` — ``err`` no nulo solo si falla el bloque global.
@@ -398,4 +533,7 @@ def etiquetar_longitudinales_en_vista(
     )
     if n_tags > 0 and rebars_by_side:
         _align_longitudinal_tags_sup_inf(document, view, rebars_by_side)
+    elif n_tags > 0 and rebars:
+        # Sin side: no se puede distinguir SUP/INF; no forzar side.
+        pass
     return n_tags, avisos, err

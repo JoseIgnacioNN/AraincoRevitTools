@@ -2,8 +2,14 @@
 """
 Colocación de estribos Ext/Cent y confinamiento E (1ª capa) en vigas del lote.
 
-Reutiliza ``geometria_estribos_viga`` para el estribo perimetral y bucles internos
-(E-pares, trabas) según ``domain/confinement.py`` y ``estConfin`` por viga.
+Solo vigas con conf. definido (perimetral / pairs / ties en ``estConfDraft``).
+Sin conf. en CONF, la viga no recibe estribos ni trabas.
+
+La geometría en sección es la dibujada en CONF:
+- perimetral → estribo de recubrimiento (geometria_estribos_viga)
+- pairs → estribos E (y el de vano completo si no hay perimetral)
+- ties → trabas
+No se genera un segundo perimetral automático si el usuario ya dibujó pares E.
 """
 
 from __future__ import division
@@ -15,12 +21,23 @@ clr.AddReference("RevitAPI")
 from System.Collections.Generic import List
 from Autodesk.Revit.DB import Curve, CurveLoop, Line, LocationCurve, UnitUtils, UnitTypeId, XYZ
 
-from armado_vigas.domain.confinement import ensure_beam_confinement, find_confin_def
+from armado_vigas.domain.confinement import (
+    ensure_beam_confinement,
+    find_confin_def,
+    is_conf_draft_defined,
+)
 from armado_vigas.domain.constants import ESTRIBO_SPACING_DEFAULT_CENT, ESTRIBO_SPACING_DEFAULT_EXT
 from armado_vigas.domain.layers import ensure_beam_layers, first_layer_bar_count
+from armado_vigas.domain.stirrups import (
+    ensure_beam_stirrup_zone_mode,
+    section_height_mm,
+    stirrup_zone_placement_segments,
+)
 from armado_vigas.revit.rebar_resources import resolve_bar_type_mm
 
 _COVER_MM = 25.0
+# Insets del array de estribos (mismo valor que geometria_estribos_viga).
+_ESTRIBO_ARRAY_INSET_MM = 50.0
 
 
 def _geometria_estribos_viga_module():
@@ -53,8 +70,126 @@ except Exception:
     obtener_cara_superior_framing = None
 
 
+def _ft_to_mm(ft):
+    try:
+        return float(UnitUtils.ConvertFromInternalUnits(float(ft), UnitTypeId.Millimeters))
+    except Exception:
+        return float(ft) * 304.8
+
+
 def _mm_to_ft(mm):
     return UnitUtils.ConvertToInternalUnits(float(mm), UnitTypeId.Millimeters)
+
+
+def _array_length_ft_from_line_work(line_work):
+    if line_work is None:
+        return 0.0
+    try:
+        Lw = float(line_work.Length)
+        inset = _mm_to_ft(_ESTRIBO_ARRAY_INSET_MM)
+        return max(0.0, Lw - 2.0 * inset)
+    except Exception:
+        return 0.0
+
+
+def _line_work_estribo_host(host, avisos=None):
+    """Eje recortado entre tapas (misma base que el reparto de estribos)."""
+    try:
+        gev = _geometria_estribos_viga_module()
+        _curva_location_framing = gev._curva_location_framing
+        _line_bound_desde_location_curve = gev._line_bound_desde_location_curve
+        _linea_entre_tapas_extremas_viga = gev._linea_entre_tapas_extremas_viga
+        _solido_principal = gev._solido_principal
+        _AXIS_CASI_VERTICAL_TOL = gev._AXIS_CASI_VERTICAL_TOL
+    except Exception as ex:
+        if avisos is not None:
+            avisos.append(u"geometria_estribos_viga: {0}".format(ex))
+        return None
+    crv = _curva_location_framing(host)
+    if crv is None:
+        return None
+    line_full = _line_bound_desde_location_curve(crv)
+    if line_full is None:
+        return None
+    try:
+        p0f = line_full.GetEndPoint(0)
+        p1f = line_full.GetEndPoint(1)
+        t = (p1f.Subtract(p0f)).Normalize()
+        if t is None or abs(float(t.Z)) > float(_AXIS_CASI_VERTICAL_TOL):
+            return None
+    except Exception:
+        return None
+    solid = _solido_principal(host)
+    line_work = None
+    if solid is not None:
+        try:
+            line_work = _linea_entre_tapas_extremas_viga(line_full, solid)
+        except Exception:
+            line_work = None
+    return line_work if line_work is not None else line_full
+
+
+def _zonas_override_from_beam(document, host, line_work, beam, bt_ext, bt_cent, sp_ext, sp_cent):
+    """
+    Construye ``zonas_override`` para geometria_estribos_viga a partir de la
+    zonificación de dominio (estZonasMode + regla 2·h), sobre la L_arr física.
+    """
+    if beam is None:
+        return None
+    ensure_beam_stirrup_zone_mode(beam)
+    if line_work is None and host is not None:
+        line_work = _line_work_estribo_host(host)
+    L_arr_ft = _array_length_ft_from_line_work(line_work) if line_work is not None else 0.0
+    if L_arr_ft <= 1e-12:
+        # Fallback domain (preview): len viga − 2×inset
+        try:
+            from armado_vigas.domain.stirrups import beam_array_length_mm
+
+            l_arr_mm = float(beam_array_length_mm(beam))
+        except Exception:
+            return None
+        if l_arr_mm <= 0:
+            return None
+        L_arr_ft = _mm_to_ft(l_arr_mm)
+    else:
+        l_arr_mm = _ft_to_mm(L_arr_ft)
+    h_mm = section_height_mm(beam.get("type"))
+    try:
+        gev = _geometria_estribos_viga_module()
+        h_host = gev._altura_viga_estribos_mm(document, host)
+        if h_host is not None and float(h_host) > 0:
+            h_mm = float(h_host)
+    except Exception:
+        pass
+    segments, _plan = stirrup_zone_placement_segments(beam, l_arr_mm, h_mm=h_mm)
+    bt_e = bt_ext or bt_cent
+    bt_c = bt_cent or bt_ext
+    try:
+        sp_e = float(max(50.0, float(sp_ext or ESTRIBO_SPACING_DEFAULT_EXT)))
+    except Exception:
+        sp_e = float(ESTRIBO_SPACING_DEFAULT_EXT)
+    try:
+        sp_c = float(max(50.0, float(sp_cent or ESTRIBO_SPACING_DEFAULT_CENT)))
+    except Exception:
+        sp_c = float(ESTRIBO_SPACING_DEFAULT_CENT)
+
+    n_seg = len(segments)
+    zonas = []
+    for role, len_mm in segments:
+        Lz = _mm_to_ft(len_mm)
+        role_u = unicode(role or u"cent")
+        if role_u == u"ext":
+            bt = bt_e
+            sp = sp_e
+            include_ends = True
+            kind = u"extremo"
+        else:
+            bt = bt_c
+            sp = sp_c
+            include_ends = n_seg <= 1 or role_u == u"uni"
+            kind = u"central"
+        zonas.append((Lz, bt, sp, include_ends, kind))
+    return zonas or None
 
 
 def _element_id_int(el):
@@ -659,6 +794,21 @@ def _tie_interior_reference(sup_pts, inf_pts, section_origin):
         return pts[0]
 
 
+def _pair_covers_full_layer(pair, n_bars):
+    """True si el par E cubre la 1ª capa entera (equivalente al estribo perimetral)."""
+    if not pair or len(pair) < 2:
+        return False
+    try:
+        n = int(n_bars)
+        a = int(pair[0])
+        b = int(pair[1])
+    except Exception:
+        return False
+    if n < 2:
+        return False
+    return min(a, b) == 0 and max(a, b) == n - 1
+
+
 def _curve_loop_from_corners(corners):
     curves = _curve_list_rect(corners)
     if curves is None:
@@ -780,6 +930,7 @@ def _place_internal_loops(
             rebars_creados=rebars_out,
             rebar_zone_meta_out=zone_meta,
             view=view,
+            zonas_override=geo.get(u"zonas_override"),
         )
         _append_conf_tag_jobs(
             conf_jobs,
@@ -794,8 +945,12 @@ def _place_internal_loops(
         )
         return n_created
 
+    peri = bool(conf.get(u"perimetral"))
     for pair in conf.get("pairs") or []:
         if not pair or len(pair) < 2:
+            continue
+        if peri and _pair_covers_full_layer(pair, n_bars):
+            # Mismo lazo que el perimetral ya colocado; no duplicar.
             continue
         corners = _corners_e_pair(
             sup_pts,
@@ -885,6 +1040,7 @@ def _place_internal_loops(
                 rebars_out,
                 view,
                 curves_list=tie_curves,
+                zonas_override=geo.get(u"zonas_override"),
             )
             if n_created <= 0:
                 avisos.append(
@@ -909,7 +1065,9 @@ def _place_internal_loops(
 
 def colocar_estribos_confinamiento(document, session, view=None):
     """
-    Coloca estribos perimetrales (Ext/Cent) y confinamiento E por viga del lote.
+    Coloca estribos Ext/Cent y conf. E solo en vigas con conf. definido.
+
+    Vigas sin ``estConfDraft`` (sin perimetral/pares/trabas) se omiten.
 
     Returns:
         ``(n_posiciones_rebar, avisos, rebars_creados, conf_tag_jobs)``
@@ -940,6 +1098,11 @@ def colocar_estribos_confinamiento(document, session, view=None):
 
         ensure_beam_layers(beam)
         ensure_beam_confinement(beam)
+        ensure_beam_stirrup_zone_mode(beam)
+        # Sin E/T/perimetral definidos en CONF → no modelar estribos ni conf. de esa viga.
+        if not is_conf_draft_defined(beam):
+            continue
+
         conf = find_confin_def(beam)
         bt_ext = resolve_bar_type_mm(document, beam.get("estExtDiam") or 10)
         bt_cent = resolve_bar_type_mm(document, beam.get("estCentDiam") or 8)
@@ -949,11 +1112,17 @@ def colocar_estribos_confinamiento(document, session, view=None):
         sp_cent = int(beam.get("estCentSpacing") or ESTRIBO_SPACING_DEFAULT_CENT)
         reb_local = []
 
+        line_work = _line_work_estribo_host(el, avisos)
+        zonas_ov = _zonas_override_from_beam(
+            document, el, line_work, beam, bt_ext, bt_cent, sp_ext, sp_cent,
+        )
+
+        peri = bool(conf.get(u"perimetral"))
         pairs = conf.get("pairs") or []
         ties = conf.get("ties") or []
-        # Estribos multizona Ext/Cent del vano: perimetral E o vano sin pares/trabas.
-        colocar_estribos_zona = bool(conf.get("perimetral")) or (not pairs and not ties)
-        if colocar_estribos_zona:
+        # Perimetral CONF → estribo de recubrimiento con zonificación Ext/Cent.
+        # Pares E / trabas se modelan aparte; no auto-duplicar el perimetral.
+        if peri:
             n_reb_before = len(reb_local)
             zone_meta = []
             _, _, n_rb, av = crear_model_lines_preview_estribo_viga(
@@ -968,6 +1137,7 @@ def colocar_estribos_confinamiento(document, session, view=None):
                 out_rebars_creados=reb_local,
                 out_rebar_zone_meta=zone_meta,
                 view=view,
+                zonas_override=zonas_ov,
             )
             n_total += int(n_rb or 0)
             avisos.extend(av or [])
@@ -985,6 +1155,7 @@ def colocar_estribos_confinamiento(document, session, view=None):
         if pairs or ties:
             geo = _prepare_beam_stirrup_geometry(document, el, beam, avisos)
             if geo is not None:
+                geo[u"zonas_override"] = zonas_ov
                 n_total += _place_internal_loops(
                     document,
                     el,

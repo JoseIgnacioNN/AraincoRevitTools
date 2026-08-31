@@ -9,10 +9,12 @@ from armado_vigas.domain.constants import (
     CAPAS_MIN,
 )
 
-# Cantidades y nº capas: compartidas entre todos los tramos Tn del lote.
+# Cantidades (n) y ø se definen por tramo Tn (ver ``tramo_armado``).
+# Nº de capas: compartido en el lote (misma profundidad de armado).
 LAYER_QTY_FIELDS = ("nSup", "nInf", "nSup2", "nInf2", "nSup3", "nInf3")
 LAYER_CAPAS_FIELDS = ("nCapasSup", "nCapasInf")
-GLOBAL_LAYER_SYNC_FIELDS = LAYER_QTY_FIELDS + LAYER_CAPAS_FIELDS
+# Solo capas se sincronizan a todo el lote. n/ø son por tramo.
+GLOBAL_LAYER_SYNC_FIELDS = LAYER_CAPAS_FIELDS
 
 
 def layer_keys(layer_num):
@@ -114,15 +116,21 @@ def is_global_layer_sync_field(field):
 
 def sync_layer_field_all_beams(beams, field, value):
     """
-    Propaga cantidad de barras o nº capas (sup/inf) a todas las vigas del lote.
-    La 1ª capa mantiene nSup = nInf (confinamiento E).
+    Propaga nº de capas (sup/inf) a todas las vigas del lote.
+
+    Cantidades n y ø por tramo: ver :mod:`armado_vigas.domain.tramo_armado`.
     """
     if not beams:
         return
     if field in ("nSup", "nInf"):
+        # Compat: si alguien llama con n, se aplica solo a las vigas pasadas
+        # (p. ej. las del tramo seleccionado), no a un «lote» implícito más amplio.
         for beam in beams:
             set_first_layer_bar_count(beam, value)
     elif field in GLOBAL_LAYER_SYNC_FIELDS:
+        for beam in beams:
+            beam[field] = value
+    elif field in LAYER_QTY_FIELDS:
         for beam in beams:
             beam[field] = value
     else:

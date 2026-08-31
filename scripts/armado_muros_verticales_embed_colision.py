@@ -1,20 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-Empotramiento en cabeza de barras verticales (cara exterior e interior).
+Empotramiento / terminación en cabeza y pie de barras verticales (ext. e int.).
 
-Criterio cabeza (V2 — apilamiento en Z, sin sonda de sólidos tras estirar):
-1. Muros de la selección ordenados / evaluados por contacto en Z + solape en planta.
-2. Si el host tiene **muro apilado encima** en la selección → estirar L(Ø) de tabla
-   (empotramiento).
-3. Si **no** hay muro apilado encima → retraída ``25 mm + Ø/2`` + pata L.
-4. Largo pata L = espesor muro − 50 mm − Ø horiz. ext. − Ø horiz. int.
-   Orden de tramos: **segmento 0** = eje vertical (pie→cabeza); **segmento 1** = pata L.
+Criterio cabeza (Mallas en muros — decisión UI, sin colisión):
+1. ``params_dict['terminacion_cabeza']``: ``empotramiento`` | ``pata_l`` | ``recto``.
+2. Empotramiento → estira L(Ø) de tabla en cabeza (int.+ext.).
+3. Gancho 90º (``pata_l``) → retraída ``25 mm + Ø/2`` + gancho (int.+ext.).
+4. Sin Cambios (``recto``) → solo retraída ``25 mm + Ø/2`` (sin gancho).
+5. Sin valor / inválido → ``empotramiento`` (mismo default que la UI).
+6. Largo gancho = espesor muro − 50 mm − Ø horiz. ext. − Ø horiz. int.
+   Orden de tramos: **segmento 0** = eje vertical (pie→cabeza); **segmento 1** = gancho.
 
 Pie:
-5. Si el muro host tiene **fundación estructural** unida → pie vs fundación
-   (prisma 100 mm; colisión → estira + pata L; sin colisión → ``25+Ø/2`` + pata L int.).
-6. Si **no** hay fundación → si hay **muro apilado debajo** no mutar; si no,
-   retraer ``25+Ø/2`` + pata L en pie.
+7. Si el muro host tiene **fundación estructural** unida → pie vs fundación
+   (prisma 100 mm; colisión → estira; sin colisión → ``25+Ø/2``) y **pata L
+   en pie** (ext. e int.), anclada por cota Z (no por bbox de cara).
+8. Si **no** hay fundación → decisión UI ``terminacion_pie``:
+   ``empotramiento`` | ``pata_l`` | ``sin_cambios`` (default ``sin_cambios``).
 
 Orden por barra: **cabeza** → **pie**.
 """
@@ -349,159 +351,6 @@ def _build_bbox_z_cache(elements):
     return cache
 
 
-def _bbox_xy_overlap(bb_a, bb_b, tol_xy):
-    if bb_a is None or bb_b is None:
-        return False
-    try:
-        return not (
-            float(bb_a.Max.X) < float(bb_b.Min.X) - tol_xy
-            or float(bb_b.Max.X) < float(bb_a.Min.X) - tol_xy
-            or float(bb_a.Max.Y) < float(bb_b.Min.Y) - tol_xy
-            or float(bb_b.Max.Y) < float(bb_a.Min.Y) - tol_xy
-        )
-    except Exception:
-        return False
-
-
-def _stack_z_tolerance_ft():
-    try:
-        return float(_mm_to_internal(40.0))
-    except Exception:
-        return 0.12
-
-
-def _muro_apilado_sobre_host(host, other, tol_z=None):
-    """
-    True si ``other`` apoya sobre la cara superior de ``host``
-    (contacto Z + solape en planta). Criterio alineado a wall_node / coronamiento.
-    """
-    if host is None or other is None:
-        return False
-    if not isinstance(host, Wall) or not isinstance(other, Wall):
-        return False
-    try:
-        if other.Id == host.Id:
-            return False
-    except Exception:
-        pass
-    try:
-        hbb = host.get_BoundingBox(None)
-        obb = other.get_BoundingBox(None)
-    except Exception:
-        return False
-    if hbb is None or obb is None:
-        return False
-    if tol_z is None:
-        tol_z = _stack_z_tolerance_ft()
-    try:
-        d_face = float(_mm_to_internal(4.0))
-        band = max(float(tol_z), 1e-4)
-        tol_xy = max(float(tol_z), float(_mm_to_internal(50.0)))
-    except Exception:
-        d_face = 0.01
-        band = 0.12
-        tol_xy = 0.15
-    if not _bbox_xy_overlap(hbb, obb, tol_xy):
-        return False
-    try:
-        if abs(float(obb.Min.Z) - float(hbb.Max.Z)) > d_face + band:
-            return False
-        if float(obb.Max.Z) <= float(hbb.Max.Z) + 1e-5:
-            return False
-    except Exception:
-        return False
-    return True
-
-
-def _muro_apilado_bajo_host(host, other, tol_z=None):
-    """True si ``other`` contacta la cara inferior de ``host`` (apilado debajo)."""
-    if host is None or other is None:
-        return False
-    if not isinstance(host, Wall) or not isinstance(other, Wall):
-        return False
-    try:
-        if other.Id == host.Id:
-            return False
-    except Exception:
-        pass
-    try:
-        hbb = host.get_BoundingBox(None)
-        obb = other.get_BoundingBox(None)
-    except Exception:
-        return False
-    if hbb is None or obb is None:
-        return False
-    if tol_z is None:
-        tol_z = _stack_z_tolerance_ft()
-    try:
-        d_face = float(_mm_to_internal(4.0))
-        band = max(float(tol_z), 1e-4)
-        tol_xy = max(float(tol_z), float(_mm_to_internal(50.0)))
-    except Exception:
-        d_face = 0.01
-        band = 0.12
-        tol_xy = 0.15
-    if not _bbox_xy_overlap(hbb, obb, tol_xy):
-        return False
-    try:
-        if abs(float(obb.Max.Z) - float(hbb.Min.Z)) > d_face + band:
-            return False
-        if float(obb.Min.Z) >= float(hbb.Min.Z) - 1e-5:
-            return False
-    except Exception:
-        return False
-    return True
-
-
-def _build_apilamiento_maps(walls):
-    """
-    Precalcula por host_id si hay muro apilado encima / debajo en la selección.
-
-    :returns: ``(ids_con_sobre, ids_con_bajo)`` — sets de ``int`` wall id.
-    """
-    sobre = set()
-    bajo = set()
-    walls_list = [w for w in (walls or []) if w is not None and isinstance(w, Wall)]
-    tol = _stack_z_tolerance_ft()
-    n = len(walls_list)
-    for i in range(n):
-        host = walls_list[i]
-        hid = _element_id_int(getattr(host, "Id", None))
-        if hid is None:
-            continue
-        for j in range(n):
-            if i == j:
-                continue
-            other = walls_list[j]
-            if hid not in sobre and _muro_apilado_sobre_host(host, other, tol):
-                sobre.add(int(hid))
-            if hid not in bajo and _muro_apilado_bajo_host(host, other, tol):
-                bajo.add(int(hid))
-            if hid in sobre and hid in bajo:
-                break
-    return sobre, bajo
-
-
-def _host_tiene_apilado_sobre(host, ids_con_sobre):
-    hid = _element_id_int(getattr(host, "Id", None))
-    if hid is None:
-        return False
-    try:
-        return int(hid) in (ids_con_sobre or set())
-    except Exception:
-        return False
-
-
-def _host_tiene_apilado_bajo(host, ids_con_bajo):
-    hid = _element_id_int(getattr(host, "Id", None))
-    if hid is None:
-        return False
-    try:
-        return int(hid) in (ids_con_bajo or set())
-    except Exception:
-        return False
-
-
 def _iter_obstacle_solids(
     wall_obstacles,
     host_wall_id,
@@ -772,6 +621,31 @@ def _punto_pie_vertical(p0, p1):
     return p1
 
 
+def _concrete_grade_from_params(params_dict, fallback=None):
+    """Grado G25/G35/G45 desde ``params_dict`` (herramienta Mallas en muros)."""
+    if not params_dict:
+        return fallback
+    g = params_dict.get(u"concrete_grade")
+    if g is None:
+        return fallback
+    try:
+        import armado_muros_cabezal as _cab
+
+        return _cab.normalize_cabezal_concrete_grade(g)
+    except Exception:
+        pass
+    try:
+        s = unicode(g).strip().upper()
+    except Exception:
+        try:
+            s = str(g or u"").strip().upper()
+        except Exception:
+            s = u""
+    if s in (u"G25", u"G35", u"G45"):
+        return s
+    return fallback
+
+
 def _empotramiento_tabla_mm(d_mm, concrete_grade=None):
     """Valor de tabla traslape/empotramiento (mm) según Ø nominal y grado."""
     if traslape_mm_from_nominal_diameter_mm is None:
@@ -856,6 +730,22 @@ def _extender_vertical_pie_mm(doc, rebar, mm_pie, pos_idx=0, host_wall=None):
         )
     return _extender_rebar_por_eje_mm(
         doc, rebar, 0.0, m, int(pos_idx), host_wall=host_wall,
+    )
+
+
+def _extender_vertical_pie_tabla_empotramiento(
+    doc, rebar, pos_idx=0, concrete_grade=None, host_wall=None,
+):
+    """Estira el pie (menor Z) con L = tabla empotramientos por Ø del RebarBarType."""
+    if _extender_rebar_por_eje_mm is None or _rebar_eje_p_start_p_end is None:
+        return False, u"Extensión por tabla no disponible.", None
+    L = _empotramiento_cabeza_mm_desde_rebar(rebar, doc, concrete_grade)
+    if L is None:
+        return False, u"Ø nominal o tabla no resuelta.", None
+    if L < 0.1:
+        return True, u"L=0, sin extender.", rebar
+    return _extender_vertical_pie_mm(
+        doc, rebar, L, pos_idx=pos_idx, host_wall=host_wall,
     )
 
 
@@ -1331,14 +1221,20 @@ def _rebar_es_vertical_interior(rebar, host_wall):
     return bool(_rebar_solo_cara_interior(rebar, host_wall))
 
 
-def _aplicar_pata_l_pie_fundacion(doc, rebar, host, res, solo_interior=False):
+def _aplicar_pata_l_pie_fundacion(
+    doc,
+    rebar,
+    host,
+    res,
+    params_dict=None,
+    muro_contencion=False,
+):
     """Pata L en pie tras evaluación de fundación (tabla patas BIMTools por Ø)."""
     if rebar is None or host is None:
         return rebar
-    if solo_interior:
-        if not _rebar_es_vertical_interior(rebar, host):
-            return rebar
-    elif not _rebar_es_vertical_cara_ext_o_int(rebar, host):
+    if not _rebar_es_vertical_para_terminacion_malla(
+        rebar, host, params_dict, muro_contencion,
+    ):
         return rebar
 
     d_mm = _nominal_diameter_mm_from_rebar(rebar, doc)
@@ -1366,6 +1262,7 @@ def _aplicar_pata_l_pie_fundacion(doc, rebar, host, res, solo_interior=False):
         invertir,
         u"Arainco: Armado muros lineales — pata L pie fundación vertical",
         0,
+        pie_segmento_por_elevacion=True,
     )
     if ok_l:
         res[u"n_pata_l_fund_pie"] += 1
@@ -1391,7 +1288,9 @@ def _aplicar_pata_l_pie_muro_sin_fundacion(
     """Pata L en pie (sin fundación, sin colisión vs muros): ext. e int."""
     if rebar is None or host is None:
         return rebar
-    if not _rebar_es_vertical_cara_ext_o_int(rebar, host):
+    if not _rebar_es_vertical_para_terminacion_malla(
+        rebar, host, params_dict, muro_contencion,
+    ):
         return rebar
 
     largo_l = largo_pata_l_vertical_cabeza_mm(
@@ -1418,6 +1317,7 @@ def _aplicar_pata_l_pie_muro_sin_fundacion(
         invertir,
         u"Arainco: Armado muros lineales — pata L pie muro sin fundación",
         0,
+        pie_segmento_por_elevacion=True,
     )
     if ok_l:
         res[u"n_pie_muro_pata_l"] += 1
@@ -1435,25 +1335,67 @@ def _aplicar_pata_l_pie_muro_sin_fundacion(
     return rebar
 
 
+def _normalize_terminacion_pie(raw):
+    """
+    Modo de extremo inferior verticales sin fundación — decisión UI.
+
+    Retorna ``empotramiento`` | ``pata_l`` | ``sin_cambios`` | ``None``.
+    """
+    if raw is None:
+        return None
+    try:
+        s = unicode(raw).strip().lower()
+    except Exception:
+        try:
+            s = str(raw).strip().lower()
+        except Exception:
+            return None
+    if not s or s in (u"auto", u"default"):
+        return None
+    if s in (u"empotramiento", u"emp", u"embed", u"estirar", u"extension"):
+        return u"empotramiento"
+    if s in (u"pata_l", u"pata-l", u"pata l", u"patal", u"pata"):
+        return u"pata_l"
+    if s in (
+        u"gancho 90", u"gancho 90º", u"gancho 90°", u"gancho90", u"g90", u"g90º",
+    ):
+        return u"pata_l"
+    if s in (
+        u"sin_cambios", u"sin cambios", u"ninguno", u"none", u"dejar",
+        u"intacto", u"sin_cambio", u"no_cambiar", u"no cambiar",
+    ):
+        return u"sin_cambios"
+    return None
+
+
+def _terminacion_pie_desde_params(params_dict):
+    if not params_dict:
+        return None
+    for key in (u"terminacion_pie", u"modo_terminacion_pie"):
+        if key in params_dict:
+            return _normalize_terminacion_pie(params_dict.get(key))
+    return None
+
+
 def _procesar_rebar_vertical_pie_colision_muro_sin_fundacion(
     doc,
     rebar,
     host,
-    walls,
-    geom_opts,
     res,
     params_dict=None,
     layer_active_dict=None,
     muro_contencion=False,
-    ids_con_apilado_bajo=None,
-    solids_cache=None,
-    bbox_z_cache=None,
+    concrete_grade=None,
 ):
     """
-    Pie sin fundación: si hay muro apilado debajo → no mutar; si no →
-    retraer ``25+Ø/2`` + pata L.
+    Pie sin fundación según UI (``terminacion_pie``).
+
+    ``empotramiento`` → estira L(Ø); ``pata_l`` → retrae + gancho 90º;
+    ``sin_cambios`` → no muta. Sin modo → ``sin_cambios``.
     """
-    if not _rebar_es_vertical_cara_ext_o_int(rebar, host):
+    if not _rebar_es_vertical_para_terminacion_malla(
+        rebar, host, params_dict, muro_contencion,
+    ):
         res[u"n_skip"] += 1
         return rebar
 
@@ -1462,10 +1404,39 @@ def _procesar_rebar_vertical_pie_colision_muro_sin_fundacion(
         res[u"n_fail"] += 1
         return rebar
 
-    if _host_tiene_apilado_bajo(host, ids_con_apilado_bajo):
-        res[u"n_pie_muro_colision_revert"] += 1
+    modo = _terminacion_pie_desde_params(params_dict)
+    if modo is None:
+        modo = u"sin_cambios"
+
+    if modo == u"sin_cambios":
+        res[u"n_pie_muro_sin_cambios"] = int(
+            res.get(u"n_pie_muro_sin_cambios", 0) or 0
+        ) + 1
         return rebar
 
+    if modo == u"empotramiento":
+        L_eval_mm = _empotramiento_cabeza_mm_desde_diametro(d_mm, concrete_grade)
+        if L_eval_mm is None or L_eval_mm < 0.1:
+            res[u"n_skip"] += 1
+            return rebar
+        ok_eval, msg_eval, rebar_eval = _extender_vertical_pie_tabla_empotramiento(
+            doc, rebar, 0, concrete_grade, host_wall=host,
+        )
+        if not ok_eval:
+            res[u"n_fail"] += 1
+            rid = _element_id_int(getattr(rebar, "Id", None))
+            res[u"messages"].append(
+                u"Rebar {0} (empotramiento pie sin fund.): {1}".format(
+                    rid, msg_eval or u"error al estirar",
+                ),
+            )
+            return rebar
+        res[u"n_pie_muro_extended"] = int(
+            res.get(u"n_pie_muro_extended", 0) or 0
+        ) + 1
+        return rebar_eval if rebar_eval is not None else rebar
+
+    # pata_l → retraer + pata L
     retract_mm = _retract_mm_sin_colision(d_mm)
     ok, msg, rb_out = _acortar_vertical_pie_mm(
         doc, rebar, retract_mm, 0, host_wall=host,
@@ -1474,7 +1445,7 @@ def _procesar_rebar_vertical_pie_colision_muro_sin_fundacion(
         res[u"n_fail"] += 1
         rid = _element_id_int(getattr(rebar, "Id", None))
         res[u"messages"].append(
-            u"Rebar {0} (pie sin muro apilado): {1}".format(rid, msg or u"error"),
+            u"Rebar {0} (pie sin fundación): {1}".format(rid, msg or u"error"),
         )
         return rebar
 
@@ -1492,64 +1463,70 @@ def _procesar_rebar_vertical_pie_colision_muro_sin_fundacion(
 
 
 def _aplicar_estiramiento_fundacion_pie(
-    doc, rebar, host, foundations, geom_opts, res, solids_cache=None,
+    doc,
+    rebar,
+    host,
+    foundations,
+    geom_opts,
+    res,
+    solids_cache=None,
+    params_dict=None,
+    muro_contencion=False,
 ):
     """
     Evalúa colisión en pie (100 mm) en verticales con fundación unida.
-    Colisión → estira pie (+ pata L ext/int); sin colisión → retrae pie 25 mm + Ø/2
-    (+ pata L solo interior).
+    Colisión → estira pie; sin colisión → retrae pie 25 mm + Ø/2.
+    En ambos casos: pata L en pie (ext. e int.), anclada por cota Z.
     """
     if not foundations or rebar is None or host is None:
         return rebar
-    if _rebar_es_vertical_por_criterio is None:
-        return rebar
-    try:
-        if not _rebar_es_vertical_por_criterio(rebar, host, 0):
-            return rebar
-    except Exception:
+    if not _rebar_es_vertical_para_terminacion_malla(
+        rebar, host, params_dict, muro_contencion,
+    ):
         return rebar
 
     eval_res = _estiramiento_fundacion_pie_por_colision(
         doc, rebar, host, foundations, geom_opts,
         solids_cache=solids_cache,
     )
-    if eval_res is None:
-        return rebar
-    mm_accion, collided = eval_res
-    if mm_accion is None or float(mm_accion) < 0.1:
-        return rebar
+    rb_work = rebar
+    if eval_res is not None:
+        mm_accion, collided = eval_res
+        if mm_accion is not None and float(mm_accion) >= 0.1:
+            if collided:
+                ok, msg, rb_out = _extender_vertical_pie_mm(
+                    doc, rebar, mm_accion, 0, host_wall=host,
+                )
+                if not ok:
+                    res[u"n_fail"] += 1
+                    rid = _element_id_int(getattr(rebar, "Id", None))
+                    res[u"messages"].append(
+                        u"Rebar {0} (fundación pie vertical): {1}".format(
+                            rid, msg or u"error al estirar",
+                        ),
+                    )
+                    return rebar
+                res[u"n_fundacion_pie"] += 1
+                rb_work = rb_out if rb_out is not None else rebar
+            else:
+                ok, msg, rb_out = _acortar_vertical_pie_mm(
+                    doc, rebar, mm_accion, 0, host_wall=host,
+                )
+                if not ok:
+                    res[u"n_fail"] += 1
+                    rid = _element_id_int(getattr(rebar, "Id", None))
+                    res[u"messages"].append(
+                        u"Rebar {0} (fundación pie sin colisión): {1}".format(
+                            rid, msg or u"error al retraer",
+                        ),
+                    )
+                    return rebar
+                res[u"n_fundacion_retract"] += 1
+                rb_work = rb_out if rb_out is not None else rebar
 
-    if collided:
-        ok, msg, rb_out = _extender_vertical_pie_mm(
-            doc, rebar, mm_accion, 0, host_wall=host,
-        )
-        if not ok:
-            res[u"n_fail"] += 1
-            rid = _element_id_int(getattr(rebar, "Id", None))
-            res[u"messages"].append(
-                u"Rebar {0} (fundación pie vertical): {1}".format(rid, msg or u"error al estirar"),
-            )
-            return rebar
-        res[u"n_fundacion_pie"] += 1
-        rb_work = rb_out if rb_out is not None else rebar
-    else:
-        ok, msg, rb_out = _acortar_vertical_pie_mm(
-            doc, rebar, mm_accion, 0, host_wall=host,
-        )
-        if not ok:
-            res[u"n_fail"] += 1
-            rid = _element_id_int(getattr(rebar, "Id", None))
-            res[u"messages"].append(
-                u"Rebar {0} (fundación pie sin colisión): {1}".format(
-                    rid, msg or u"error al retraer",
-                ),
-            )
-            return rebar
-        res[u"n_fundacion_retract"] += 1
-        rb_work = rb_out if rb_out is not None else rebar
-        return _aplicar_pata_l_pie_fundacion(doc, rb_work, host, res, solo_interior=True)
-
-    return _aplicar_pata_l_pie_fundacion(doc, rb_work, host, res)
+    return _aplicar_pata_l_pie_fundacion(
+        doc, rb_work, host, res, params_dict, muro_contencion,
+    )
 
 
 def _acortar_vertical_pie_mm(doc, rebar, mm_retiro, pos_idx=0, host_wall=None):
@@ -1896,7 +1873,7 @@ def _excluir_extremos_rebar_set(doc, rebar, host=None):
     """
     Excluye extremos según orientación (horizontal: última; vertical: 1.ª y última).
 
-    En verticales partidos por desacople, el extremo en la junta no se apaga.
+    En verticales recreados en post-proceso, el extremo en junta puede conservarse.
     """
     if doc is None or rebar is None or ajustar_inclusion_extremos_rebar_set_con_fallback is None:
         return rebar
@@ -2190,6 +2167,87 @@ def _construir_cadena_l_cabeza_segmento_0_principal(
     return ordered + [leg], None
 
 
+def _construir_cadena_l_pie_por_elevacion(
+    chain, norm, largo_p_mm, host=None, invertir=False,
+):
+    """
+    Polilínea con pata L en el pie (menor Z), conservando tramos existentes
+    (p. ej. pata L en cabeza). Segmento 0 = pata; el resto arranca en el pie.
+    """
+    if not chain:
+        return None, u"Cadena vacía."
+    p_pie, p_cab = _punto_pie_y_cabeza_en_cadena(chain)
+    if p_pie is None:
+        return None, u"No se resolvió el pie por cota Z."
+    le = _mm_to_internal(float(largo_p_mm))
+    try:
+        tol = _mm_to_internal(0.5)
+    except Exception:
+        tol = 1.0e-4
+
+    t_vec = None
+    for c in chain:
+        try:
+            a = c.GetEndPoint(0)
+            b = c.GetEndPoint(1)
+        except Exception:
+            continue
+        try:
+            if a.DistanceTo(p_pie) < tol:
+                t_vec = b.Subtract(a)
+                break
+            if b.DistanceTo(p_pie) < tol:
+                t_vec = a.Subtract(b)
+                break
+        except Exception:
+            continue
+    if t_vec is None or float(t_vec.GetLength()) < 1e-9:
+        if p_cab is not None:
+            try:
+                t_vec = p_cab.Subtract(p_pie)
+            except Exception:
+                t_vec = None
+    if t_vec is None or float(t_vec.GetLength()) < 1e-9:
+        return None, u"Tangente en pie nula."
+    try:
+        t_vec = t_vec.Normalize()
+    except Exception:
+        return None, u"Tangente en pie nula."
+
+    b_vec = l135._perp_in_plane(norm, t_vec)
+    if b_vec is None:
+        return None, u"Perpendicular in-plane nula."
+    leg_dir = _b_pata_l_en_plano_hacia_adentro(
+        b_vec, host, p_pie, t_vec=t_vec, invertir=invertir,
+    )
+    if leg_dir is None:
+        return None, u"Dirección pata L nula."
+    p_tip = p_pie + leg_dir.Multiply(le)
+    leg = Line.CreateBound(p_tip, p_pie)
+
+    try:
+        p0s = chain[0].GetEndPoint(0)
+        p1e = chain[-1].GetEndPoint(1)
+        if p0s.DistanceTo(p_pie) < tol:
+            p_other = p1e
+        else:
+            p_other = p0s
+    except Exception:
+        p_other = p_cab
+    if p_other is None:
+        return None, u"Extremo opuesto al pie no resuelto."
+    if len(chain) == 1:
+        try:
+            main_line = Line.CreateBound(p_pie, p_other)
+        except Exception as ex:
+            return None, u"Eje principal: {0!s}".format(ex)
+        return [leg, main_line], None
+    ordered = _ordenar_cadena_desde_hasta(chain, p_pie, p_other)
+    if ordered is None:
+        return None, u"Polilínea desde pie no consecutiva."
+    return [leg] + ordered, None
+
+
 def _agregar_pata_l_extremo_sketch(
     doc,
     rebar,
@@ -2200,6 +2258,7 @@ def _agregar_pata_l_extremo_sketch(
     txn_name,
     pos_idx=0,
     cabeza_segmento_0_principal=False,
+    pie_segmento_por_elevacion=False,
 ):
     """
     Añade pata L en un extremo del boceto (edit sketch: polilínea L + CreateFromCurves).
@@ -2238,6 +2297,12 @@ def _agregar_pata_l_extremo_sketch(
         )
         if new_chain is None:
             return False, err_chain or u"Cadena L cabeza inválida.", None
+    elif pie_segmento_por_elevacion:
+        new_chain, err_chain = _construir_cadena_l_pie_por_elevacion(
+            chain, norm, float(largo_p_mm), host=host, invertir=invertir,
+        )
+        if new_chain is None:
+            return False, err_chain or u"Cadena L pie inválida.", None
     elif not pata_en_final:
         c0 = chain[0]
         t_vec = l135._tangent_start_first_curve(c0)
@@ -2399,11 +2464,51 @@ def _rebar_es_vertical_cara_ext_o_int(rebar, host_wall):
     return False
 
 
+def _rebar_es_vertical_para_terminacion_malla(
+    rebar,
+    host_wall,
+    params_dict=None,
+    muro_contencion=False,
+):
+    """
+    Verticales int.+ext. para terminación UI (malla).
+
+    Tras mutar la cabeza el ``Rebar`` suele ser uno nuevo sin ``BoundingBox``;
+    el filtro por centro de bbox falla aunque la barra siga siendo vertical de
+    malla. Respaldo: clasificación por tipo de capa / geometría de malla.
+    """
+    if rebar is None or host_wall is None:
+        return False
+    if _rebar_es_vertical_por_criterio is None:
+        return False
+    if not isinstance(rebar, Rebar):
+        return False
+    es_vert_geom = False
+    if _rebar_es_vertical_por_criterio is not None:
+        try:
+            es_vert_geom = bool(_rebar_es_vertical_por_criterio(rebar, host_wall, 0))
+        except Exception:
+            es_vert_geom = False
+    if es_vert_geom and _rebar_es_vertical_cara_ext_o_int(rebar, host_wall):
+        return True
+    if params_dict:
+        try:
+            import armado_muros_lineales as _lin_term
+
+            if _lin_term._rebar_es_malla_vertical_para_stamp(
+                rebar, host_wall, params_dict, muro_contencion,
+            ):
+                return True
+        except Exception:
+            pass
+    return bool(es_vert_geom)
+
+
 def _normalize_terminacion_cabeza(raw):
     """
-    Modo de extremo superior verticales (malla).
+    Modo de extremo superior verticales (malla) — decisión UI.
 
-    Retorna ``empotramiento`` | ``pata_l`` | ``recto`` | ``None`` (auto / apilado).
+    Retorna ``empotramiento`` | ``pata_l`` | ``recto`` | ``None`` (usar default).
     """
     if raw is None:
         return None
@@ -2414,15 +2519,20 @@ def _normalize_terminacion_cabeza(raw):
             s = str(raw).strip().lower()
         except Exception:
             return None
-    if not s or s in (u"auto", u"apilado", u"default"):
+    if not s or s in (u"auto", u"default"):
         return None
     if s in (u"empotramiento", u"emp", u"embed", u"estirar", u"extension"):
         return u"empotramiento"
     if s in (u"pata_l", u"pata-l", u"pata l", u"patal", u"pata"):
         return u"pata_l"
     if s in (
+        u"gancho 90", u"gancho 90º", u"gancho 90°", u"gancho90", u"g90", u"g90º",
+    ):
+        return u"pata_l"
+    if s in (
         u"recto", u"retract", u"retraida", u"retraída",
         u"sin_pata", u"sin pata", u"corte",
+        u"sin_cambios", u"sin cambios", u"sin cambio",
     ):
         return u"recto"
     return None
@@ -2441,24 +2551,21 @@ def _procesar_rebar_vertical_cabeza_colision(
     doc,
     rebar,
     host,
-    walls,
-    geom_opts,
     concrete_grade,
     res,
     params_dict=None,
     layer_active_dict=None,
     muro_contencion=False,
-    ids_con_apilado_sobre=None,
-    solids_cache=None,
-    bbox_z_cache=None,
 ):
     """
-    Cabeza: si ``params_dict['terminacion_cabeza']`` es ``recto`` / ``pata_l``,
-    aplica ese modo a int.+ext. Si es ``empotramiento`` o auto: empotrar solo
-    donde el rebar tiene **solape** con muro apilado encima; en **desacople**
-    (largos distintos) → retraer + pata L.
+    Cabeza según UI (``terminacion_cabeza``): sin sonda de colisión.
+
+    ``empotramiento`` → estira L(Ø); ``pata_l`` → retrae + gancho 90º; ``recto`` →
+    solo retrae. Sin modo → ``empotramiento``.
     """
-    if not _rebar_es_vertical_cara_ext_o_int(rebar, host):
+    if not _rebar_es_vertical_para_terminacion_malla(
+        rebar, host, params_dict, muro_contencion,
+    ):
         res[u"n_skip"] += 1
         return rebar
 
@@ -2469,53 +2576,17 @@ def _procesar_rebar_vertical_cabeza_colision(
         res[u"n_fail"] += 1
         return rebar
 
-    L_eval_mm = _empotramiento_cabeza_mm_desde_diametro(d_mm, concrete_grade)
-    if L_eval_mm is None or L_eval_mm < 0.1:
-        res[u"n_skip"] += 1
-        return rebar
-
     modo = _terminacion_cabeza_desde_params(params_dict)
+    if modo is None:
+        modo = u"empotramiento"
     force_recto = modo == u"recto"
-    force_pata = modo == u"pata_l"
-    force_emp = False
-    if force_recto:
-        force_emp = False
-    elif force_pata:
-        force_emp = False
-    else:
-        # Desacople experimental (off por defecto): emp solo en zona solape.
-        use_des = False
-        try:
-            import armado_muros_apilado_desacople as _des
-
-            use_des = bool(getattr(_des, u"ENABLE_DESACOPLE", False))
-        except Exception:
-            _des = None
-            use_des = False
-        if use_des and _des is not None:
-            try:
-                force_emp = bool(
-                    _des.rebar_en_solape_apilado(
-                        rebar, host, walls, _muro_apilado_sobre_host,
-                    )
-                )
-            except Exception:
-                if modo == u"empotramiento":
-                    force_emp = True
-                elif modo is None:
-                    force_emp = _host_tiene_apilado_sobre(host, ids_con_apilado_sobre)
-                else:
-                    force_emp = False
-        else:
-            # Comportamiento previo: muro con apilado encima → empotramiento.
-            if modo == u"empotramiento":
-                force_emp = True
-            elif modo is None:
-                force_emp = _host_tiene_apilado_sobre(host, ids_con_apilado_sobre)
-            else:
-                force_emp = False
+    force_emp = modo == u"empotramiento"
 
     if force_emp:
+        L_eval_mm = _empotramiento_cabeza_mm_desde_diametro(d_mm, concrete_grade)
+        if L_eval_mm is None or L_eval_mm < 0.1:
+            res[u"n_skip"] += 1
+            return rebar
         ok_eval, msg_eval, rebar_eval = _extender_vertical_cabeza_tabla_empotramiento(
             doc, rebar, 0, concrete_grade, host_wall=host,
         )
@@ -2531,7 +2602,7 @@ def _procesar_rebar_vertical_cabeza_colision(
         res[u"n_extended"] += 1
         return rebar_eval if rebar_eval is not None else rebar
 
-    # pata_l / recto / auto-sin-apilado → retraer en cabeza
+    # pata_l / recto → retraer en cabeza
     retract_mm = _retract_mm_sin_colision(d_mm)
     ok, msg, rebar_final = _acortar_vertical_cabeza_mm(
         doc, rebar, retract_mm, 0, host_wall=host,
@@ -2589,15 +2660,16 @@ def aplicar_empotramiento_verticales_cara_por_colision(
     fund_solids_cache=None,
 ):
     """
-    Post-proceso de verticales ext/int: fundación unida (pie) y empotramiento
-    en cabeza según **solape** con muro apilado encima (no solo sí/no apilado).
+    Post-proceso de verticales ext/int: terminación de cabeza (UI) + pie.
 
     ``rebars_por_muro_id``: ``{ wall_id_int: [ElementId, ...], ... }``
-    ``evaluar_colision_cabeza``: si ``False`` (herramienta Cabezal muros), no ejecuta
-    estiramiento/retraída por apilamiento en cabeza.
-    Cabeza: ``recto``/``pata_l`` fuerzan ese modo; ``empotramiento``/auto empotran
-    solo en solape y usan pata L en desacople (largos distintos).
-    Pie con fundación unida: lógica actual de sondeo (sin cambio).
+    ``evaluar_colision_cabeza``: si ``False`` (herramienta Cabezal muros), no
+    muta la cabeza. Si ``True``, aplica ``terminacion_cabeza`` de
+    ``params_por_muro_id`` **sin** sondeo de colisión
+    (``empotramiento`` / ``pata_l`` / ``recto``; default ``empotramiento``).
+    Pie con fundación unida: sondeo (estirar/retraer) + pata L ext/int.
+    Pie sin fundación: ``terminacion_pie`` de params (``empotramiento`` /
+    ``pata_l`` / ``sin_cambios``; default ``sin_cambios``).
     ``regenerate_fund_geom``: si ``False``, no regenera antes de sólidos de fundación
     (caller ya regeneró, p. ej. malla lote).
     ``fund_solids_cache``: dict opcional ``{fund_id_int: solids}`` reutilizable.
@@ -2613,6 +2685,8 @@ def aplicar_empotramiento_verticales_cara_por_colision(
         u"n_fundacion_pie": 0,
         u"n_fundacion_retract": 0,
         u"n_pie_muro_colision_revert": 0,
+        u"n_pie_muro_extended": 0,
+        u"n_pie_muro_sin_cambios": 0,
         u"n_pie_muro_retract": 0,
         u"n_pie_muro_pata_l": 0,
         u"n_pie_muro_pata_l_ext": 0,
@@ -2652,33 +2726,6 @@ def aplicar_empotramiento_verticales_cara_por_colision(
     g = CONCRETE_GRADE if concrete_grade is None else concrete_grade
 
     def _run_vertical_lote():
-        # Apilamiento en Z (bbox) una vez por lote — sin sonda de sólidos por barra.
-        ids_sobre, ids_bajo = _build_apilamiento_maps(walls)
-        # Partir sets verticales solape/desacople (off si ENABLE_DESACOPLE=False).
-        if evaluar_colision_cabeza:
-            try:
-                import armado_muros_apilado_desacople as _des
-
-                if bool(getattr(_des, u"ENABLE_DESACOPLE", False)):
-                    split_res = _des.partir_verticales_lote_por_desacople(
-                        doc,
-                        walls,
-                        rebars_por_muro_id,
-                        _muro_apilado_sobre_host,
-                        es_vertical_cara_fn=_rebar_es_vertical_cara_ext_o_int,
-                    )
-                    n_part = int((split_res or {}).get(u"n_partidos", 0) or 0)
-                    if n_part:
-                        res[u"n_vertical_split_desacople"] = (
-                            int(res.get(u"n_vertical_split_desacople", 0)) + n_part
-                        )
-                    for m in (split_res or {}).get(u"messages") or []:
-                        if m:
-                            res[u"messages"].append(m)
-            except Exception as ex_split:
-                res[u"messages"].append(
-                    u"Partir verticales desacople: {0}".format(ex_split),
-                )
         # Fundación: reutilizar dict compartido entre lotes (fund_solids_cache)
         # o dict local si no hay caché del caller.
         if fund_solids_cache is not None:
@@ -2711,6 +2758,7 @@ def aplicar_empotramiento_verticales_cara_por_colision(
                         params_dict, layer_active_dict = tup
                 except Exception:
                     pass
+            g_wall = _concrete_grade_from_params(params_dict, g)
             foundations = _fundaciones_estructurales_unidas_muro(doc, host)
             if foundations:
                 for fund in foundations:
@@ -2725,36 +2773,44 @@ def aplicar_empotramiento_verticales_cara_por_colision(
                     continue
                 rebar_work = rebar
                 if evaluar_colision_cabeza:
+                    rebar_prev_id = _element_id_int(getattr(rebar_work, "Id", None))
                     rebar_work = _procesar_rebar_vertical_cabeza_colision(
                         doc,
                         rebar_work,
                         host,
-                        walls,
-                        geom_opts,
-                        g,
+                        g_wall,
                         res,
                         params_dict,
                         layer_active_dict,
                         muro_contencion,
-                        ids_con_apilado_sobre=ids_sobre,
                     )
+                    rebar_new_id = _element_id_int(getattr(rebar_work, "Id", None))
+                    if (
+                        rebar_new_id is not None
+                        and rebar_prev_id is not None
+                        and int(rebar_new_id) != int(rebar_prev_id)
+                    ):
+                        try:
+                            doc.Regenerate()
+                        except Exception:
+                            pass
                 if foundations:
                     rebar_work = _aplicar_estiramiento_fundacion_pie(
                         doc, rebar_work, host, foundations, geom_opts, res,
                         solids_cache=fund_solids,
+                        params_dict=params_dict,
+                        muro_contencion=muro_contencion,
                     )
                 else:
                     rebar_work = _procesar_rebar_vertical_pie_colision_muro_sin_fundacion(
                         doc,
                         rebar_work,
                         host,
-                        walls,
-                        geom_opts,
                         res,
                         params_dict,
                         layer_active_dict,
                         muro_contencion,
-                        ids_con_apilado_bajo=ids_bajo,
+                        concrete_grade=g_wall,
                     )
                 try:
                     eid_list[idx] = rebar_work.Id

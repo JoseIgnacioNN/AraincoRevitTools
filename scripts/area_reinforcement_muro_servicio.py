@@ -2,8 +2,7 @@
 """
 Servicio dominio Revit para Area Reinforcement en muros — sin UI.
 
-Usado por:
-- FloorGeometryCanvas (espesor de muro, ganchos)
+Servicio de espesor de muro y ganchos para Area Reinforcement.
 
 Solo References RevitAPI (no PresentationFramework).
 

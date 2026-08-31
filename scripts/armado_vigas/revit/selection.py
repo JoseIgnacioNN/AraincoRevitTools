@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Selección inicial: vigas, columnas y muros de hormigón."""
+"""Selección inicial: vigas, columnas, muros y losas de hormigón."""
 
 import clr
 
@@ -15,13 +15,14 @@ from armado_vigas.ui.instruction_dialog import show_ok_cancel_dialog
 _DIALOG = u"Arainco: Armado vigas"
 _PICK_PROMPT = (
     u"Seleccione vigas de hormigón paralelas a la vista activa y apoyos de hormigón "
-    u"(columnas, muros) · Finalizar en la cinta o Esc para cancelar"
+    u"(columnas, muros, losas) · Finalizar en la cinta o Esc para cancelar"
 )
 
 _ALLOWED = frozenset([
     int(BuiltInCategory.OST_StructuralFraming),
     int(BuiltInCategory.OST_StructuralColumns),
     int(BuiltInCategory.OST_Walls),
+    int(BuiltInCategory.OST_Floors),
 ])
 _FRAMING_CAT = int(BuiltInCategory.OST_StructuralFraming)
 
@@ -94,15 +95,18 @@ def show_selection_instructions(uiapp=None):
     return show_ok_cancel_dialog(
         _DIALOG,
         u"Seleccione las vigas de hormigón a armar y los apoyos de hormigón "
-        u"relacionados (columnas y/o muros).",
+        u"relacionados (columnas, muros y/o losas).",
         u"Solo se permiten elementos con Material for Model Behavior = Concrete.\n"
         u"Las vigas (Structural Framing) deben tener su eje paralelo al plano de "
-        u"la vista activa.\n\n"
+        u"la vista activa.\n"
+        u"Las losas se muestran en el canvas de elevación (contexto del alzado); "
+        u"no arman ni definen extremos de viga.\n\n"
         u"Pulse Aceptar para iniciar la selección en el modelo. "
         u"Finalice con la cinta (Finalizar) o cancela con Esc.",
         ok_text=u"Aceptar",
         cancel_text=u"Cancelar",
         hwnd_revit=hwnd,
+        uiapp=uiapp,
     )
 
 
@@ -144,7 +148,7 @@ def validate_initial_selection(document, refs, view=None):
             return False, (
                 u"El lote incluye elementos que no son de hormigón "
                 u"(Material for Model Behavior ≠ Concrete). "
-                u"Solo se permiten vigas, columnas y muros de hormigón."
+                u"Solo se permiten vigas, columnas, muros y losas de hormigón."
             )
         if not _viga_paralela_a_vista(el, view):
             return False, (
@@ -161,3 +165,18 @@ def validate_initial_selection(document, refs, view=None):
             u"Incluya las vigas a armar junto con sus apoyos de hormigón."
         )
     return True, u""
+
+
+def is_beam_parallel_to_active_view(elem, view):
+    """True si el eje de la viga es // al plano de la vista activa."""
+    return _viga_paralela_a_vista(elem, view)
+
+
+def detect_joined_to_selection(document, host_framing, view=None):
+    """
+    Detecta vigas de hormigón unidas a ``host_framing`` y las separa en
+    paralelas / no paralelas al plano de ``view``.
+    """
+    from armado_vigas.revit.joined_framing import detect_joined_concrete_framing
+
+    return detect_joined_concrete_framing(document, host_framing, view)

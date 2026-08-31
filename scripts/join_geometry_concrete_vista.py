@@ -9,9 +9,14 @@ Módulo canónico en ``BIMTools.extension/scripts/``. El pushbutton
 - Candidatos por **solape de cajas** (``BoundingBoxIntersectsFilter`` + contorno inflado); la API
   de intersección sólida a menudo no devuelve pares con contacto mínimo (columna/viga).
 - Criterio de hormigón: ``join_geometry_material_concrete.material_estructural_es_concrete``.
+- **Paso previo a unir:** en muros de hormigón con *attachment* a alguna losa (Floor),
+  se aplica *Detach All* (``Wall.RemoveAttachment`` / Revit ≥ 2025.3; respaldo por
+  ``WALL_TOP_IS_ATTACHED`` / ``WALL_BOTTOM_IS_ATTACHED`` en versiones anteriores).
 - Tras unir, en pares **forjado + muro/viga/pilar/cimentación**: ``SwitchJoinOrder`` si hace
   falta para que el **forjado sea el recortado** (no el cortante), vía
   ``IsCuttingElementInJoin`` (mismo criterio que el flujo RPS de referencia).
+- Tras unir, en pares **muro + pilar estructural**: ``SwitchJoinOrder`` si hace falta
+  para que la **columna sea el cortante** (el muro queda recortado).
 - Barra de progreso: ``pyrevit.forms.ProgressBar`` con acento BIMTools (91,192,222),
   patrón ``armado_muros_lineales`` — fases lectura, candidatos y unión.
 - Pantalla de inicio / avisos: diálogo WPF shell BIMTools (``join_geometry_instruction_dialog``).
@@ -41,6 +46,7 @@ clr.AddReference("RevitAPIUI")
 
 from Autodesk.Revit.DB import (
     BuiltInCategory,
+    BuiltInParameter,
     BoundingBoxIntersectsFilter,
     ElementCategoryFilter,
     ElementFilter,
@@ -62,6 +68,7 @@ from Autodesk.Revit.DB import (
     View,
     ViewSchedule,
     ViewSheet,
+    Wall,
     XYZ,
 )
 from System import Int64
@@ -78,6 +85,7 @@ from join_geometry_material_concrete import (
 
 _PBAR_BASE_LECTURA = u"Arainco: Unir geom. hormigón — lectura"
 _PBAR_BASE_CANDIDATOS = u"Arainco: Unir geom. hormigón — candidatos"
+_PBAR_BASE_DETACH = u"Arainco: Unir geom. hormigón — detach muros"
 _PBAR_BASE_UNION = u"Arainco: Unir geom. hormigón — uniendo"
 
 
@@ -626,17 +634,204 @@ def _pares_unicos_por_caja(doc, view, elements_concrete, pbar_cajas=None):
             yield _element_id_from_int(a), _element_id_from_int(b)
 
 
-def _es_floor(elem):
+def _categoria_id(elem):
     try:
         c = elem.Category
         if c is None:
-            return False
-        cid = _element_id_to_int(c.Id)
-        if cid is None:
-            return False
+            return None
+        return _element_id_to_int(c.Id)
+    except Exception:
+        return None
+
+
+def _es_floor(elem):
+    cid = _categoria_id(elem)
+    if cid is None:
+        return False
+    try:
         return cid == int(BuiltInCategory.OST_Floors)
     except Exception:
         return False
+
+
+def _es_wall_cat(elem):
+    cid = _categoria_id(elem)
+    if cid is None:
+        return False
+    try:
+        return cid == int(BuiltInCategory.OST_Walls)
+    except Exception:
+        return False
+
+
+def _es_structural_column(elem):
+    cid = _categoria_id(elem)
+    if cid is None:
+        return False
+    try:
+        return cid == int(BuiltInCategory.OST_StructuralColumns)
+    except Exception:
+        return False
+
+
+def _as_wall(elem):
+    """Devuelve el ``Wall`` si el ejemplar es muro; si no, ``None``."""
+    if elem is None:
+        return None
+    try:
+        if isinstance(elem, Wall):
+            return elem
+    except Exception:
+        pass
+    return None
+
+
+def _attachment_locations():
+    """``AttachmentLocation.Base`` / ``Top`` si la API las expone (≥ 2025.3)."""
+    out = []
+    try:
+        from Autodesk.Revit.DB import AttachmentLocation
+
+        for name in (u"Base", u"Top"):
+            v = getattr(AttachmentLocation, name, None)
+            if v is not None:
+                out.append(v)
+    except Exception:
+        pass
+    return out
+
+
+def _wall_attachment_target_ids(wall):
+    """
+    ElementIds a los que el muro está *attached* (top + base).
+    Vacío si no hay attachments o si ``GetAttachmentIds`` no existe.
+    """
+    ids = []
+    if wall is None:
+        return ids
+    get_fn = getattr(wall, u"GetAttachmentIds", None)
+    if get_fn is None:
+        return ids
+    seen = set()
+    for loc in _attachment_locations():
+        try:
+            attached = get_fn(loc)
+        except Exception:
+            continue
+        if not attached:
+            continue
+        try:
+            for eid in attached:
+                if eid is None or eid == ElementId.InvalidElementId:
+                    continue
+                ni = _element_id_to_int(eid)
+                if ni is None or ni in seen:
+                    continue
+                seen.add(ni)
+                ids.append(eid)
+        except Exception:
+            pass
+    return ids
+
+
+def _muro_param_is_attached(wall):
+    """True si Top/Base Is Attached (parámetros; sin conocer el objetivo)."""
+    if wall is None:
+        return False
+    for bip in (
+        BuiltInParameter.WALL_TOP_IS_ATTACHED,
+        BuiltInParameter.WALL_BOTTOM_IS_ATTACHED,
+    ):
+        try:
+            p = wall.get_Parameter(bip)
+            if p is not None and p.HasValue and int(p.AsInteger()) == 1:
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _muro_tiene_attachment_a_losa(wall, doc):
+    """
+    True si el muro tiene *attachment* a alguna losa (Floor).
+
+    Prioriza ``Wall.GetAttachmentIds`` (Revit ≥ 2025.3). Si la API no está
+    disponible, usa ``WALL_TOP_IS_ATTACHED`` / ``WALL_BOTTOM_IS_ATTACHED``.
+    """
+    if wall is None or doc is None:
+        return False
+    get_fn = getattr(wall, u"GetAttachmentIds", None)
+    if get_fn is not None and _attachment_locations():
+        for eid in _wall_attachment_target_ids(wall):
+            try:
+                target = doc.GetElement(eid)
+            except Exception:
+                target = None
+            if _es_floor(target):
+                return True
+        return False
+    return _muro_param_is_attached(wall)
+
+
+def _detach_all_wall(wall):
+    """
+    Equivalente a *Detach All* del muro: quita todos los attachments top/base.
+
+    Usa ``RemoveAttachment`` cuando existe; si no, pone a 0 los parámetros
+    Top/Base Is Attached (si son escribibles).
+    Devuelve True si se aplicó algún cambio.
+    """
+    if wall is None:
+        return False
+    removed = False
+    remove_fn = getattr(wall, u"RemoveAttachment", None)
+    targets = _wall_attachment_target_ids(wall)
+    if remove_fn is not None and targets:
+        locs = _attachment_locations()
+        for eid in targets:
+            try:
+                remove_fn(eid)
+                removed = True
+                continue
+            except (System.Exception, TypeError):
+                pass
+            for loc in locs:
+                try:
+                    remove_fn(eid, loc)
+                    removed = True
+                except (System.Exception, TypeError):
+                    pass
+        if removed:
+            return True
+    # Respaldo / API antigua: flags de attachment.
+    for bip in (
+        BuiltInParameter.WALL_TOP_IS_ATTACHED,
+        BuiltInParameter.WALL_BOTTOM_IS_ATTACHED,
+    ):
+        try:
+            p = wall.get_Parameter(bip)
+            if p is None or p.IsReadOnly:
+                continue
+            if p.HasValue and int(p.AsInteger()) == 1:
+                p.Set(0)
+                removed = True
+        except Exception:
+            pass
+    return removed
+
+
+def _muros_hormigon_con_attachment_losa(doc, elements_concrete):
+    """Muros de hormigón del conjunto con attachment a alguna losa."""
+    out = []
+    if not elements_concrete:
+        return out
+    for el in elements_concrete:
+        wall = _as_wall(el)
+        if wall is None:
+            continue
+        if _muro_tiene_attachment_a_losa(wall, doc):
+            out.append(wall)
+    return out
 
 
 def _join_geometry_try_both_orders(doc, a, b):
@@ -701,6 +896,42 @@ def _switch_forjado_recortado_por_otro(doc, a, b, err_switch):
         if err_switch is not None and len(err_switch) < 8:
             err_switch.append(
                 u"Switch forjado: {0}".format(_exc_text(ex))
+            )
+        return False
+
+
+def _switch_columna_corta_muro(doc, a, b, err_switch):
+    """
+    En pares muro + pilar estructural, si el muro actúa como **cortante**,
+    invierte el orden para que la **columna corte al muro** (prioridad columna).
+    """
+    if a is None or b is None or doc is None:
+        return False
+    wall = column = None
+    if _es_wall_cat(a) and _es_structural_column(b):
+        wall, column = a, b
+    elif _es_wall_cat(b) and _es_structural_column(a):
+        wall, column = b, a
+    else:
+        return False
+    try:
+        if not JoinGeometryUtils.AreElementsJoined(doc, wall, column):
+            return False
+    except Exception:
+        return False
+    try:
+        # Columna ya cortante → no hace falta switch.
+        if bool(JoinGeometryUtils.IsCuttingElementInJoin(doc, column, wall)):
+            return False
+    except Exception:
+        return False
+    try:
+        JoinGeometryUtils.SwitchJoinOrder(doc, wall, column)
+        return True
+    except Exception as ex:
+        if err_switch is not None and len(err_switch) < 8:
+            err_switch.append(
+                u"Switch columna/muro: {0}".format(_exc_text(ex))
             )
         return False
 
@@ -826,15 +1057,20 @@ def run(revit):
             )
             return
 
+        walls_detach = _muros_hormigon_con_attachment_losa(
+            doc, elements_concrete
+        )
+
         ya_unidos = 0
         nuevos = 0
         fallos = 0
         inversiones = 0
+        detachados = 0
         err_switch = []
 
         n_pairs = len(pairs)
-        _pb = _pbar_start(_pbar_phase_title(_PBAR_BASE_UNION, n_pairs), n_pairs)
-        _pbar_open = _pbar_enter(_pb)
+        n_detach = len(walls_detach)
+
         tx = Transaction(
             doc, u"Arainco: Unir geometría hormigón (vista activa)"
         )
@@ -849,7 +1085,33 @@ def run(revit):
         except System.Exception:
             pass
         tx.Start()
+        _pb_det = None
+        _pbar_det_open = False
+        _pb = None
+        _pbar_open = False
         try:
+            # Paso previo: Detach All en muros con attachment a losa.
+            if n_detach > 0:
+                _pb_det = _pbar_start(
+                    _pbar_phase_title(_PBAR_BASE_DETACH, n_detach), n_detach
+                )
+                _pbar_det_open = _pbar_enter(_pb_det)
+                try:
+                    for idx_d, wall in enumerate(walls_detach):
+                        if _pbar_det_open:
+                            _pbar_step(
+                                _pb_det, idx_d, n_detach, _PBAR_BASE_DETACH
+                            )
+                        if _detach_all_wall(wall):
+                            detachados += 1
+                finally:
+                    _pbar_exit(_pb_det, _pbar_det_open)
+                    _pbar_det_open = False
+
+            _pb = _pbar_start(
+                _pbar_phase_title(_PBAR_BASE_UNION, n_pairs), n_pairs
+            )
+            _pbar_open = _pbar_enter(_pb)
             for idx, (ida, idb) in enumerate(pairs):
                 if _pbar_open:
                     _pbar_step(_pb, idx, n_pairs, _PBAR_BASE_UNION)
@@ -880,6 +1142,8 @@ def run(revit):
                         continue
                 if _switch_forjado_recortado_por_otro(doc, a, b, err_switch):
                     inversiones += 1
+                if _switch_columna_corta_muro(doc, a, b, err_switch):
+                    inversiones += 1
             tx.Commit()
         except Exception as ex:
             try:
@@ -893,17 +1157,26 @@ def run(revit):
             )
             return
         finally:
+            _pbar_exit(_pb_det, _pbar_det_open)
             _pbar_exit(_pb, _pbar_open)
 
         # Elementos modificados solo se liberan tras sync + relinquish.
         sync_ok = False
         sync_err = u""
-        if (nuevos > 0 or inversiones > 0) and _doc_is_workshared(doc):
+        if (
+            (nuevos > 0 or inversiones > 0 or detachados > 0)
+            and _doc_is_workshared(doc)
+        ):
             sync_ok, sync_err = _sincronizar_y_liberar_propiedad(doc)
 
     view_name = getattr(view, u"Name", u"?") or u"?"
-    if nuevos > 0 or inversiones > 0:
-        detalle = u"Vista: {0}. Nuevas uniones: {1}.".format(view_name, nuevos)
+    if nuevos > 0 or inversiones > 0 or detachados > 0:
+        detalle = u"Vista: {0}.".format(view_name)
+        if detachados > 0:
+            detalle += u" Muros detach (attachment a losa): {0}.".format(
+                detachados
+            )
+        detalle += u" Nuevas uniones: {0}.".format(nuevos)
         if inversiones > 0:
             detalle += u" Órdenes de corte ajustados: {0}.".format(inversiones)
         detalle = _detalle_con_liberacion(detalle, sync_ok, sync_err)

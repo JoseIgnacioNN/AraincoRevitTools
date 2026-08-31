@@ -26,7 +26,7 @@ except Exception:
 CABEZAL_COVER_MM = 25.0
 CABEZAL_EXTREMO_INICIO = u"inicio"
 CABEZAL_EXTREMO_FIN = u"fin"
-CABEZAL_MAX_CAPAS = 6
+CABEZAL_MAX_CAPAS = 25
 CABEZAL_MIN_CAPAS = 1
 CABEZAL_MIN_BARRAS_POR_CAPA = 2
 CABEZAL_MAX_BARRAS_POR_CAPA = 4
@@ -340,15 +340,19 @@ def cabezal_extremo_config_encuentro_l(
         e_ref = e_sel
     row = sic_encuentro_lookup(e_ref)
     n_capas, n_bars = rejilla_desde_total_sic(row[u"total"])
-    n_capas = max(ENC_L_MIN_CAPAS, min(CABEZAL_MAX_CAPAS, n_capas))
+    cab = _cab()
+    if cab is None:
+        return None
+    try:
+        max_c = int(cab.CABEZAL_MAX_CAPAS_ENCUENTRO)
+    except Exception:
+        max_c = CABEZAL_MAX_CAPAS
+    n_capas = max(ENC_L_MIN_CAPAS, min(max_c, n_capas))
     n_bars = max(
         ENC_L_MIN_BARS,
         min(CABEZAL_MAX_BARRAS_POR_CAPA, n_bars),
     )
     diam_mm = float(row[u"diam"])
-    cab = _cab()
-    if cab is None:
-        return None
     fb_bt = None
     if fallback_bar_type_id not in (None, ElementId.InvalidElementId):
         fb_bt = cab._element_to_bar_type(doc, fallback_bar_type_id)

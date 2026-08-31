@@ -4,8 +4,10 @@ Servicio Revit — creación de vistas por categoría (01_ENTREGABLE).
 
 Equivalente Python del grafo Dynamo VistasPorCategoria_script.dyn:
 - Valida que no existan vistas con Section Filter = {categoria}_{zona}.
+- Permite varias categorías en una sola ejecución (misma zona, niveles y escala).
 - Duplica plantillas de vista maestras y tipos Detail / Building Section.
-- Crea plantas Cielo y Piso por nivel seleccionado.
+- Crea plantas Cielo y Piso por nivel seleccionado
+  (en 01_LO: cuatro plantas por nivel — Cielo/Piso × inferior/superior).
 - Asigna rango de vista, escala y parámetros de instancia.
 
 Requisitos: Revit 2024+, tipos de vista con nombres definidos en constants.py.
@@ -46,9 +48,10 @@ from crear_vistas_revision_estructural import (
     _apply_view_range_cielo,
     _apply_view_range_piso,
     _collect_levels_sorted,
+    _create_plan_view,
     _find_view_family_type_by_name,
     _is_lowest_project_level,
-    _level_above,
+    _level_above_for_cielo,
     _mm_to_internal,
     _normalize_compare_name,
     _regenerate_doc_safe,
@@ -60,14 +63,23 @@ from crear_vistas_revision_estructural import (
 )
 
 from vistas_por_categoria.constants import (
+    ARMADURA_UBICACION_INFERIOR,
+    ARMADURA_UBICACION_SUPERIOR,
+    CATEGORIA_LO,
     CLASIFICACION,
     DISCIPLINE_DETAIL_SECTION,
+    LO_PLANS_PER_LEVEL,
     MASTER_TEMPLATE_SEEDS,
+    PARAM_ARMADURA_UBICACION,
     TRANSACTION_TITLE,
     VFT_NAME_CIELO,
     VFT_NAME_DETAIL_FAMILY,
     VFT_NAME_PISO,
     VFT_NAME_SECTION_FAMILY,
+    VIEW_SUFFIX_CIELO,
+    VIEW_SUFFIX_INFERIOR,
+    VIEW_SUFFIX_PISO,
+    VIEW_SUFFIX_SUPERIOR,
     ZONA_DEFAULT,
 )
 
@@ -76,17 +88,51 @@ class VistasPorCategoriaError(Exception):
     """Error de validación o configuración previo a la transacción."""
 
 
-class VistasPorCategoriaRequest(object):
-    """Entrada del formulario WPF."""
+def _normalize_categorias(categorias):
+    """Lista de (codigo, etiqueta) sin duplicados. Acepta un código o pares."""
+    try:
+        basestring
+    except NameError:
+        basestring = str
 
-    def __init__(self, categoria_code, zona, scale, levels, categoria_display=None):
-        # str() por si Tag/ComboBox entrega System.String (pythonnet)
-        self.categoria_code = _normalize_compare_name(categoria_code)
-        self.categoria_display = (
-            _normalize_compare_name(categoria_display)
-            if categoria_display
-            else self.categoria_code
-        )
+    items = []
+    seen = set()
+    if categorias is None:
+        return items
+    if isinstance(categorias, basestring):
+        raw = [(categorias, categorias)]
+    else:
+        raw = list(categorias or [])
+
+    for item in raw:
+        code = u""
+        display = u""
+        if isinstance(item, (list, tuple)):
+            if len(item) >= 1:
+                code = _normalize_compare_name(item[0])
+            if len(item) >= 2 and item[1]:
+                display = _normalize_compare_name(item[1])
+            else:
+                display = code
+        else:
+            code = _normalize_compare_name(item)
+            display = code
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        items.append((code, display))
+    return items
+
+
+class VistasPorCategoriaRequest(object):
+    """Entrada del formulario WPF (una o varias categorías, misma zona)."""
+
+    def __init__(self, categorias, zona, scale, levels):
+        # categorias: lista de (codigo, etiqueta) o un código unicode
+        self.categorias = _normalize_categorias(categorias)
+        first = self.categorias[0] if self.categorias else (u"", u"")
+        self.categoria_code = first[0]
+        self.categoria_display = first[1]
         self.zona = _normalize_compare_name(zona) or ZONA_DEFAULT
         self.scale = int(scale)
         self.levels = list(levels or [])
@@ -662,19 +708,122 @@ def _sheet_titles_for_levels(levels):
     return titles
 
 
+def _is_lo_categoria(categoria_code):
+    """True si la categoría es plantas losas (armadura inferior/superior)."""
+    return _normalize_compare_name(categoria_code) == _normalize_compare_name(
+        CATEGORIA_LO
+    )
+
+
+def plans_per_level_for_categoria(categoria_code):
+    """Plantas estructurales creadas por cada nivel de la categoría."""
+    if _is_lo_categoria(categoria_code):
+        return LO_PLANS_PER_LEVEL
+    return 2
+
+
+def _plan_view_names(categoria, lvl_name, zona):
+    """
+    Nombres de planta por nivel (no LO).
+    LO usa ``_iter_lo_plan_view_jobs`` (4 plantas: Cielo/Piso × inferior/superior).
+    """
+    name_cielo = u"{}_CIELO_{}_{}".format(categoria, lvl_name, zona)
+    name_piso = u"{}_PISO_{}_{}".format(categoria, lvl_name, zona)
+    return name_cielo, name_piso
+
+
+def _lo_plan_template_key(plan_key, arm_suffix):
+    """Clave interna de plantilla LO (p. ej. ``cielo_SUPERIOR``)."""
+    return u"{}_{}".format(plan_key, arm_suffix)
+
+
+def _lo_armadura_ubicacion_filter_name(categoria_code, zona, arm_suffix):
+    """Nombre del filtro Rebar por tipo de armadura (superior / inferior)."""
+    return u"{}_{}_ARM_UBIC_{}".format(categoria_code, zona, arm_suffix)
+
+
+def _lo_plan_sheet_title(plan_token, arm_suffix, levels, sheet_titles, idx, lvl_name):
+    if len(levels) == 2:
+        base = sheet_titles[idx] if idx < len(sheet_titles) else lvl_name
+        return u"{} {} {}".format(base, plan_token, arm_suffix)
+    return u"PLANTA ESTRUCTURA {} {} {}".format(plan_token, arm_suffix, lvl_name)
+
+
+def _iter_lo_plan_view_jobs(categoria, lvl_name, zona):
+    """
+    Cuatro plantas LO por nivel: Cielo/Piso con armadura inferior y superior.
+
+    Yields dicts con vft_key, plan_token, arm_suffix, arm_value, name, sheet_title
+    (sheet_title se rellena fuera con contexto de nivel).
+    """
+    for plan_token, vft_key in (
+        (VIEW_SUFFIX_CIELO, u"cielo"),
+        (VIEW_SUFFIX_PISO, u"piso"),
+    ):
+        for arm_suffix, arm_value in (
+            (VIEW_SUFFIX_INFERIOR, ARMADURA_UBICACION_INFERIOR),
+            (VIEW_SUFFIX_SUPERIOR, ARMADURA_UBICACION_SUPERIOR),
+        ):
+            name = u"{}_{}_{}_{}_{}".format(
+                categoria, lvl_name, zona, plan_token, arm_suffix
+            )
+            yield {
+                u"vft_key": vft_key,
+                u"plan_token": plan_token,
+                u"arm_suffix": arm_suffix,
+                u"arm_value": arm_value,
+                u"template_key": _lo_plan_template_key(vft_key, arm_suffix),
+                u"name": name,
+            }
+
+
+def _plan_sheet_titles(categoria, levels, sheet_titles, idx, lvl_name):
+    """Title on Sheet para el par Cielo/Piso (categorías distintas de LO)."""
+    if len(levels) == 2:
+        base = sheet_titles[idx] if idx < len(sheet_titles) else lvl_name
+        return base, base
+    return (
+        u"PLANTA ESTRUCTURA CIELO " + lvl_name,
+        u"PLANTA ESTRUCTURA PISO " + lvl_name,
+    )
+
+
+def _has_plan_templates(templates, categoria_code):
+    """True si existen plantillas de planta mínimas para la categoría."""
+    if _is_lo_categoria(categoria_code):
+        return all(
+            templates.get(_lo_plan_template_key(plan_key, arm_suffix))
+            for plan_key in (u"cielo", u"piso")
+            for arm_suffix in (VIEW_SUFFIX_INFERIOR, VIEW_SUFFIX_SUPERIOR)
+        )
+    return bool(templates.get(u"cielo") and templates.get(u"piso"))
+
+
 def _template_names(categoria_code, zona):
-    return {
-        u"cielo": u"{}_{}_STRUCTURAL PLAN (CIELO)_{}".format(
-            CLASIFICACION, categoria_code, zona
-        ),
-        u"piso": u"{}_{}_STRUCTURAL PLAN (PISO)_{}".format(
-            CLASIFICACION, categoria_code, zona
-        ),
+    names = {
         u"detail": u"{}_{}_DETAIL_{}".format(CLASIFICACION, categoria_code, zona),
         u"section": u"{}_{}_BUILDING SECTION_{}".format(
             CLASIFICACION, categoria_code, zona
         ),
     }
+    if _is_lo_categoria(categoria_code):
+        for plan_key, label in ((u"cielo", u"CIELO"), (u"piso", u"PISO")):
+            base = u"{}_{}_STRUCTURAL PLAN ({})_{}".format(
+                CLASIFICACION, categoria_code, label, zona
+            )
+            for arm_suffix in (VIEW_SUFFIX_INFERIOR, VIEW_SUFFIX_SUPERIOR):
+                names[_lo_plan_template_key(plan_key, arm_suffix)] = u"{}_{}".format(
+                    base, arm_suffix
+                )
+        return names
+
+    names[u"cielo"] = u"{}_{}_STRUCTURAL PLAN (CIELO)_{}".format(
+        CLASIFICACION, categoria_code, zona
+    )
+    names[u"piso"] = u"{}_{}_STRUCTURAL PLAN (PISO)_{}".format(
+        CLASIFICACION, categoria_code, zona
+    )
+    return names
 
 
 def _resolve_view_family_types(doc, result):
@@ -853,45 +1002,50 @@ def _ensure_section_filter(doc, section_filter_key, warnings):
         return None
 
 
-def _apply_filter_to_view_template(view_template, filter_elem, warnings):
-    """Añade el filtro a la plantilla y oculta elementos que cumplen la regla."""
-    if view_template is None or filter_elem is None:
+def _apply_parameter_filter_hidden(view_or_template, filter_elem, warnings):
+    """Añade filtro a vista o plantilla y oculta elementos que cumplen la regla."""
+    if view_or_template is None or filter_elem is None:
         return False
     fid = filter_elem.Id
-    label = _view_display_name(view_template) or u"?"
+    label = _view_display_name(view_or_template) or u"?"
 
     try:
         already = False
         try:
-            already = view_template.GetFilters().Contains(fid)
+            already = view_or_template.GetFilters().Contains(fid)
         except Exception:
-            already = fid in list(view_template.GetFilters())
+            already = fid in list(view_or_template.GetFilters())
         if not already:
-            view_template.AddFilter(fid)
+            view_or_template.AddFilter(fid)
     except Exception as ex:
         warnings.append(
-            u"Plantilla «{}»: no se pudo AddFilter: {}".format(label, ex)
+            u"«{}»: no se pudo AddFilter: {}".format(label, ex)
         )
         return False
 
     try:
-        view_template.SetIsFilterEnabled(fid, True)
+        view_or_template.SetIsFilterEnabled(fid, True)
     except Exception:
         pass
 
     try:
-        view_template.SetFilterVisibility(fid, False)
+        view_or_template.SetFilterVisibility(fid, False)
     except Exception as ex:
         warnings.append(
-            u"Plantilla «{}»: SetFilterVisibility: {}".format(label, ex)
+            u"«{}»: SetFilterVisibility: {}".format(label, ex)
         )
 
     try:
-        view_template.SetFilterOverrides(fid, OverrideGraphicSettings())
+        view_or_template.SetFilterOverrides(fid, OverrideGraphicSettings())
     except Exception:
         pass
 
     return True
+
+
+def _apply_filter_to_view_template(view_template, filter_elem, warnings):
+    """Añade el filtro a la plantilla y oculta elementos que cumplen la regla."""
+    return _apply_parameter_filter_hidden(view_template, filter_elem, warnings)
 
 
 def _apply_filters_to_templates(doc, section_filter_key, templates, tpl_names, result):
@@ -925,6 +1079,156 @@ def _apply_filters_to_templates(doc, section_filter_key, templates, tpl_names, r
         result.filters_created.extend(
             u"  → {}".format(n) for n in applied
         )
+
+
+def _find_armadura_ubicacion_param_id(doc, cat_ids):
+    """ElementId del parámetro «Armadura_Ubicacion» en categoría Rebar."""
+    try:
+        for spe in FilteredElementCollector(doc).OfClass(SharedParameterElement):
+            try:
+                if spe and _normalize_compare_name(spe.Name) == _normalize_compare_name(
+                    PARAM_ARMADURA_UBICACION
+                ):
+                    return spe.Id
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    try:
+        for p_id in ParameterFilterUtilities.GetFilterableParametersInCommon(doc, cat_ids):
+            p_elem = doc.GetElement(p_id)
+            if p_elem is None:
+                continue
+            try:
+                if _normalize_compare_name(p_elem.Name) == _normalize_compare_name(
+                    PARAM_ARMADURA_UBICACION
+                ):
+                    return p_id
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    try:
+        rebar = (
+            FilteredElementCollector(doc)
+            .OfCategory(BuiltInCategory.OST_Rebar)
+            .WhereElementIsNotElementType()
+            .FirstElement()
+        )
+        if rebar is not None:
+            p = rebar.LookupParameter(PARAM_ARMADURA_UBICACION)
+            if p is not None:
+                return p.Id
+    except Exception:
+        pass
+    return None
+
+
+def _ensure_armadura_ubicacion_filter(doc, filter_name, ubicacion_value, warnings):
+    """
+    Crea/actualiza filtro Rebar: Armadura_Ubicacion NotEquals ``ubicacion_value``.
+    Con visibilidad apagada en plantilla, solo quedan visibles los rebars con ese valor.
+    """
+    if not filter_name or not ubicacion_value:
+        return None
+
+    if DotNetList is None:
+        warnings.append(
+            u"No se pudo crear filtro «{}»: List[ElementId] no disponible.".format(
+                filter_name
+            )
+        )
+        return None
+
+    cat_ids = DotNetList[ElementId]()
+    cat_ids.Add(ElementId(BuiltInCategory.OST_Rebar))
+
+    param_id = _find_armadura_ubicacion_param_id(doc, cat_ids)
+    if param_id is None:
+        warnings.append(
+            u"No se encontró «{}» para el filtro «{}».".format(
+                PARAM_ARMADURA_UBICACION, filter_name
+            )
+        )
+        return None
+
+    rule = _create_not_equals_string_rule(param_id, ubicacion_value)
+    elem_filter = ElementParameterFilter(rule)
+
+    existing = _find_parameter_filter_by_name(doc, filter_name)
+    if existing is not None:
+        try:
+            existing.SetElementFilter(elem_filter)
+            existing.SetCategories(cat_ids)
+        except Exception as ex:
+            warnings.append(
+                u"Filtro «{}» existente no actualizable: {}".format(filter_name, ex)
+            )
+        return existing
+
+    try:
+        return ParameterFilterElement.Create(doc, filter_name, cat_ids, elem_filter)
+    except Exception as ex:
+        warnings.append(
+            u"No se pudo crear ParameterFilter «{}»: {}".format(filter_name, ex)
+        )
+        return None
+
+
+def _apply_lo_armadura_filters_to_templates(
+    doc, categoria_code, zona, templates, tpl_names, result
+):
+    """
+    En 01_LO: filtro Rebar Armadura_Ubicacion en plantillas superior/inferior.
+    Superior → NotEquals F' · Inferior → NotEquals F (visibilidad apagada).
+    """
+    assignments = (
+        (VIEW_SUFFIX_SUPERIOR, ARMADURA_UBICACION_SUPERIOR),
+        (VIEW_SUFFIX_INFERIOR, ARMADURA_UBICACION_INFERIOR),
+    )
+    for arm_suffix, arm_value in assignments:
+        filter_name = _lo_armadura_ubicacion_filter_name(
+            categoria_code, zona, arm_suffix
+        )
+        filt = _ensure_armadura_ubicacion_filter(
+            doc, filter_name, arm_value, result.warnings
+        )
+        if filt is None:
+            continue
+
+        applied = []
+        for plan_key in (u"cielo", u"piso"):
+            tpl_key = _lo_plan_template_key(plan_key, arm_suffix)
+            tpl = templates.get(tpl_key)
+            if tpl is None:
+                continue
+            expected = _norm_tpl_name(tpl_names.get(tpl_key) or u"")
+            actual = _norm_tpl_name(_view_display_name(tpl))
+            if not expected or actual != expected:
+                result.warnings.append(
+                    u"Filtro «{}» no aplicado a «{}» "
+                    u"(no es la plantilla por-categoría «{}»)."
+                    .format(
+                        filter_name,
+                        _view_display_name(tpl),
+                        tpl_names.get(tpl_key),
+                    )
+                )
+                continue
+            if _apply_filter_to_view_template(tpl, filt, result.warnings):
+                applied.append(_view_display_name(tpl))
+
+        if applied:
+            result.filters_created.append(
+                u"{} (Rebar «{}» ≠ «{}»)".format(
+                    filter_name, PARAM_ARMADURA_UBICACION, arm_value
+                )
+            )
+            result.filters_created.extend(
+                u"  → {}".format(n) for n in applied
+            )
 
 
 def _set_default_view_template_on_type(view_family_type, template_view, warnings):
@@ -1001,6 +1305,50 @@ def _duplicate_templates_and_types(doc, categoria_code, zona, vft_detail, vft_se
     plan_fail_details = []
 
     for key, seed_name in MASTER_TEMPLATE_SEEDS.items():
+        if key in (u"cielo", u"piso") and _is_lo_categoria(categoria_code):
+            master, diag = _find_view_template_master(doc, seed_name)
+            if master is None:
+                extra = u""
+                if diag:
+                    extra = u" Motivo: {}.".format(diag)
+                if sample_names:
+                    lines = u"\n".join(u"  • {}".format(n) for n in sample_names)
+                    if total_tpl > len(sample_names):
+                        lines += u"\n  … (+{} más)".format(
+                            total_tpl - len(sample_names)
+                        )
+                    extra += u"\nVistas/plantillas detectadas (muestra):\n" + lines
+                for arm_suffix in (VIEW_SUFFIX_INFERIOR, VIEW_SUFFIX_SUPERIOR):
+                    tpl_key = _lo_plan_template_key(key, arm_suffix)
+                    msg = (
+                        u"Plantilla semilla no encontrada: «{}» "
+                        u"(necesaria para crear «{}»).{}"
+                    ).format(seed_name, tpl_names.get(tpl_key), extra)
+                    result.warnings.append(msg)
+                missing_plan_seeds.append(seed_name)
+                plan_fail_details.append(
+                    u"«{}»: {}".format(seed_name, diag or u"no encontrada")
+                )
+                continue
+
+            for arm_suffix in (VIEW_SUFFIX_INFERIOR, VIEW_SUFFIX_SUPERIOR):
+                tpl_key = _lo_plan_template_key(key, arm_suffix)
+                target_name = tpl_names.get(tpl_key)
+                dup, err = _duplicate_view_template(doc, master, target_name)
+                if dup is None:
+                    result.warnings.append(
+                        u"No se pudo duplicar plantilla «{}» desde «{}»: {}. "
+                        u"Se asignará la plantilla semilla compartida a las vistas."
+                        .format(target_name, seed_name, err)
+                    )
+                    templates[tpl_key] = master
+                    continue
+
+                _apply_param_list(dup, doc, params_plan, result.warnings)
+                templates[tpl_key] = dup
+                result.templates_created.append(target_name)
+            continue
+
         master, diag = _find_view_template_master(doc, seed_name)
         if master is None:
             extra = u""
@@ -1041,9 +1389,7 @@ def _duplicate_templates_and_types(doc, categoria_code, zona, vft_detail, vft_se
         templates[key] = dup
         result.templates_created.append(tpl_names[key])
 
-    if missing_plan_seeds and not (
-        templates.get(u"cielo") and templates.get(u"piso")
-    ):
+    if missing_plan_seeds and not _has_plan_templates(templates, categoria_code):
         detail = u""
         if plan_fail_details:
             detail = u"\n\nDetalle:\n" + u"\n".join(
@@ -1096,12 +1442,50 @@ def _duplicate_templates_and_types(doc, categoria_code, zona, vft_detail, vft_se
             result.types_created.append(section_type_name)
 
     _apply_filters_to_templates(doc, section_filter, templates, tpl_names, result)
+    if _is_lo_categoria(categoria_code):
+        _apply_lo_armadura_filters_to_templates(
+            doc, categoria_code, zona, templates, tpl_names, result
+        )
 
     return templates
 
 
+def _apply_view_template_to_view(view, template_view, warnings):
+    """Asigna plantilla de vista si ``view`` no es plantilla."""
+    if view is None or template_view is None:
+        return False
+    if _is_view_template(view):
+        return False
+
+    applied = False
+    try:
+        view.ViewTemplateId = template_view.Id
+        applied = True
+    except Exception as ex:
+        warnings.append(
+            u'ViewTemplateId falló en «{}»: {}'.format(view.Name, ex)
+        )
+    if not applied:
+        try:
+            from Autodesk.Revit.DB import BuiltInParameter
+
+            p = view.get_Parameter(BuiltInParameter.VIEW_TEMPLATE_ID)
+            if p is not None and not p.IsReadOnly:
+                p.Set(template_view.Id)
+                applied = True
+        except Exception:
+            pass
+    if not applied:
+        warnings.append(
+            u'No se pudo aplicar plantilla «{}» a «{}».'
+            .format(_view_display_name(template_view), view.Name)
+        )
+    return applied
+
+
 def _apply_plan_view_metadata(
-    view, doc, level, categoria_code, zona, scale, sheet_title, template_view, warnings
+    view, doc, level, categoria_code, zona, scale, sheet_title, template_view, warnings,
+    apply_template=True,
 ):
     try:
         view.Scale = int(scale)
@@ -1123,45 +1507,254 @@ def _apply_plan_view_metadata(
             u'Vista «{}» — Title on Sheet: {}'.format(view.Name, detail_title)
         )
 
-    if template_view is not None:
-        applied = False
-        try:
-            if not _is_view_template(view):
-                view.ViewTemplateId = template_view.Id
-                applied = True
-        except Exception as ex:
-            warnings.append(
-                u'ViewTemplateId falló en «{}»: {}'.format(view.Name, ex)
-            )
-        if not applied:
-            try:
-                from Autodesk.Revit.DB import BuiltInParameter
+    if template_view is not None and apply_template:
+        _apply_view_template_to_view(view, template_view, warnings)
 
-                p = view.get_Parameter(BuiltInParameter.VIEW_TEMPLATE_ID)
-                if p is not None and not p.IsReadOnly:
-                    p.Set(template_view.Id)
-                    applied = True
-            except Exception:
-                pass
-        if not applied:
-            warnings.append(
-                u'No se pudo aplicar plantilla «{}» a «{}».'
-                .format(_view_display_name(template_view), view.Name)
+
+def _create_lo_plan_views_for_level(
+    doc,
+    categoria,
+    zona,
+    scale,
+    level,
+    levels,
+    levels_all,
+    idx,
+    sheet_titles,
+    vft_cielo,
+    vft_piso,
+    templates,
+    used,
+    result,
+    offsets,
+):
+    """Cuatro plantas LO: Cielo/Piso × armadura inferior/superior."""
+    off_piso_1500 = offsets[0]
+    off_piso_neg_1500 = offsets[1]
+    off_cut_cielo = offsets[2]
+    off_top_depth = offsets[3]
+    off_fallback = offsets[4]
+
+    try:
+        lvl_name = str(level.Name or u"")
+    except Exception:
+        lvl_name = u""
+
+    piso_lowest = _is_lowest_project_level(level, levels_all)
+    lvl_up = _level_above_for_cielo(
+        level, levels_all, off_cut_cielo, off_top_depth
+    )
+
+    for job in _iter_lo_plan_view_jobs(categoria, lvl_name, zona):
+        name = job[u"name"]
+        key = _normalize_compare_name(name)
+        if key in used:
+            result.skipped.append(name + u" (ya existía)")
+            continue
+
+        vft_key = job[u"vft_key"]
+        plan_token = job[u"plan_token"]
+        arm_suffix = job[u"arm_suffix"]
+        template_key = job[u"template_key"]
+        sheet_title = _lo_plan_sheet_title(
+            plan_token, arm_suffix, levels, sheet_titles, idx, lvl_name
+        )
+
+        if vft_key == u"piso":
+            def _make_piso(
+                lev=level,
+                nm=name,
+                lowest=piso_lowest,
+            ):
+                vp = _create_plan_view(doc, vft_piso, lev.Id, nm)
+                vp.Name = nm
+                _apply_view_range_piso(
+                    vp, lev, off_piso_1500, off_piso_neg_1500, lowest
+                )
+                _regenerate_doc_safe(doc)
+                return vp
+
+            view = _subtransaction_run(doc, _make_piso)
+        else:
+            def _make_cielo(
+                lev=level,
+                lup=lvl_up,
+                nm=name,
+            ):
+                vc = _create_plan_view(doc, vft_cielo, lev.Id, nm)
+                vc.Name = nm
+                _apply_view_range_cielo(
+                    vc,
+                    lev,
+                    lup,
+                    off_cut_cielo,
+                    off_top_depth,
+                    off_fallback,
+                )
+                _regenerate_doc_safe(doc)
+                return vc
+
+            view = _subtransaction_run(doc, _make_cielo)
+
+        _apply_plan_view_metadata(
+            view,
+            doc,
+            level,
+            categoria,
+            zona,
+            scale,
+            sheet_title,
+            templates.get(template_key),
+            result.warnings,
+        )
+
+        used.add(key)
+        result.created.append(name)
+
+
+def _create_plan_views_for_categoria(
+    doc,
+    categoria,
+    zona,
+    scale,
+    levels,
+    levels_all,
+    vft_cielo,
+    vft_piso,
+    vft_detail,
+    vft_section,
+    used,
+    sheet_titles,
+    result,
+    offsets,
+):
+    """Crea plantillas, tipos y plantas Cielo/Piso de una categoría (TX abierta).
+
+    En 01_LO: cuatro plantas por nivel (Cielo/Piso × inferior/superior).
+    Resto: dos plantas por nivel (Cielo y Piso).
+    """
+    templates = _duplicate_templates_and_types(
+        doc, categoria, zona, vft_detail, vft_section, result
+    )
+    off_piso_1500 = offsets[0]
+    off_piso_neg_1500 = offsets[1]
+    off_cut_cielo = offsets[2]
+    off_top_depth = offsets[3]
+    off_fallback = offsets[4]
+
+    if _is_lo_categoria(categoria):
+        for idx, level in enumerate(levels):
+            _create_lo_plan_views_for_level(
+                doc,
+                categoria,
+                zona,
+                scale,
+                level,
+                levels,
+                levels_all,
+                idx,
+                sheet_titles,
+                vft_cielo,
+                vft_piso,
+                templates,
+                used,
+                result,
+                offsets,
             )
+        return
+
+    for idx, level in enumerate(levels):
+        try:
+            lvl_name = str(level.Name or u"")
+        except Exception:
+            lvl_name = u""
+
+        sheet_cielo, sheet_piso = _plan_sheet_titles(
+            categoria, levels, sheet_titles, idx, lvl_name
+        )
+        name_cielo, name_piso = _plan_view_names(categoria, lvl_name, zona)
+        key_cielo = _normalize_compare_name(name_cielo)
+        key_piso = _normalize_compare_name(name_piso)
+
+        if key_piso in used:
+            result.skipped.append(name_piso + u" (ya existía)")
+        else:
+            piso_lowest = _is_lowest_project_level(level, levels_all)
+
+            def _make_piso(lev=level, nm=name_piso, lowest=piso_lowest):
+                vp = _create_plan_view(doc, vft_piso, lev.Id, nm)
+                vp.Name = nm
+                _apply_view_range_piso(
+                    vp, lev, off_piso_1500, off_piso_neg_1500, lowest
+                )
+                _regenerate_doc_safe(doc)
+                return vp
+
+            vp = _subtransaction_run(doc, _make_piso)
+            _apply_plan_view_metadata(
+                vp,
+                doc,
+                level,
+                categoria,
+                zona,
+                scale,
+                sheet_piso,
+                templates.get(u"piso"),
+                result.warnings,
+            )
+            used.add(key_piso)
+            result.created.append(name_piso)
+
+        if key_cielo in used:
+            result.skipped.append(name_cielo + u" (ya existía)")
+        else:
+            lvl_up = _level_above_for_cielo(
+                level, levels_all, off_cut_cielo, off_top_depth
+            )
+
+            def _make_cielo(lev=level, lup=lvl_up, nm=name_cielo):
+                vc = _create_plan_view(doc, vft_cielo, lev.Id, nm)
+                vc.Name = nm
+                _apply_view_range_cielo(
+                    vc,
+                    lev,
+                    lup,
+                    off_cut_cielo,
+                    off_top_depth,
+                    off_fallback,
+                )
+                _regenerate_doc_safe(doc)
+                return vc
+
+            vc = _subtransaction_run(doc, _make_cielo)
+            _apply_plan_view_metadata(
+                vc,
+                doc,
+                level,
+                categoria,
+                zona,
+                scale,
+                sheet_cielo,
+                templates.get(u"cielo"),
+                result.warnings,
+            )
+            used.add(key_cielo)
+            result.created.append(name_cielo)
 
 
 def create_categoria_views(doc, request):
     """
-    Ejecuta la creación completa. Devuelve VistasPorCategoriaResult.
+    Ejecuta la creación completa (una o varias categorías, misma zona).
+    Devuelve VistasPorCategoriaResult.
     Lanza VistasPorCategoriaError si falla validación previa.
     """
-    if not request.categoria_code:
-        raise VistasPorCategoriaError(u"Seleccione una categoría.")
+    cats = list(request.categorias or [])
+    if not cats and request.categoria_code:
+        cats = [(request.categoria_code, request.categoria_display)]
+    if not cats:
+        raise VistasPorCategoriaError(u"Seleccione al menos una categoría.")
 
     zona = request.zona or ZONA_DEFAULT
-    ok, msg = validate_categoria_views_not_exist(doc, request.categoria_code, zona)
-    if not ok:
-        raise VistasPorCategoriaError(msg)
 
     levels_all = _collect_levels_sorted(doc)
     if not levels_all:
@@ -1177,110 +1770,63 @@ def create_categoria_views(doc, request):
         raise VistasPorCategoriaError(u"Los niveles seleccionados no son válidos.")
 
     result = VistasPorCategoriaResult()
-    vft_cielo, vft_piso, vft_detail, vft_section = _resolve_view_family_types(doc, result)
+    to_create = []
+    for code, _display in cats:
+        ok, _msg = validate_categoria_views_not_exist(doc, code, zona)
+        if ok:
+            to_create.append(code)
+        else:
+            result.skipped.append(
+                u"{} / zona {} (ya generadas)".format(code, zona)
+            )
 
-    off_piso_1500 = _mm_to_internal(1500)
-    off_piso_neg_1500 = _mm_to_internal(-1500)
-    off_cut_cielo = _mm_to_internal(1000)
-    off_top_depth = _mm_to_internal(300)
-    off_fallback = _mm_to_internal(4000)
+    if not to_create:
+        if len(cats) == 1:
+            raise VistasPorCategoriaError(
+                u"Las vistas de esta Categoría Zona ya fueron generadas. "
+                u"Para vistas adicionales, duplicar de las ya existentes."
+            )
+        raise VistasPorCategoriaError(
+            u"Las vistas de las categorías seleccionadas ya fueron generadas "
+            u"para la zona {}. Para vistas adicionales, duplicar de las ya "
+            u"existentes.".format(zona)
+        )
 
+    vft_cielo, vft_piso, vft_detail, vft_section = _resolve_view_family_types(
+        doc, result
+    )
+
+    offsets = (
+        _mm_to_internal(1500),
+        _mm_to_internal(-1500),
+        _mm_to_internal(1000),
+        _mm_to_internal(300),
+        _mm_to_internal(4000),
+    )
     used = _existing_view_names(doc)
     sheet_titles = _sheet_titles_for_levels(levels)
-    categoria = request.categoria_code
+    scale = request.scale
 
     txn = Transaction(doc, TRANSACTION_TITLE)
     txn.Start()
     try:
-        templates = _duplicate_templates_and_types(
-            doc, categoria, zona, vft_detail, vft_section, result
-        )
-
-        for idx, level in enumerate(levels):
-            try:
-                lvl_name = str(level.Name or u"")
-            except Exception:
-                lvl_name = u""
-
-            if len(levels) == 2:
-                sheet_cielo = (
-                    sheet_titles[idx] if idx < len(sheet_titles) else lvl_name
-                )
-                sheet_piso = (
-                    sheet_titles[idx] if idx < len(sheet_titles) else lvl_name
-                )
-            else:
-                sheet_cielo = u"PLANTA ESTRUCTURA CIELO " + lvl_name
-                sheet_piso = u"PLANTA ESTRUCTURA PISO " + lvl_name
-
-            name_cielo = u"{}_CIELO_{}_{}".format(categoria, lvl_name, zona)
-            name_piso = u"{}_PISO_{}_{}".format(categoria, lvl_name, zona)
-            key_cielo = _normalize_compare_name(name_cielo)
-            key_piso = _normalize_compare_name(name_piso)
-
-            if key_piso in used:
-                result.skipped.append(name_piso + u" (ya existía)")
-            else:
-                piso_lowest = _is_lowest_project_level(level, levels_all)
-
-                def _make_piso(lev=level, nm=name_piso, lowest=piso_lowest):
-                    vp = ViewPlan.Create(doc, vft_piso.Id, lev.Id)
-                    vp.Name = nm
-                    _apply_view_range_piso(
-                        vp, lev, off_piso_1500, off_piso_neg_1500, lowest
-                    )
-                    _regenerate_doc_safe(doc)
-                    return vp
-
-                vp = _subtransaction_run(doc, _make_piso)
-                _apply_plan_view_metadata(
-                    vp,
-                    doc,
-                    level,
-                    categoria,
-                    zona,
-                    request.scale,
-                    sheet_piso,
-                    templates.get(u"piso"),
-                    result.warnings,
-                )
-                used.add(key_piso)
-                result.created.append(name_piso)
-
-            if key_cielo in used:
-                result.skipped.append(name_cielo + u" (ya existía)")
-            else:
-                lvl_up = _level_above(level, levels_all)
-
-                def _make_cielo(lev=level, lup=lvl_up, nm=name_cielo):
-                    vc = ViewPlan.Create(doc, vft_cielo.Id, lev.Id)
-                    vc.Name = nm
-                    _apply_view_range_cielo(
-                        vc,
-                        lev,
-                        lup,
-                        off_cut_cielo,
-                        off_top_depth,
-                        off_fallback,
-                    )
-                    _regenerate_doc_safe(doc)
-                    return vc
-
-                vc = _subtransaction_run(doc, _make_cielo)
-                _apply_plan_view_metadata(
-                    vc,
-                    doc,
-                    level,
-                    categoria,
-                    zona,
-                    request.scale,
-                    sheet_cielo,
-                    templates.get(u"cielo"),
-                    result.warnings,
-                )
-                used.add(key_cielo)
-                result.created.append(name_cielo)
-
+        for categoria in to_create:
+            _create_plan_views_for_categoria(
+                doc,
+                categoria,
+                zona,
+                scale,
+                levels,
+                levels_all,
+                vft_cielo,
+                vft_piso,
+                vft_detail,
+                vft_section,
+                used,
+                sheet_titles,
+                result,
+                offsets,
+            )
         _regenerate_doc_safe(doc)
         txn.Commit()
     except Exception:
@@ -1317,20 +1863,43 @@ def format_result_message(result):
     return u"\n".join(lines)
 
 
-def format_success_dialog(result, categoria_display=None, categoria_code=None, zona=None):
+def format_success_dialog(
+    result,
+    categoria_display=None,
+    categoria_code=None,
+    zona=None,
+    categorias=None,
+):
     """
     Texto para diálogo WPF de éxito.
 
     Returns:
         (instruction, content) — instrucción breve + detalle de vistas/tipos.
     """
-    who = (categoria_display or u"").strip()
-    code = (categoria_code or u"").strip()
     zon = (zona or ZONA_DEFAULT).strip()
-    if who and code and who != code:
-        who_label = u"{0} / zona {1}".format(who, zon)
+    items = _normalize_categorias(categorias)
+    if not items:
+        who = (categoria_display or u"").strip()
+        code = (categoria_code or u"").strip()
+        if who or code:
+            items = [(code or who, who or code)]
+
+    if len(items) > 1:
+        codes = [c[0] for c in items if c and c[0]]
+        who_label = u"{0} categorías ({1}) / zona {2}".format(
+            len(codes), u", ".join(codes), zon
+        )
     else:
-        who_label = u"{0} / zona {1}".format(who or code or u"categoría", zon)
+        who = (items[0][1] if items else u"").strip()
+        code = (items[0][0] if items else u"").strip()
+        if not who:
+            who = (categoria_display or u"").strip()
+        if not code:
+            code = (categoria_code or u"").strip()
+        if who and code and who != code:
+            who_label = u"{0} / zona {1}".format(who, zon)
+        else:
+            who_label = u"{0} / zona {1}".format(who or code or u"categoría", zon)
 
     n_views = len(result.created or [])
     n_types = len(result.types_created or [])
@@ -1353,7 +1922,7 @@ def format_success_dialog(result, categoria_display=None, categoria_code=None, z
     if result.filters_created:
         if lines:
             lines.append(u"")
-        lines.append(u"Filtros de vista (Section Filter):")
+        lines.append(u"Filtros de vista:")
         for name in result.filters_created:
             if name.startswith(u"  →"):
                 lines.append(name)

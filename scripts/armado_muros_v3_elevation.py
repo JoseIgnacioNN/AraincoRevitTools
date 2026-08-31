@@ -4,6 +4,7 @@
 Dibujo fiel a Armado Muros V2:
 - Escala uniforme px/mm (mismo para ancho y alto) → ``draw_w/draw_h ≈ L/H``.
 - Fit vertical como máximo 8 muros; con más, escala fija y scrollbar (~8 visibles).
+  En Mallas (``align_world_z``) la altura es el span Z real: mismo nivel = misma Y.
 - Bloque (fustes + niveles + Auto/Tn) centrado en X en el viewport; stack al fondo.
 - Scroll si no cabe a escala mínima (ancho) o si hay más de 8 muros (alto).
 - Espesor = color de relleno + etiqueta ``e=``.
@@ -45,10 +46,19 @@ _WALL_CORNER_R = 2.0
 
 
 def _wall_length_mm(m):
+    """Largo en mm para el alzado: proyección U si existe, si no curva."""
+    ft = None
     try:
-        ft = float(m.get(u"length_ft") or m.get(u"length_u") or 0.0)
+        lu = (m or {}).get(u"length_u")
+        if lu is not None:
+            ft = float(lu)
     except Exception:
-        ft = 0.0
+        ft = None
+    if ft is None or ft <= 1e-9:
+        try:
+            ft = float((m or {}).get(u"length_ft") or 0.0)
+        except Exception:
+            ft = 0.0
     if ft <= 1e-9:
         ft = 1.0 / _FT_TO_MM
     return max(ft * _FT_TO_MM, 1.0)
@@ -94,9 +104,21 @@ def _wall_row_height_mm(m):
     return _wall_height_mm(m) + _wall_fund_height_mm(m)
 
 
+def _wall_z_extents_mm(m):
+    """Pie (incl. fundación) y cabeza del fuste en mm (coords internas)."""
+    try:
+        z0 = float((m or {}).get(u"z_mm") or 0.0)
+    except Exception:
+        z0 = 0.0
+    h = _wall_height_mm(m)
+    fh = _wall_fund_height_mm(m)
+    return z0 - fh, z0 + h
+
+
 def _compute_elev_layout(
     meta, viewport_w, viewport_h, legend_h, g_min, span_u,
     show_tramo_bands=True, show_pie_controls=True,
+    align_world_z=False,
 ):
     """Escala uniforme px/mm; bloque elevación+Auto/Tn centrado en el viewport.
 
@@ -111,6 +133,8 @@ def _compute_elev_layout(
 
     ``show_tramo_bands`` / ``show_pie_controls``: si False (p. ej. Mallas en
     muros), no se reserva ancho de columnas Tn / Auto.
+    ``align_world_z``: si True, la altura del bloque es el span Z real
+    (muros del mismo nivel coinciden en Y; no se apilan por índice).
     """
     items = list(meta or [])
     n = len(items)
@@ -161,22 +185,43 @@ def _compute_elev_layout(
         span_u_f = 1e-6
     span_mm = max(span_u_f * _FT_TO_MM, max_len_mm)
 
-    # Fit altura: como máximo 8 muros. Con N>8 la escala no sigue bajando
-    # (viewport ~8 fustes; el resto → scrollbar). Incluye fundación unida.
-    fit_count = min(len(heights_mm), _MAX_WALLS_FIT_SCALE)
-    fit_h_mm = max(sum(heights_mm[:fit_count]), 1.0)
+    use_world_z = bool(align_world_z)
+    z_min_mm = 0.0
+    z_max_mm = max(heights_mm) if heights_mm else 3000.0
+    if use_world_z:
+        extents = (
+            [_wall_z_extents_mm(m) for m in items]
+            if items else [(0.0, 3000.0)]
+        )
+        z_min_mm = min(e[0] for e in extents)
+        z_max_mm = max(e[1] for e in extents)
+        fit_h_mm = max(z_max_mm - z_min_mm, max(heights_mm), 1.0)
+    else:
+        # Fit altura: como máximo 8 muros. Con N>8 la escala no sigue bajando
+        # (viewport ~8 fustes; el resto → scrollbar). Incluye fundación unida.
+        fit_count = min(len(heights_mm), _MAX_WALLS_FIT_SCALE)
+        fit_h_mm = max(sum(heights_mm[:fit_count]), 1.0)
 
-    # Escala uniforme: fit (≤8 muros) en altura y huella completa en ancho.
+    # Escala uniforme: fit en altura y huella completa en ancho.
     scale_h = avail_h / fit_h_mm
     scale_w = usable_w_fit / span_mm
     scale = min(scale_h, scale_w)
     if scale < _SCALE_PX_PER_MM_MIN:
         scale = _SCALE_PX_PER_MM_MIN
 
-    row_heights = [max(8.0, h * scale) for h in heights_mm]
-    while len(row_heights) < n:
-        row_heights.append(max(8.0, 1000.0 * scale))
-    stack_h = sum(row_heights[:n])
+    if use_world_z:
+        row_heights = []
+        for m in items:
+            zb, zt = _wall_z_extents_mm(m)
+            row_heights.append(max(8.0, (zt - zb) * scale))
+        while len(row_heights) < n:
+            row_heights.append(max(8.0, 1000.0 * scale))
+        stack_h = fit_h_mm * scale
+    else:
+        row_heights = [max(8.0, h * scale) for h in heights_mm]
+        while len(row_heights) < n:
+            row_heights.append(max(8.0, 1000.0 * scale))
+        stack_h = sum(row_heights[:n])
     content_h = stack_h + chrome_h
 
     # Columna justa al dibujo a esta escala (sin estirar → hueco negro lateral).
@@ -240,6 +285,9 @@ def _compute_elev_layout(
         u"max_len_mm": max_len_mm,
         u"show_tramo_bands": show_bands,
         u"show_pie_controls": show_pies,
+        u"align_world_z": use_world_z,
+        u"z_min_mm": float(z_min_mm),
+        u"z_max_mm": float(z_max_mm),
     }
 
 _THICKNESS_UI_PALETTE = (
@@ -419,7 +467,24 @@ def _draw_level_marker(canvas, elev_x, elev_col_w, foot_y, label_txt):
         canvas.Children.Add(lead)
 
 
-def lap_mm_from_long_diam(diam_mm):
+def lap_mm_from_long_diam(diam_mm, concrete_grade=None):
+    """Traslape/empalme (mm) por ø; opcional G25/G35/G45 de tablas de proyecto."""
+    try:
+        from bimtools_rebar_hook_lengths import traslape_mm_from_nominal_diameter_mm
+
+        g = concrete_grade
+        if g is not None:
+            try:
+                g = unicode(g).strip().upper()
+            except Exception:
+                g = str(g).strip().upper() if g else None
+            if g not in (u"G25", u"G35", u"G45"):
+                g = u"G25"
+        L = traslape_mm_from_nominal_diameter_mm(float(diam_mm or 16.0), g)
+        if L is not None and float(L) > 50.0:
+            return float(L)
+    except Exception:
+        pass
     d = float(diam_mm or 16.0)
     if d <= 10:
         return 350.0
@@ -571,6 +636,10 @@ def _fill_wall_fuste_label(
             cab_short = mesh.get(u"terminacion_cabeza_short") or u""
         except Exception:
             cab_short = u""
+        try:
+            pie_short = mesh.get(u"terminacion_pie_short") or u""
+        except Exception:
+            pie_short = u""
         if cab_short:
             t_cab = TextBlock()
             t_cab.Text = u"↑{0}".format(cab_short)
@@ -582,6 +651,17 @@ def _fill_wall_fuste_label(
             t_cab.Margin = Thickness(0, 1, 0, 0)
             t_cab.Opacity = 0.9
             sp.Children.Add(t_cab)
+        if pie_short:
+            t_pie = TextBlock()
+            t_pie.Text = u"↓{0}".format(pie_short)
+            t_pie.Foreground = br_muted
+            t_pie.FontSize = 8.0
+            t_pie.FontWeight = FontWeights.SemiBold
+            t_pie.TextAlignment = TextAlignment.Center
+            t_pie.HorizontalAlignment = HorizontalAlignment.Center
+            t_pie.Margin = Thickness(0, 1, 0, 0)
+            t_pie.Opacity = 0.9
+            sp.Children.Add(t_pie)
         return tipo
 
     # Legacy: tipo / e= / Ø@ confinamiento.
@@ -642,13 +722,26 @@ def _u_layout_metrics(wall_meta):
     for m in items:
         try:
             u0 = float(m.get(u"u_start", 0.0))
+        except Exception:
+            u0 = 0.0
+        u1 = None
+        try:
+            if m.get(u"u_end") is not None:
+                u1 = float(m.get(u"u_end"))
+        except Exception:
+            u1 = None
+        try:
             lu = max(float(m.get(u"length_u", m.get(u"length_ft", 1.0))), 1e-6)
         except Exception:
-            u0, lu = 0.0, 1.0
-        u_mins.append(u0)
-        u_maxs.append(u0 + lu)
-        if lu > max_len:
-            max_len = lu
+            lu = 1.0
+        if u1 is None:
+            u1 = u0 + lu
+        lo, hi = (u0, u1) if u0 <= u1 else (u1, u0)
+        u_mins.append(lo)
+        u_maxs.append(hi)
+        span_i = max(hi - lo, lu, 1e-6)
+        if span_i > max_len:
+            max_len = span_i
     g_min = min(u_mins)
     g_max = max(u_maxs)
     span = max(g_max - g_min, max_len, 1e-6)
@@ -658,13 +751,25 @@ def _u_layout_metrics(wall_meta):
 def _normalize_extremo_key(extremo, default=u"inicio"):
     """``inicio`` / ``fin`` canónicos (LocationCurve extremo, no lado canvas)."""
     act = (extremo or default).strip().lower()
-    if act in (u"fin", u"termino", u"término", u"final"):
+    if act in (u"fin", u"termino", u"término", u"final", u"b", u"extremo b"):
         return u"fin"
     return u"inicio"
 
 
 def _extremo_side_label(extremo_key):
-    return u"Inicio" if extremo_key == u"inicio" else u"Término"
+    return u"Extremo A" if extremo_key == u"inicio" else u"Extremo B"
+
+
+def _tramo_band_code(extremo_key, sid):
+    """A1 / B1… según extremo del rail y id de tramo (0 → 1)."""
+    letter = u"A" if _normalize_extremo_key(extremo_key) == u"inicio" else u"B"
+    try:
+        n = int(sid) + 1
+    except Exception:
+        n = 0
+    if n < 1:
+        return letter
+    return u"{0}{1}".format(letter, n)
 
 
 def _draw_w_xoff(m, elev_w, scale_px_per_mm, g_min=None, span_u=None):
@@ -693,12 +798,8 @@ def _draw_w_xoff(m, elev_w, scale_px_per_mm, g_min=None, span_u=None):
         use_u = False
 
     if use_u:
+        # Sin clamp: el clamp a zona rompe offsets U entre muros colineales.
         x_off = zone_left + (u0 - gmin) * _FT_TO_MM * scale
-        wall_zone_max = zone_left + zone_w
-        if x_off < zone_left:
-            x_off = zone_left
-        if x_off + draw_w > wall_zone_max + 0.5:
-            x_off = max(zone_left, wall_zone_max - draw_w)
     else:
         x_off = zone_left + (zone_w - draw_w) / 2.0
     return x_off, draw_w
@@ -882,6 +983,7 @@ def _draw_tramo_band_column(
     dim_opacity,
     on_select_segment,
     extremo_label,
+    extremo_key,
     br_elev,
     br_border,
     br_sel,
@@ -900,7 +1002,7 @@ def _draw_tramo_band_column(
     Canvas,
     selected_segments=None,
 ):
-    """Dibuja una columna de bandas Tn en ``band_x`` (Inicio o Término)."""
+    """Dibuja una columna de bandas A1/B1 en ``band_x`` (Extremo A o B)."""
     try:
         sel_seg = int(selected_segment)
     except Exception:
@@ -912,9 +1014,11 @@ def _draw_tramo_band_column(
         opac = 1.0 if band_active else BAND_DIM_OPACITY
     opac = max(0.15, min(1.0, opac))
     label = extremo_label or u"Tramo"
+    ex_key = extremo_key
 
     for bi, blk in enumerate(_build_tramo_band_blocks(display, segments)):
         sid = int(blk.get(u"sid", -1))
+        code = _tramo_band_code(ex_key, sid) if sid >= 0 else u"—"
         count = int(blk.get(u"count", 1))
         di0 = int(blk.get(u"di0", 0))
         y_band = y_at_di[di0] if di0 < len(y_at_di) else float(y0)
@@ -954,9 +1058,9 @@ def _draw_tramo_band_column(
         tip_b = ToolTip()
         if sid >= 0:
             tip_b.Content = (
-                u"{0} · Tramo T{1}: clic = seleccionar · "
+                u"{0} · {1}: clic = seleccionar · "
                 u"Ctrl+clic = multi · Mayús+clic = rango"
-            ).format(label, sid + 1)
+            ).format(label, code)
         else:
             tip_b.Content = u"{0} · Sin tramo".format(label)
         band.ToolTip = tip_b
@@ -967,7 +1071,7 @@ def _draw_tramo_band_column(
         sp_b.HorizontalAlignment = HorizontalAlignment.Center
         sp_b.VerticalAlignment = VerticalAlignment.Center
         t_tn = TextBlock()
-        t_tn.Text = u"T{0}".format(sid + 1) if sid >= 0 else u"—"
+        t_tn.Text = code
         t_tn.Foreground = br_sel if block_sel else br_title
         t_tn.FontSize = 12.0
         t_tn.FontWeight = FontWeights.Bold if is_primary else FontWeights.SemiBold
@@ -1058,6 +1162,9 @@ def redraw_elevation(
     selected_segments_fin=None,
     show_tramo_bands=True,
     show_pie_controls=True,
+    concrete_grade=None,
+    lap_mm_by_wall=None,
+    align_world_z=False,
 ):
     """
     ``wall_meta``: lista ordenada base→cima con keys
@@ -1081,6 +1188,9 @@ def redraw_elevation(
 
     ``show_tramo_bands`` / ``show_pie_controls``: False en Mallas en muros
     (solo elevación de fustes + etiquetas malla; sin bandas Tn ni Auto).
+    ``concrete_grade`` / ``lap_mm_by_wall``: L empalme en elevación por G del tramo.
+    ``align_world_z``: True en Mallas en muros — Y según cota Z del modelo
+    (mismo nivel = misma altura en canvas; no apilar por índice).
     """
     if canvas is None:
         return
@@ -1170,6 +1280,8 @@ def redraw_elevation(
             u"h_spacing_mm": 200.0,
             u"terminacion_cabeza": u"",
             u"terminacion_cabeza_short": u"",
+            u"terminacion_pie": u"",
+            u"terminacion_pie_short": u"",
         })
     show_mesh = bool(show_mesh_labels)
 
@@ -1310,6 +1422,7 @@ def redraw_elevation(
         meta, viewport_w, viewport_h, legend_h, g_min, span,
         show_tramo_bands=bool(show_tramo_bands),
         show_pie_controls=bool(show_pie_controls),
+        align_world_z=bool(align_world_z),
     )
     elev_x = float(lay[u"elev_x"])
     elev_col_w = float(lay[u"elev_col_w"])
@@ -1343,12 +1456,23 @@ def redraw_elevation(
     canvas.Width = max(40.0, float(lay[u"canvas_w"] or 40.0))
     canvas.Height = max(40.0, float(lay[u"canvas_h"] or 40.0))
 
-    # Y acumulado por índice de display (cima → base).
+    align_z = bool(lay.get(u"align_world_z"))
+    try:
+        z_max_mm = float(lay.get(u"z_max_mm") or 0.0)
+    except Exception:
+        z_max_mm = 0.0
+
+    # Y: cota Z del modelo, o acumulación cima → base (stack clásico).
     y_at_di = []
     _yc = float(lay[u"y0"])
     for _di, _wi in enumerate(display):
-        y_at_di.append(_yc)
-        _yc += float(row_heights[_wi] if _wi < len(row_heights) else 40.0)
+        if align_z:
+            _m = meta[_wi] if 0 <= int(_wi) < n else None
+            _zb, _zt = _wall_z_extents_mm(_m)
+            y_at_di.append(_yc + (z_max_mm - _zt) * scale_px)
+        else:
+            y_at_di.append(_yc)
+            _yc += float(row_heights[_wi] if _wi < len(row_heights) else 40.0)
 
     br_border = _hex_brush("#21465C")
     br_title = _hex_brush("#E8F4F8")
@@ -1366,6 +1490,20 @@ def redraw_elevation(
     br_elev = _hex_brush("#0E1B32")
 
     y0 = float(lay[u"y0"])
+
+    if align_z:
+        # Un solo fondo de columna: el bg por fila taparía fustes colineales.
+        try:
+            bg_col = Border()
+            bg_col.Width = elev_col_w
+            bg_col.Height = max(8.0, float(lay.get(u"stack_h") or 8.0))
+            bg_col.Background = br_app
+            bg_col.BorderThickness = Thickness(0)
+            Canvas.SetLeft(bg_col, elev_x)
+            Canvas.SetTop(bg_col, y0)
+            canvas.Children.Add(bg_col)
+        except Exception:
+            pass
 
     if legend_h > 0:
         lx = elev_x
@@ -1443,6 +1581,7 @@ def redraw_elevation(
                 band_active=(act == ex_left),
                 on_select_segment=side_left[u"on_sel"],
                 extremo_label=_extremo_side_label(ex_left),
+                extremo_key=ex_left,
                 **_band_kw
             )
             _draw_tramo_band_column(
@@ -1455,6 +1594,7 @@ def redraw_elevation(
                 band_active=(act == ex_right),
                 on_select_segment=side_right[u"on_sel"],
                 extremo_label=_extremo_side_label(ex_right),
+                extremo_key=ex_right,
                 **_band_kw
             )
         else:
@@ -1468,6 +1608,7 @@ def redraw_elevation(
                 band_active=True,
                 on_select_segment=on_select_segment,
                 extremo_label=u"Tramo",
+                extremo_key=u"inicio",
                 **_band_kw
             )
 
@@ -1479,8 +1620,13 @@ def redraw_elevation(
 
     for di, wi in enumerate(display):
         m = meta[wi]
-        row_h = float(row_heights[wi] if wi < len(row_heights) else 40.0)
-        y = y_at_di[di] if di < len(y_at_di) else float(lay[u"y0"])
+        if align_z:
+            zb, zt = _wall_z_extents_mm(m)
+            y = float(lay[u"y0"]) + (z_max_mm - zt) * scale_px
+            row_h = max(8.0, (zt - zb) * scale_px)
+        else:
+            row_h = float(row_heights[wi] if wi < len(row_heights) else 40.0)
+            y = y_at_di[di] if di < len(y_at_di) else float(lay[u"y0"])
         seg = _seg_of(wi)
         try:
             seg_id_i = int(seg.get(u"id", -1)) if seg is not None else -1
@@ -1513,7 +1659,10 @@ def redraw_elevation(
         )
         fund_h_mm = _wall_fund_height_mm(m)
         fund_h_px = max(0.0, fund_h_mm * scale_px) if fund_h_mm > 0.1 else 0.0
-        wall_h_px = max(8.0, row_h - fund_h_px)
+        if align_z:
+            wall_h_px = max(8.0, _wall_height_mm(m) * scale_px)
+        else:
+            wall_h_px = max(8.0, row_h - fund_h_px)
         stem_foot_y = float(y + wall_h_px)
         fund_info = m.get(u"fund_info")
         is_first = di <= 0
@@ -1521,17 +1670,18 @@ def redraw_elevation(
         conf = confs[wi] if wi < len(confs) else {}
         mesh = meshes[wi] if wi < len(meshes) else {}
 
-        bg = Border()
-        bg.Width = elev_col_w
-        bg.Height = row_h
-        bg.Background = br_app
-        bg.BorderThickness = Thickness(0)
-        Canvas.SetLeft(bg, elev_x)
-        Canvas.SetTop(bg, y)
-        canvas.Children.Add(bg)
+        if not align_z:
+            bg = Border()
+            bg.Width = elev_col_w
+            bg.Height = row_h
+            bg.Background = br_app
+            bg.BorderThickness = Thickness(0)
+            Canvas.SetLeft(bg, elev_x)
+            Canvas.SetTop(bg, y)
+            canvas.Children.Add(bg)
 
         stroke_px = float(_WALL_STROKE_PX)
-        if is_first and is_last:
+        if align_z or (is_first and is_last):
             band_bt = Thickness(stroke_px)
         elif is_first:
             band_bt = Thickness(stroke_px, stroke_px, stroke_px, 0.0)
@@ -1618,17 +1768,26 @@ def redraw_elevation(
                 mesh_on = True
             if mesh_on:
                 cab_s = u""
+                pie_s = u""
                 try:
                     cab_s = mesh.get(u"terminacion_cabeza_short") or u""
                 except Exception:
                     cab_s = u""
+                try:
+                    pie_s = mesh.get(u"terminacion_pie_short") or u""
+                except Exception:
+                    pie_s = u""
                 cab_line = (
                     u"\n↑ extremo superior: {0}".format(cab_s) if cab_s else u""
                 )
+                pie_line = (
+                    u"\n↓ pie sin fundación: {0}".format(pie_s) if pie_s else u""
+                )
                 tip.Content = (
                     u"{0} · {1} · e={2} · L={3}\n"
-                    u"D.M.  V.={4}  H.={5}{6}\n"
-                    u"Clic = seleccionar · Ctrl+clic = multi · Mayús+clic = rango"
+                    u"D.M.  V.={4}  H.={5}{6}{7}\n"
+                    u"Clic = seleccionar · Ctrl+clic = multi · Mayús+clic = rango · "
+                    u"arrastre en el alzado = marquee"
                 ).format(
                     m.get(u"name") or u"W{0}".format(wi),
                     tipo,
@@ -1641,12 +1800,14 @@ def redraw_elevation(
                         mesh.get(u"h_diam_mm"), mesh.get(u"h_spacing_mm"),
                     ),
                     cab_line,
+                    pie_line,
                 )
             else:
                 tip.Content = (
                     u"{0} · {1} · e={2} · L={3}\n"
                     u"sin malla\n"
-                    u"Clic = seleccionar · Ctrl+clic = multi · Mayús+clic = rango"
+                    u"Clic = seleccionar · Ctrl+clic = multi · Mayús+clic = rango · "
+                    u"arrastre en el alzado = marquee"
                 ).format(
                     m.get(u"name") or u"W{0}".format(wi),
                     tipo,
@@ -1656,7 +1817,8 @@ def redraw_elevation(
         else:
             tip.Content = (
                 u"{0} · {1} · e={2} · L={3}\n"
-                u"Clic = seleccionar · Ctrl+clic = multi · Mayús+clic = rango"
+                u"Clic = seleccionar · Ctrl+clic = multi · Mayús+clic = rango · "
+                u"arrastre en vacío = marquee"
             ).format(
                 m.get(u"name") or u"W{0}".format(wi),
                 tipo,
@@ -1664,6 +1826,11 @@ def redraw_elevation(
                 len_mm,
             )
         wall_band.ToolTip = tip
+
+        try:
+            wall_band.Tag = int(wi)
+        except Exception:
+            pass
 
         try:
 
@@ -1680,7 +1847,7 @@ def redraw_elevation(
 
         canvas.Children.Add(wall_band)
         y_bottom_of_wall[wi] = stem_foot_y
-        band_geom[wi] = (elev_x + x_off, draw_w, y)
+        band_geom[wi] = (elev_x + x_off, draw_w, y, wall_h_px)
 
         if fund_h_px > 0.5:
             try:
@@ -1821,13 +1988,21 @@ def redraw_elevation(
             canvas.Children.Add(tick)
 
     if show_tramo_bands:
-        lap_mm = lap_mm_from_long_diam(long_diam_mm)
-        lap_px = max(8.0, float(lap_mm) * scale_px)
+        lap_default = lap_mm_from_long_diam(long_diam_mm, concrete_grade)
         for wi in empalme_indices_from_modes(modes, autos, base_index=base_i):
             geom = band_geom.get(wi)
             y_foot = y_bottom_of_wall.get(wi)
             if geom is None or y_foot is None:
                 continue
+            lap_mm = lap_default
+            try:
+                if lap_mm_by_wall is not None and wi < len(lap_mm_by_wall):
+                    lv = lap_mm_by_wall[wi]
+                    if lv is not None and float(lv) > 50.0:
+                        lap_mm = float(lv)
+            except Exception:
+                pass
+            lap_px = max(8.0, float(lap_mm) * scale_px)
             bx, bw, _yt = geom
             ln_a = Line()
             ln_a.X1 = bx
@@ -1856,8 +2031,16 @@ def redraw_elevation(
             canvas.Children.Add(ln_b)
 
     # Cotas de nivel encima de bg/empalme para que no las tape la fila inferior.
+    _lvl_seen = set()
     for foot_y, lbl in level_marks:
+        if align_z:
+            _lk = (round(float(foot_y), 1), u"{0}".format(lbl))
+            if _lk in _lvl_seen:
+                continue
+            _lvl_seen.add(_lk)
         try:
             _draw_level_marker(canvas, elev_x, elev_col_w, foot_y, lbl)
         except Exception:
             pass
+
+    return band_geom

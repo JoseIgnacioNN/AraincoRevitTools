@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-DMU: si un Structural Rebar supera 12 m (12000 mm), colorea de rojo la barra
-en la vista activa (OverrideGraphicSettings).
+DMU: al cambiar el largo de un Structural Rebar, evalúa el umbral comercial de
+12 m (12000 mm):
+
+- Si supera 12 m: colorea de rojo la barra en la vista activa.
+- Si deja de superar 12 m: quita el override rojo de largo exceso en todas las
+  vistas aplicables del documento (reset ``OverrideGraphicSettings``), solo
+  cuando el override coincide con el patrón rojo de esta herramienta.
 
 Se excluyen vistas 3D y plantillas de vista. El trabajo se difiere con
 ExternalEvent (no dentro de IUpdater.Execute).
@@ -32,6 +37,7 @@ from Autodesk.Revit.DB import (
     TransactionStatus,
     UpdaterId,
     UpdaterRegistry,
+    View,
     ViewType,
 )
 from Autodesk.Revit.DB.Structure import Rebar
@@ -196,6 +202,97 @@ def _limpiar_override(view, element_id):
         return False
 
 
+def _color_es_rojo_largo_exceso(color):
+    try:
+        if color is None:
+            return False
+        if hasattr(color, "IsValid") and not color.IsValid:
+            return False
+        return (
+            int(color.Red) == 255
+            and int(color.Green) == 0
+            and int(color.Blue) == 0
+        )
+    except Exception:
+        return False
+
+
+def _override_es_largo_exceso_rojo(view, element_id):
+    """
+    True si la vista tiene el patrón rojo de largo >12 m (línea roja peso 6
+    y/o relleno sólido rojo), coherente con Armado Muros y este DMU.
+    """
+    if view is None or element_id is None:
+        return False
+    try:
+        ogs = view.GetElementOverrides(element_id)
+    except Exception:
+        return False
+    if ogs is None:
+        return False
+    try:
+        if ogs.IsValidObject is False:
+            return False
+    except Exception:
+        pass
+
+    rojo_linea = _color_es_rojo_largo_exceso(ogs.ProjectionLineColor)
+    if not rojo_linea:
+        try:
+            rojo_linea = _color_es_rojo_largo_exceso(ogs.CutLineColor)
+        except Exception:
+            rojo_linea = False
+    if not rojo_linea:
+        return False
+
+    try:
+        if int(ogs.ProjectionLineWeight) == 6:
+            return True
+    except Exception:
+        pass
+
+    try:
+        if _color_es_rojo_largo_exceso(ogs.SurfaceForegroundPatternColor):
+            return True
+    except Exception:
+        pass
+    try:
+        if _color_es_rojo_largo_exceso(ogs.SurfaceBackgroundPatternColor):
+            return True
+    except Exception:
+        pass
+
+    return False
+
+
+def _iter_vistas_aplicables(doc):
+    if doc is None:
+        return
+    try:
+        views = FilteredElementCollector(doc).OfClass(View).ToElements()
+    except Exception:
+        views = []
+    for view in views or []:
+        if _vista_aplicable(view):
+            yield view
+
+
+def _reset_largo_exceso_overrides_en_documento(doc, rebar_id):
+    """Quita override rojo de largo >12 m en todas las vistas aplicables."""
+    if doc is None or rebar_id is None:
+        return 0
+    n_limpio = 0
+    for view in _iter_vistas_aplicables(doc):
+        if not _override_es_largo_exceso_rojo(view, rebar_id):
+            continue
+        if _limpiar_override(view, rebar_id):
+            n_limpio += 1
+            ck = _color_key(doc, view, rebar_id)
+            if ck is not None:
+                _colored_keys.discard(ck)
+    return n_limpio
+
+
 def _color_key(doc, view, rebar_id):
     try:
         return (id(doc), int(view.Id.IntegerValue), int(rebar_id.IntegerValue))
@@ -205,15 +302,15 @@ def _color_key(doc, view, rebar_id):
 
 def _aplicar_colores_en_vista(doc, view, rebar_ints):
     """
-    Colorea de rojo barras >12 m; quita el override solo si este DMU lo había puesto.
-    Devuelve (n_rojo, n_limpiados, n_revisados).
+    Colorea de rojo barras >12 m en la vista activa (si aplica); quita el
+    override rojo de largo exceso en todo el documento si la barra ya no
+    supera 12 m. Devuelve (n_rojo, n_limpiados, n_revisados).
     """
-    if doc is None or view is None or not rebar_ints:
-        return 0, 0, 0
-    if not _vista_aplicable(view):
+    if doc is None or not rebar_ints:
         return 0, 0, 0
 
-    solid_id = _solid_fill_pattern_id(doc)
+    vista_pinta = view if _vista_aplicable(view) else None
+    solid_id = _solid_fill_pattern_id(doc) if vista_pinta is not None else None
     lim = float(MAX_BARRA_COMERCIAL_MM)
     n_rojo = 0
     n_limpio = 0
@@ -233,18 +330,18 @@ def _aplicar_colores_en_vista(doc, view, rebar_ints):
         except Exception:
             L_mm = None
 
-        ck = _color_key(doc, view, eid)
+        ck = _color_key(doc, vista_pinta, eid) if vista_pinta is not None else None
         exceso = L_mm is not None and float(L_mm) > lim + 1e-6
 
         if exceso:
-            if _aplicar_override_rojo(view, eid, solid_id):
+            if vista_pinta is not None and _aplicar_override_rojo(
+                vista_pinta, eid, solid_id,
+            ):
                 n_rojo += 1
                 if ck is not None:
                     _colored_keys.add(ck)
-        elif ck is not None and ck in _colored_keys:
-            if _limpiar_override(view, eid):
-                n_limpio += 1
-                _colored_keys.discard(ck)
+        else:
+            n_limpio += _reset_largo_exceso_overrides_en_documento(doc, eid)
 
     return n_rojo, n_limpio, n_rev
 
@@ -271,7 +368,7 @@ class _RebarLargoExcesoColorHandler(IExternalEventHandler):
             view = None
             active_doc = None
 
-        if active_doc is None or not _vista_aplicable(view):
+        if active_doc is None:
             return
 
         for doc, rebar_ints in pending:
@@ -340,8 +437,9 @@ class RebarLargoExcesoColorUpdater(IUpdater):
 
     def GetAdditionalInformation(self):
         return (
-            u"Colorea de rojo en la vista activa (no 3D) los Rebar cuyo largo "
-            u"total supera 12 m (12000 mm)."
+            u"Al cambiar el largo de un Rebar: colorea de rojo en la vista activa "
+            u"si supera 12 m (12000 mm) y quita el override rojo de largo exceso "
+            u"en todas las vistas cuando vuelve a medir 12 m o menos."
         )
 
     def GetChangePriority(self):
@@ -436,3 +534,43 @@ def is_rebar_largo_exceso_color_dmu_registered(addin_id=None):
             return None
     uid = UpdaterId(addin_id, UPDATER_GUID)
     return UpdaterRegistry.IsUpdaterRegistered(uid)
+
+
+def toggle_rebar_largo_exceso_color_dmu(addin_id=None, doc=None):
+    """Alterna registro del DMU. Retorna ``(registered_now, message)``."""
+    if addin_id is None:
+        addin_id = _addin_id_pyrevit_or_none()
+    if addin_id is None:
+        return None, u"No hay AddInId (ejecutar desde pyRevit)."
+    if is_rebar_largo_exceso_color_dmu_registered(addin_id):
+        unregister_rebar_largo_exceso_color_updater(addin_id)
+        return False, (
+            u"DMU color / reset barras >12 m: DESACTIVADO.\n"
+            u"No se colorearán ni despintarán barras automáticamente."
+        )
+    register_rebar_largo_exceso_color_updater(addin_id, doc=doc)
+    return True, (
+        u"DMU color / reset barras >12 m: ACTIVADO.\n"
+        u"Colorea en rojo en la vista activa si supera 12 m y quita el override "
+        u"rojo en todas las vistas cuando el largo baja a 12 m o menos."
+    )
+
+
+def run(__revit__):
+    """Entrada pushbutton: alternar registro del DMU."""
+    from Autodesk.Revit.UI import TaskDialog
+
+    addin_id = _addin_id_pyrevit_or_none()
+    doc = None
+    try:
+        uidoc = __revit__.ActiveUIDocument
+        if uidoc is not None:
+            doc = uidoc.Document
+    except Exception:
+        doc = None
+    _on, msg = toggle_rebar_largo_exceso_color_dmu(addin_id, doc=doc)
+    title = u"Arainco: Color / reset barras >12 m (DMU)"
+    try:
+        TaskDialog.Show(title, msg or u"?")
+    except Exception:
+        print(msg)

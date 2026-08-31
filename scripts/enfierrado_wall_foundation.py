@@ -41,9 +41,11 @@ Left/Right (misma lógica que ``enfierrado_shaft_hashtag`` / vigas). Ese detalle
 vinculan con ``lap_detail_link_wall_foundation_schema`` para el **DMU**: solo depuración si
 falta una barra; **no** se recoloca el tramo del símbolo (evita saltos a la primera barra del
 layout).
-Tras colocar armadura se genera una **vista en sección transversal** al ``LocationCurve`` (punto
-medio), como en enfierrado de vigas (módulo ``vista_seccion_enfierrado_vigas``); al cerrar el
-formulario se eliminan esas vistas de revisión.
+Sobre los Rebar creados se activa **View Unobscured** (+ sólido) en la vista activa.
+No se generan vistas de sección de revisión en el modelo.
+
+**UI:** shell BIMTools con canvas de planta a la izquierda y canvas de sección (corte por el
+ancho) en el rail derecho, junto a los parámetros ø/@.
 """
 
 from __future__ import print_function
@@ -110,6 +112,7 @@ from geometria_wall_foundation_cortes_muro import (
     vector_transversal_planta_desde_muro_host,
 )
 from geometria_fundacion_cara_inferior import (
+    aplicar_recubrimiento_extremos_mm,
     aplicar_recubrimiento_inferior_completo_mm,
     centro_xy_perimetro_inferior_doc,
     construir_polilinea_fundacion_ganchos_geometricos_desde_eje,
@@ -142,9 +145,16 @@ from revit_wpf_window_position import (
     revit_main_hwnd,
 )
 
+from bimtools_ui_tokens import WINDOW_CHROME_TITLE
 from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
 
 _APPDOMAIN_WINDOW_KEY = "BIMTools.WallFoundationReinforcement.ActiveWindow"
+_FT_TO_MM = 304.8
+_PLAN_PAD_FRAC = 0.08
+_SECTION_PAD_PX = 28.0
+_BRUSH_CACHE = {}
+_COLOR_TRANS = u"#5BC0DE"
+_COLOR_LONG = u"#4ade80"
 
 _FOUNDATION_CAT_ID = int(BuiltInCategory.OST_StructuralFoundation)
 
@@ -735,6 +745,63 @@ def _wf_aplicar_presentacion_solo_barra_central_planta(view, rebars):
         _wf_rebar_presentacion_solo_centro_en_vista(view, rb)
 
 
+def _wf_resolver_rebars_frescos(doc, rebars):
+    """Relee ``Rebar`` desde el documento (ids válidos tras commit / regen)."""
+    out = []
+    if doc is None or not rebars:
+        return out
+    seen = set()
+    for ref in rebars:
+        if ref is None:
+            continue
+        try:
+            rid = ref.Id if hasattr(ref, "Id") else ref
+            el = doc.GetElement(rid)
+        except Exception:
+            el = None
+        if el is None or not isinstance(el, Rebar):
+            continue
+        try:
+            key = element_id_to_int(el.Id)
+        except Exception:
+            key = None
+        if key is not None:
+            if key in seen:
+                continue
+            seen.add(key)
+        out.append(el)
+    return out
+
+
+def _wf_aplicar_unobscured_rebars(doc, view, rebars):
+    """
+    Activa View Unobscured (+ sólido en vista) en los Rebar indicados para ``view``.
+    Devuelve cuántas barras recibieron Unobscured.
+    """
+    if doc is None or view is None or not rebars:
+        return 0
+    fresh = _wf_resolver_rebars_frescos(doc, rebars)
+    if not fresh:
+        return 0
+    try:
+        from bimtools_rebar_3d_visibility import apply_rebar_unobscured_in_view
+
+        return int(apply_rebar_unobscured_in_view(doc, fresh, view) or 0)
+    except Exception:
+        n_ok = 0
+        for rb in fresh:
+            try:
+                rb.SetUnobscuredInView(view, True)
+                n_ok += 1
+            except Exception:
+                pass
+            try:
+                rb.SetSolidInView(view, True)
+            except Exception:
+                pass
+        return n_ok
+
+
 _FUND_INPUT_COLS_PER_ROW = 2
 _FUND_COMBO_WIDTH_PX = 110
 _FUND_DIAM_ESP_AT_COL_PX = 28
@@ -1001,6 +1068,190 @@ def _wf_z_range_ft(wf):
         return float(bb.Min.Z), float(bb.Max.Z)
     except Exception:
         return None, None
+
+
+def _wf_as_unicode(text):
+    if text is None:
+        return u""
+    try:
+        return unicode(text)
+    except NameError:
+        return str(text)
+
+
+def _wf_brush(hex_color, alpha=255):
+    from System.Windows.Media import Color, SolidColorBrush
+
+    h = (_wf_as_unicode(hex_color) or u"#95B8CC").lstrip(u"#")
+    if len(h) != 6:
+        h = u"95B8CC"
+    try:
+        a = int(alpha)
+    except Exception:
+        a = 255
+    key = (h, a)
+    cached = _BRUSH_CACHE.get(key)
+    if cached is not None:
+        return cached
+    brush = SolidColorBrush(
+        Color.FromArgb(a, int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+    )
+    try:
+        if brush.CanFreeze:
+            brush.Freeze()
+    except Exception:
+        pass
+    _BRUSH_CACHE[key] = brush
+    return brush
+
+
+def _wf_preview_width_ft_from_bbox(wf, tu_xy):
+    """Ancho en planta proyectando el bbox sobre la normal al eje (ft)."""
+    bb = wf.get_BoundingBox(None) if wf is not None else None
+    if bb is None or tu_xy is None:
+        return None
+    try:
+        nx = float(-tu_xy.Y)
+        ny = float(tu_xy.X)
+        nlen = (nx * nx + ny * ny) ** 0.5
+        if nlen < 1e-12:
+            return None
+        nx /= nlen
+        ny /= nlen
+        corners = (
+            (float(bb.Min.X), float(bb.Min.Y)),
+            (float(bb.Max.X), float(bb.Min.Y)),
+            (float(bb.Max.X), float(bb.Max.Y)),
+            (float(bb.Min.X), float(bb.Max.Y)),
+        )
+        projs = [cx * nx + cy * ny for cx, cy in corners]
+        return abs(max(projs) - min(projs))
+    except Exception:
+        return None
+
+
+def _wf_preview_geo_mm(wf):
+    """
+    Geometría de preview (solo lectura, sin Unjoin).
+
+    Returns dict:
+      poly: lista [(x_mm, y_mm), ...] contorno en planta
+      length_mm, width_mm, height_mm
+      label: texto host
+    o None.
+    """
+    if wf is None or not isinstance(wf, WallFoundation):
+        return None
+    ax, _ = _axis_line_wall_foundation(wf)
+    tu = _wf_tu_xy_desde_linea(ax) if ax is not None else None
+    length_ft = None
+    p0 = p1 = None
+    if ax is not None:
+        try:
+            p0 = ax.GetEndPoint(0)
+            p1 = ax.GetEndPoint(1)
+            length_ft = float(ax.Length)
+        except Exception:
+            length_ft = None
+    if length_ft is None or length_ft < 1e-6 or p0 is None or tu is None:
+        bb = wf.get_BoundingBox(None)
+        if bb is None:
+            return None
+        try:
+            dx = float(bb.Max.X - bb.Min.X)
+            dy = float(bb.Max.Y - bb.Min.Y)
+            if dx >= dy:
+                length_ft = dx
+                tu = XYZ(1.0, 0.0, 0.0)
+                mid_y = 0.5 * (float(bb.Min.Y) + float(bb.Max.Y))
+                mid_z = 0.5 * (float(bb.Min.Z) + float(bb.Max.Z))
+                p0 = XYZ(float(bb.Min.X), mid_y, mid_z)
+                p1 = XYZ(float(bb.Max.X), mid_y, mid_z)
+            else:
+                length_ft = dy
+                tu = XYZ(0.0, 1.0, 0.0)
+                mid_x = 0.5 * (float(bb.Min.X) + float(bb.Max.X))
+                mid_z = 0.5 * (float(bb.Min.Z) + float(bb.Max.Z))
+                p0 = XYZ(mid_x, float(bb.Min.Y), mid_z)
+                p1 = XYZ(mid_x, float(bb.Max.Y), mid_z)
+        except Exception:
+            return None
+    width_ft = _wf_width_ft(wf)
+    if width_ft is None or width_ft < 1e-6:
+        width_ft = _wf_preview_width_ft_from_bbox(wf, tu)
+    if width_ft is None or width_ft < 1e-6:
+        width_ft = _mm_to_ft(600.0)
+    z0, z1 = _wf_z_range_ft(wf)
+    if z0 is None or z1 is None:
+        height_ft = _mm_to_ft(500.0)
+    else:
+        height_ft = max(_mm_to_ft(50.0), abs(float(z1) - float(z0)))
+    try:
+        tn = XYZ(float(-tu.Y), float(tu.X), 0.0)
+        if float(tn.GetLength()) < 1e-12:
+            tn = XYZ(0.0, 1.0, 0.0)
+        else:
+            tn = tn.Normalize()
+        half = 0.5 * float(width_ft)
+        c0 = p0.Add(tn.Multiply(half))
+        c1 = p1.Add(tn.Multiply(half))
+        c2 = p1.Add(tn.Multiply(-half))
+        c3 = p0.Add(tn.Multiply(-half))
+        poly = [
+            (float(c0.X) * _FT_TO_MM, float(c0.Y) * _FT_TO_MM),
+            (float(c1.X) * _FT_TO_MM, float(c1.Y) * _FT_TO_MM),
+            (float(c2.X) * _FT_TO_MM, float(c2.Y) * _FT_TO_MM),
+            (float(c3.X) * _FT_TO_MM, float(c3.Y) * _FT_TO_MM),
+        ]
+    except Exception:
+        return None
+    label = u"Wall Foundation"
+    try:
+        eid = element_id_to_int(wf.Id)
+        if eid is not None:
+            label = u"Wall Foundation Id {0}".format(eid)
+    except Exception:
+        pass
+    try:
+        nm = _wf_as_unicode(wf.Name)
+        if nm:
+            label = u"{0} · {1}".format(nm, label)
+    except Exception:
+        pass
+    return {
+        u"poly": poly,
+        u"length_mm": float(length_ft) * _FT_TO_MM,
+        u"width_mm": float(width_ft) * _FT_TO_MM,
+        u"height_mm": float(height_ft) * _FT_TO_MM,
+        u"label": label,
+        u"p0_mm": (float(p0.X) * _FT_TO_MM, float(p0.Y) * _FT_TO_MM),
+        u"p1_mm": (float(p1.X) * _FT_TO_MM, float(p1.Y) * _FT_TO_MM),
+    }
+
+
+def _wf_preview_positions_along(length_mm, spacing_mm, cover_mm):
+    L = float(length_mm)
+    e = max(1.0, float(spacing_mm))
+    c = max(0.0, float(cover_mm))
+    if L <= 2.0 * c + 1.0:
+        return [L * 0.5]
+    start = c
+    end = L - c
+    xs = []
+    x = start
+    guard = 0
+    while x <= end + 0.5 and guard < 500:
+        xs.append(x)
+        x += e
+        guard += 1
+    if not xs:
+        xs = [L * 0.5]
+    if xs and abs(xs[-1] - end) > 0.5:
+        if end - xs[-1] > 0.5 * e:
+            xs.append(end)
+        else:
+            xs[-1] = end
+    return xs
 
 
 def _wf_collect_joined_element_ids(document, wf):
@@ -1810,6 +2061,59 @@ def _wf_geo_alinear_strip_a_location_wall_foundation(
         pass
 
 
+def _wf_apply_recubrimiento_ejes_franja(wf, geo, diam_long_mm, diam_trans_mm):
+    """
+    Recubrimiento en ejes long./ancho derivados de una **franja** dibujada.
+
+    La franja ya delimita la zona en planta (sin offset de 100 mm del perímetro).
+    Se aplica el mismo criterio que ``_geometria_wf_cara_inferior_tol`` en extremos
+    y en vertical (50 mm + ø/2 al eje desde la cara inferior).
+    """
+    if geo is None:
+        return None
+    long_raw = geo.get("long_line")
+    width_raw = geo.get("width_line")
+    if long_raw is None or width_raw is None:
+        return geo
+    n_cara = geo.get("n_cara")
+    if n_cara is None:
+        marco = geo.get("marco_uvn")
+        if marco is not None and len(marco) > 3:
+            n_cara = marco[3]
+    if n_cara is None:
+        n_cara = XYZ.BasisZ.Negate()
+    try:
+        d_l = float(diam_long_mm) if diam_long_mm else 0.0
+        d_t = float(diam_trans_mm) if diam_trans_mm else 0.0
+    except Exception:
+        d_l = d_t = 0.0
+    ext_long_mm = float(_REC_EXTREMOS_LONG_TANGENTE_MM)
+    if d_l > 1e-6:
+        ext_long_mm = float(_REC_EXTREMOS_LONG_TANGENTE_MM) + 0.5 * d_l
+    ct_long = aplicar_recubrimiento_extremos_mm(long_raw, ext_long_mm)
+    ct_width = aplicar_recubrimiento_extremos_mm(
+        width_raw, float(_REC_EXTREMOS_INFERIOR_MM)
+    )
+    if ct_long is None or ct_width is None:
+        return geo
+    long_bar = offset_linea_eje_barra_desde_cara_inferior_mm(
+        ct_long, n_cara, _RECO_HOR_MM, d_l
+    )
+    width_bar = offset_linea_eje_barra_desde_cara_inferior_mm(
+        ct_width, n_cara, _RECO_HOR_MM, d_t
+    )
+    if long_bar is None or width_bar is None:
+        return geo
+    geo["long_line"] = long_bar
+    geo["width_line"] = width_bar
+    try:
+        geo["usable_w_ft"] = float(width_bar.Length)
+    except Exception:
+        pass
+    geo["n_cara"] = n_cara
+    return geo
+
+
 def _split_line_laps(line, max_len_ft, lap_ft):
     if line is None or not isinstance(line, Line):
         return []
@@ -2196,191 +2500,284 @@ def _ubicar_punto_eje_menos_recorte(p0, p1, tangent, recorte_ft):
     return p0.Add(tu.Multiply(recorte_ft)), p1.Subtract(tu.Multiply(recorte_ft))
 
 
-# --- XAML (chrome alineado con ``armado_muros_preview_ui`` / fundación aislada) ----
+# --- XAML shell: planta izquierda + rail seccion / params (como fundacion aislada) ----
 _WF_XAML = (
     u"""
 <Window
     x:Name="WallFoundWin"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Arainco: Armadura Fundacion Corrida"
-    SizeToContent="Height"
-    MaxHeight="920"
+    Title="__CHROME__"
+    Height="820" Width="1040"
+    MinHeight="760" MinWidth="980"
     WindowStartupLocation="Manual"
     Background="#071018"
     FontFamily="Segoe UI"
     FontSize="12"
     ShowInTaskbar="False"
-    ResizeMode="NoResize"
-    Topmost="True"
+    ResizeMode="CanResize"
     UseLayoutRounding="True">
   <Window.Resources>
-""" + BIMTOOLS_DARK_STYLES_XML + u"""
+"""
+    + BIMTOOLS_DARK_STYLES_XML
+    + u"""
   </Window.Resources>
   <Border Background="#071018" BorderBrush="#21465C" BorderThickness="1" Padding="18">
-    <Grid HorizontalAlignment="Stretch">
+    <Grid>
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
 
-      <StackPanel Grid.Row="0" Margin="0,0,0,10">
-        <TextBlock Text="Arainco: Armadura Fundacion Corrida" Foreground="#E8F4F8" FontSize="18" FontWeight="Bold"
-                   TextWrapping="Wrap"/>
-        <TextBlock x:Name="TxtSubtitle" Margin="0,6,0,0" Foreground="#95B8CC" TextWrapping="Wrap"
-                   Text="Selecciona fundaciones corrida (Wall Foundation) y configura armadura transversal y longitudinal."/>
+      <StackPanel Grid.Row="0" Margin="0,0,0,8">
+        <TextBlock x:Name="TxtTitle" Text="Arainco: Armadura Fundación Corrida"
+                   Foreground="#E8F4F8" FontSize="18" FontWeight="Bold"/>
+        <TextBlock x:Name="TxtSubtitle" Margin="0,6,0,0" Foreground="#95B8CC"
+                   FontSize="11" TextWrapping="Wrap"
+                   Text="Planta a la izquierda · sección por el ancho en el rail · transversales U y longitudinales."/>
       </StackPanel>
 
-      <ScrollViewer x:Name="SvContenido" Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="600" Margin="0,0,0,2">
-        <StackPanel HorizontalAlignment="Stretch">
-          <StackPanel Margin="0,0,0,10" HorizontalAlignment="Stretch">
-            <Button x:Name="BtnPick" Content="Seleccionar fundaciones en modelo"
-                    Style="{StaticResource BtnSelectOutline}"
-                    HorizontalAlignment="Stretch" Padding="12,8"/>
-          </StackPanel>
+      <Grid Grid.Row="1">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="380"/>
+        </Grid.ColumnDefinitions>
 
-          <GroupBox Style="{StaticResource GbParams}" Margin="0,0,0,0" HorizontalAlignment="Stretch">
-            <GroupBox.Header>
-              <Grid VerticalAlignment="Center">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Informacion Armaduras" Foreground="#E8F4F8" FontWeight="Bold" FontSize="12"
-                           VerticalAlignment="Center" HorizontalAlignment="Left"/>
-                <ComboBox x:Name="CmbDosificacionHormigon" Grid.Column="1" Style="{StaticResource Combo}" Margin="16,0,0,0"
-                          IsEditable="False" IsReadOnly="True" VerticalAlignment="Center" HorizontalAlignment="Right"
-                          ToolTip="Dosificación del hormigón">
-                  <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
-                </ComboBox>
-              </Grid>
-            </GroupBox.Header>
-            <StackPanel>
-              <StackPanel x:Name="PanelTrans" Margin="0,0,0,10">
-                <TextBlock Text="Transversales" Foreground="#95B8CC" FontWeight="SemiBold" FontSize="11"
-                           HorizontalAlignment="Left" Margin="0,0,0,8"/>
-                <Grid HorizontalAlignment="Center">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="110"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="110"/>
-                  </Grid.ColumnDefinitions>
-                  <ComboBox Grid.Column="0" x:Name="CmbTransDiam" Style="{StaticResource Combo}" IsEditable="False" IsReadOnly="True">
-                    <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
-                  </ComboBox>
-                  <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
-                             Foreground="#95B8CC" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,0,8,0"/>
-                  <Border Grid.Column="2" Width="110" Height="24" CornerRadius="5" Background="#050E18"
-                          BorderBrush="#1A3A4D" BorderThickness="1" SnapsToDevicePixels="True">
-                    <Grid>
-                      <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="18"/>
-                      </Grid.ColumnDefinitions>
-                      <TextBox x:Name="TxtTransSep" Grid.Column="0" Style="{StaticResource CantSpinnerText}"
-                               Text="100" Padding="6,0,6,0" VerticalContentAlignment="Center"
-                               ToolTip="Separación transversal (mm): 100 a 400, paso 10"/>
-                      <Border Grid.Column="1" Background="#11253D" BorderBrush="#1A3A4D"
-                              BorderThickness="1,0,0,0" CornerRadius="0,5,5,0" ClipToBounds="True">
-                        <Grid>
-                          <Grid.RowDefinitions>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="*"/>
-                          </Grid.RowDefinitions>
-                          <RepeatButton x:Name="BtnTransSepUp" Grid.Row="0" Style="{StaticResource SpinRepeatBtn}" Content="▲"
-                                        ToolTip="Más 10 mm (máx. 400 mm)"/>
-                          <RepeatButton x:Name="BtnTransSepDown" Grid.Row="1" Style="{StaticResource SpinRepeatBtn}" Content="▼"
-                                        ToolTip="Menos 10 mm (mín. 100 mm)"/>
-                        </Grid>
-                      </Border>
-                    </Grid>
-                  </Border>
-                </Grid>
-              </StackPanel>
+        <Border Grid.Column="0" Background="#0a1620" BorderBrush="#21465C"
+                BorderThickness="1" CornerRadius="4,0,0,4" Padding="0">
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Border Grid.Row="0" Background="#0a1620" BorderBrush="#21465C"
+                    BorderThickness="0,0,0,1" Padding="8,6,8,4">
+              <TextBlock x:Name="TxtCanvasHeader"
+                         Foreground="#64748b" FontSize="10" FontWeight="SemiBold"
+                         VerticalAlignment="Center"
+                         Text="PLANTA · ZAPATA DE MURO"/>
+            </Border>
+            <Border Grid.Row="1" Background="#050E18" BorderBrush="Transparent"
+                    BorderThickness="0" Padding="8,4,8,8">
+              <Border Background="#050E18" BorderBrush="#21465C"
+                      BorderThickness="1" CornerRadius="4">
+                <Canvas x:Name="CvPlan" ClipToBounds="True" Background="#050E18"/>
+              </Border>
+            </Border>
+          </Grid>
+        </Border>
 
-              <StackPanel x:Name="PanelLong" Margin="0,0,0,0">
-                <TextBlock Text="Longitudinales" Foreground="#95B8CC" FontWeight="SemiBold" FontSize="11"
-                           HorizontalAlignment="Left" Margin="0,0,0,8"/>
-                <Grid HorizontalAlignment="Center">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="110"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="110"/>
-                  </Grid.ColumnDefinitions>
-                  <ComboBox Grid.Column="0" x:Name="CmbLongDiam" Style="{StaticResource Combo}" IsEditable="False" IsReadOnly="True">
-                    <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/></ComboBox.ItemContainerStyle>
-                  </ComboBox>
-                  <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
-                             Foreground="#95B8CC" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,0,8,0"/>
-                  <Border Grid.Column="2" Width="110" Height="24" CornerRadius="5" Background="#050E18"
-                          BorderBrush="#1A3A4D" BorderThickness="1" SnapsToDevicePixels="True">
-                    <Grid>
-                      <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="18"/>
-                      </Grid.ColumnDefinitions>
-                      <TextBox x:Name="TxtLongSep" Grid.Column="0" Style="{StaticResource CantSpinnerText}"
-                               Text="100" Padding="6,0,6,0" VerticalContentAlignment="Center"
-                               ToolTip="Separación longitudinal (mm): 100 a 400, paso 10"/>
-                      <Border Grid.Column="1" Background="#11253D" BorderBrush="#1A3A4D"
-                              BorderThickness="1,0,0,0" CornerRadius="0,5,5,0" ClipToBounds="True">
-                        <Grid>
-                          <Grid.RowDefinitions>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="*"/>
-                          </Grid.RowDefinitions>
-                          <RepeatButton x:Name="BtnLongSepUp" Grid.Row="0" Style="{StaticResource SpinRepeatBtn}" Content="▲"
-                                        ToolTip="Más 10 mm (máx. 400 mm)"/>
-                          <RepeatButton x:Name="BtnLongSepDown" Grid.Row="1" Style="{StaticResource SpinRepeatBtn}" Content="▼"
-                                        ToolTip="Menos 10 mm (mín. 100 mm)"/>
-                        </Grid>
-                      </Border>
-                    </Grid>
+        <Border Grid.Column="1" Background="#0a1620" BorderBrush="#21465C"
+                BorderThickness="1" CornerRadius="0,4,4,0" Padding="8,8">
+          <ScrollViewer VerticalScrollBarVisibility="Auto"
+                        HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="PnlSectionRail">
+
+              <Border Background="#0a1620" BorderBrush="#21465C"
+                      BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,10">
+                <StackPanel>
+                  <TextBlock Text="SECCIÓN · ANCHO" Foreground="#64748b"
+                             FontSize="10" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                  <Border Background="#050E18" BorderBrush="#21465C"
+                          BorderThickness="1" CornerRadius="4" Height="220">
+                    <Canvas x:Name="CvSection" ClipToBounds="True" Background="#050E18"/>
                   </Border>
-                </Grid>
-                <Border x:Name="BorderTroceo" Visibility="Collapsed" Margin="0,10,0,0" HorizontalAlignment="Stretch"
-                        Background="#0a1620" BorderBrush="#21465C" BorderThickness="1" CornerRadius="4" Padding="8,8,8,8">
-                  <StackPanel>
-                    <TextBlock Text="Troceo longitudinal (&gt; 12 m de eje)" Style="{StaticResource Label}" Margin="0,0,0,4"/>
-                    <Grid Margin="0,0,0,6">
-                      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                      <StackPanel Grid.Column="0">
-                        <TextBlock Text="Largo máx. tramo (mm)" Foreground="#95B8CC" FontSize="10"/>
-                        <TextBox x:Name="TxtMaxBarMm" Style="{StaticResource CantSpinnerText}" Background="#050E18"
-                                 BorderBrush="#1A3A4D" BorderThickness="1" Padding="4" Text="12000"/>
-                      </StackPanel>
-                      <StackPanel Grid.Column="2">
-                        <TextBlock Text="Empalme / traslape (mm)" Foreground="#95B8CC" FontSize="10"/>
-                        <TextBox x:Name="TxtLapMm" Style="{StaticResource CantSpinnerText}" Background="#050E18"
-                                 BorderBrush="#1A3A4D" BorderThickness="1" Padding="4" Text="600"/>
-                      </StackPanel>
-                    </Grid>
-                  </StackPanel>
-                </Border>
-              </StackPanel>
+                  <TextBlock x:Name="TxtSectionDims" Foreground="#64748b" FontSize="10"
+                             Margin="0,6,0,0" TextWrapping="Wrap" Text=""/>
+                </StackPanel>
+              </Border>
+
+              <Border Background="#0a1620" BorderBrush="#21465C"
+                      BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,0,0,10">
+                <StackPanel>
+                  <TextBlock Text="Fundación" Foreground="#E8F4F8"
+                             FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                  <TextBlock x:Name="TxtHost" Foreground="#95B8CC" FontSize="11"
+                             TextWrapping="Wrap" Text="— Sin selección —"/>
+                  <Button x:Name="BtnPick" Content="Seleccionar fundación"
+                          Style="{StaticResource BtnSelectOutline}"
+                          HorizontalAlignment="Stretch" Margin="0,8,0,0" Padding="10,6"/>
+                </StackPanel>
+              </Border>
+
+              <Border Background="#0a1620" BorderBrush="#21465C"
+                      BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,0,0,0">
+                <StackPanel>
+                  <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Armadura" Foreground="#E8F4F8"
+                               FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="CmbDosificacionHormigon" Grid.Column="1"
+                              Style="{StaticResource Combo}" Margin="8,0,0,0"
+                              IsEditable="False" IsReadOnly="True" VerticalAlignment="Center"
+                              MinWidth="72" ToolTip="Dosificación del hormigón">
+                      <ComboBox.ItemContainerStyle>
+                        <Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/>
+                      </ComboBox.ItemContainerStyle>
+                    </ComboBox>
+                  </Grid>
+
+                  <TextBlock Text="Transversales (U)" Foreground="#95B8CC" FontWeight="SemiBold"
+                             FontSize="11" Margin="0,0,0,6"/>
+                  <Grid Margin="0,0,0,12" HorizontalAlignment="Stretch">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="110"/>
+                    </Grid.ColumnDefinitions>
+                    <ComboBox Grid.Column="0" x:Name="CmbTransDiam" Style="{StaticResource Combo}"
+                              IsEditable="False" IsReadOnly="True">
+                      <ComboBox.ItemContainerStyle>
+                        <Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/>
+                      </ComboBox.ItemContainerStyle>
+                    </ComboBox>
+                    <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
+                               Foreground="#95B8CC" VerticalAlignment="Center" Margin="6,0,6,0"/>
+                    <Border Grid.Column="2" Height="24" CornerRadius="5" Background="#050E18"
+                            BorderBrush="#1A3A4D" BorderThickness="1" SnapsToDevicePixels="True">
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="18"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="TxtTransSep" Grid.Column="0"
+                                 Style="{StaticResource CantSpinnerText}"
+                                 Text="100" Padding="6,0,6,0" VerticalContentAlignment="Center"
+                                 ToolTip="Separación transversal (mm): 100 a 400, pasos 10"/>
+                        <Border Grid.Column="1" Background="#11253D" BorderBrush="#1A3A4D"
+                                BorderThickness="1,0,0,0" CornerRadius="0,5,5,0" ClipToBounds="True">
+                          <Grid>
+                            <Grid.RowDefinitions>
+                              <RowDefinition Height="*"/>
+                              <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <RepeatButton x:Name="BtnTransSepUp" Grid.Row="0"
+                                          Style="{StaticResource SpinRepeatBtn}" Content="▲"
+                                          ToolTip="Más 10 mm (máx. 400 mm)"/>
+                            <RepeatButton x:Name="BtnTransSepDown" Grid.Row="1"
+                                          Style="{StaticResource SpinRepeatBtn}" Content="▼"
+                                          ToolTip="Menos 10 mm (mín. 100 mm)"/>
+                          </Grid>
+                        </Border>
+                      </Grid>
+                    </Border>
+                  </Grid>
+
+                  <TextBlock Text="Longitudinales" Foreground="#95B8CC" FontWeight="SemiBold"
+                             FontSize="11" Margin="0,0,0,6"/>
+                  <Grid Margin="0,0,0,0" HorizontalAlignment="Stretch">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="110"/>
+                    </Grid.ColumnDefinitions>
+                    <ComboBox Grid.Column="0" x:Name="CmbLongDiam" Style="{StaticResource Combo}"
+                              IsEditable="False" IsReadOnly="True">
+                      <ComboBox.ItemContainerStyle>
+                        <Style TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItem}"/>
+                      </ComboBox.ItemContainerStyle>
+                    </ComboBox>
+                    <TextBlock Grid.Column="1" Text="@" FontSize="12" FontWeight="Bold"
+                               Foreground="#95B8CC" VerticalAlignment="Center" Margin="6,0,6,0"/>
+                    <Border Grid.Column="2" Height="24" CornerRadius="5" Background="#050E18"
+                            BorderBrush="#1A3A4D" BorderThickness="1" SnapsToDevicePixels="True">
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="18"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="TxtLongSep" Grid.Column="0"
+                                 Style="{StaticResource CantSpinnerText}"
+                                 Text="100" Padding="6,0,6,0" VerticalContentAlignment="Center"
+                                 ToolTip="Separación longitudinal (mm): 100 a 400, pasos 10"/>
+                        <Border Grid.Column="1" Background="#11253D" BorderBrush="#1A3A4D"
+                                BorderThickness="1,0,0,0" CornerRadius="0,5,5,0" ClipToBounds="True">
+                          <Grid>
+                            <Grid.RowDefinitions>
+                              <RowDefinition Height="*"/>
+                              <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <RepeatButton x:Name="BtnLongSepUp" Grid.Row="0"
+                                          Style="{StaticResource SpinRepeatBtn}" Content="▲"
+                                          ToolTip="Más 10 mm (máx. 400 mm)"/>
+                            <RepeatButton x:Name="BtnLongSepDown" Grid.Row="1"
+                                          Style="{StaticResource SpinRepeatBtn}" Content="▼"
+                                          ToolTip="Menos 10 mm (mín. 100 mm)"/>
+                          </Grid>
+                        </Border>
+                      </Grid>
+                    </Border>
+                  </Grid>
+
+                  <Border x:Name="BorderTroceo" Visibility="Collapsed" Margin="0,10,0,0"
+                          HorizontalAlignment="Stretch"
+                          Background="#050E18" BorderBrush="#21465C" BorderThickness="1"
+                          CornerRadius="4" Padding="8,8,8,8">
+                    <StackPanel>
+                      <TextBlock Text="Troceo longitudinal (&gt; 12 m de eje)"
+                                 Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                      <Grid Margin="0,0,0,0">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="8"/>
+                          <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                          <TextBlock Text="Largo máx. tramo (mm)" Foreground="#95B8CC" FontSize="10"/>
+                          <TextBox x:Name="TxtMaxBarMm" Style="{StaticResource CantSpinnerText}"
+                                   Background="#050E18" BorderBrush="#1A3A4D" BorderThickness="1"
+                                   Padding="4" Text="12000"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                          <TextBlock Text="Empalme / traslape (mm)" Foreground="#95B8CC" FontSize="10"/>
+                          <TextBox x:Name="TxtLapMm" Style="{StaticResource CantSpinnerText}"
+                                   Background="#050E18" BorderBrush="#1A3A4D" BorderThickness="1"
+                                   Padding="4" Text="600"/>
+                        </StackPanel>
+                      </Grid>
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+              </Border>
+
             </StackPanel>
-          </GroupBox>
-        </StackPanel>
-      </ScrollViewer>
+          </ScrollViewer>
+        </Border>
+      </Grid>
 
-      <Grid Grid.Row="2" Margin="0,14,0,0">
-        <Grid.RowDefinitions>
-          <RowDefinition Height="Auto"/>
-          <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-        <TextBlock x:Name="TxtEstado" Grid.Row="0"
-                   Foreground="#64748b" FontSize="10" TextWrapping="Wrap" Margin="0,0,0,8"/>
-        <Grid Grid.Row="1">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="8"/>
-            <ColumnDefinition Width="*"/>
-          </Grid.ColumnDefinitions>
-          <Button x:Name="BtnCancelar" Grid.Column="0" Content="Cancelar"
-                  Style="{StaticResource BtnSelectOutline}" HorizontalAlignment="Stretch"/>
-          <Button x:Name="BtnColocar" Grid.Column="2" Content="Colocar armadura"
-                  Style="{StaticResource BtnPrimary}" HorizontalAlignment="Stretch"/>
-        </Grid>
+      <TextBlock Grid.Row="2" x:Name="TxtHint" Foreground="#64748b" FontSize="10"
+                 TextWrapping="Wrap" Margin="0,8,0,0"
+                 Text="Rueda = zoom en planta · arrastre = pan · la sección muestra el corte por el ancho."/>
+
+      <Grid Grid.Row="3" Margin="0,14,0,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <Button x:Name="BtnManual" Grid.Column="0" Content="Manual"
+                Style="{StaticResource BtnSelectOutline}" MinWidth="96"
+                Margin="0,0,12,0" Background="#2A5C3D"
+                ToolTip="Abrir manual de usuario" VerticalAlignment="Center"/>
+        <TextBlock x:Name="TxtEstado" Grid.Column="1" VerticalAlignment="Center"
+                   Foreground="#64748b" FontSize="10" TextWrapping="Wrap" Margin="0,0,12,0"/>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
+          <Button x:Name="BtnCancelar" Content="Cancelar"
+                  Style="{StaticResource BtnSelectOutline}" MinWidth="110" Margin="0,0,10,0"/>
+          <Button x:Name="BtnColocar" Content="Colocar armadura"
+                  Style="{StaticResource BtnPrimary}" MinWidth="160"/>
+        </StackPanel>
       </Grid>
     </Grid>
   </Border>
 </Window>
 """
-)
+).replace(u"__CHROME__", WINDOW_CHROME_TITLE)
 
 
 def _wf_apply_selection_uidoc(uidoc, wf_id):
@@ -2451,11 +2848,14 @@ class PickWallFoundationHandler(IExternalEventHandler):
         win._wf_id = r.ElementId
         _wf_apply_selection_uidoc(uidoc, r.ElementId)
         win._refresh_troceo_panel()
+        try:
+            win._refresh_preview_from_selection()
+        except Exception:
+            pass
         win._show_after_pick()
 
     def GetName(self):
         return u"PickWallFoundation"
-
 
 class ReselectWallFoundationHandler(IExternalEventHandler):
     """
@@ -2495,51 +2895,6 @@ class ReselectWallFoundationHandler(IExternalEventHandler):
 
     def GetName(self):
         return u"ReseleccionarWallFoundationPendiente"
-
-
-class EliminarSeccionesRevisionWallFoundationHandler(IExternalEventHandler):
-    """
-    Borra vistas de sección de revisión tras cerrar el WPF modeless (Revit no permite
-    transacción en el evento Closed).
-    """
-
-    def __init__(self):
-        self._pending_doc = None
-        self._pending_ids = None
-
-    def armar(self, document, ids):
-        self._pending_doc = document
-        self._pending_ids = list(ids) if ids else []
-
-    def Execute(self, uiapp):
-        doc = self._pending_doc
-        ids = self._pending_ids
-        self._pending_doc = None
-        self._pending_ids = None
-        if doc is None:
-            try:
-                uidoc = uiapp.ActiveUIDocument
-                if uidoc is not None:
-                    doc = uidoc.Document
-            except Exception:
-                pass
-        if doc is None:
-            return
-        try:
-            from vista_seccion_enfierrado_vigas import (
-                eliminar_vistas_seccion_revision_enfierrado,
-            )
-
-            eliminar_vistas_seccion_revision_enfierrado(
-                doc,
-                ids or [],
-                uidocument=uiapp.ActiveUIDocument,
-            )
-        except Exception:
-            pass
-
-    def GetName(self):
-        return u"EliminarSeccionesRevisionWallFoundation"
 
 
 def _colocar_rebar_en_host(
@@ -3169,7 +3524,6 @@ class ColocarWallFoundationHandler(IExternalEventHandler):
         rebars_sets_creados = []
         active_view = uidoc.ActiveView
         n_t = n_l = 0
-        linea_para_seccion = None
         t = Transaction(doc, u"Arainco: Wall Foundation Reinforcement")
         t.Start()
         try:
@@ -3189,25 +3543,6 @@ class ColocarWallFoundationHandler(IExternalEventHandler):
             _wf_geo_alinear_strip_a_location_wall_foundation(
                 wf, geo, d_long_mm, d_tr_mm
             )
-            try:
-                _ln_s = geo.get("long_line")
-                if _ln_s is not None:
-                    linea_para_seccion = Line.CreateBound(
-                        _ln_s.GetEndPoint(0), _ln_s.GetEndPoint(1)
-                    )
-            except Exception:
-                linea_para_seccion = None
-            if linea_para_seccion is None and wf is not None:
-                try:
-                    loc = wf.Location
-                    if isinstance(loc, LocationCurve) and loc.Curve is not None:
-                        ax = _wf_location_curve_como_linea(loc.Curve)
-                        if ax is not None:
-                            linea_para_seccion = Line.CreateBound(
-                                ax.GetEndPoint(0), ax.GetEndPoint(1)
-                            )
-                except Exception:
-                    pass
             L_mm_act = _ft_to_mm(float(geo["long_line"].Length))
             needs_lap = float(L_mm_act) > _MAX_STOCK_MM + 0.01
             if needs_lap:
@@ -3335,6 +3670,19 @@ class ColocarWallFoundationHandler(IExternalEventHandler):
                     )
                 except Exception:
                     pass
+            if rebars_sets_creados:
+                try:
+                    _n_unob = _wf_aplicar_unobscured_rebars(
+                        doc, active_view, rebars_sets_creados
+                    )
+                    if _n_unob > 0:
+                        avisos.append(
+                            u"View Unobscured (+ sólido): {0} barra(s) en la vista activa.".format(
+                                int(_n_unob)
+                            )
+                        )
+                except Exception:
+                    pass
             t.Commit()
         except Exception as ex:
             t.RollBack()
@@ -3344,79 +3692,6 @@ class ColocarWallFoundationHandler(IExternalEventHandler):
                 win._win,
             )
             return
-        # Por defecto True: si el import falla (pyRevit / path), no bloquear silenciosamente.
-        _crear_seccion_revision = True
-        try:
-            from vista_seccion_enfierrado_vigas import CREAR_SECCION_REVISION_WALL_FOUNDATION
-
-            _crear_seccion_revision = bool(CREAR_SECCION_REVISION_WALL_FOUNDATION)
-        except Exception:
-            pass
-        if _crear_seccion_revision and (n_t > 0 or n_l > 0):
-            tsec = Transaction(doc, u"Arainco: Sección revisión Wall Foundation")
-            tsec.Start()
-            try:
-                from vista_seccion_enfierrado_vigas import (
-                    crear_vistas_seccion_revision_wall_foundation,
-                )
-
-                wf_sec = doc.GetElement(wf_id)
-                _vsec = []
-                if wf_sec is None:
-                    avisos.append(
-                        u"Sección revisión: no se encontró la Wall Foundation en el documento."
-                    )
-                else:
-                    _vsec, _av_sec = crear_vistas_seccion_revision_wall_foundation(
-                        doc,
-                        [wf_sec],
-                        linea_eje=linea_para_seccion,
-                        gestionar_transaccion=False,
-                        uidocument=uidoc,
-                    )
-                    avisos.extend(_av_sec or [])
-                    if _vsec:
-                        try:
-                            for _vs in _vsec:
-                                if _vs is not None:
-                                    win._secciones_revision_ids.append(_vs.Id)
-                        except Exception:
-                            pass
-                        try:
-                            nombres_vsec = []
-                            for _vs in _vsec:
-                                if _vs is not None:
-                                    nombres_vsec.append(unicode(_vs.Name))
-                            if nombres_vsec:
-                                avisos.append(
-                                    u"Vista(s) de sección (revisión armadura): "
-                                    + u"; ".join(nombres_vsec)
-                                    + u"."
-                                )
-                        except Exception:
-                            pass
-                    else:
-                        if not (_av_sec or []):
-                            avisos.append(
-                                u"Sección revisión: no se creó ninguna vista. "
-                                u"Compruebe que exista un tipo «Section» en el proyecto."
-                            )
-                tsec.Commit()
-            except Exception as ex_sec:
-                try:
-                    tsec.RollBack()
-                except Exception:
-                    pass
-                try:
-                    avisos.append(
-                        u"Sección revisión: {0}".format(unicode(ex_sec))
-                    )
-                except Exception:
-                    avisos.append(u"Sección revisión: error inesperado.")
-        elif (n_t > 0 or n_l > 0) and not _crear_seccion_revision:
-            avisos.append(
-                u"Sección revisión: desactivada (CREAR_SECCION_REVISION_WALL_FOUNDATION = False)."
-            )
         try:
             from System.Collections.Generic import List
 
@@ -3440,6 +3715,14 @@ class ColocarWallFoundationHandler(IExternalEventHandler):
             win._refresh_troceo_panel()
         except Exception:
             pass
+        try:
+            win._refresh_preview_from_selection()
+        except Exception:
+            pass
+        try:
+            win._set_estado(u"Armadura colocada. Puede seleccionar otra fundación.")
+        except Exception:
+            pass
 
     def GetName(self):
         return u"ColocarWallFoundationRebar"
@@ -3451,16 +3734,24 @@ class WallFoundationReinforcementWindow(object):
         self._document = None
         self._wf_id = None
         self._entries = []
-        self._form_width_px = float(_fund_form_width_px())
+        self._preview_geo = None
+        self._view_zoom = 1.0
+        self._view_pan_x = 0.0
+        self._view_pan_y = 0.0
+        self._scene_base = None
+        self._panning = False
+        self._pan_last = None
+        self._ui_cv_plan = None
+        self._ui_cv_section = None
+        self._ui_txt_header = None
+        self._ui_txt_section_dims = None
+        self._ui_txt_host = None
 
         from System.Windows import RoutedEventHandler
         from System.Windows.Input import ApplicationCommands, CommandBinding, Key, KeyBinding, ModifierKeys
         from System.Windows.Markup import XamlReader
 
         self._win = XamlReader.Parse(_WF_XAML)
-        self._win.Width = self._form_width_px
-        self._win.MinWidth = self._form_width_px
-        self._win.MaxWidth = self._form_width_px
 
         self._pick_handler = PickWallFoundationHandler(weakref.ref(self))
         self._pick_event = ExternalEvent.Create(self._pick_handler)
@@ -3468,18 +3759,36 @@ class WallFoundationReinforcementWindow(object):
         self._col_event = ExternalEvent.Create(self._col_handler)
         self._reselect_handler = ReselectWallFoundationHandler(weakref.ref(self))
         self._reselect_event = ExternalEvent.Create(self._reselect_handler)
-        self._secciones_revision_ids = []
-        self._eliminar_secciones_handler = (
-            EliminarSeccionesRevisionWallFoundationHandler()
-        )
-        self._eliminar_secciones_event = ExternalEvent.Create(
-            self._eliminar_secciones_handler
-        )
 
+        self._cache_ui_refs()
         self._wire_ui(RoutedEventHandler)
+        self._wire_canvas_interaction()
         self._wire_keys(ApplicationCommands, CommandBinding, KeyBinding, Key, ModifierKeys)
         self._wire_lifecycle()
         self._wire_activate_resel()
+
+    def _cache_ui_refs(self):
+        win = self._win
+        try:
+            self._ui_cv_plan = win.FindName(u"CvPlan")
+        except Exception:
+            self._ui_cv_plan = None
+        try:
+            self._ui_cv_section = win.FindName(u"CvSection")
+        except Exception:
+            self._ui_cv_section = None
+        try:
+            self._ui_txt_header = win.FindName(u"TxtCanvasHeader")
+        except Exception:
+            self._ui_txt_header = None
+        try:
+            self._ui_txt_section_dims = win.FindName(u"TxtSectionDims")
+        except Exception:
+            self._ui_txt_section_dims = None
+        try:
+            self._ui_txt_host = win.FindName(u"TxtHost")
+        except Exception:
+            self._ui_txt_host = None
 
     def _wire_activate_resel(self):
         try:
@@ -3501,31 +3810,22 @@ class WallFoundationReinforcementWindow(object):
         from System import EventHandler
 
         self._win.Closed += EventHandler(self._on_win_closed)
+        try:
+            from System.Windows import SizeChangedEventHandler
+
+            self._win.SizeChanged += SizeChangedEventHandler(self._on_size_changed)
+        except Exception:
+            try:
+                self._win.SizeChanged += EventHandler(self._on_size_changed)
+            except Exception:
+                pass
 
     def _on_win_closed(self, sender, args):
         _clear_appdomain_window_key()
-        try:
-            if getattr(self, "_secciones_revision_ids", None):
-                self._enqueue_eliminar_secciones_revision()
-        except Exception:
-            pass
 
-    def _enqueue_eliminar_secciones_revision(self):
+    def _on_size_changed(self, sender, args):
         try:
-            _ids = list(self._secciones_revision_ids or [])
-            self._secciones_revision_ids = []
-            _doc = getattr(self, "_document", None)
-            if _doc is None:
-                try:
-                    _ud = self._revit.ActiveUIDocument
-                    if _ud is not None:
-                        _doc = _ud.Document
-                except Exception:
-                    _doc = None
-            if _doc is None:
-                return
-            self._eliminar_secciones_handler.armar(_doc, _ids)
-            self._eliminar_secciones_event.Raise()
+            self._redraw_all()
         except Exception:
             pass
 
@@ -3539,6 +3839,73 @@ class WallFoundationReinforcementWindow(object):
         v += int(delta)
         v = _snap_sep_mm(v, _SEP_MM_DEFAULT)
         tb.Text = unicode(int(v))
+        try:
+            self._redraw_all()
+        except Exception:
+            pass
+
+    def _request_redraw(self, sender=None, args=None):
+        try:
+            self._redraw_all()
+        except Exception:
+            pass
+
+    def _resolve_manual_path(self):
+        candidates = []
+        try:
+            import bimtools_paths
+
+            pb = bimtools_paths.get_pushbutton_dir()
+            if pb:
+                candidates.append(os.path.join(pb, u"manual_usuario.html"))
+        except Exception:
+            pass
+        try:
+            ext_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            for tab_name in os.listdir(ext_dir):
+                if not tab_name.endswith(u".tab"):
+                    continue
+                panel = os.path.join(ext_dir, tab_name, u"Armadura.panel")
+                if not os.path.isdir(panel):
+                    continue
+                for pb_name in os.listdir(panel):
+                    if u"WallFoundationReinforcement" not in pb_name:
+                        continue
+                    candidates.append(
+                        os.path.join(panel, pb_name, u"manual_usuario.html")
+                    )
+        except Exception:
+            pass
+        seen = set()
+        for path in candidates:
+            try:
+                ap = os.path.normpath(os.path.abspath(path))
+            except Exception:
+                continue
+            if ap in seen:
+                continue
+            seen.add(ap)
+            if os.path.isfile(ap):
+                return ap
+        return None
+
+    def _open_manual(self, sender=None, args=None):
+        path = self._resolve_manual_path()
+        if not path:
+            _task_dialog_show(
+                u"Arainco: Armadura Fundación Corrida",
+                u"No se encontró manual_usuario.html en la carpeta del botón.",
+                self._win,
+            )
+            return
+        try:
+            os.startfile(path)
+        except Exception as ex:
+            _task_dialog_show(
+                u"Arainco: Armadura Fundación Corrida",
+                u"No se pudo abrir el manual:\n{0}".format(ex),
+                self._win,
+            )
 
     def _wire_ui(self, RoutedEventHandler):
         bp = self._win.FindName("BtnPick")
@@ -3550,6 +3917,10 @@ class WallFoundationReinforcementWindow(object):
         bcol = self._win.FindName("BtnColocar")
         if bcol is not None:
             bcol.Click += RoutedEventHandler(lambda s, e: self._col_event.Raise())
+        bman = self._win.FindName("BtnManual")
+        if bman is not None:
+            bman.Click += RoutedEventHandler(self._open_manual)
+
         def _bind_sep(tb_name, up_name, dn_name):
             tb = self._win.FindName(tb_name)
             bu = self._win.FindName(up_name)
@@ -3567,7 +3938,10 @@ class WallFoundationReinforcementWindow(object):
                 bd.Click += RoutedEventHandler(dn)
             if tb is not None:
                 tb.LostFocus += RoutedEventHandler(
-                    lambda s, a, tbx=tb: _normalize_sep_tb(tbx)
+                    lambda s, a, tbx=tb: (
+                        _normalize_sep_tb(tbx),
+                        self._request_redraw(),
+                    )
                 )
 
         _bind_sep("TxtTransSep", "BtnTransSepUp", "BtnTransSepDown")
@@ -3588,11 +3962,95 @@ class WallFoundationReinforcementWindow(object):
                 cmb_long.SelectionChanged += SelectionChangedEventHandler(
                     self._on_cmb_long_diam_selection_changed
                 )
+            cmb_trans = self._win.FindName("CmbTransDiam")
+            if cmb_trans is not None:
+                cmb_trans.SelectionChanged += SelectionChangedEventHandler(
+                    self._request_redraw
+                )
             cmb_dos = self._win.FindName("CmbDosificacionHormigon")
             if cmb_dos is not None:
                 cmb_dos.SelectionChanged += SelectionChangedEventHandler(
                     lambda s, a: self._sync_lap_tb_from_long_diam()
                 )
+        except Exception:
+            pass
+
+    def _wire_canvas_interaction(self):
+        from System.Windows.Input import (
+            MouseButtonEventHandler,
+            MouseEventHandler,
+            MouseWheelEventHandler,
+        )
+
+        cv = self._ui_cv_plan
+        if cv is None:
+            return
+        try:
+            cv.MouseWheel += MouseWheelEventHandler(self._on_plan_wheel)
+        except Exception:
+            pass
+        try:
+            cv.MouseLeftButtonDown += MouseButtonEventHandler(self._on_plan_mouse_down)
+            cv.MouseMove += MouseEventHandler(self._on_plan_mouse_move)
+            cv.MouseLeftButtonUp += MouseButtonEventHandler(self._on_plan_mouse_up)
+            cv.MouseLeave += MouseEventHandler(self._on_plan_mouse_up)
+        except Exception:
+            pass
+
+    def _on_plan_wheel(self, sender, args):
+        try:
+            delta = int(args.Delta)
+        except Exception:
+            return
+        factor = 1.1 if delta > 0 else (1.0 / 1.1)
+        try:
+            nz = float(self._view_zoom) * factor
+            self._view_zoom = max(0.2, min(8.0, nz))
+        except Exception:
+            return
+        self._redraw_plan()
+
+    def _on_plan_mouse_down(self, sender, args):
+        try:
+            self._panning = True
+            self._pan_last = args.GetPosition(self._ui_cv_plan)
+            try:
+                self._ui_cv_plan.CaptureMouse()
+            except Exception:
+                pass
+        except Exception:
+            self._panning = False
+            self._pan_last = None
+
+    def _on_plan_mouse_move(self, sender, args):
+        if not self._panning or self._scene_base is None:
+            return
+        try:
+            pos = args.GetPosition(self._ui_cv_plan)
+            last = self._pan_last
+            if last is None:
+                self._pan_last = pos
+                return
+            dx_px = float(pos.X - last.X)
+            dy_px = float(pos.Y - last.Y)
+            scale = float(self._scene_base.get(u"scale") or 1.0)
+            if scale < 1e-9:
+                return
+            self._view_pan_x -= dx_px / scale
+            self._view_pan_y += dy_px / scale
+            self._pan_last = pos
+            self._redraw_plan()
+        except Exception:
+            pass
+
+    def _on_plan_mouse_up(self, sender, args):
+        if not self._panning:
+            return
+        self._panning = False
+        self._pan_last = None
+        try:
+            if self._ui_cv_plan is not None:
+                self._ui_cv_plan.ReleaseMouseCapture()
         except Exception:
             pass
 
@@ -3616,6 +4074,327 @@ class WallFoundationReinforcementWindow(object):
         try:
             self._win.Show()
             self._win.Activate()
+            self._redraw_all()
+        except Exception:
+            pass
+
+    def _refresh_preview_from_selection(self):
+        self._preview_geo = None
+        self._view_zoom = 1.0
+        self._view_pan_x = 0.0
+        self._view_pan_y = 0.0
+        doc = self._document
+        wf_id = self._wf_id
+        if doc is None or wf_id is None:
+            if self._ui_txt_host is not None:
+                self._ui_txt_host.Text = u"— Sin selección —"
+            self._redraw_all()
+            return
+        wf = doc.GetElement(wf_id)
+        geo = _wf_preview_geo_mm(wf)
+        self._preview_geo = geo
+        if self._ui_txt_host is not None:
+            try:
+                self._ui_txt_host.Text = (
+                    geo.get(u"label") if geo else u"— Sin selección —"
+                ) or u"— Sin selección —"
+            except Exception:
+                pass
+        self._redraw_all()
+
+    def _read_preview_bar_params(self):
+        doc = self._document
+        entries = getattr(self, "_entries", None) or []
+        d_tr = 8.0
+        d_lo = 8.0
+        sep_tr = float(_SEP_MM_DEFAULT)
+        sep_lo = float(_SEP_MM_DEFAULT)
+        try:
+            bt_tr, _ = _resolver_bar_type_from_combo(
+                doc, self._win.FindName("CmbTransDiam"), entries
+            )
+            if bt_tr is not None:
+                v = _rebar_nominal_diameter_mm(bt_tr)
+                if v:
+                    d_tr = float(v)
+        except Exception:
+            pass
+        try:
+            bt_lo, _ = _resolver_bar_type_from_combo(
+                doc, self._win.FindName("CmbLongDiam"), entries
+            )
+            if bt_lo is not None:
+                v = _rebar_nominal_diameter_mm(bt_lo)
+                if v:
+                    d_lo = float(v)
+        except Exception:
+            pass
+        try:
+            sep_tr = float(_read_sep_tb(self._win.FindName("TxtTransSep")))
+        except Exception:
+            pass
+        try:
+            sep_lo = float(_read_sep_tb(self._win.FindName("TxtLongSep")))
+        except Exception:
+            pass
+        return d_tr, d_lo, sep_tr, sep_lo
+
+    def _canvas_size(self, cv):
+        w = h = 40.0
+        try:
+            w = float(cv.ActualWidth or 0)
+        except Exception:
+            pass
+        try:
+            h = float(cv.ActualHeight or 0)
+        except Exception:
+            pass
+        if w < 40:
+            try:
+                w = float(cv.RenderSize.Width or 0)
+            except Exception:
+                pass
+        if h < 40:
+            try:
+                h = float(cv.RenderSize.Height or 0)
+            except Exception:
+                pass
+        return max(40.0, w), max(40.0, h)
+
+    def _redraw_all(self):
+        self._redraw_plan()
+        self._redraw_section()
+
+    def _redraw_plan(self):
+        from System.Windows import Point as WpfPoint
+        from System.Windows.Media import PointCollection
+        from System.Windows.Shapes import Ellipse as WpfEllipse
+        from System.Windows.Shapes import Line as WpfLine
+        from System.Windows.Shapes import Polygon as WpfPolygon
+
+        cv = self._ui_cv_plan
+        if cv is None:
+            return
+        try:
+            cv.Children.Clear()
+        except Exception:
+            return
+        geo = self._preview_geo
+        if not geo or not geo.get(u"poly"):
+            try:
+                if self._ui_txt_header is not None:
+                    self._ui_txt_header.Text = u"PLANTA · ZAPATA DE MURO"
+            except Exception:
+                pass
+            return
+
+        poly = geo[u"poly"]
+        xs = [float(p[0]) for p in poly]
+        ys = [float(p[1]) for p in poly]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        span_x = max(1.0, max_x - min_x)
+        span_y = max(1.0, max_y - min_y)
+        cw, ch = self._canvas_size(cv)
+        pad = _PLAN_PAD_FRAC
+        fit = min(
+            (cw * (1.0 - 2.0 * pad)) / span_x,
+            (ch * (1.0 - 2.0 * pad)) / span_y,
+        )
+        fit = max(1e-6, fit)
+        scale = fit * max(0.05, float(self._view_zoom))
+        cx_mm = 0.5 * (min_x + max_x) + float(self._view_pan_x)
+        cy_mm = 0.5 * (min_y + max_y) + float(self._view_pan_y)
+        ox = cw / 2.0 - (cx_mm - min_x) * scale
+        oy = ch / 2.0 - (max_y - cy_mm) * scale
+        self._scene_base = {
+            u"min_x": min_x,
+            u"max_x": max_x,
+            u"min_y": min_y,
+            u"max_y": max_y,
+            u"ox": ox,
+            u"oy": oy,
+            u"scale": scale,
+        }
+
+        def to_px(xmm, ymm):
+            return (
+                ox + (float(xmm) - min_x) * scale,
+                oy + (max_y - float(ymm)) * scale,
+            )
+
+        wp = WpfPolygon()
+        pc = PointCollection()
+        for xmm, ymm in poly:
+            px, py = to_px(xmm, ymm)
+            pc.Add(WpfPoint(px, py))
+        wp.Points = pc
+        wp.Fill = _wf_brush(u"#1a3a4d", 160)
+        wp.Stroke = _wf_brush(u"#5BC0DE")
+        wp.StrokeThickness = 1.6
+        try:
+            cv.Children.Add(wp)
+        except Exception:
+            pass
+
+        d_tr, d_lo, sep_tr, sep_lo = self._read_preview_bar_params()
+        length_mm = float(geo.get(u"length_mm") or span_x)
+        width_mm = float(geo.get(u"width_mm") or span_y)
+        p0 = geo.get(u"p0_mm")
+        p1 = geo.get(u"p1_mm")
+        rec = float(_REC_OFF_PLANTA_INF_MM)
+        if p0 is not None and p1 is not None:
+            ax = float(p1[0] - p0[0])
+            ay = float(p1[1] - p0[1])
+            alen = (ax * ax + ay * ay) ** 0.5
+            if alen > 1.0:
+                ux, uy = ax / alen, ay / alen
+                nx, ny = -uy, ux
+                # Transversales: líneas a través del ancho
+                for t in _wf_preview_positions_along(length_mm, sep_tr, rec):
+                    cx = float(p0[0]) + ux * t
+                    cy = float(p0[1]) + uy * t
+                    half = 0.5 * max(1.0, width_mm - 2.0 * rec)
+                    x0, y0 = cx + nx * half, cy + ny * half
+                    x1, y1 = cx - nx * half, cy - ny * half
+                    ln = WpfLine()
+                    px0, py0 = to_px(x0, y0)
+                    px1, py1 = to_px(x1, y1)
+                    ln.X1, ln.Y1, ln.X2, ln.Y2 = px0, py0, px1, py1
+                    ln.Stroke = _wf_brush(_COLOR_TRANS)
+                    ln.StrokeThickness = max(1.2, min(2.8, d_tr * scale * 0.02))
+                    try:
+                        cv.Children.Add(ln)
+                    except Exception:
+                        pass
+                # Longitudinales: líneas a lo largo del eje
+                for s in _wf_preview_positions_along(width_mm, sep_lo, rec):
+                    off = s - 0.5 * width_mm
+                    x0 = float(p0[0]) + nx * off + ux * rec
+                    y0 = float(p0[1]) + ny * off + uy * rec
+                    x1 = float(p1[0]) + nx * off - ux * rec
+                    y1 = float(p1[1]) + ny * off - uy * rec
+                    ln = WpfLine()
+                    px0, py0 = to_px(x0, y0)
+                    px1, py1 = to_px(x1, y1)
+                    ln.X1, ln.Y1, ln.X2, ln.Y2 = px0, py0, px1, py1
+                    ln.Stroke = _wf_brush(_COLOR_LONG)
+                    ln.StrokeThickness = max(1.0, min(2.4, d_lo * scale * 0.018))
+                    try:
+                        cv.Children.Add(ln)
+                    except Exception:
+                        pass
+
+        try:
+            if self._ui_txt_header is not None:
+                self._ui_txt_header.Text = (
+                    u"PLANTA · ZAPATA  ·  {0:.0f} × {1:.0f} mm"
+                ).format(length_mm, width_mm)
+        except Exception:
+            pass
+
+    def _redraw_section(self):
+        from System.Windows.Controls import Canvas as WpfCanvas
+        from System.Windows.Shapes import Ellipse as WpfEllipse
+        from System.Windows.Shapes import Line as WpfLine
+        from System.Windows.Shapes import Rectangle as WpfRectangle
+
+        cv = self._ui_cv_section
+        if cv is None:
+            return
+        try:
+            cv.Children.Clear()
+        except Exception:
+            return
+        geo = self._preview_geo
+        if not geo:
+            try:
+                if self._ui_txt_section_dims is not None:
+                    self._ui_txt_section_dims.Text = u""
+            except Exception:
+                pass
+            return
+
+        w_mm = max(1.0, float(geo.get(u"width_mm") or 600.0))
+        h_mm = max(1.0, float(geo.get(u"height_mm") or 500.0))
+        cw, ch = self._canvas_size(cv)
+        pad = _SECTION_PAD_PX
+        usable_w = max(20.0, cw - 2.0 * pad)
+        usable_h = max(20.0, ch - 2.0 * pad - 8.0)
+        scale = min(usable_w / w_mm, usable_h / h_mm)
+        rw = w_mm * scale
+        rh = h_mm * scale
+        left = (cw - rw) * 0.5
+        top = (ch - rh) * 0.5
+
+        rect = WpfRectangle()
+        rect.Width = rw
+        rect.Height = rh
+        rect.Fill = _wf_brush(u"#1a3a4d", 180)
+        rect.Stroke = _wf_brush(u"#5BC0DE")
+        rect.StrokeThickness = 1.5
+        try:
+            WpfCanvas.SetLeft(rect, left)
+            WpfCanvas.SetTop(rect, top)
+            cv.Children.Add(rect)
+        except Exception:
+            pass
+
+        d_tr, d_lo, _sep_tr, sep_lo = self._read_preview_bar_params()
+        rec_h = float(_RECO_HOR_MM)
+        rec_lat = float(_REC_LATERAL_CARA_U_MM)
+        y_tr = rec_h + 0.5 * d_tr
+        x0 = rec_lat + 0.5 * d_tr
+        x1 = w_mm - rec_lat - 0.5 * d_tr
+        if x1 <= x0:
+            x0, x1 = 0.0, w_mm
+
+        def mm_to_px_x(xmm):
+            return left + float(xmm) * scale
+
+        def mm_to_px_y(ymm_from_bottom):
+            return top + rh - float(ymm_from_bottom) * scale
+
+        def add_line(xa, ya, xb, yb, color, thick):
+            ln = WpfLine()
+            ln.X1, ln.Y1 = mm_to_px_x(xa), mm_to_px_y(ya)
+            ln.X2, ln.Y2 = mm_to_px_x(xb), mm_to_px_y(yb)
+            ln.Stroke = _wf_brush(color)
+            ln.StrokeThickness = thick
+            try:
+                cv.Children.Add(ln)
+            except Exception:
+                pass
+
+        thick_u = max(1.4, min(3.0, d_tr * scale * 0.15))
+        add_line(x0, y_tr, x1, y_tr, _COLOR_TRANS, thick_u)
+        # Patas U hacia arriba (preview)
+        leg = max(40.0, min(h_mm - rec_h - y_tr, float(_DESC_PATA_U_MM)))
+        y_leg = min(h_mm - rec_h, y_tr + leg)
+        add_line(x0, y_tr, x0, y_leg, _COLOR_TRANS, thick_u)
+        add_line(x1, y_tr, x1, y_leg, _COLOR_TRANS, thick_u)
+
+        # Longitudinales como círculos (corte por el ancho)
+        y_lo = rec_h + d_tr + 0.5 * d_lo
+        for xmm in _wf_preview_positions_along(w_mm, sep_lo, rec_lat + 0.5 * d_lo):
+            rpx = max(2.0, min(6.0, 0.5 * d_lo * scale))
+            el = WpfEllipse()
+            el.Width = 2.0 * rpx
+            el.Height = 2.0 * rpx
+            el.Fill = _wf_brush(_COLOR_LONG)
+            el.Stroke = _wf_brush(_COLOR_LONG)
+            try:
+                WpfCanvas.SetLeft(el, mm_to_px_x(xmm) - rpx)
+                WpfCanvas.SetTop(el, mm_to_px_y(y_lo) - rpx)
+                cv.Children.Add(el)
+            except Exception:
+                pass
+
+        try:
+            if self._ui_txt_section_dims is not None:
+                self._ui_txt_section_dims.Text = (
+                    u"Ancho {0:.0f} mm · Peralte {1:.0f} mm"
+                ).format(w_mm, h_mm)
         except Exception:
             pass
 
@@ -3652,6 +4431,10 @@ class WallFoundationReinforcementWindow(object):
     def _on_cmb_long_diam_selection_changed(self, sender, args):
         try:
             self._sync_lap_tb_from_long_diam()
+        except Exception:
+            pass
+        try:
+            self._redraw_all()
         except Exception:
             pass
 
@@ -3737,7 +4520,7 @@ class WallFoundationReinforcementWindow(object):
         uidoc = self._revit.ActiveUIDocument
         if uidoc is None:
             TaskDialog.Show(
-                u"Arainco: Armadura Fundacion Corrida",
+                u"Arainco: Armadura Fundación Corrida",
                 u"No hay documento activo.",
             )
             return
@@ -3759,11 +4542,19 @@ class WallFoundationReinforcementWindow(object):
         _normalize_sep_tb(self._win.FindName("TxtTransSep"))
         _normalize_sep_tb(self._win.FindName("TxtLongSep"))
         self._refresh_troceo_panel()
-        self._set_estado(u"")
+        self._set_estado(u"Seleccione una zapata de muro para ver el esquema.")
         try:
             if not self._win.IsVisible:
                 self._win.Show()
             self._win.Activate()
+        except Exception:
+            pass
+        try:
+            self._win.UpdateLayout()
+        except Exception:
+            pass
+        try:
+            self._redraw_all()
         except Exception:
             pass
         try:
@@ -3793,7 +4584,7 @@ def run_pyrevit(revit):
             existing = None
         if ok and existing is not None:
             _task_dialog_show(
-                u"Arainco: Armadura Fundacion Corrida",
+                u"Arainco: Armadura Fundación Corrida",
                 u"La herramienta ya está en ejecución.",
                 existing,
             )
@@ -3805,3 +4596,4 @@ def run_pyrevit(revit):
     except Exception:
         _clear_appdomain_window_key()
         raise
+

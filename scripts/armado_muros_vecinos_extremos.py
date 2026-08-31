@@ -1,11 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-Muros vecinos en extremos — criterio Armado muros nodo (``wall_node_section``).
+Muros vecinos en extremos — uniones de muro + p_join (Armado Muros V3).
 
-Expone detección de muros laterales en inicio/fin de ``LocationCurve`` para el boceto
-de Area Reinforcement en Mallas muros lineales.
+Criterio principal: ``LocationCurve.get_ElementsAtJoin`` (unión de muro en
+punta: L, T, cadena). Eso es lo que Revit usa en esquinas; **no** es
+*Unir geometría* (``JoinGeometryUtils``).
 
-Solo ``Wall`` (joins / intersección / bbox). No barre ``Floor`` ni forjados.
+Complemento: Join Geometry, intersección de sólidos y bbox cercano; se
+confirma con ejes no paralelos / ``p_join`` si no hay unión de muro.
+
+Excluye apilados (muro sobre/bajo) y uniones longitudinales paralelas.
+Solo ``Wall``. No barre ``Floor`` ni forjados.
 """
 
 from __future__ import print_function
@@ -100,11 +105,12 @@ def _load_wall_node_section():
 
 def muros_vecinos_en_extremos(doc, host):
     """
-    Muros en encuentro en los extremos del ``host`` (L, T, esquina, join).
+    Muros unidos en los extremos del ``host`` (L, T, esquina).
 
-    Solo categoría ``Wall``: joins + intersección + bbox. **No** consulta
-    ``Floor`` / forjados (evita tocar losas fuera de la selección). La fundación
-    de pie se resuelve aparte en embed vertical.
+    Primero uniones de muro (``ElementsAtJoin``); luego Join Geometry,
+    intersección de sólidos y bbox cercano. Cada candidato se confirma
+    con ``_pjoin_valido_en_extremo``. Excluye apilados y muros paralelos.
+    **No** consulta ``Floor`` / forjados.
 
     :returns: lista de instancias ``Wall`` (puede estar vacía).
     """
@@ -129,8 +135,6 @@ def muros_vecinos_en_extremos(doc, host):
 
     try:
         from Autodesk.Revit.DB import (
-            BoundingBoxIntersectsFilter,
-            ElementId,
             ElementIntersectsElementFilter,
             FilteredElementCollector,
             UnitTypeId,
@@ -141,12 +145,8 @@ def muros_vecinos_en_extremos(doc, host):
 
     try:
         tol_end = UnitUtils.ConvertToInternalUnits(80.0, UnitTypeId.Millimeters)
-        tol_z = UnitUtils.ConvertToInternalUnits(40.0, UnitTypeId.Millimeters)
-        pad_bb = UnitUtils.ConvertToInternalUnits(1.8, UnitTypeId.Meters)
     except Exception:
-        tol_end = 0.25
-        tol_z = 0.12
-        pad_bb = 6.0
+        tol_end = _tol_extremo_default()
 
     out = []
     seen = set()
@@ -163,17 +163,24 @@ def muros_vecinos_en_extremos(doc, host):
             return
         if eid is not None and eid in seen:
             return
-        if not wns._es_muro_lateral_en_extremos(doc, host, wall_line, w2, tol_end):
-            return
-        if wns._muro_apilado_bajo_muro_principal(host, w2, tol_z):
-            return
-        if wns._muro_apilado_sobre_muro_principal(host, w2, tol_z):
+        if not _muro_unido_por_pjoin_en_algun_extremo(
+            doc, host, w2, wall_line=wall_line, tol_end=tol_end,
+        ):
             return
         if eid is not None:
             seen.add(eid)
         out.append(w2)
 
-    # 1) Solo muros unidos por Join Geometry (sin barrer Floor)
+    # 1) Uniones de muro en puntas (ElementsAtJoin) — criterio Revit de esquina
+    try:
+        for jid in wns._coleccion_ids_wall_joins_extremos(host):
+            el = doc.GetElement(jid)
+            if el is not None and isinstance(el, Wall):
+                _try_add(el)
+    except Exception:
+        pass
+
+    # 2) Unir geometría (Join Geometry; no es lo mismo que unión de muro)
     try:
         for jid in wns._coleccion_ids_unidas(doc, host):
             el = doc.GetElement(jid)
@@ -182,7 +189,7 @@ def muros_vecinos_en_extremos(doc, host):
     except Exception:
         pass
 
-    # 2) Muros que intersectan el host
+    # 3) Muros que intersectan el sólido del host
     try:
         xf = ElementIntersectsElementFilter(host)
         for eid in (
@@ -195,9 +202,15 @@ def muros_vecinos_en_extremos(doc, host):
     except Exception:
         pass
 
-    # 3) Muros cercanos por bbox inflado
+    # 4) Bbox cercano: L/T a inglete suelen no solapar volumen ni Unir geom.
     try:
-        olh = wns._outline_host_inflado(host, pad_bb)
+        from Autodesk.Revit.DB import BoundingBoxIntersectsFilter
+        pad = max(float(tol_end) * 4.0, 1.0)
+        try:
+            pad = max(pad, abs(float(host.Width)) * 2.0)
+        except Exception:
+            pass
+        olh = wns._outline_host_inflado(host, pad)
         if olh is not None:
             bf = BoundingBoxIntersectsFilter(olh)
             for eid in (
@@ -232,9 +245,53 @@ def _tol_extremo_default():
         return 0.25
 
 
-def vecino_en_extremo_muro(doc, host, extremo, neighbor):
+def _tol_z_apilamiento():
+    try:
+        from Autodesk.Revit.DB import UnitUtils, UnitTypeId
+        return UnitUtils.ConvertToInternalUnits(40.0, UnitTypeId.Millimeters)
+    except Exception:
+        return 0.12
+
+
+def _encuentro_l_mod():
+    try:
+        import armado_muros_cabezal_encuentro_l as enc_l
+        return enc_l
+    except Exception:
+        return None
+
+
+def _es_apilado_sobre_o_bajo(host, neighbor):
+    wns = _load_wall_node_section()
+    if wns is None:
+        return False
+    tol_z = _tol_z_apilamiento()
+    try:
+        if wns._muro_apilado_bajo_muro_principal(host, neighbor, tol_z):
+            return True
+        if wns._muro_apilado_sobre_muro_principal(host, neighbor, tol_z):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _dist_xy(a, b):
+    """Distancia en planta (ignora Z: bases distintas no anulan el encuentro)."""
+    if a is None or b is None:
+        return 1e30
+    try:
+        dx = float(a.X) - float(b.X)
+        dy = float(a.Y) - float(b.Y)
+        return (dx * dx + dy * dy) ** 0.5
+    except Exception:
+        return 1e30
+
+
+def _candidato_geometrico_en_extremo(doc, host, extremo, neighbor, wall_line=None, tol_end=None):
     """
-    True si ``neighbor`` participa en el encuentro en el extremo ``inicio``/``fin`` del host.
+    Proximidad del extremo del host al eje del vecino (sin p_join).
+    Usado como prefiltro antes de validar intersección de ejes.
     """
     if doc is None or host is None or neighbor is None:
         return False
@@ -244,12 +301,19 @@ def vecino_en_extremo_muro(doc, host, extremo, neighbor):
     if wns is None:
         return False
     try:
-        wall_line, _co = wns._location_as_line(host)
+        if wns._esta_unido_por_wall_join_en_extremo(host, neighbor, extremo):
+            return True
     except Exception:
-        return False
+        pass
+    if wall_line is None:
+        try:
+            wall_line, _co = wns._location_as_line(host)
+        except Exception:
+            return False
     if wall_line is None:
         return False
-    tol_end = _tol_extremo_default()
+    if tol_end is None:
+        tol_end = _tol_extremo_default()
     if not wns._es_muro_lateral_en_extremos(doc, host, wall_line, neighbor, tol_end):
         return False
     try:
@@ -268,7 +332,7 @@ def vecino_en_extremo_muro(doc, host, extremo, neighbor):
         return False
     try:
         for p in (oc.GetEndPoint(0), oc.GetEndPoint(1)):
-            if station.DistanceTo(p) <= tol_curve:
+            if _dist_xy(station, p) <= tol_curve:
                 return True
         if wns._dist_point_to_curve(station, oc) <= tol_curve:
             return True
@@ -287,14 +351,115 @@ def vecino_en_extremo_muro(doc, host, extremo, neighbor):
                     return True
     except Exception:
         pass
-    if wns._esta_unido_por_join_geometry(doc, host, neighbor):
+    if wns._esta_unido_por_join_geometry(doc, host, neighbor) or wns._esta_unido_por_wall_join(
+        host, neighbor
+    ):
         try:
             for p in (oc.GetEndPoint(0), oc.GetEndPoint(1)):
-                if station.DistanceTo(p) <= tol_curve * 1.5:
+                if _dist_xy(station, p) <= tol_curve * 1.5:
                     return True
         except Exception:
             pass
     return False
+
+
+def _pjoin_valido_en_extremo(doc, host, neighbor, extremo, wall_line=None, tol_end=None):
+    """
+    True si ``neighbor`` se une al ``host`` en ``extremo``: unión de muro
+    (``ElementsAtJoin``) o, si no hay, intersección de ejes (p_join).
+    Excluye apilados y muros paralelos longitudinales.
+    """
+    if doc is None or host is None or neighbor is None:
+        return False
+    if extremo not in (u"inicio", u"fin"):
+        return False
+    if _es_apilado_sobre_o_bajo(host, neighbor):
+        return False
+
+    enc_l = _encuentro_l_mod()
+    if enc_l is None:
+        return False
+    if enc_l._dot_dirs_wall(host, neighbor) > 0.92:
+        return False
+
+    wns = _load_wall_node_section()
+    wall_join_end = False
+    if wns is not None:
+        try:
+            wall_join_end = bool(
+                wns._esta_unido_por_wall_join_en_extremo(host, neighbor, extremo)
+            )
+        except Exception:
+            wall_join_end = False
+
+    # Unión de muro en esa punta + ejes no paralelos = encuentro (L/T).
+    if wall_join_end:
+        return True
+
+    if not _candidato_geometrico_en_extremo(
+        doc, host, extremo, neighbor, wall_line=wall_line, tol_end=tol_end,
+    ):
+        return False
+
+    try:
+        from armado_muros_cabezal import _wall_longitudinal_at_extremo
+    except Exception:
+        return False
+    geom_h = _wall_longitudinal_at_extremo(host, extremo)
+    if geom_h is None:
+        return False
+    station = geom_h.get(u"pt_extremo")
+    if station is None:
+        return False
+
+    lc_h = enc_l.location_curve_wall(host) if enc_l.location_curve_wall else None
+    lc_n = enc_l.location_curve_wall(neighbor) if enc_l.location_curve_wall else None
+    if lc_h is None or lc_n is None:
+        return False
+    o1, d1 = enc_l._line_dir_xy(lc_h)
+    o2, d2 = enc_l._line_dir_xy(lc_n)
+    if enc_l._intersect_lines_xy(o1, d1, o2, d2) is None:
+        return False
+
+    try:
+        p_join = enc_l.cabezal_encuentro_l_p_join(doc, host, neighbor, extremo)
+    except Exception:
+        return False
+    if p_join is None:
+        return False
+
+    if tol_end is None:
+        tol_end = _tol_extremo_default()
+    tol_curve = tol_end
+    if wns is not None:
+        try:
+            tol_curve = wns._tol_extremo_curva_muros(host, neighbor, tol_end)
+        except Exception:
+            tol_curve = tol_end
+    try:
+        if _dist_xy(station, p_join) > float(tol_curve) * 1.5:
+            return False
+    except Exception:
+        return False
+    return True
+
+
+def _muro_unido_por_pjoin_en_algun_extremo(doc, host, neighbor, wall_line=None, tol_end=None):
+    for extremo in (u"inicio", u"fin"):
+        if _pjoin_valido_en_extremo(
+            doc, host, neighbor, extremo,
+            wall_line=wall_line, tol_end=tol_end,
+        ):
+            return True
+    return False
+
+
+def vecino_en_extremo_muro(doc, host, extremo, neighbor):
+    """
+    True si ``neighbor`` participa en el encuentro en el extremo ``inicio``/``fin`` del host
+    (intersección de ejes p_join, criterio Armado Muros V3).
+    """
+    return _pjoin_valido_en_extremo(doc, host, neighbor, extremo)
 
 
 def vecinos_en_extremo(doc, host, extremo):

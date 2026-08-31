@@ -2435,6 +2435,7 @@ class ColocarArmaduraFundacionStubHandler(IExternalEventHandler):
 
             # --- Vistas y secciones dentro de la misma transacción principal ---
             _ultima_vista = None
+            _vistas_para_unobscured = []
             if _crear_vistas_en_este_ciclo:
                 try:
                     from vista_seccion_enfierrado_vigas import (
@@ -2477,16 +2478,67 @@ class ColocarArmaduraFundacionStubHandler(IExternalEventHandler):
                                 rebar_avisos.append(u"Vista de planta: {0}".format(_av_planta))
                             if _vista_planta is not None:
                                 _ultima_vista = _vista_planta
+                                _vistas_para_unobscured.append(_vista_planta)
                         _vistas_sec, _av_sec = crear_secciones_fundacion_aislada(
                             doc,
                             _elem_vista,
                             uidocument=None,
                             gestionar_transaccion=False,
                         )
+                        for _vs in (_vistas_sec or []):
+                            if _vs is not None:
+                                _vistas_para_unobscured.append(_vs)
                         for _av in _av_sec:
                             rebar_avisos.append(u"Sección: {0}".format(_av))
                 except Exception as _ex_vistas:
                     rebar_avisos.append(u"Vistas no creadas: {0}".format(_ex_vistas))
+
+            # View Unobscured (+ sólido) en las barras creadas: vista activa y vistas nuevas.
+            if rebar_ids_armadura_largo_total:
+                try:
+                    from bimtools_rebar_3d_visibility import apply_rebar_unobscured_in_view
+
+                    _rebars_created = []
+                    for _rid in rebar_ids_armadura_largo_total:
+                        try:
+                            _rb = doc.GetElement(_rid)
+                            if _rb is not None:
+                                _rebars_created.append(_rb)
+                        except Exception:
+                            pass
+                    if _rebars_created:
+                        _views_unob = []
+                        _seen_vid = set()
+
+                        def _add_view_unob(v):
+                            if v is None:
+                                return
+                            try:
+                                vi = element_id_to_int(v.Id)
+                            except Exception:
+                                vi = None
+                            if vi is not None:
+                                if vi in _seen_vid:
+                                    return
+                                _seen_vid.add(vi)
+                            _views_unob.append(v)
+
+                        try:
+                            if uidoc is not None:
+                                _add_view_unob(uidoc.ActiveView)
+                        except Exception:
+                            pass
+                        for _v_u in _vistas_para_unobscured:
+                            _add_view_unob(_v_u)
+                        for _v_u in _views_unob:
+                            try:
+                                apply_rebar_unobscured_in_view(
+                                    doc, _rebars_created, _v_u
+                                )
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
 
             t.Commit()
             _guid_commit_ok = True

@@ -14,7 +14,7 @@ def run_pyrevit(uiapp):
     from armado_muros_run import setup_armado_muros_paths, ensure_armado_muros_modules_fresh
 
     setup_armado_muros_paths()
-    ensure_armado_muros_modules_fresh()
+    ensure_armado_muros_modules_fresh(force=True)
     from armado_muros_lineales import run_mallas
 
     return run_mallas(uiapp)

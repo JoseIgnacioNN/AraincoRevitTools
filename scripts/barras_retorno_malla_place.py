@@ -53,6 +53,8 @@ from armado_muros_rebar_params import (
     iniciar_armadura_conjunto_guid_ejecucion,
     iniciar_armadura_eje_ejecucion,
     set_armadura_capa_desde_layer,
+    stamp_armadura_capas_si_multilayer,
+    stamp_armadura_eje,
 )
 
 try:
@@ -153,6 +155,112 @@ def wall_espesor_mm(wall):
         return 200.0
 
 
+def end_join_stretch_mm(doc, wall):
+    """
+    Estirón positivo (mm) del segmento mayor por unión con muros en extremos.
+
+    En cada extremo (inicio / fin de ``LocationCurve``), si hay muro vecino detectado,
+    suma la mitad del ancho de ese muro. Varios vecinos en el mismo extremo → el de
+    mayor espesor.
+
+    Returns:
+        (stretch_inicio_mm, stretch_fin_mm)
+    """
+    sa = 0.0
+    sb = 0.0
+    if doc is None or wall is None or not isinstance(wall, Wall):
+        return sa, sb
+    try:
+        import armado_muros_vecinos_extremos as vec_ext
+    except Exception:
+        return sa, sb
+
+    def _half_max_width_mm(neighbors):
+        best = 0.0
+        for nw in neighbors or []:
+            try:
+                w = float(wall_espesor_mm(nw))
+            except Exception:
+                w = 0.0
+            if w > best:
+                best = w
+        if best <= 1.0:
+            return 0.0
+        return best * 0.5
+
+    try:
+        sa = float(_half_max_width_mm(vec_ext.vecinos_en_extremo(doc, wall, u"inicio")))
+    except Exception:
+        sa = 0.0
+    try:
+        sb = float(_half_max_width_mm(vec_ext.vecinos_en_extremo(doc, wall, u"fin")))
+    except Exception:
+        sb = 0.0
+    return sa, sb
+
+
+def end_neighbors_for_ui(doc, wall):
+    """
+    Muros vecinos detectados en extremos (inicio / fin de LocationCurve).
+
+    Returns:
+        dict: ``inicio`` / ``fin`` → listas de
+        ``{id, width_mm, height_mm}`` (ancho = espesor del vecino).
+    """
+    out = {u"inicio": [], u"fin": []}
+    if doc is None or wall is None or not isinstance(wall, Wall):
+        return out
+    try:
+        import armado_muros_vecinos_extremos as vec_ext
+    except Exception:
+        return out
+    for ex in (u"inicio", u"fin"):
+        try:
+            vecinos = vec_ext.vecinos_en_extremo(doc, wall, ex) or []
+        except Exception:
+            vecinos = []
+        for nw in vecinos:
+            if nw is None:
+                continue
+            try:
+                w_mm = float(wall_espesor_mm(nw))
+            except Exception:
+                w_mm = 0.0
+            if w_mm <= 1.0:
+                continue
+            try:
+                nid = int(nw.Id.IntegerValue)
+            except Exception:
+                nid = 0
+            out[ex].append(
+                {
+                    u"id": nid,
+                    u"width_mm": w_mm,
+                    u"height_mm": float(wall_height_mm(nw)),
+                }
+            )
+    return out
+
+
+def end_neighbor_width_mm(doc, wall, extremo):
+    """Mayor espesor (mm) entre vecinos en un extremo; 0 si no hay."""
+    data = end_neighbors_for_ui(doc, wall)
+    items = data.get(extremo) or []
+    if not items:
+        return 0.0
+    return max(float(n.get(u"width_mm") or 0.0) for n in items)
+
+
+def main_bar_length_for_wall_mm(doc, wall):
+    """
+    Largo del segmento mayor (mm): L muro − 2·margen + estirones por muros unidos
+    en extremos (½ ancho del vecino en cada punta detectada).
+    """
+    L = float(wall_largo_mm(wall))
+    sa, sb = end_join_stretch_mm(doc, wall)
+    return float(long_bar_length_mm(L + sa + sb, MARGIN_END_MM))
+
+
 def wall_height_mm(wall):
     try:
         z0, z1 = cor._wall_z_bounds_ft(wall)
@@ -162,11 +270,68 @@ def wall_height_mm(wall):
 
 
 def resolve_foundation(doc, wall):
-    """Fundación principal unida al muro, o None."""
+    """
+    Fundación asociada al muro.
+
+    Prioriza ``WallFoundation`` con ``WallId`` = muro (corrida típica Arainco);
+    si no hay, usa fundaciones estructurales unidas por Join Geometry.
+    """
+    wf = _wall_foundation_for_wall(doc, wall)
+    if wf is not None:
+        return wf
     try:
         return cor._fundacion_principal_muro(doc, wall)
     except Exception:
         return None
+
+
+def _wall_foundation_for_wall(doc, wall):
+    """Primera ``WallFoundation`` cuyo ``WallId`` apunta al muro."""
+    if doc is None or wall is None:
+        return None
+    try:
+        from Autodesk.Revit.DB import FilteredElementCollector, WallFoundation
+    except Exception:
+        return None
+    try:
+        wid = wall.Id
+    except Exception:
+        return None
+    try:
+        wid_i = int(wid.IntegerValue)
+    except Exception:
+        try:
+            wid_i = int(wid.Value)
+        except Exception:
+            wid_i = None
+    try:
+        for wf in FilteredElementCollector(doc).OfClass(WallFoundation):
+            if wf is None:
+                continue
+            try:
+                wfid = wf.WallId
+            except Exception:
+                continue
+            if wfid is None:
+                continue
+            try:
+                if wfid == wid:
+                    return wf
+            except Exception:
+                pass
+            if wid_i is not None:
+                try:
+                    if int(wfid.IntegerValue) == wid_i:
+                        return wf
+                except Exception:
+                    try:
+                        if int(wfid.Value) == wid_i:
+                            return wf
+                    except Exception:
+                        pass
+    except Exception:
+        return None
+    return None
 
 
 def foundation_dims_mm(foundation, wall_thickness_mm=None):
@@ -244,7 +409,67 @@ def detect_joined_wall_relation(doc, wall):
     return None
 
 
-def wall_meta_for_ui(doc, wall):
+def _view_right_unit(view):
+    """``RightDirection`` unitario (rx, ry, rz) o ``None``."""
+    if view is None:
+        return None
+    try:
+        rd = view.RightDirection
+        rx = float(rd.X)
+        ry = float(rd.Y)
+        rz = float(rd.Z)
+    except Exception:
+        return None
+    rl = (rx * rx + ry * ry + rz * rz) ** 0.5
+    if rl < 1e-9:
+        return None
+    return (rx / rl, ry / rl, rz / rl)
+
+
+def _dot3(pt, axis):
+    return (
+        float(pt.X) * float(axis[0])
+        + float(pt.Y) * float(axis[1])
+        + float(pt.Z) * float(axis[2])
+    )
+
+
+def wall_elev_canvas_flip_for_view(wall, view):
+    """
+    ``True`` si el canvas de elevación debe espejarse para coincidir con la vista.
+
+    Proyecta P0/P1 de ``LocationCurve`` sobre ``view.RightDirection``.
+    Si ``P0·Right > P1·Right``, el inicio del muro (extremo A) queda a la
+    **derecha** en pantalla → hay que invertir el eje X del dibujo para que
+    izquierda canvas = izquierda vista.
+
+    Respaldo ``False`` (izq. = A = P0) si no hay vista/curva o el muro queda
+    casi de canto respecto a la vista.
+    """
+    if wall is None or view is None:
+        return False
+    lc = location_curve_wall(wall) if location_curve_wall else None
+    if lc is None:
+        return False
+    rd = _view_right_unit(view)
+    if rd is None:
+        return False
+    try:
+        p0 = lc.GetEndPoint(0)
+        p1 = lc.GetEndPoint(1)
+        u0 = _dot3(p0, rd)
+        u1 = _dot3(p1, rd)
+        length_ft = float(lc.Length)
+    except Exception:
+        return False
+    du = u1 - u0
+    min_span = max(1e-3, 0.15 * max(abs(length_ft), 1e-6))
+    if abs(du) < min_span:
+        return False
+    return bool(u0 > u1)
+
+
+def wall_meta_for_ui(doc, wall, view=None):
     """Metadatos de muro + fundación opcional para preview."""
     thick = wall_espesor_mm(wall)
     fund = resolve_foundation(doc, wall) if doc is not None else None
@@ -271,15 +496,30 @@ def wall_meta_for_ui(doc, wall):
             u"height_mm": float(dims[u"height_mm"]),
             u"offset_from_wall_mm": float(dims[u"offset_from_wall_mm"]),
         }
+    sa, sb = end_join_stretch_mm(doc, wall)
+    elev_flip = wall_elev_canvas_flip_for_view(wall, view)
+    end_neigh = end_neighbors_for_ui(doc, wall)
+    w_a = end_neighbor_width_mm(doc, wall, u"inicio")
+    w_b = end_neighbor_width_mm(doc, wall, u"fin")
+    if w_a <= 1.0 and sa > 1.0:
+        w_a = sa * 2.0
+    if w_b <= 1.0 and sb > 1.0:
+        w_b = sb * 2.0
     return {
         u"wall": wall,
         u"id": wid,
-        u"thickness_mm": float(thick),
+        u"thickness_mm": thick,
         u"length_mm": wall_largo_mm(wall),
         u"height_mm": wall_height_mm(wall),
         u"foundation": fund_info,
         u"joined": joined,
-        u"main_mm": long_bar_length_mm(wall_largo_mm(wall), MARGIN_END_MM),
+        u"join_stretch_start_mm": float(sa),
+        u"join_stretch_end_mm": float(sb),
+        u"end_neighbors": end_neigh,
+        u"end_neighbor_width_inicio_mm": float(w_a),
+        u"end_neighbor_width_fin_mm": float(w_b),
+        u"main_mm": main_bar_length_for_wall_mm(doc, wall),
+        u"elev_flip": bool(elev_flip),
     }
 
 
@@ -296,44 +536,47 @@ def _bar_type(doc, diam_mm, fallback=None):
         return fallback
 
 
+_DIVIDIR_PB_NAMES = (
+    u"04_DividirRebarPuntoTraslape.pushbutton",
+    u"56_DividirRebarPuntoTraslape.pushbutton",
+)
+_DIVIDIR_PB_SUFFIX = u"DividirRebarPuntoTraslape.pushbutton"
+_DIVIDIR_PANELS = (
+    u"3D Rebar.panel",
+    u"Armadura.panel",
+)
+
+
 def _find_dividir_rebar_punto_scripts_dir():
+    """
+    Localiza el módulo compartido ``dividir_rebar_punto_core`` (carpeta scripts/).
+    """
     global _DIVIDIR56_LOAD_ERROR
     here = os.path.dirname(os.path.abspath(__file__))
+    core = os.path.join(here, u"dividir_rebar_punto_core.py")
+    if os.path.isfile(core):
+        return here
+    # Compat: antiguo layout portable bajo el pushbutton
     cursor = here
     for _ in range(24):
-        candidate = os.path.join(
-            cursor,
-            u"BIMTools.tab",
-            u"Armadura.panel",
-            u"56_DividirRebarPuntoTraslape.pushbutton",
-            u"scripts",
-        )
-        if os.path.isdir(candidate):
-            return candidate
-        # también relativo a extensión
-        candidate2 = os.path.join(
-            cursor,
-            u"Armadura.panel",
-            u"56_DividirRebarPuntoTraslape.pushbutton",
-            u"scripts",
-        )
-        if os.path.isdir(candidate2):
-            return candidate2
+        for panel in _DIVIDIR_PANELS:
+            for name in _DIVIDIR_PB_NAMES:
+                candidate = os.path.join(
+                    cursor,
+                    u"BIMTools.tab",
+                    panel,
+                    name,
+                    u"scripts",
+                )
+                if os.path.isfile(
+                    os.path.join(candidate, u"dividir_rebar_punto_core.py")
+                ):
+                    return candidate
         parent = os.path.dirname(cursor)
         if parent == cursor:
             break
         cursor = parent
-    # walk from extension root via this file's parent chain
-    ext = os.path.dirname(here)
-    for root, dirs, _files in os.walk(ext):
-        if u"56_DividirRebarPuntoTraslape.pushbutton" in dirs:
-            sc = os.path.join(root, u"56_DividirRebarPuntoTraslape.pushbutton", u"scripts")
-            if os.path.isdir(sc):
-                return sc
-        # limit depth
-        if root.count(os.sep) - ext.count(os.sep) > 4:
-            dirs[:] = []
-    _DIVIDIR56_LOAD_ERROR = u"Scripts 56 no encontrados."
+    _DIVIDIR56_LOAD_ERROR = u"dividir_rebar_punto_core no encontrado en scripts/."
     return None
 
 
@@ -341,21 +584,19 @@ def _ensure_dividir_rebar_punto():
     global _DIVIDIR56_LOAD_ERROR
     scripts_dir = _find_dividir_rebar_punto_scripts_dir()
     if not scripts_dir:
-        return False, _DIVIDIR56_LOAD_ERROR or u"Scripts 56 no encontrados.", None
+        return False, _DIVIDIR56_LOAD_ERROR or u"Scripts Dividir no encontrados.", None
     try:
-        if scripts_dir in sys.path:
-            sys.path.remove(scripts_dir)
-        sys.path.insert(0, scripts_dir)
-    except Exception:
         if scripts_dir not in sys.path:
             sys.path.insert(0, scripts_dir)
+    except Exception:
+        pass
     try:
         from dividir_rebar_punto_core import divide_rebar_at_cuts
 
         return True, u"", divide_rebar_at_cuts
     except Exception as ex:
         _DIVIDIR56_LOAD_ERROR = _as_unicode(ex)
-        return False, u"Import 56: {0}".format(_DIVIDIR56_LOAD_ERROR), None
+        return False, u"Import Dividir: {0}".format(_DIVIDIR56_LOAD_ERROR), None
 
 
 def _xyz(x, y, z):
@@ -403,13 +644,17 @@ def _build_longitudinal_curves(
     end_a,
     end_b,
     concrete_grade,
+    pata_leg_sign=1.0,
+    bar_type=None,
+    doc=None,
 ):
     """
     Polilínea longitudinal (1–3 tramos) en el plano del muro.
 
     Origen mm: LocationCurve P0 + MARGIN_END.
-    Empotramiento: prolonga más allá del margen.
-    Pata 90º: tramo vertical hacia +Z en el extremo.
+    Unión con muro en extremo: estirón +½ ancho del vecino (hacia fuera).
+    Empotramiento: prolonga más allá del margen (y del estirón de unión).
+    Pata 90º: tramo vertical; ``pata_leg_sign`` +1 = +Z, −1 = −Z (tope muro).
 
     Returns:
         curves, normal, distrib_ft, main_mm, err
@@ -426,6 +671,8 @@ def _build_longitudinal_curves(
     wall_len_ft = float(p0.DistanceTo(p1))
     if wall_len_ft < 1e-9:
         return None, None, None, 0.0, u"Muro de longitud nula."
+
+    stretch_a_mm, stretch_b_mm = end_join_stretch_mm(doc, wall)
 
     margin_ft = float(_mm_to_internal(MARGIN_END_MM))
     cover_ft = float(_mm_to_internal(COVER_WALL_MM))
@@ -450,12 +697,21 @@ def _build_longitudinal_curves(
     # holgura extremos
     pt_a = _offset_point(pt_a, t_hat, margin_ft)
     pt_b = _offset_point(pt_b, t_hat.Negate(), margin_ft)
+    # estirón por muro unido en extremos (½ ancho del vecino, hacia fuera)
+    if float(stretch_a_mm) > 1e-6:
+        pt_a = _offset_point(
+            pt_a, t_hat.Negate(), float(_mm_to_internal(stretch_a_mm))
+        )
+    if float(stretch_b_mm) > 1e-6:
+        pt_b = _offset_point(pt_b, t_hat, float(_mm_to_internal(stretch_b_mm)))
 
     ea = normalize_end_condition(end_a)
     eb = normalize_end_condition(end_b)
     embed_mm = empotramiento_mm_from_diam(diam_mm, concrete_grade)
     embed_ft = float(_mm_to_internal(embed_mm))
-    pata_mm = pata_mm_from_diam(diam_mm)
+    pata_mm = pata_mm_from_diam(
+        diam_mm, concrete_grade=concrete_grade, bar_type=bar_type,
+    )
     pata_ft = float(_mm_to_internal(pata_mm))
 
     if ea == END_EMPOTRO:
@@ -463,13 +719,22 @@ def _build_longitudinal_curves(
     if eb == END_EMPOTRO:
         pt_b = _offset_point(pt_b, t_hat, embed_ft)
 
-    main_mm = long_bar_length_mm(_ft_to_mm(wall_len_ft), MARGIN_END_MM)
+    main_mm = long_bar_length_mm(
+        _ft_to_mm(wall_len_ft) + float(stretch_a_mm) + float(stretch_b_mm),
+        MARGIN_END_MM,
+    )
     curves = []
 
     # Pata A: vertical desde pt_a_horiz; si pata, el horizontal empieza en pt_a
     start_h = pt_a
     end_h = pt_b
-    up = XYZ.BasisZ
+    try:
+        leg_sign = float(pata_leg_sign)
+    except Exception:
+        leg_sign = 1.0
+    if abs(leg_sign) < 1e-9:
+        leg_sign = 1.0
+    up = XYZ.BasisZ.Multiply(leg_sign)
 
     if ea == END_PATA and pata_ft > 1e-6:
         p_leg_a = _offset_point(pt_a, up, pata_ft)
@@ -500,7 +765,7 @@ def _build_longitudinal_curves(
     return curves, n_hat, distrib_ft, main_mm, None
 
 
-def _cuts_ui_to_centerline_mm(cuts_ui_mm, diam_mm, end_a, concrete_grade):
+def _cuts_ui_to_centerline_mm(cuts_ui_mm, diam_mm, end_a, concrete_grade, bar_type=None):
     """
     UI cuts (mm sobre vano claro entre holguras) → mm sobre centerline CreateFromCurves.
 
@@ -510,7 +775,13 @@ def _cuts_ui_to_centerline_mm(cuts_ui_mm, diam_mm, end_a, concrete_grade):
     ea = normalize_end_condition(end_a)
     offset = 0.0
     if ea == END_PATA:
-        offset += float(pata_mm_from_diam(diam_mm))
+        offset += float(
+            pata_mm_from_diam(
+                diam_mm,
+                concrete_grade=concrete_grade,
+                bar_type=bar_type,
+            )
+        )
     elif ea == END_EMPOTRO:
         offset += float(empotramiento_mm_from_diam(diam_mm, concrete_grade))
     out = []
@@ -533,6 +804,7 @@ def _create_retorno_rebar(
     end_a,
     end_b,
     concrete_grade,
+    pata_leg_sign=1.0,
 ):
     """Crea un set longitudinal con layout Fixed Number en espesor."""
     if doc is None or wall is None or host is None or bar_type is None:
@@ -542,7 +814,15 @@ def _create_retorno_rebar(
 
     n_bars = clamp_n_bars(n_bars)
     curves, normal, distrib_ft, _main, err = _build_longitudinal_curves(
-        wall, z_bar_ft, diam_mm, end_a, end_b, concrete_grade
+        wall,
+        z_bar_ft,
+        diam_mm,
+        end_a,
+        end_b,
+        concrete_grade,
+        pata_leg_sign=pata_leg_sign,
+        bar_type=bar_type,
+        doc=doc,
     )
     if err:
         return None, 0, err
@@ -613,7 +893,33 @@ def _element_ids_from_ints(id_ints):
     return out
 
 
-def _tag_retorno_rebars(doc, uidoc, rebar_id_ints, tag_meta=None):
+def _build_rebar_groups_multicapas(layer_segment_ids):
+    """
+    Agrupa ids por índice de tramo (misma sucesión de capas → multihost).
+
+    ``layer_segment_ids``: lista por capa de listas de id int (orden de tramo).
+    """
+    if not layer_segment_ids or len(layer_segment_ids) < 2:
+        return []
+    try:
+        n_seg = max(len(row) for row in layer_segment_ids)
+    except Exception:
+        return []
+    groups = []
+    for si in range(n_seg):
+        grp = []
+        for row in layer_segment_ids:
+            if si < len(row):
+                try:
+                    grp.append(int(row[si]))
+                except Exception:
+                    pass
+        if len(grp) >= 2:
+            groups.append(grp)
+    return groups
+
+
+def _tag_retorno_rebars(doc, uidoc, rebar_id_ints, tag_meta=None, rebar_groups=None, n_capas=None):
     """
     Etiqueta sets en ActiveView (familia WALL_HORIZONTAL).
 
@@ -636,10 +942,7 @@ def _tag_retorno_rebars(doc, uidoc, rebar_id_ints, tag_meta=None):
         )
         return result
     try:
-        from armado_muros_cabezal_tags import (
-            CABEZAL_REBAR_TAG_FAMILY_NAME,
-            etiquetar_cabezal_longitudinales_en_vista,
-        )
+        from armado_muros_cabezal_tags import CABEZAL_REBAR_TAG_FAMILY_NAME
     except Exception as ex_imp:
         result[u"n_fail"] = len(ids)
         result[u"messages"].append(
@@ -649,44 +952,147 @@ def _tag_retorno_rebars(doc, uidoc, rebar_id_ints, tag_meta=None):
 
     fam = CABEZAL_REBAR_TAG_FAMILY_NAME or _REBAR_TAG_FAMILY
     try:
+        n_capas_i = int(n_capas or 0)
+    except Exception:
+        n_capas_i = 0
+    groups = list(rebar_groups or [])
+    if n_capas_i >= 2 and groups:
+        try:
+            from enfierrado_shaft_hashtag import (
+                etiquetar_grupos_rebar_multihost_capas_en_vista,
+            )
+
+            groups_eid = []
+            for grp in groups:
+                row = []
+                for rid in grp or []:
+                    try:
+                        row.append(ElementId(int(rid)))
+                    except Exception:
+                        pass
+                if len(row) >= 2:
+                    groups_eid.append(row)
+            if groups_eid:
+                n_tag, avisos, err = etiquetar_grupos_rebar_multihost_capas_en_vista(
+                    doc,
+                    view,
+                    groups_eid,
+                    ids,
+                    family_name=fam,
+                    use_transaction=False,
+                )
+                result[u"n_ok"] = int(n_tag or 0)
+                tagged_ids = set()
+                for grp in groups:
+                    for rid in grp or []:
+                        try:
+                            tagged_ids.add(int(rid))
+                        except Exception:
+                            pass
+                untagged = []
+                for rid in rebar_id_ints or []:
+                    try:
+                        ri = int(rid)
+                    except Exception:
+                        continue
+                    if ri not in tagged_ids:
+                        untagged.append(ri)
+                result[u"n_fail"] = max(0, len(groups_eid) - result[u"n_ok"])
+                if untagged:
+                    ind_res = _tag_retorno_rebars_individual(
+                        doc, view, untagged, tag_meta, fam,
+                    )
+                    result[u"n_ok"] += int(ind_res.get(u"n_ok", 0) or 0)
+                    result[u"n_fail"] += int(ind_res.get(u"n_fail", 0) or 0)
+                    for m in ind_res.get(u"messages") or []:
+                        if m:
+                            result[u"messages"].append(m)
+                for m in avisos or []:
+                    if m:
+                        result[u"messages"].append(m)
+                if err:
+                    result[u"messages"].append(err)
+                if result[u"n_ok"] or result[u"messages"]:
+                    return result
+        except Exception as ex_mh:
+            result[u"messages"].append(
+                u"Etiquetas multihost: {0}".format(_as_unicode(ex_mh))
+            )
+
+    return _tag_retorno_rebars_individual(doc, view, rebar_id_ints, tag_meta, fam, result)
+
+
+def _tag_retorno_rebars_individual(
+    doc, view, rebar_id_ints, tag_meta, family_name, result=None,
+):
+    """Etiqueta cada barra (cabezal / coronamiento layout)."""
+    if result is None:
+        result = {u"n_ok": 0, u"n_fail": 0, u"messages": []}
+    ids = _element_ids_from_ints(rebar_id_ints)
+    if not ids:
+        return result
+    try:
+        from armado_muros_cabezal_tags import etiquetar_cabezal_longitudinales_en_vista
+    except Exception as ex_imp:
+        result[u"n_fail"] += len(ids)
+        result[u"messages"].append(
+            u"Etiquetas: módulo no disponible ({0}).".format(_as_unicode(ex_imp))
+        )
+        return result
+    try:
         tag_res = etiquetar_cabezal_longitudinales_en_vista(
             doc,
             view,
             ids,
             tag_meta=tag_meta,
-            family_name=fam,
+            family_name=family_name,
         )
     except Exception as ex_tag:
-        result[u"n_fail"] = len(ids)
+        result[u"n_fail"] += len(ids)
         result[u"messages"].append(
             u"Etiquetas: {0}".format(_as_unicode(ex_tag))
         )
         return result
 
-    result[u"n_ok"] = int(tag_res.get(u"n_ok", 0) or 0)
-    result[u"n_fail"] = int(tag_res.get(u"n_fail", 0) or 0)
+    result[u"n_ok"] += int(tag_res.get(u"n_ok", 0) or 0)
+    result[u"n_fail"] += int(tag_res.get(u"n_fail", 0) or 0)
     for m in tag_res.get(u"messages") or []:
         if m:
             result[u"messages"].append(m)
-    if result[u"n_ok"] == 0 and result[u"n_fail"] > 0 and not result[u"messages"]:
+    if (
+        result[u"n_ok"] == 0
+        and result[u"n_fail"] > 0
+        and not result[u"messages"]
+    ):
         result[u"messages"].append(
-            u"Etiquetas: no se pudo etiquetar (¿falta familia «{0}»?).".format(fam)
+            u"Etiquetas: no se pudo etiquetar (¿falta familia «{0}»?).".format(
+                family_name,
+            )
         )
     return result
 
 
-def _stamp_layer(rebar, layer_index):
+def _stamp_layer(rebar, layer_index, n_capas_total=None):
     if rebar is None:
         return
     try:
         set_armadura_capa_desde_layer(rebar, int(layer_index))
     except Exception:
         pass
+    if n_capas_total is not None:
+        try:
+            stamp_armadura_capas_si_multilayer(rebar, n_capas_total)
+        except Exception:
+            pass
     if activar_armadura_arainco is not None:
         try:
             activar_armadura_arainco(rebar)
         except Exception:
             pass
+    try:
+        stamp_armadura_eje(rebar)
+    except Exception:
+        pass
 
 
 def place_barras_retorno_malla_wall(
@@ -726,6 +1132,8 @@ def place_barras_retorno_malla_wall(
         result[u"messages"].append(u"Sin capas configuradas.")
         return result
 
+    n_capas_cfg = len(layers)
+
     grade = normalize_concrete_grade(concrete_grade)
     ea = normalize_end_condition(end_a if end_a is not None else END_EMPOTRO)
     eb = normalize_end_condition(end_b if end_b is not None else END_PATA)
@@ -738,7 +1146,7 @@ def place_barras_retorno_malla_wall(
     except Exception:
         wall_id_int = 0
 
-    main_mm = long_bar_length_mm(wall_largo_mm(wall), MARGIN_END_MM)
+    main_mm = main_bar_length_for_wall_mm(doc, wall)
     result[u"main_mm"] = float(main_mm)
     result[u"exceeds_12m"] = bool(main_mm > MAX_BARRA_COMERCIAL_MM)
     cuts_ref = list(cuts_ref_mm or [])
@@ -758,9 +1166,10 @@ def place_barras_retorno_malla_wall(
     tg_started = False
     view = _active_view(uidoc)
     tag_meta = []
+    layer_segment_ids = []
     try:
         try:
-            iniciar_armadura_eje_ejecucion(uidoc=uidoc)
+            iniciar_armadura_eje_ejecucion(uidoc=uidoc, view=view)
         except Exception:
             pass
 
@@ -802,7 +1211,7 @@ def place_barras_retorno_malla_wall(
                     grade,
                 )
                 if rb is not None:
-                    _stamp_layer(rb, li)
+                    _stamp_layer(rb, li, n_capas_cfg)
                     t.Commit()
                 else:
                     t.RollBack()
@@ -826,7 +1235,7 @@ def place_barras_retorno_malla_wall(
 
             if layer_cuts and divide_fn is not None:
                 cuts_cl = _cuts_ui_to_centerline_mm(
-                    layer_cuts, diam_mm, ea, grade
+                    layer_cuts, diam_mm, ea, grade, bar_type=bt
                 )
                 # Cotas de traslape vía 56 (Detail + NewDimension); fallan en soft.
                 # prefer_above: cotas hacia +Up; etiquetas van debajo (−Up, cor_pie).
@@ -886,7 +1295,7 @@ def place_barras_retorno_malla_wall(
                     for iv in final_ids:
                         try:
                             el = doc.GetElement(ElementId(int(iv)))
-                            _stamp_layer(el, li)
+                            _stamp_layer(el, li, n_capas_cfg)
                         except Exception:
                             pass
                 else:
@@ -922,8 +1331,10 @@ def place_barras_retorno_malla_wall(
                     pass
 
             created.extend(final_ids)
+            layer_segment_ids.append(list(final_ids))
             result[u"n_layers"] += 1
 
+        rebar_groups = _build_rebar_groups_multicapas(layer_segment_ids)
         result[u"rebar_ids"] = created
         if created:
             result[u"ok"] = True
@@ -933,7 +1344,14 @@ def place_barras_retorno_malla_wall(
                 )
             )
             try:
-                tag_res = _tag_retorno_rebars(doc, uidoc, created, tag_meta=tag_meta)
+                tag_res = _tag_retorno_rebars(
+                    doc,
+                    uidoc,
+                    created,
+                    tag_meta=tag_meta,
+                    rebar_groups=rebar_groups,
+                    n_capas=n_capas_cfg,
+                )
                 result[u"n_tags"] = int(tag_res.get(u"n_ok", 0) or 0)
                 result[u"n_tags_fail"] = int(tag_res.get(u"n_fail", 0) or 0)
                 if result[u"n_tags"] or result[u"n_tags_fail"]:

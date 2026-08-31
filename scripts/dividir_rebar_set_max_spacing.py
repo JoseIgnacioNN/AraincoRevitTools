@@ -34,6 +34,51 @@ except Exception:
 
 _DIALOG_TITLE = u"Arainco: Dividir rebar set Maximum Spacing"
 _TRANSACTION_NAME = u"Arainco: Dividir rebar set Maximum Spacing"
+_PARAM_CONJUNTO_GUID = u"Armadura_Conjunto_GUID"
+_PARAM_MALLA_ORIENTACION = u"Armadura_Malla_Orientacion"
+_PARAM_ARMADURA_NIVEL = u"Armadura_Nivel"
+
+
+def _as_unicode(text):
+    if text is None:
+        return u""
+    try:
+        return unicode(text)
+    except NameError:
+        return str(text)
+
+
+def mostrar_aviso(uiapp, instruction, content=u""):
+    """Aviso WPF BIMTools; respaldo a TaskDialog."""
+    instruction = _as_unicode(instruction)
+    content = _as_unicode(content)
+    try:
+        from bimtools_instruction_dialog import show_message_dialog
+        from revit_wpf_window_position import revit_main_hwnd
+
+        hwnd = None
+        try:
+            hwnd = revit_main_hwnd(uiapp)
+        except Exception:
+            hwnd = None
+        show_message_dialog(
+            _DIALOG_TITLE,
+            instruction=instruction,
+            content=content,
+            ok_text=u"Entendido",
+            hwnd_revit=hwnd,
+            uiapp=uiapp,
+        )
+        return
+    except Exception:
+        pass
+    try:
+        msg = instruction
+        if content:
+            msg = u"{0}\n\n{1}".format(instruction, content)
+        TaskDialog.Show(_DIALOG_TITLE, msg)
+    except Exception:
+        pass
 
 
 def _element_id_int(eid):
@@ -46,6 +91,119 @@ def _element_id_int(eid):
             return int(eid.Value)
         except Exception:
             return None
+
+
+def _find_string_param(element, param_name):
+    if element is None or not param_name:
+        return None
+    p = None
+    try:
+        p = element.LookupParameter(param_name)
+    except Exception:
+        pass
+    if p is None:
+        try:
+            for pr in element.Parameters:
+                try:
+                    defn = pr.Definition
+                    if defn is not None and defn.Name == param_name:
+                        p = pr
+                        break
+                except Exception:
+                    continue
+        except Exception:
+            pass
+    if p is None:
+        return None
+    val = None
+    try:
+        val = p.AsString()
+    except Exception:
+        pass
+    if not val:
+        try:
+            val = p.AsValueString()
+        except Exception:
+            pass
+    if not val:
+        return None
+    try:
+        t = unicode(val).strip()
+    except Exception:
+        try:
+            t = str(val or u"").strip()
+        except Exception:
+            return None
+    return t or None
+
+
+def _get_conjunto_guid(element):
+    try:
+        from armado_muros_rebar_params import get_armadura_conjunto_guid
+
+        return get_armadura_conjunto_guid(element)
+    except Exception:
+        return _find_string_param(element, _PARAM_CONJUNTO_GUID)
+
+
+def _get_malla_orientacion(rebar):
+    try:
+        from armado_muros_rebar_params import get_armadura_malla_orientacion
+
+        return get_armadura_malla_orientacion(rebar)
+    except Exception:
+        val = _find_string_param(rebar, _PARAM_MALLA_ORIENTACION)
+        if not val:
+            return None
+        try:
+            tl = unicode(val).strip().lower()
+        except NameError:
+            tl = str(val or u"").strip().lower()
+        if tl.startswith(u"v"):
+            return u"vertical"
+        if tl.startswith(u"h"):
+            return u"horizontal"
+        return None
+
+
+def _get_armadura_nivel(element):
+    """Lee ``Armadura_Nivel`` (nombre de nivel) o ``None``."""
+    return _find_string_param(element, _PARAM_ARMADURA_NIVEL)
+
+
+def _collect_rebar_ids_conjunto_guid(doc, conjunto_guid):
+    if doc is None or not conjunto_guid:
+        return []
+    try:
+        from armado_muros_rebar_params import collect_rebars_por_conjunto_guid
+
+        return list(collect_rebars_por_conjunto_guid(doc, conjunto_guid))
+    except Exception:
+        from Autodesk.Revit.DB import FilteredElementCollector
+
+        try:
+            target = unicode(conjunto_guid).strip()
+        except NameError:
+            target = str(conjunto_guid or u"").strip()
+        if not target:
+            return []
+        ids = []
+        try:
+            rebars = (
+                FilteredElementCollector(doc)
+                .OfClass(Rebar)
+                .WhereElementIsNotElementType()
+            )
+        except Exception:
+            return []
+        for rb in rebars:
+            gid = _get_conjunto_guid(rb)
+            if gid == target:
+                try:
+                    ids.append(rb.Id)
+                except Exception:
+                    pass
+        return ids
 
 
 def _cantidad_posiciones(rebar):
@@ -161,6 +319,45 @@ def _es_rebar_divisible_pipeline(rebar):
     return True, u""
 
 
+def _peers_misma_orientacion_y_guid(doc, seed_rebar):
+    """
+    Otras rebars con el mismo ``Armadura_Conjunto_GUID``,
+    ``Armadura_Malla_Orientacion`` y ``Armadura_Nivel``
+    (cara opuesta u host distinto en el mismo nivel).
+
+    Mallas de otros niveles se excluyen aunque compartan el GUID de creación.
+    """
+    guid = _get_conjunto_guid(seed_rebar)
+    orient = _get_malla_orientacion(seed_rebar)
+    if not guid or not orient:
+        return []
+    seed_nivel = _get_armadura_nivel(seed_rebar)
+    seed_id = _element_id_int(seed_rebar.Id)
+    peers = []
+    for eid in _collect_rebar_ids_conjunto_guid(doc, guid):
+        try:
+            rb = doc.GetElement(eid)
+        except Exception:
+            continue
+        if rb is None or not isinstance(rb, Rebar):
+            continue
+        if _element_id_int(rb.Id) == seed_id:
+            continue
+        if _get_malla_orientacion(rb) != orient:
+            continue
+        if _get_armadura_nivel(rb) != seed_nivel:
+            continue
+        ok, _ = _es_rebar_divisible(rb)
+        if not ok:
+            continue
+        peers.append(rb)
+    return peers
+
+
+def _targets_dividir_ui(doc, seed_rebar):
+    return [seed_rebar] + _peers_misma_orientacion_y_guid(doc, seed_rebar)
+
+
 def _bar_index_desde_referencia(rebar, reference):
     if rebar is None or reference is None:
         return -1
@@ -192,6 +389,83 @@ def _validar_indice_division(rebar, bar_index):
         except Exception:
             pass
     return True, u""
+
+
+def _ajustar_indice_ultima_barra(rebar, bar_index):
+    """Si el índice es la última barra, cortar antes para aislarla (n-2)."""
+    n = _cantidad_posiciones(rebar)
+    idx = int(bar_index)
+    if n >= 2 and idx >= n - 1:
+        return n - 2
+    return idx
+
+
+def _indice_equivalente(rebar_src, idx_src, rebar_dst):
+    """
+    Índice de corte en ``rebar_dst`` equivalente al de ``rebar_src``.
+
+    Misma cantidad → mismo índice (si es válido). Distinta cantidad → mapeo
+    proporcional en 0..n-1, acotado a [0, n-2] para no dejar un set vacío.
+    """
+    n_src = _cantidad_posiciones(rebar_src)
+    n_dst = _cantidad_posiciones(rebar_dst)
+    max_split = n_dst - 2
+    if max_split < 0:
+        return None
+    idx_src = int(idx_src)
+    if n_dst == n_src:
+        if 0 <= idx_src <= max_split:
+            return idx_src
+        if idx_src >= n_src - 1:
+            return max_split
+        return max(0, min(idx_src, max_split))
+    if n_src <= 1:
+        return max(0, min(idx_src, max_split))
+    mapped = int(round(float(idx_src) * float(n_dst - 1) / float(n_src - 1)))
+    return max(0, min(mapped, max_split))
+
+
+def _plan_division_ui(document, seed, bar_index):
+    """
+    Plan de corte por Rebar (semilla + peers GUID/orientación/nivel).
+
+    Returns:
+        ``(ok, mensaje_error, plan, avisos)``
+        ``plan`` = lista de ``(rebar, idx)``; si la semilla no es válida, ``ok`` es False.
+    """
+    idx_seed = _ajustar_indice_ultima_barra(seed, bar_index)
+    seed_id = _element_id_int(seed.Id)
+    plan = []
+    avisos = []
+    for rb in _targets_dividir_ui(document, seed):
+        rid = _element_id_int(rb.Id)
+        ok_pre, msg_pre = _es_rebar_divisible(rb)
+        if not ok_pre:
+            if rid == seed_id:
+                return False, u"Rebar {0}: {1}".format(rid, msg_pre), [], []
+            avisos.append(u"Rebar {0}: {1}".format(rid, msg_pre))
+            continue
+        if rid == seed_id:
+            idx_rb = idx_seed
+        else:
+            idx_rb = _indice_equivalente(seed, idx_seed, rb)
+            if idx_rb is None:
+                avisos.append(
+                    u"Rebar {0}: no se pudo calcular un índice de corte equivalente.".format(
+                        rid
+                    )
+                )
+                continue
+        ok_idx, msg_idx = _validar_indice_division(rb, idx_rb)
+        if not ok_idx:
+            if rid == seed_id:
+                return False, u"Rebar {0}: {1}".format(rid, msg_idx), [], []
+            avisos.append(u"Rebar {0}: {1}".format(rid, msg_idx))
+            continue
+        plan.append((rb, idx_rb))
+    if not plan:
+        return False, u"Ningún conjunto se pudo dividir.", [], avisos
+    return True, u"", plan, avisos
 
 
 def _split_rebar_api_disponible(rebar=None):
@@ -618,24 +892,35 @@ def dividir_rebar_set_en_indice(document, rebar, bar_index):
     """
     Divide ``rebar`` en el índice indicado (abre Transaction).
 
+    Si la barra tiene ``Armadura_Conjunto_GUID`` y ``Armadura_Malla_Orientacion``,
+    divide también las demás rebars del mismo GUID, misma orientación y
+    mismo ``Armadura_Nivel`` (p. ej. cara interior y exterior de una malla
+    en el mismo nivel). No se dividen mallas de otros niveles aunque
+    compartan el GUID de creación.
+
     Returns:
         (ok: bool, mensaje: unicode, ids_resultantes: list)
     """
-    ok_pre, msg_pre = _es_rebar_divisible(rebar)
-    if not ok_pre:
-        return False, msg_pre, []
-
-    ok_idx, msg_idx = _validar_indice_division(rebar, bar_index)
-    if not ok_idx:
-        return False, msg_idx, []
+    ok_plan, msg_plan, plan, avisos = _plan_division_ui(document, rebar, bar_index)
+    if not ok_plan:
+        extra = u""
+        if avisos:
+            extra = u"\n" + u"\n".join(avisos)
+        return False, (msg_plan or u"Ningún conjunto se pudo dividir.") + extra, []
 
     t = Transaction(document, _TRANSACTION_NAME)
     t.Start()
     msg = u""
     try:
-        ok, msg, rbs = dividir_rebar_set_en_indice_en_tx(document, rebar, bar_index)
-        if not ok:
-            raise RuntimeError(msg or u"Error al dividir el conjunto.")
+        for rb, idx_rb in plan:
+            ok, msg_rb, _ = dividir_rebar_set_en_indice_en_tx(document, rb, idx_rb)
+            if not ok:
+                rid = _element_id_int(rb.Id)
+                raise RuntimeError(
+                    u"Rebar {0}: {1}".format(rid, msg_rb or u"Error al dividir el conjunto."),
+                )
+            if not msg:
+                msg = msg_rb or u""
         t.Commit()
     except Exception as ex:
         t.RollBack()
@@ -644,6 +929,16 @@ def dividir_rebar_set_en_indice(document, rebar, bar_index):
         except NameError:
             msg = str(ex) if ex else u"Error al dividir el conjunto."
         return False, msg, []
+
+    n_extra = len(plan) - 1
+    if n_extra > 0:
+        msg = (
+            u"{0}\n\nConjuntos adicionales divididos (misma GUID, orientación y nivel): {1}."
+        ).format(msg, n_extra)
+    if avisos:
+        msg = (
+            u"{0}\n\nConjuntos no divididos (índice equivalente o layout):\n{1}"
+        ).format(msg, u"\n".join(avisos))
 
     return True, msg, []
 
@@ -700,7 +995,7 @@ def _pick_rebar_max_spacing(uidoc):
 
 def _pick_bar_index(uidoc, rebar):
     ot_sub = _object_type_subelement()
-    prompt = u"2/2 — Selecciona la barra donde dividir el conjunto."
+    prompt = u"2/2 — Selecciona la barra de corte (última del primer set; la última aísla esa barra)."
     if ot_sub is not None:
         try:
             ref = uidoc.Selection.PickObject(
@@ -754,17 +1049,9 @@ def _rebar_desde_seleccion_actual(uidoc):
 
 
 def run_pyrevit(__revit__):
-    from dividir_rebar_set_instruction_dialog import (
-        show_info_dialog,
-        show_selection_instructions,
-    )
-
     uidoc = __revit__.ActiveUIDocument
     if uidoc is None:
-        show_info_dialog(_DIALOG_TITLE, u"No hay documento activo.", uiapp=__revit__)
-        return
-
-    if not show_selection_instructions(__revit__):
+        mostrar_aviso(__revit__, u"No hay documento activo.")
         return
 
     rebar = _rebar_desde_seleccion_actual(uidoc)
@@ -777,27 +1064,31 @@ def run_pyrevit(__revit__):
     if bar_index is None:
         return
 
+    n_pick = _cantidad_posiciones(rebar)
+    nota_ultima = u""
+    if n_pick >= 2 and int(bar_index) >= n_pick - 1:
+        bar_index = n_pick - 2
+        nota_ultima = u"\nLa última barra quedó aislada como segundo subconjunto."
+
     ok_idx, msg_idx = _validar_indice_division(rebar, bar_index)
     if not ok_idx:
-        show_info_dialog(_DIALOG_TITLE, msg_idx, uiapp=__revit__)
+        mostrar_aviso(__revit__, msg_idx)
         return
 
     doc = uidoc.Document
     ok, msg, _ = dividir_rebar_set_en_indice(doc, rebar, bar_index)
     if ok:
-        show_info_dialog(
-            _DIALOG_TITLE,
-            u"Conjunto dividido correctamente.\n\n{}\nÍndice de corte: {}".format(
-                msg, bar_index
-            ),
-            uiapp=__revit__,
+        mostrar_aviso(
+            __revit__,
+            u"Conjunto dividido correctamente.",
+            u"{0}\nÍndice de corte: {1}{2}".format(msg, bar_index, nota_ultima),
         )
     else:
-        show_info_dialog(
-            _DIALOG_TITLE,
-            u"No se pudo dividir:\n\n{}".format(msg),
-            uiapp=__revit__,
-        )
+        mostrar_aviso(__revit__, u"No se pudo dividir.", msg)
+
+
+def run(__revit__):
+    run_pyrevit(__revit__)
 
 
 def main_rps():

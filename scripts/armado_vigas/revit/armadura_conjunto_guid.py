@@ -118,7 +118,6 @@ def stamp_etiquetas_rebar_en_vista(document, view, rebars, conjunto_guid=None):
             FilteredElementCollector(document, view.Id)
             .OfClass(IndependentTag)
             .WhereElementIsNotElementType()
-            .ToElements()
         )
     except Exception:
         tags = []

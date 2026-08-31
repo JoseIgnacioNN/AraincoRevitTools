@@ -1,0 +1,1528 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Lab · Rail CONF + dibujo estribos/trabas</title>
+<style>
+  :root {
+    --bg: #0a1620;
+    --panel: #071018;
+    --border: #21465c;
+    --fg: #e2e8f0;
+    --mid: #94a3b8;
+    --lo: #64748b;
+    --accent: #22d3ee;
+    --green: #34d399;
+    --tie: #fb923c;
+    --sup: #22d3ee;
+    --inf: #f87171;
+    --input: #0c1824;
+    --rail-w: 340px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: #061018;
+    color: var(--fg);
+    min-height: 100vh;
+  }
+  .app {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 12px 16px 24px;
+  }
+  .badge {
+    font-size: 0.72rem;
+    color: var(--lo);
+    margin-bottom: 8px;
+  }
+  .title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0 0 4px;
+  }
+  .subtitle {
+    font-size: 0.78rem;
+    color: var(--mid);
+    margin: 0 0 14px;
+    line-height: 1.4;
+  }
+  /* Layout como Armado Vigas: alzado + rail */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr var(--rail-w);
+    min-height: 640px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--panel);
+  }
+  @media (max-width: 900px) {
+    .main-grid { grid-template-columns: 1fr; }
+  }
+  .elev-mock {
+    background: #0a1620;
+    border-right: 1px solid var(--border);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  .elev-mock h2 {
+    font-size: 0.85rem;
+    color: var(--mid);
+    margin: 0;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .elev-mock h2 .chip {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 3px 7px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    color: var(--lo);
+    background: #071018;
+  }
+  .elev-mock h2 .chip.conf {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(22, 78, 99, 0.5);
+  }
+  /* Workspace principal: alzado (otras tabs) o sección grande (CONF) */
+  .workspace {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: #071018;
+    overflow: hidden;
+    position: relative;
+  }
+  .workspace-elev {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--lo);
+    font-size: 0.8rem;
+    text-align: center;
+    padding: 16px;
+    line-height: 1.45;
+    background:
+      linear-gradient(180deg, transparent 48%, rgba(33,70,92,0.35) 48%, rgba(33,70,92,0.35) 52%, transparent 52%),
+      #0a1620;
+  }
+  .workspace-elev .fake-beam {
+    width: 86%;
+    max-width: 520px;
+    height: 56px;
+    border: 1.5px solid #5bb8d4;
+    border-radius: 2px;
+    background: rgba(10, 22, 32, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    color: var(--mid);
+  }
+  .workspace-section {
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    background: #0a1620;
+  }
+  .workspace-section.active { display: flex; }
+  .workspace-elev.hidden { display: none; }
+  .workspace-section canvas {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    cursor: crosshair;
+    border-radius: 2px;
+    background: #0a1620;
+  }
+  .status-main {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--accent);
+    min-height: 1.2em;
+    margin: 0;
+  }
+  .elev-notes {
+    font-size: 0.72rem;
+    color: var(--lo);
+    line-height: 1.4;
+  }
+  .n-bars-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .n-bars-row select { width: auto; min-width: 140px; }
+
+  /* === RAIL (replica PnlSectionRail) === */
+  .rail {
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    max-height: 92vh;
+  }
+  .rail-scroll {
+    overflow-y: auto;
+    padding: 8px;
+    flex: 1;
+  }
+  .rail-hint {
+    font-size: 9px;
+    color: var(--lo);
+    margin: 0 0 8px;
+  }
+  .rail-preview {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px;
+    min-height: 236px;
+    position: relative;
+  }
+  .rail-preview canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    cursor: crosshair;
+    border-radius: 2px;
+  }
+  .rail-preview.draw-off canvas {
+    cursor: default;
+    opacity: 0.92;
+  }
+  .draw-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 3px 6px;
+    border-radius: 3px;
+    pointer-events: none;
+  }
+  .draw-badge.on {
+    background: rgba(22, 78, 99, 0.92);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+  }
+  .draw-badge.off {
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid var(--border);
+    color: var(--lo);
+  }
+  .rail-meta {
+    font-size: 10px;
+    color: var(--mid);
+    margin: 8px 0 0;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+  .rail-ctrls { margin-top: 8px; }
+
+  /* Config viga */
+  .cfg-card {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--input);
+    padding: 8px;
+    margin-bottom: 10px;
+  }
+  .cfg-card .row-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .cfg-card .lbl {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--fg);
+  }
+  .pill {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: rgba(34, 211, 238, 0.12);
+    border: 1px solid rgba(34, 211, 238, 0.4);
+    color: var(--accent);
+  }
+  .field-lbl {
+    font-size: 9px;
+    color: var(--lo);
+    font-weight: 700;
+    text-transform: uppercase;
+    margin: 0 0 3px;
+  }
+  select, input[type="text"], input[type="number"] {
+    width: 100%;
+    background: #0a1620;
+    border: 1px solid var(--border);
+    color: var(--fg);
+    height: 26px;
+    border-radius: 3px;
+    font-size: 11px;
+    padding: 0 6px;
+  }
+  .cfg-select { margin-top: 2px; }
+
+  /* Tabs SUP INF LAT CONF */
+  .tabs {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    margin-bottom: 10px;
+  }
+  .tab {
+    height: 32px;
+    border: 1px solid var(--border);
+    background: #122636;
+    color: var(--mid);
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .tab:hover { filter: brightness(1.1); }
+  .tab.active {
+    border-color: var(--accent);
+    background: #164e63;
+    color: var(--accent);
+  }
+
+  /* Cards */
+  .card {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--input);
+    padding: 10px 8px;
+    margin-bottom: 8px;
+  }
+  .card.accent-conf { border-color: rgba(91, 184, 212, 0.55); }
+  .card-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .card-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--fg);
+  }
+  .toggle {
+    width: 30px;
+    height: 16px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: #122636;
+    position: relative;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .toggle.on {
+    background: rgba(34, 211, 238, 0.28);
+    border-color: var(--accent);
+  }
+  .toggle::after {
+    content: "";
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #e8f4f8;
+    top: 1px;
+    left: 2px;
+    transition: left 0.12s;
+  }
+  .toggle.on::after { left: 14px; }
+  .card-hint {
+    font-size: 10px;
+    color: var(--lo);
+    margin: 0 0 10px;
+    line-height: 1.35;
+  }
+  .zone-box {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+    margin-bottom: 8px;
+    background: #0E1B32;
+    cursor: pointer;
+  }
+  .zone-box.sel {
+    border-color: #34d399;
+    border-width: 1.5px;
+  }
+  .zone-box.sel.ext { border-color: #fbbf24; }
+  .zone-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--mid);
+    margin-bottom: 6px;
+  }
+  .zone-box.sel .zone-title { color: #34d399; }
+  .zone-box.sel.ext .zone-title { color: #fbbf24; }
+  .field-grid {
+    display: grid;
+    grid-template-columns: 1fr 10px 1fr;
+    align-items: end;
+  }
+  .section-lbl {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--lo);
+    text-transform: uppercase;
+    margin: 10px 0 6px;
+  }
+  .status-line {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--accent);
+    margin: 8px 0 4px;
+    min-height: 1.2em;
+    line-height: 1.35;
+  }
+  .draft-pre {
+    margin: 6px 0 0;
+    background: #0a1620;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 8px;
+    font: 11px/1.4 Consolas, monospace;
+    color: var(--fg);
+    white-space: pre-wrap;
+  }
+  .mock-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+  }
+  .mock-row label { font-size: 10px; color: var(--mid); min-width: 72px; }
+  .mock-btn {
+    height: 24px;
+    padding: 0 8px;
+    font-size: 10px;
+    background: #122636;
+    border: 1px solid var(--border);
+    color: var(--fg);
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .mock-btn:hover { filter: brightness(1.1); }
+  .mock-btn.active {
+    border-color: var(--accent);
+    background: #164e63;
+    color: var(--accent);
+  }
+  .footnote {
+    font-size: 9px;
+    color: var(--lo);
+    margin-top: 12px;
+    line-height: 1.4;
+  }
+  .lab-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 8px 0 4px;
+  }
+  .catalog {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 140px;
+    overflow: auto;
+    margin-top: 6px;
+  }
+  .cat-item {
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 6px 8px;
+    font-size: 10px;
+    cursor: pointer;
+    background: #0a1620;
+    color: #cbd5e1;
+  }
+  .cat-item.match {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: #0e2a34;
+  }
+  .analysis {
+    margin-top: 14px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: #071018;
+    font-size: 0.78rem;
+    color: var(--mid);
+    line-height: 1.5;
+  }
+  .analysis h3 {
+    margin: 0 0 8px;
+    font-size: 0.85rem;
+    color: var(--fg);
+  }
+  .analysis ul { margin: 0; padding-left: 1.2em; }
+  .analysis li { margin-bottom: 4px; }
+  .analysis code {
+    font-size: 0.75rem;
+    background: #0a1620;
+    padding: 1px 4px;
+    border-radius: 2px;
+    color: var(--accent);
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="badge">Bizards · Lab de evaluación · mock del rail de Armado Vigas · sin Colocar / SESSION</div>
+  <h1 class="title">CONF → dibujo en workspace grande (sitio del alzado)</h1>
+  <p class="subtitle">
+    En pestaña <b>CONF</b> el área principal (canvas de elevación) pasa a <b>sección interactiva grande</b>
+    para dibujar estribos/trabas con precisión. El preview del rail solo refleja el resultado (satélite).
+    En SUP/INF/LAT el área principal vuelve al alzado mock.
+  </p>
+
+  <div class="main-grid">
+    <!-- Izquierda: workspace elevación / sección CONF -->
+    <div class="elev-mock">
+      <h2>
+        <span id="wsTitle">Sección · diagrama E (workspace elevación)</span>
+        <span class="chip conf" id="wsChip">CONF · DIBUJO</span>
+      </h2>
+      <div class="workspace" id="workspace">
+        <div class="workspace-elev hidden" id="wsElev">
+          <div>
+            <div class="fake-beam">Alzado · silueta + Ext/Cent + bandas Tn</div>
+            <p style="margin:12px 0 0;font-size:0.75rem;color:var(--lo)">
+              Mock no interactivo. El dibujo de estribos se hace en CONF
+              ocupando este mismo espacio a escala grande.
+            </p>
+          </div>
+        </div>
+        <div class="workspace-section active" id="wsSection">
+          <canvas id="cvMain" width="720" height="520"></canvas>
+        </div>
+      </div>
+      <p class="status-main" id="snapStatusMain"></p>
+      <div class="n-bars-row">
+        <div class="field-lbl" style="margin:0">n 1ª capa (SUP/INF)</div>
+        <select id="nBars"></select>
+      </div>
+      <div class="elev-notes" id="wsNotes">
+        Producción: con <code>rail_card=="conf"</code>, el host del alzado pinta sección ampliada
+        (mismo draft que el preview del rail). Snap · clic ancla · doble clic cierra.
+      </div>
+    </div>
+
+    <!-- Derecha: rail completo -->
+    <aside class="rail">
+      <div class="rail-scroll">
+        <p class="rail-hint" id="railHint">Viga 1 · sección · Conf.</p>
+
+        <div class="rail-preview draw-off" id="previewHost" title="Vista satélite · dibujo en área alzado">
+          <span class="draw-badge off" id="drawBadge">SATÉLITE · ver alzado</span>
+          <canvas id="cvRail" width="324" height="222"></canvas>
+        </div>
+        <p class="rail-meta" id="railMeta">—</p>
+
+        <div class="rail-ctrls">
+          <!-- Config viga -->
+          <div class="cfg-card">
+            <div class="row-hdr">
+              <span class="lbl">Configuración viga</span>
+              <span class="pill">VIGA</span>
+            </div>
+            <div class="field-lbl">Viga activa</div>
+            <select class="cfg-select" id="beamSelect">
+              <option>Viga 1 · V-2504114 · 20×56 · 9.1 m</option>
+              <option>Viga 2 · V-2504115 · 20×56 · 7.2 m</option>
+            </select>
+          </div>
+
+          <!-- Tabs -->
+          <div class="tabs" id="tabs">
+            <button type="button" class="tab" data-tab="sup">SUP</button>
+            <button type="button" class="tab" data-tab="inf">INF</button>
+            <button type="button" class="tab" data-tab="lat">LAT</button>
+            <button type="button" class="tab active" data-tab="conf">CONF</button>
+          </div>
+
+          <!-- Paneles por tab -->
+          <div id="panelSup" class="card" hidden>
+            <div class="card-hdr">
+              <span class="card-title">Armadura superior</span>
+              <span class="pill">SUP</span>
+            </div>
+            <p class="card-hint">Mock: Nº capas, n/ø por capa (en real vive en rail SUP).</p>
+            <div class="mock-row"><label>Nº capas</label><select><option>1</option><option>2</option></select></div>
+            <div class="mock-row"><label>1ª · n / ø</label><span style="font-size:11px;color:var(--mid)">2ø16 (alimenta índices de conf.)</span></div>
+          </div>
+
+          <div id="panelInf" class="card" hidden>
+            <div class="card-hdr">
+              <span class="card-title">Armadura inferior</span>
+              <span class="pill" style="border-color:#fb7185;color:#fb7185;background:rgba(251,113,133,0.12)">INF</span>
+            </div>
+            <p class="card-hint">Mock: espejo de SUP para n 1ª capa.</p>
+            <div class="mock-row"><label>1ª · n / ø</label><span style="font-size:11px;color:var(--mid)">2ø16</span></div>
+          </div>
+
+          <div id="panelLat" class="card" hidden>
+            <div class="card-hdr">
+              <span class="card-title">Laterales</span>
+              <span class="pill" style="border-color:#a78bfa;color:#a78bfa">LAT</span>
+            </div>
+            <p class="card-hint">Mock: n / ø laterales de alma (preview sección).</p>
+            <div class="mock-row"><label>n laterales</label><select><option>1</option><option>2</option></select></div>
+          </div>
+
+          <div id="panelConf" class="card accent-conf">
+            <div class="card-hdr">
+              <span class="card-title">Confinamiento / estribos</span>
+              <div style="display:flex;gap:8px;align-items:center">
+                <span class="pill">CONF</span>
+                <div class="toggle on" id="togConf" title="Activar colocación CONF"></div>
+              </div>
+            </div>
+            <p class="card-hint">
+              Zonas Ext/Cent · diagrama E · <b>dibujo en el área de alzado</b>
+              (sección grande, clic + doble clic). El preview de arriba solo refleja el draft.
+            </p>
+
+            <div class="field-lbl">Zonificación estribos</div>
+            <select id="zonasMode" style="margin-bottom:8px">
+              <option>Auto (2·h)</option>
+              <option>Forzar Ext+Cent</option>
+              <option>Forzar único</option>
+            </select>
+
+            <p class="card-hint" id="zoneMeta" style="margin-bottom:8px">
+              Viga 1 · Auto → Ext+Cent · h=560 mm · Lext 1120 mm ×2 · Lcent 6860 mm
+            </p>
+
+            <div class="zone-box sel" data-zone="cent" id="zoneCent">
+              <div class="zone-title">Cent · L 6860 mm</div>
+              <div class="field-grid">
+                <div>
+                  <div class="field-lbl">Diámetro (ø)</div>
+                  <select id="diamCent"><option>8</option><option selected>10</option><option>12</option></select>
+                </div>
+                <div></div>
+                <div>
+                  <div class="field-lbl">Espaciado (@)</div>
+                  <input type="text" id="spCent" value="200"/>
+                </div>
+              </div>
+            </div>
+            <div class="zone-box ext" data-zone="ext" id="zoneExt">
+              <div class="zone-title">Ext · L 1120 mm ×2</div>
+              <div class="field-grid">
+                <div>
+                  <div class="field-lbl">Diámetro (ø)</div>
+                  <select id="diamExt"><option selected>10</option><option>12</option><option>16</option></select>
+                </div>
+                <div></div>
+                <div>
+                  <div class="field-lbl">Espaciado (@)</div>
+                  <input type="text" id="spExt" value="100"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="section-lbl">Diagrama E · herramientas (gesto en alzado)</div>
+            <div class="lab-tools">
+              <button type="button" class="mock-btn active" data-mode="draw">Dibujar · doble clic</button>
+              <button type="button" class="mock-btn" data-mode="peri">Perimetral</button>
+              <button type="button" class="mock-btn" data-mode="erase">Borrar</button>
+              <button type="button" class="mock-btn" id="btnClear">Limpiar</button>
+            </div>
+            <p class="status-line" id="snapStatus"></p>
+            <p class="card-hint" id="hint"></p>
+
+            <div class="section-lbl">Borrador (dibujo libre)</div>
+            <pre class="draft-pre" id="draft"></pre>
+          </div>
+
+          <p class="footnote">
+            Vista previa UI · lab de evaluación · motor de colocación no incluido.
+            En producción este bloque es <code>PnlSectionCtrls</code> bajo el preview.
+          </p>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="analysis">
+    <h3>Análisis para implementación en CONF real</h3>
+    <ul>
+      <li><b>CONF activo:</b> el host del alzado (<code>PnlCanvasHost</code> / ScrCanvas) pasa a
+        modo <b>sección conf amplia</b> (misma geometría que el preview, escala grande).</li>
+      <li><b>Preview rail:</b> sigue mostrando la sección en miniatura, <b>solo lectura</b>
+        (refleja pairs/ties; no recibe hits de dibujo).</li>
+      <li><b>SUP/INF/LAT:</b> el alzado vuelve a elevación normal.</li>
+      <li><b>Snap + doble clic:</b> ancla con clic · doble clic cierra estribo/traba.</li>
+      <li><b>Gráfico:</b> estribos/trabas con ganchos 135° estilo
+        <code>ArmadoMurosV3</code> (Stirrup135Path / Hook135TrabaEnd).</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+
+
+const B_CM = 20, H_CM = 56;
+const SNAP_R_MAIN = 28;
+const SNAP_R_RAIL = 14;
+/* Estilo visual Armado Muros V3 (cabezal sección) */
+const BAR_DRAW_R = 3.5;
+const STIRRUP_MARGIN_PAD = 4;
+const STIRRUP_THICK = 2.2;
+const TIE_THICK = 1.6;
+const COLOR_ESTRIBO = "#00b450";
+const COLOR_TRABA = "#f59e0b";
+
+const state = {
+  nBars: 4,
+  tab: "conf",
+  mode: "draw",
+  draft: { perimetral: false, pairs: [], ties: [] },
+  pending: null,
+  hoverBar: null,
+  mouse: null,
+  geom: null, // geometría del canvas principal (hits)
+  zone: "cent",
+  confEnabled: true,
+  _raf: 0,
+  _sideDirty: true,
+};
+
+const cvMain = document.getElementById("cvMain");
+const ctxMain = cvMain.getContext("2d");
+const cvRail = document.getElementById("cvRail");
+const ctxRail = cvRail.getContext("2d");
+const snapStatus = document.getElementById("snapStatus");
+const snapStatusMain = document.getElementById("snapStatusMain");
+const nSel = document.getElementById("nBars");
+for (let n = 2; n <= 8; n++) {
+  const o = document.createElement("option");
+  o.value = n;
+  o.textContent = n + " bars 1ª capa";
+  if (n === 4) o.selected = true;
+  nSel.appendChild(o);
+}
+
+function drawEnabled() {
+  return state.tab === "conf" && state.confEnabled;
+}
+
+function canvasXY(ev, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: ((ev.clientX - rect.left) / rect.width) * canvas.width,
+    y: ((ev.clientY - rect.top) / rect.height) * canvas.height,
+  };
+}
+
+function classifyTwoClicks(i0, i1) {
+  const a = +i0, b = +i1;
+  if (a === b) return { kind: "traba", index: a };
+  return { kind: "estribo", pair: [Math.min(a, b), Math.max(a, b)] };
+}
+
+function toggleEstribo(pair) {
+  const key = JSON.stringify(pair);
+  const list = (state.draft.pairs || []).map((p) => [
+    Math.min(+p[0], +p[1]), Math.max(+p[0], +p[1]),
+  ]);
+  const exists = list.some((p) => JSON.stringify(p) === key);
+  state.draft.pairs = exists
+    ? list.filter((p) => JSON.stringify(p) !== key)
+    : [...list, pair];
+}
+
+function toggleTraba(k) {
+  const ties = new Set(state.draft.ties || []);
+  if (ties.has(k)) ties.delete(k);
+  else ties.add(k);
+  state.draft.ties = [...ties].sort((a, b) => a - b);
+}
+
+function fitSection(wCm, hCm, cw, ch) {
+  const padX = 16, padTop = 10, labelH = 22;
+  const maxW = cw - padX * 2;
+  const maxH = ch - padTop - labelH - 2;
+  let secW, secH;
+  if (hCm >= wCm) {
+    secH = maxH;
+    secW = (secH * wCm) / hCm;
+    if (secW > maxW) { secW = maxW; secH = (secW * hCm) / wCm; }
+  } else {
+    secW = maxW;
+    secH = (secW * hCm) / wCm;
+    if (secH > maxH) { secH = maxH; secW = (secH * wCm) / hCm; }
+  }
+  return { ox: (cw - secW) * 0.5, oy: padTop + (maxH - secH) * 0.5, secW, secH };
+}
+
+function distribute(count, x0, x1, y) {
+  if (count <= 0) return [];
+  if (count === 1) return [{ x: (x0 + x1) * 0.5, y }];
+  const step = (x1 - x0) / (count - 1);
+  return Array.from({ length: count }, (_, i) => ({ x: x0 + i * step, y }));
+}
+
+function roundRect(c, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
+
+function stirrupMargin(scale) {
+  // Muros: r_barra(3.5) + pad(4) — sin hinchar por scale del canvas
+  // (el scale de UI ensanchaba el envolvente y distorsionaba ganchos).
+  return BAR_DRAW_R * Math.min(scale, 1.15) + STIRRUP_MARGIN_PAD * Math.min(scale, 1.15);
+}
+
+function polarPx(cx, cy, deg, rad) {
+  const a = (deg * Math.PI) / 180;
+  // Muros: 0=E, 90=S, 180=O, 270=N (y pantalla ↓)
+  return { x: cx + rad * Math.cos(a), y: cy + rad * Math.sin(a) };
+}
+
+function degRad(d) {
+  return (d * Math.PI) / 180;
+}
+
+/**
+ * Canvas 2d: con y↓, ángulo 0=E y sentido positivo = CW en pantalla
+ * (coincide con polar Muros en grados). anticlockwise=false → CW en grados.
+ */
+function strokeBegin(c, color, thick, dashed) {
+  c.save();
+  c.strokeStyle = color;
+  c.lineWidth = thick;
+  c.lineCap = "round";
+  c.lineJoin = "round";
+  if (dashed) c.setLineDash([5, 4]);
+  c.beginPath();
+}
+
+function strokeEnd(c) {
+  c.stroke();
+  c.restore();
+}
+
+/**
+ * Estribo 135° — geometría explícita (port fiable de Stirrup135Path).
+ * Cuerpo = redondeado abierto por la esquina del gancho; ganchos = arco 135° + cola.
+ */
+function drawStirrup135(c, left, top, right, bot, barCx, barCy, wrapR, tipLeft, color, thick, dashed) {
+  const R = Math.max(3, wrapR);
+  let cr = Math.min(
+    R,
+    (right - left) * 0.5 - 0.5,
+    (bot - top) * 0.5 - 0.5,
+  );
+  cr = Math.max(1.5, cr);
+  const tail = Math.max(14, thick * 6.5);
+  const sh = Math.SQRT1_2;
+  const pol = (deg) => polarPx(barCx, barCy, deg, R);
+
+  if (tipLeft) {
+    // Gancho en TR. Cuerpo: N → TL → BL → BR → E
+    const N = pol(270);
+    const E = pol(0);
+    const exitA = pol(45);   // fin gancho superior (135° desde N)
+    const exitB = pol(225);  // fin gancho lateral (135° desde E)
+    const tx = -sh, ty = sh;
+
+    // --- cuerpo ---
+    strokeBegin(c, color, thick, dashed);
+    c.moveTo(N.x, N.y);
+    c.lineTo(left + cr, top);
+    c.arcTo(left, top, left, bot, cr);          // TL exterior
+    c.lineTo(left, bot - cr);
+    c.arcTo(left, bot, right, bot, cr);         // BL
+    c.lineTo(right - cr, bot);
+    c.arcTo(right, bot, right, top, cr);        // BR
+    c.lineTo(E.x, E.y);
+    strokeEnd(c);
+
+    // --- gancho superior: N → 45° CW (135°) + cola ---
+    strokeBegin(c, color, thick, dashed);
+    c.moveTo(N.x, N.y);
+    c.arc(barCx, barCy, R, degRad(270), degRad(45), false); // CW
+    c.lineTo(exitA.x + tx * tail, exitA.y + ty * tail);
+    strokeEnd(c);
+
+    // --- gancho lateral: E → 225° CCW (135°) + cola ---
+    strokeBegin(c, color, thick, dashed);
+    c.moveTo(E.x, E.y);
+    c.arc(barCx, barCy, R, degRad(0), degRad(225), true); // CCW
+    c.lineTo(exitB.x + tx * tail, exitB.y + ty * tail);
+    strokeEnd(c);
+  } else {
+    // Gancho en TL. Cuerpo: N → TR → BR → BL → O
+    const N = pol(270);
+    const W = pol(180);
+    const exitA = pol(135);
+    const exitB = pol(315);
+    const tx = sh, ty = sh;
+
+    strokeBegin(c, color, thick, dashed);
+    c.moveTo(N.x, N.y);
+    c.lineTo(right - cr, top);
+    c.arcTo(right, top, right, bot, cr);        // TR
+    c.lineTo(right, bot - cr);
+    c.arcTo(right, bot, left, bot, cr);         // BR
+    c.lineTo(left + cr, bot);
+    c.arcTo(left, bot, left, top, cr);          // BL
+    c.lineTo(W.x, W.y);
+    strokeEnd(c);
+
+    strokeBegin(c, color, thick, dashed);
+    c.moveTo(N.x, N.y);
+    c.arc(barCx, barCy, R, degRad(270), degRad(135), true); // CCW
+    c.lineTo(exitA.x + tx * tail, exitA.y + ty * tail);
+    strokeEnd(c);
+
+    strokeBegin(c, color, thick, dashed);
+    c.moveTo(W.x, W.y);
+    c.arc(barCx, barCy, R, degRad(180), degRad(315), false); // CW
+    c.lineTo(exitB.x + tx * tail, exitB.y + ty * tail);
+    strokeEnd(c);
+  }
+}
+
+/** Gancho 135° traba — arco polar en la longitudinal (Hook135TrabaEnd). */
+function drawHook135Traba(c, barCx, barCy, wrapR, tipLeft, end, color, thick, dashed) {
+  const R = Math.max(3, wrapR);
+  const tail = Math.max(16, thick * 7);
+  const sh = Math.SQRT1_2;
+  const pol = (deg) => polarPx(barCx, barCy, deg, R);
+
+  // Endpoints idénticos a Muros; dirección = arco corto 135° en coords canvas (0=E, + = CW).
+  let startDeg, exitDeg, ccw, tx, ty;
+  if (end === "top") {
+    startDeg = tipLeft ? 0 : 180;
+    exitDeg = tipLeft ? 225 : 315;
+    // tipLeft: 0→225 corto = CCW 135°; mirror: 180→315 corto = CW 135°
+    ccw = !!tipLeft;
+    tx = tipLeft ? -sh : sh;
+    ty = sh;
+  } else if (end === "bottom") {
+    startDeg = tipLeft ? 0 : 180;
+    exitDeg = tipLeft ? 135 : 45;
+    // tipLeft: 0→135 CW; mirror: 180→45 CCW
+    ccw = !tipLeft;
+    tx = tipLeft ? -sh : sh;
+    ty = -sh;
+  } else if (end === "left") {
+    startDeg = 90;
+    exitDeg = 225;
+    ccw = false; // CW 135°
+    tx = sh;
+    ty = -sh;
+  } else {
+    startDeg = 90;
+    exitDeg = 315;
+    ccw = true; // CCW 135°
+    tx = -sh;
+    ty = -sh;
+  }
+
+  const start = pol(startDeg);
+  const exitPt = pol(exitDeg);
+  strokeBegin(c, color, thick, dashed);
+  c.moveTo(start.x, start.y);
+  // canvas: anticlockwise=true dibuja en sentido antihorario en grados (arco corto según endpoints)
+  c.arc(barCx, barCy, R, degRad(startDeg), degRad(exitDeg), ccw);
+  c.lineTo(exitPt.x + tx * tail, exitPt.y + ty * tail);
+  strokeEnd(c);
+}
+
+function pairPoints(sup, inf, i0, i1) {
+  const a = Math.min(i0, i1), b = Math.max(i0, i1);
+  return [sup[a], sup[b], inf[a], inf[b]];
+}
+
+function pairBounds(sup, inf, i0, i1, pad) {
+  const pts = pairPoints(sup, inf, i0, i1);
+  const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+  return {
+    rx: Math.min(...xs) - pad,
+    ry: Math.min(...ys) - pad,
+    rw: Math.max(...xs) - Math.min(...xs) + pad * 2,
+    rh: Math.max(...ys) - Math.min(...ys) + pad * 2,
+    a: Math.min(i0, i1),
+    b: Math.max(i0, i1),
+  };
+}
+
+/**
+ * Estribo alrededor de long. Selecciona la barra de esquina del gancho
+ * (TR cuando tipLeft) entre las 4 del grupo — como layout de Muros.
+ */
+function drawEstriboAround(c, pts, scale, dashed, color) {
+  if (!pts || pts.length < 2) return;
+  const m = stirrupMargin(scale);
+  const cxs = pts.map((p) => p.x), cys = pts.map((p) => p.y);
+  const left = Math.min(...cxs) - m;
+  const right = Math.max(...cxs) + m;
+  const top = Math.min(...cys) - m;
+  const bot = Math.max(...cys) + m;
+  if (right - left < 6 || bot - top < 6) return;
+
+  // Barra exacta de esquina TR (no solo max x suelto si hay empate en fila)
+  const tipLeft = true;
+  const maxX = Math.max(...cxs);
+  const minY = Math.min(...cys);
+  // Preferir la que esté en esquina superior-derecha
+  let barCx = maxX, barCy = minY;
+  let best = Infinity;
+  for (const p of pts) {
+    const score = (maxX - p.x) + (p.y - minY);
+    if (score < best) {
+      best = score;
+      barCx = p.x;
+      barCy = p.y;
+    }
+  }
+
+  const thick = STIRRUP_THICK * (scale > 1.2 ? 1.25 : 1);
+  drawStirrup135(
+    c, left, top, right, bot, barCx, barCy, m, tipLeft,
+    color || COLOR_ESTRIBO, thick, !!dashed,
+  );
+}
+
+function drawTrabaColumn(c, sup, inf, k, scale, dashed, color) {
+  if (!sup[k] || !inf[k]) return;
+  const m = stirrupMargin(scale);
+  const th = TIE_THICK * (scale > 1.2 ? 1.2 : 1);
+  const col = color || COLOR_TRABA;
+  const tipLeft = true;
+  // En Muros la traba está offset al exterior del grupo; aquí columna vertical
+  // → offset al +x (mismo lado que tip del estribo TR).
+  const yMin = Math.min(sup[k].y, inf[k].y);
+  const yMax = Math.max(sup[k].y, inf[k].y);
+  // Centros de long = puntos gancho; línea a x = bar + side*m solo si bars co-lineales en x
+  const bx = (sup[k].x + inf[k].x) * 0.5;
+  const xTie = bx + (tipLeft ? 1 : -1) * m;
+
+  strokeBegin(c, col, th, dashed);
+  c.lineCap = "butt";
+  c.moveTo(xTie, yMin);
+  c.lineTo(xTie, yMax);
+  strokeEnd(c);
+
+  drawHook135Traba(c, sup[k].x, sup[k].y, m, tipLeft, "top", col, th, dashed);
+  drawHook135Traba(c, inf[k].x, inf[k].y, m, tipLeft, "bottom", col, th, dashed);
+}
+
+function nearestBar(mx, my, maxR) {
+  if (!state.geom) return null;
+  let best = null, bestD = maxR;
+  const byI = {};
+  for (const h of state.geom.hits) {
+    const d = Math.hypot(mx - h.x, my - h.y);
+    if (d <= maxR && (!byI[h.i] || d < byI[h.i])) byI[h.i] = d;
+  }
+  for (const [i, d] of Object.entries(byI)) {
+    if (d < bestD) { bestD = d; best = +i; }
+  }
+  return best;
+}
+
+function snapMessage() {
+  if (!drawEnabled()) {
+    return state.tab === "conf"
+      ? (state.confEnabled ? "" : "CONF desactivado · no dibuja")
+      : "Cambia a pestaña CONF para dibujar en el workspace grande";
+  }
+  const h = state.hoverBar, p = state.pending;
+  if (state.mode === "draw") {
+    if (p == null && h != null) return `Snap → [${h}] · clic ancla`;
+    if (p != null && h != null && h !== p)
+      return `ESTRIBO E(${Math.min(p, h)}–${Math.max(p, h)}) · doble clic cierra`;
+    if (p != null && h === p) return `TRABA [${p}] · doble clic cierra`;
+    if (p != null) return `A=[${p}] · doble clic: otra col.=estribo · misma=traba`;
+    return "Clic ancla · doble clic cierra estribo/traba";
+  }
+  if (state.mode === "peri") return "Clic en hormigón = toggle perimetral (135°)";
+  if (state.mode === "erase") return "Clic en estribo / traba / barra para borrar";
+  return "";
+}
+
+function updateSnapStatus() {
+  const msg = snapMessage();
+  snapStatusMain.textContent = msg;
+  snapStatus.textContent = drawEnabled()
+    ? "Dibujar en el canvas grande (izq.) · este preview es satélite"
+    : (state.tab === "conf" ? msg : "Vista satélite · dibujo solo en CONF");
+}
+
+function drawRubber(c, sup, inf, scale) {
+  if (!drawEnabled() || state.mode !== "draw" || state.pending == null) return;
+  const p = state.pending, b = state.hoverBar;
+  if (b != null && b === p) {
+    drawTrabaColumn(c, sup, inf, p, scale, true, "rgba(245,158,11,0.85)");
+    c.fillStyle = "#fdba74";
+    c.font = `700 ${Math.round(11 * scale)}px Segoe UI`;
+    const x = (sup[p].x + inf[p].x) * 0.5;
+    c.fillText(`TRABA [${p}]`, x + 8 * scale, (sup[p].y + inf[p].y) * 0.5);
+    return;
+  }
+  if (b != null && b !== p) {
+    const pts = pairPoints(sup, inf, p, b);
+    drawEstriboAround(c, pts, scale, true, "rgba(0,180,80,0.7)");
+    const bb = pairBounds(sup, inf, p, b, stirrupMargin(scale));
+    c.fillStyle = "#a5f3fc";
+    c.font = `700 ${Math.round(11 * scale)}px Segoe UI`;
+    c.fillText(`ESTRIBO E(${bb.a}–${bb.b})`, bb.rx + 4 * scale, bb.ry - 4 * scale);
+  }
+}
+
+function updateRailChrome() {
+  const role = { sup: "Sup.", inf: "Inf.", lat: "Laterales", conf: "Conf." }[state.tab] || "";
+  document.getElementById("railHint").textContent = `Viga 1 · sección · ${role}`;
+  const d = state.draft;
+  const nE = (d.pairs || []).length;
+  const nT = (d.ties || []).length;
+  const foot = `Ext ø${document.getElementById("diamExt").value}@${document.getElementById("spExt").value} · Cent ø${document.getElementById("diamCent").value}@${document.getElementById("spCent").value}`;
+  const confBits = [
+    d.perimetral ? "peri" : null,
+    nE ? `${nE}E` : null,
+    nT ? `${nT}T` : null,
+  ].filter(Boolean).join("+") || "sin dibujo";
+  document.getElementById("railMeta").textContent =
+    `V-2504114 · 20×56 · 1ª ${state.nBars}b · ${confBits} · ${foot}`;
+
+  const confMode = state.tab === "conf";
+  const wsElev = document.getElementById("wsElev");
+  const wsSection = document.getElementById("wsSection");
+  const wsTitle = document.getElementById("wsTitle");
+  const wsChip = document.getElementById("wsChip");
+  if (confMode) {
+    wsElev.classList.add("hidden");
+    wsSection.classList.add("active");
+    wsTitle.textContent = "Sección · diagrama E (workspace elevación)";
+    wsChip.textContent = drawEnabled() ? "CONF · DIBUJO" : "CONF · OFF";
+    wsChip.className = "chip conf";
+  } else {
+    wsElev.classList.remove("hidden");
+    wsSection.classList.remove("active");
+    wsTitle.textContent = "Alzado · vista longitudinal (mock)";
+    wsChip.textContent = role.toUpperCase();
+    wsChip.className = "chip";
+  }
+
+  const badge = document.getElementById("drawBadge");
+  const host = document.getElementById("previewHost");
+  if (drawEnabled()) {
+    badge.textContent = "SATÉLITE · dibujo en alzado";
+    badge.className = "draw-badge on";
+    host.classList.remove("draw-off");
+  } else {
+    badge.textContent = confMode ? "CONF OFF" : "Vista satélite";
+    badge.className = "draw-badge off";
+    host.classList.add("draw-off");
+  }
+
+  document.getElementById("panelSup").hidden = state.tab !== "sup";
+  document.getElementById("panelInf").hidden = state.tab !== "inf";
+  document.getElementById("panelLat").hidden = state.tab !== "lat";
+  document.getElementById("panelConf").hidden = state.tab !== "conf";
+}
+
+/**
+ * Pinta sección en un canvas.
+ * Estribos/trabas: estilo gráfico Armado Muros V3 (135°).
+ */
+function paintSection(canvas, c, interactive, snapR) {
+  const cw = canvas.width, ch = canvas.height;
+  const scale = interactive ? 1.35 : 1;
+  const padHit = stirrupMargin(scale);
+
+  c.clearRect(0, 0, cw, ch);
+  c.fillStyle = "#0a1620";
+  c.fillRect(0, 0, cw, ch);
+
+  const { ox, oy, secW, secH } = fitSection(B_CM, H_CM, cw, ch);
+  const cover = Math.max(8 * scale, Math.min(secW, secH) * 0.11);
+  const stInset = 3 * scale;
+  const stX = ox + cover + stInset;
+  const stY = oy + cover + stInset;
+  const stW = secW - cover * 2 - stInset * 2;
+  const stH = secH - cover * 2 - stInset * 2;
+  const barPad = Math.max(5 * scale, cover * 0.45);
+  const n = state.nBars;
+  const sup = distribute(n, stX + barPad, stX + stW - barPad, stY + barPad);
+  const inf = distribute(n, stX + barPad, stX + stW - barPad, stY + stH - barPad);
+
+  c.fillStyle = "rgba(10,22,32,0.95)";
+  c.strokeStyle = "#5bb8d4";
+  c.lineWidth = 1.3 * scale;
+  roundRect(c, ox, oy, secW, secH, 2 * scale);
+  c.fill();
+  c.stroke();
+
+  c.setLineDash([2.5 * scale, 2 * scale]);
+  c.strokeStyle = "rgba(148,163,184,0.4)";
+  c.lineWidth = 0.7 * scale;
+  c.strokeRect(ox + cover, oy + cover, secW - cover * 2, secH - cover * 2);
+  c.setLineDash([]);
+
+  c.fillStyle = "#64748b";
+  c.font = `${Math.round(8 * scale)}px Segoe UI`;
+  c.textAlign = "center";
+  c.fillText(String(B_CM), ox + secW / 2, oy + secH + 10 * scale);
+  c.save();
+  c.translate(ox - 10 * scale, oy + secH / 2);
+  c.rotate(-Math.PI / 2);
+  c.fillText(String(H_CM), 0, 0);
+  c.restore();
+  c.textAlign = "left";
+
+  const d = state.draft;
+  // Perimetral: estribo 135° sobre todas las long. 1ª capa (como cabezal Muros)
+  if (d.perimetral) {
+    const all = [...sup, ...inf];
+    drawEstriboAround(c, all, scale, false, COLOR_ESTRIBO);
+  }
+
+  for (const p of d.pairs || []) {
+    const i0 = +p[0], i1 = +p[1];
+    if (i0 >= n || i1 >= n) continue;
+    drawEstriboAround(c, pairPoints(sup, inf, i0, i1), scale, false, COLOR_ESTRIBO);
+  }
+  for (const t of d.ties || []) {
+    const k = +t;
+    if (k >= n) continue;
+    drawTrabaColumn(c, sup, inf, k, scale, false, COLOR_TRABA);
+  }
+
+  if (interactive) drawRubber(c, sup, inf, scale);
+
+  if (interactive && drawEnabled() && (state.mode === "draw" || state.mode === "erase")) {
+    for (let i = 0; i < n; i++) {
+      const isH = state.hoverBar === i, isA = state.pending === i;
+      for (const pt of [sup[i], inf[i]]) {
+        c.beginPath();
+        c.arc(pt.x, pt.y, snapR, 0, Math.PI * 2);
+        c.strokeStyle = isH || isA ? "rgba(34,211,238,0.5)" : "rgba(34,211,238,0.12)";
+        c.lineWidth = isH || isA ? 1.4 * scale : 0.8 * scale;
+        c.setLineDash(isH ? [] : [2 * scale, 2 * scale]);
+        c.stroke();
+        c.setLineDash([]);
+      }
+    }
+  }
+
+  const hits = [];
+  const rSup = interactive ? 6.2 : 4;
+  const rInf = interactive ? 5.6 : 3.6;
+  for (let i = 0; i < n; i++) {
+    const isA = interactive && state.pending === i;
+    const isH = interactive && drawEnabled() && state.hoverBar === i;
+    c.beginPath();
+    c.arc(sup[i].x, sup[i].y, isA || isH ? rSup + 1.2 : rSup, 0, Math.PI * 2);
+    c.fillStyle = isA ? "#a5f3fc" : isH ? "#67e8f9" : "#22d3ee";
+    c.fill();
+    c.strokeStyle = "#0891b2";
+    c.lineWidth = Math.max(1, scale);
+    c.stroke();
+    if (interactive) hits.push({ i, x: sup[i].x, y: sup[i].y, r: snapR });
+
+    c.beginPath();
+    c.arc(inf[i].x, inf[i].y, isA || isH ? rInf + 1.1 : rInf, 0, Math.PI * 2);
+    c.fillStyle = isA ? "#fda4af" : isH ? "#fb7185" : "#f87171";
+    c.fill();
+    c.strokeStyle = "#b91c1c";
+    c.stroke();
+    if (interactive) hits.push({ i, x: inf[i].x, y: inf[i].y, r: snapR });
+
+    if (interactive || drawEnabled() || state.tab === "conf") {
+      c.fillStyle = "#94a3b8";
+      c.font = `${Math.round((interactive ? 11 : 8))}px Segoe UI`;
+      c.fillText(String(i), sup[i].x - 3, sup[i].y - (interactive ? 12 : 8));
+    }
+  }
+
+  if (!interactive) {
+    const foot = `Ext ø${document.getElementById("diamExt").value}@${document.getElementById("spExt").value} · Cent ø${document.getElementById("diamCent").value}@${document.getElementById("spCent").value}`;
+    c.fillStyle = "#94a3b8";
+    c.font = "7.5px Segoe UI";
+    c.textAlign = "center";
+    c.fillText(foot, cw / 2, ch - 6);
+    c.textAlign = "left";
+  } else if (drawEnabled()) {
+    c.fillStyle = "rgba(34,211,238,0.85)";
+    c.font = "600 11px Segoe UI";
+    c.textAlign = "center";
+    c.fillText("Estilo Muros V3 · 135° · clic long. 1ª capa", cw / 2, ch - 10);
+    c.textAlign = "left";
+  }
+
+  if (interactive) {
+    state.geom = {
+      ox, oy, secW, secH, hits, n, sup, inf, snapR,
+      pairHits: (d.pairs || []).map((p) => {
+        const bb = pairBounds(sup, inf, +p[0], +p[1], padHit);
+        return { i0: +p[0], i1: +p[1], ...bb };
+      }),
+    };
+  }
+
+  return { ox, oy, secW, secH, sup, inf };
+}
+
+function updateSidePanel() {
+  const d = state.draft;
+  document.getElementById("draft").textContent = [
+    `modo           = dibujo libre`,
+    `perimetral     = ${!!d.perimetral}`,
+    `estribos(pairs)= ${JSON.stringify(d.pairs || [])}`,
+    `trabas(ties)   = ${JSON.stringify(d.ties || [])}`,
+  ].join("\n");
+  state._sideDirty = false;
+}
+
+function paint() {
+  // Canvas principal = workspace elevación (interactivo solo en CONF dibujable)
+  if (state.tab === "conf") {
+    paintSection(cvMain, ctxMain, true, SNAP_R_MAIN);
+  } else {
+    state.geom = null;
+  }
+  // Rail = satélite (siempre lectura; sin hits ni rubber)
+  paintSection(cvRail, ctxRail, false, SNAP_R_RAIL);
+
+  updateSnapStatus();
+  updateRailChrome();
+  if (state._sideDirty) updateSidePanel();
+}
+
+function hitPair(mx, my) {
+  if (!state.geom) return null;
+  for (const p of state.geom.pairHits || []) {
+    if (mx >= p.rx && mx <= p.rx + p.rw && my >= p.ry && my <= p.ry + p.rh) return p;
+  }
+  return null;
+}
+
+function insideConcrete(mx, my) {
+  const g = state.geom;
+  if (!g) return false;
+  return mx >= g.ox && mx <= g.ox + g.secW && my >= g.oy && my <= g.oy + g.secH;
+}
+
+function schedulePaint() {
+  if (!state._raf) {
+    state._raf = requestAnimationFrame(() => {
+      state._raf = 0;
+      paint();
+    });
+  }
+}
+
+// Interacción solo en el canvas grande (sitio del alzado)
+cvMain.addEventListener("mousemove", (ev) => {
+  if (!drawEnabled()) {
+    cvMain.style.cursor = "default";
+    return;
+  }
+  const { x, y } = canvasXY(ev, cvMain);
+  state.mouse = { x, y };
+  const next = nearestBar(x, y, SNAP_R_MAIN);
+  if (next !== state.hoverBar || state.pending != null) {
+    state.hoverBar = next;
+    schedulePaint();
+  }
+  cvMain.style.cursor = next != null ? "pointer" : state.mode === "peri" ? "cell" : "crosshair";
+});
+
+cvMain.addEventListener("mouseleave", () => {
+  state.mouse = null;
+  if (state.hoverBar != null) {
+    state.hoverBar = null;
+    paint();
+  }
+});
+
+cvMain.addEventListener("click", (ev) => {
+  if (!drawEnabled()) return;
+  // Residual del doble-clic del navegador: no re-anclar ni re-toggle
+  if (ev.detail > 1) return;
+  const { x: mx, y: my } = canvasXY(ev, cvMain);
+  state.hoverBar = nearestBar(mx, my, SNAP_R_MAIN);
+  const bi = state.hoverBar;
+  const mode = state.mode;
+
+  if (mode === "erase") {
+    const ph = hitPair(mx, my);
+    if (ph && bi == null) {
+      const pair = [Math.min(ph.i0, ph.i1), Math.max(ph.i0, ph.i1)];
+      state.draft.pairs = (state.draft.pairs || []).filter(
+        (p) => !(Math.min(+p[0], +p[1]) === pair[0] && Math.max(+p[0], +p[1]) === pair[1])
+      );
+      state._sideDirty = true;
+      paint();
+      return;
+    }
+    if (bi != null) {
+      if ((state.draft.ties || []).includes(bi)) {
+        state.draft.ties = state.draft.ties.filter((t) => +t !== bi);
+      } else {
+        state.draft.pairs = (state.draft.pairs || []).filter(
+          (p) => +p[0] !== bi && +p[1] !== bi
+        );
+      }
+      state._sideDirty = true;
+      paint();
+    }
+    return;
+  }
+
+  if (mode === "peri") {
+    if (bi == null && insideConcrete(mx, my)) {
+      state.draft.perimetral = !state.draft.perimetral;
+      state._sideDirty = true;
+      paint();
+    }
+    return;
+  }
+
+  if (mode === "draw") {
+    if (bi == null) {
+      if (state.pending != null) {
+        state.pending = null;
+        paint();
+      }
+      return;
+    }
+    // Clic 1 = ancla; clic 2 = cierra estribo/traba y persiste en draft
+    if (state.pending == null) {
+      state.pending = bi;
+      paint();
+      return;
+    }
+    const A = state.pending;
+    const B = bi;
+    state.pending = null;
+    const cls = classifyTwoClicks(A, B);
+    if (cls.kind === "traba") toggleTraba(cls.index);
+    else toggleEstribo(cls.pair);
+    state._sideDirty = true;
+    paint();
+  }
+});
+
+// Rail: solo lectura (mirror)
+cvRail.style.cursor = "default";
+cvRail.title = "Vista satélite · dibuje en el workspace de la izquierda (CONF)";
+
+window.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && state.pending != null) {
+    state.pending = null;
+    paint();
+  }
+});
+
+// Tabs
+document.querySelectorAll(".tab").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    state.tab = btn.dataset.tab;
+    state.pending = null;
+    document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b === btn));
+    paint();
+  });
+});
+
+// Draw tools inside CONF
+document.querySelectorAll("[data-mode]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    state.mode = btn.dataset.mode;
+    state.pending = null;
+    document.querySelectorAll("[data-mode]").forEach((b) => b.classList.toggle("active", b === btn));
+    document.getElementById("hint").textContent = {
+      draw: "Clic ancla · doble clic cierra estribo/traba.",
+      peri: "Clic en silueta de hormigón alterna perimetral.",
+      erase: "Clic en polígono, traba o columna para borrar.",
+    }[state.mode] || "";
+    paint();
+  });
+});
+
+document.getElementById("btnClear").addEventListener("click", () => {
+  state.draft = { perimetral: false, pairs: [], ties: [] };
+  state.pending = null;
+  state._sideDirty = true;
+  paint();
+});
+
+nSel.addEventListener("change", () => {
+  state.nBars = +nSel.value;
+  state.draft.pairs = (state.draft.pairs || []).filter((p) => Math.max(+p[0], +p[1]) < state.nBars);
+  state.draft.ties = (state.draft.ties || []).filter((t) => +t < state.nBars);
+  state.pending = null;
+  state._sideDirty = true;
+  paint();
+});
+
+document.getElementById("togConf").addEventListener("click", function () {
+  state.confEnabled = !state.confEnabled;
+  this.classList.toggle("on", state.confEnabled);
+  state.pending = null;
+  paint();
+});
+
+document.querySelectorAll(".zone-box").forEach((box) => {
+  box.addEventListener("click", () => {
+    state.zone = box.dataset.zone;
+    document.querySelectorAll(".zone-box").forEach((b) => {
+      b.classList.toggle("sel", b === box);
+    });
+  });
+});
+
+["diamExt", "spExt", "diamCent", "spCent"].forEach((id) => {
+  document.getElementById(id).addEventListener("change", () => paint());
+  document.getElementById(id).addEventListener("input", () => paint());
+});
+
+document.getElementById("hint").textContent =
+  "Clic ancla · doble clic cierra estribo/traba.";
+state._sideDirty = true;
+paint();
+</script>
+</body>
+</html>

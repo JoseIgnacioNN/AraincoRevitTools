@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
 Módulo compartido: Malla en Losa (Area Reinforcement en losas).
-Crea AreaReinforcement en losas de hormigón armado.
-Usado por el botón 08_CrearAreaReinforcementRPS.
-Sin dependencias entre botones: cada uno importa este módulo independientemente.
+Crea AreaReinforcement en losas de hormigón armado y losas de cimentación
+(Structural Foundation slab; clase Floor, categoría OST_StructuralFoundation).
+Fuente canónica del botón ligero 08_CrearAreaReinforcementRPS
+(``BIMTools.extension/scripts/``).
 """
 
 import math
@@ -128,7 +129,7 @@ except Exception:
     stamp_armadura_nivel = None
     stamp_armadura_ubicacion = None
 from Autodesk.Revit.UI import TaskDialog, ExternalEvent, IExternalEventHandler
-from Autodesk.Revit.UI.Selection import ObjectType
+from Autodesk.Revit.UI.Selection import ISelectionFilter, ObjectType
 
 # Misma línea de diseño que Armado Muros v3 (54_ArmadoMurosV3).
 _APPDOMAIN_WINDOW_KEY = "BIMTools.AreaReinforcementLosa.ActiveWindow"
@@ -287,14 +288,15 @@ def _cleanup_stale_tool_state():
 
 def _initial_instruction_content():
     return (
-        u"Esta herramienta crea mallas de Area Reinforcement en losas de hormigón.\n\n"
+        u"Esta herramienta crea mallas de Area Reinforcement en losas de hormigón "
+        u"y losas de cimentación (Structural Foundation slab).\n\n"
         u"Flujo:\n"
-        u"1. Tras Aceptar, elija losas (Floor) en el modelo. Finalice con Finish "
-        u"en la barra de opciones (ESC cancela).\n"
+        u"1. Tras Aceptar, elija losas o losas de cimentación en el modelo. "
+        u"Finalice con Finish en la barra de opciones (ESC cancela).\n"
         u"2. Configure malla superior e inferior: diámetro y espaciado.\n"
         u"3. Pulse «Colocar armaduras» para crear las mallas y etiquetarlas en planta.\n\n"
-        u"Requisitos: losas con sketch cerrado, AreaReinforcementType, RebarBarType "
-        u"y RebarHookType en el proyecto."
+        u"Requisitos: losas o losas de cimentación con sketch cerrado, "
+        u"AreaReinforcementType, RebarBarType y RebarHookType en el proyecto."
     )
 
 
@@ -305,7 +307,7 @@ def _show_initial_instruction_dialog(revit):
         hwnd = revit_main_hwnd(revit)
     except Exception:
         pass
-    instruction = u"Seleccione una o más losas a armar."
+    instruction = u"Seleccione una o más losas o losas de cimentación a armar."
     content = _initial_instruction_content()
     try:
         from bimtools_instruction_dialog import show_ok_cancel_dialog
@@ -474,6 +476,32 @@ def _element_id_int(eid):
 
 
 # ── Funciones auxiliares ─────────────────────────────────────────────────────
+def _es_host_losa_area_reinforcement(elem):
+    """
+    Host válido para Area Reinforcement de esta herramienta.
+
+    En la API, ``Floor`` cubre losas (``OST_Floors``) y losas de cimentación
+    (Structural Foundation slab, ``OST_StructuralFoundation``). Las zapatas
+    aisladas (``FamilyInstance``) y los muros de cimentación no son ``Floor``.
+    """
+    if elem is None:
+        return False
+    try:
+        return isinstance(elem, Floor)
+    except Exception:
+        return False
+
+
+class _LosaHostSelectionFilter(ISelectionFilter):
+    """Permite pick de losas y losas de cimentación; excluye zapatas y muros de cimentación."""
+
+    def AllowElement(self, elem):
+        return _es_host_losa_area_reinforcement(elem)
+
+    def AllowReference(self, reference, position):
+        return True
+
+
 def _obtener_curvas_sketch(floor, document):
     """Obtiene las curvas del perímetro exterior del sketch de la losa (compatible con Create(7 params))."""
     try:
@@ -815,7 +843,7 @@ def _obtener_espesor_losa_mm(floor):
             return UnitUtils.ConvertFromInternalUnits(param.AsDouble(), UnitTypeId.Millimeters)
     except Exception:
         pass
-    # 3) LookupParameter en el tipo (común en losas estructurales)
+    # 3) LookupParameter en el tipo (común en losas estructurales y losas de cimentación)
     try:
         type_id = floor.GetTypeId()
         if type_id and type_id != ElementId.InvalidElementId:
@@ -825,6 +853,21 @@ def _obtener_espesor_losa_mm(floor):
                     param = floor_type.LookupParameter(pname)
                     if param and param.HasValue:
                         return UnitUtils.ConvertFromInternalUnits(param.AsDouble(), UnitTypeId.Millimeters)
+                for bip_name in (
+                    "FLOOR_ATTR_THICKNESS_PARAM",
+                    "FLOOR_ATTR_DEFAULT_THICKNESS_PARAM",
+                ):
+                    try:
+                        bip = getattr(BuiltInParameter, bip_name, None)
+                        if bip is None:
+                            continue
+                        param = floor_type.get_Parameter(bip)
+                        if param and param.HasValue:
+                            return UnitUtils.ConvertFromInternalUnits(
+                                param.AsDouble(), UnitTypeId.Millimeters
+                            )
+                    except Exception:
+                        pass
     except Exception:
         pass
     return None
@@ -3001,7 +3044,11 @@ class ColocarAreaReinforcementHandler(IExternalEventHandler):
             # Vista al inicio del handler (ExternalEvent); evita depender del estado tras el bucle.
             vista_etiqueta = uidoc.ActiveView
             if not self.floor_ids:
-                _mostrar_aviso(u"No hay losas seleccionadas.", uiapp=uiapp, wpf_window=_wpf)
+                _mostrar_aviso(
+                    u"No hay losas ni losas de cimentación seleccionadas.",
+                    uiapp=uiapp,
+                    wpf_window=_wpf,
+                )
                 return
             if not self.params_dict or not any(
                 pid and pid != ElementId.InvalidElementId
@@ -3234,14 +3281,12 @@ class ColocarAreaReinforcementHandler(IExternalEventHandler):
 
 
 class SeleccionarLosaHandler(IExternalEventHandler):
-    """Ejecuta la selección de losas en contexto API de Revit."""
+    """Ejecuta la selección de losas y losas de cimentación en contexto API de Revit."""
 
     def __init__(self, window_ref):
         self._window_ref = window_ref
 
     def Execute(self, uiapp):
-        from Autodesk.Revit.UI.Selection import ObjectType
-        from Autodesk.Revit.DB import BuiltInCategory, Floor
         uidoc = uiapp.ActiveUIDocument
         if uidoc is None:
             win = self._window_ref()
@@ -3261,18 +3306,18 @@ class SeleccionarLosaHandler(IExternalEventHandler):
                 win._document = doc
                 refs = list(uidoc.Selection.PickObjects(
                     ObjectType.Element,
-                    u"Selecciona una o más losas. Finaliza con Finish o Cancel."
+                    _LosaHostSelectionFilter(),
+                    u"Selecciona una o más losas o losas de cimentación. Finaliza con Finish o Cancel."
                 ))
                 if refs:
                     for ref in refs:
                         elem = doc.GetElement(ref.ElementId)
-                        if elem and elem.Category and _element_id_int(elem.Category.Id) == int(BuiltInCategory.OST_Floors):
-                            if isinstance(elem, Floor):
-                                floor_ids.append(ref.ElementId)
+                        if _es_host_losa_area_reinforcement(elem):
+                            floor_ids.append(ref.ElementId)
                     if not floor_ids:
                         _mostrar_aviso(
                             u"No se encontraron losas válidas en la selección.",
-                            content=u"Seleccione elementos de categoría Floor (losa).",
+                            content=u"Seleccione losas (Floor) o losas de cimentación (Structural Foundation slab).",
                             uiapp=uiapp,
                         )
             except Exception as ex:
@@ -3345,7 +3390,7 @@ _XAML_WINDOW_BODY = u"""
         <TextBlock x:Name="TxtSubtitle" Margin="0,6,0,0" Foreground="{fg_body}"
                    FontSize="{font_size_subtitle}"
                    TextWrapping="Wrap"
-                   Text="Configure malla superior e inferior (diámetro y espaciado) para las losas seleccionadas."/>
+                   Text="Configure malla superior e inferior (diámetro y espaciado) para las losas o losas de cimentación seleccionadas."/>
       </StackPanel>
 """.format(
     bg_app=BG_APP,
@@ -3697,7 +3742,7 @@ class AreaReinforcementLosaWindow(object):
         try:
             if not self._floor_ids:
                 _mostrar_aviso(
-                    u"Primero selecciona una o más losas.",
+                    u"Primero selecciona una o más losas o losas de cimentación.",
                     uiapp=self._revit,
                     wpf_window=self._win,
                 )
@@ -3766,7 +3811,7 @@ class AreaReinforcementLosaWindow(object):
             )
 
 def run(revit, close_on_finish=False):
-    """Punto de entrada: diálogo WPF → selección losas → formulario parámetros."""
+    """Punto de entrada: diálogo WPF → selección losas / losas de cimentación → formulario parámetros."""
     _cleanup_stale_tool_state()
 
     session = _get_active_session()

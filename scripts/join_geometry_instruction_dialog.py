@@ -30,7 +30,8 @@ def show_selection_instructions(uiapp=None):
         u"2. Se analizan muros, forjados, pilares y cimentación con material "
         u"estructural Concrete.\n"
         u"3. Los pares candidatos se detectan por solape de cajas; los forjados "
-        u"quedan recortados cuando corresponde.\n\n"
+        u"quedan recortados cuando corresponde y, en muro+pilar, prioriza la "
+        u"columna como cortante.\n\n"
         u"Pulse Aceptar para iniciar el proceso. Esc cancela.",
         ok_text=u"Aceptar",
         cancel_text=u"Cancelar",

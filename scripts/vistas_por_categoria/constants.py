@@ -9,6 +9,19 @@ DISCIPLINE_DETAIL_SECTION = 2
 
 TRANSACTION_TITLE = u"Arainco: Vistas por categoría"
 
+# LO (plantas losas): Cielo y Piso por nivel, cada uno con armadura inferior y superior.
+CATEGORIA_LO = u"01_LO"
+VIEW_SUFFIX_CIELO = u"CIELO"
+VIEW_SUFFIX_PISO = u"PISO"
+VIEW_SUFFIX_INFERIOR = u"INFERIOR"
+VIEW_SUFFIX_SUPERIOR = u"SUPERIOR"
+LO_PLANS_PER_LEVEL = 4
+
+# Filtros de visibilidad Rebar en plantillas LO (parámetro Armadura_Ubicacion).
+PARAM_ARMADURA_UBICACION = u"Armadura_Ubicacion"
+ARMADURA_UBICACION_SUPERIOR = u"F'"
+ARMADURA_UBICACION_INFERIOR = u"F"
+
 # ViewFamilyType por nombre (sustituye ElementId hardcodeados del .dyn)
 VFT_NAME_CIELO = u"Structural Plan (Cielo)"
 VFT_NAME_PISO = u"Structural Plan (Piso)"

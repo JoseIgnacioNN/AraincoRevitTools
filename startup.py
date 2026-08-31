@@ -15,9 +15,21 @@ carpetas `*.tab`.
   (`lap_detail_link_vigas_schema.py`) y geometría opcional `compute_lap_segment_endpoints_vigas`.
 - DMU marcadores de cota confinamiento (columnas): `ENABLE_CONFINEMENT_DIM_LINK_DMU` y
   `scripts/confinement_dim_updater_dmu.py`.
-- DMU color rojo barras >12 m (vista activa, no 3D):
+- DMU color rojo barras >12 m y reset al acortar (vista activa / todas las vistas):
   `ENABLE_REBAR_LARGO_EXCESO_COLOR_DMU` y
   `scripts/rebar_largo_exceso_color_updater_dmu.py`.
+- DMU patas L por cambio de diámetro: `ENABLE_REBAR_PATA_L_DIAMETER_DMU` y
+  `scripts/rebar_pata_l_diameter_updater_dmu.py`.
+- DMU tipo Detail según «Section Filter»:
+  `ENABLE_SECTION_TYPE_FROM_FILTER_DMU` y
+  `scripts/section_type_from_filter_updater_dmu.py`
+  (+ hooks `ID_SECTION` / `ID_OBJECTS_CALLOUT`).
+- DMU nombre de vista Detail al insertar en lámina:
+  `ENABLE_DETAIL_VIEW_SHEET_RENAME_DMU` y
+  `scripts/detail_view_sheet_rename_updater_dmu.py`.
+- DMU tipo de viewport Seccion al insertar Detail en lámina:
+  `ENABLE_DETAIL_VIEW_VIEWPORT_TYPE_DMU` y
+  `scripts/detail_view_viewport_type_updater_dmu.py`.
 - Interceptar «Duplicate as a Dependent»: hook
   `hooks/command-before-exec[ID_CREATE_DEPENDENT_VIEW].py` +
   `scripts/dependent_view_duplicate_intercept.py`
@@ -44,6 +56,19 @@ ENABLE_CONFINEMENT_DIM_LINK_DMU = True
 
 # Color rojo automático en vista activa si Rebar > 12 m (excluye vistas 3D).
 ENABLE_REBAR_LARGO_EXCESO_COLOR_DMU = True
+
+# Ajustar largo de pata L al cambiar RebarBarType (tabla BIMTools por Ø).
+ENABLE_REBAR_PATA_L_DIAMETER_DMU = True
+
+# Al crear una vista Detail desde una Building Section, asignar el tipo Detail
+# cuyo nombre contiene el «Section Filter» de la vista origen.
+ENABLE_SECTION_TYPE_FROM_FILTER_DMU = True
+
+# Al insertar una vista Detail en una lámina, View Name = Sheet Number_Detail Number.
+ENABLE_DETAIL_VIEW_SHEET_RENAME_DMU = True
+
+# Al insertar una vista Detail en una lámina, tipo de viewport = Seccion.
+ENABLE_DETAIL_VIEW_VIEWPORT_TYPE_DMU = True
 
 # Binding manual de respaldo (el camino principal es el hook en hooks/).
 # Dejar en False si el hook está activo, para no duplicar suscripciones.
@@ -100,6 +125,70 @@ def _register():
 
         try:
             unregister_rebar_largo_exceso_color_updater(addin_id)
+        except Exception:
+            pass
+
+    if ENABLE_REBAR_PATA_L_DIAMETER_DMU:
+        from rebar_pata_l_diameter_updater_dmu import (
+            register_rebar_pata_l_diameter_updater,
+        )
+
+        register_rebar_pata_l_diameter_updater(addin_id, doc=None)
+    else:
+        from rebar_pata_l_diameter_updater_dmu import (
+            unregister_rebar_pata_l_diameter_updater,
+        )
+
+        try:
+            unregister_rebar_pata_l_diameter_updater(addin_id)
+        except Exception:
+            pass
+
+    if ENABLE_SECTION_TYPE_FROM_FILTER_DMU:
+        from section_type_from_filter_updater_dmu import (
+            register_section_type_from_filter_updater,
+        )
+
+        register_section_type_from_filter_updater(addin_id, doc=None)
+    else:
+        from section_type_from_filter_updater_dmu import (
+            unregister_section_type_from_filter_updater,
+        )
+
+        try:
+            unregister_section_type_from_filter_updater(addin_id)
+        except Exception:
+            pass
+
+    if ENABLE_DETAIL_VIEW_SHEET_RENAME_DMU:
+        from detail_view_sheet_rename_updater_dmu import (
+            register_detail_view_sheet_rename_updater,
+        )
+
+        register_detail_view_sheet_rename_updater(addin_id, doc=None)
+    else:
+        from detail_view_sheet_rename_updater_dmu import (
+            unregister_detail_view_sheet_rename_updater,
+        )
+
+        try:
+            unregister_detail_view_sheet_rename_updater(addin_id)
+        except Exception:
+            pass
+
+    if ENABLE_DETAIL_VIEW_VIEWPORT_TYPE_DMU:
+        from detail_view_viewport_type_updater_dmu import (
+            register_detail_view_viewport_type_updater,
+        )
+
+        register_detail_view_viewport_type_updater(addin_id, doc=None)
+    else:
+        from detail_view_viewport_type_updater_dmu import (
+            unregister_detail_view_viewport_type_updater,
+        )
+
+        try:
+            unregister_detail_view_viewport_type_updater(addin_id)
         except Exception:
             pass
 

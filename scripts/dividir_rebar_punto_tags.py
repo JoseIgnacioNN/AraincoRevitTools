@@ -2,10 +2,16 @@
 """
 Etiquetado de barras divididas: familia de la etiqueta original + tipo según RebarShape.
 
+Tras dividir: IndependentTag (familia EST_A si no había etiqueta) + MRA
+«Recorrido Barras» en la vista activa para marcar el recorrido.
+
 Revit 2024+ | IronPython
 """
 
 from __future__ import print_function
+
+import os
+import sys
 
 import clr
 
@@ -28,6 +34,14 @@ from rebar_tag_shape_sync_core import (
     symbol_map_from_family_names,
     tag_rebar_int_if_match,
 )
+
+# Misma convención que zapata de muro / armadura de losa.
+_DEFAULT_TAG_FAMILY_NAMES = (
+    u"EST_A_STRUCTURAL REBAR TAG",
+    u"EST_A_STRUCTURAL REBAR TAG_FLOOR",
+)
+_FALLBACK_TAG_TYPE = u"01"
+_MRA_TYPE_NAME_RECORRIDO = u"Recorrido Barras"
 
 
 def _as_unicode(text):
@@ -404,6 +418,7 @@ def create_rebar_independent_tag(
     rotation=None,
     bar_index=None,
 ):
+    rid = _element_id_int(rebar.Id) if rebar is not None else None
     if view is None or type_id is None or rebar is None:
         return None
     if bar_index is None:
@@ -424,13 +439,13 @@ def create_rebar_independent_tag(
     refs = _referencias_tag_rebar(doc, rebar, preferred_bar_index=bi)
     if not refs:
         return None
-    for ref in refs:
+    for i_ref, ref in enumerate(refs):
         tag = None
         try:
             tag = IndependentTag.Create(
                 doc, type_id, view.Id, ref, bool(add_leader), orient, head
             )
-        except Exception:
+        except Exception as ex:
             tag = None
         if tag is None:
             try:
@@ -451,7 +466,7 @@ def create_rebar_independent_tag(
                             tag.SetTypeId(type_id)
                         except Exception:
                             pass
-            except Exception:
+            except Exception as ex:
                 tag = None
         if tag is None:
             continue
@@ -521,6 +536,12 @@ def tag_divided_rebars(doc, tag_infos, new_rebars):
             pass
         if rb is None:
             continue
+        rid = _element_id_int(rb.Id)
+        shapes = []
+        try:
+            shapes = list(rebar_shape_name_candidates(doc, rb) or [])
+        except Exception:
+            shapes = []
         # Una pasada por vista capturada (dedupe por view_id)
         seen_views = set()
         for info in tag_infos:
@@ -556,3 +577,459 @@ def tag_divided_rebars(doc, tag_infos, new_rebars):
                 if tag is not None:
                     creadas += 1
     return creadas
+
+
+def _find_extension_scripts_dir():
+    """Localiza ``BIMTools.extension/scripts`` (helpers compartidos MRA)."""
+    cursor = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(24):
+        marker = os.path.join(cursor, u"geometria_estribos_viga.py")
+        if os.path.isfile(marker):
+            return cursor
+        nested = os.path.join(cursor, u"scripts", u"geometria_estribos_viga.py")
+        if os.path.isfile(nested):
+            return os.path.join(cursor, u"scripts")
+        parent = os.path.dirname(cursor)
+        if parent == cursor:
+            break
+        cursor = parent
+    return None
+
+
+def _ensure_extension_scripts_on_path():
+    ext = _find_extension_scripts_dir()
+    if ext and ext not in sys.path:
+        try:
+            sys.path.append(ext)
+        except Exception:
+            pass
+    return ext
+
+
+def _view_ok_for_annotation(view):
+    if view is None:
+        return False
+    try:
+        if bool(view.IsTemplate):
+            return False
+    except Exception:
+        pass
+    try:
+        from Autodesk.Revit.DB import View3D, ViewSheet, ViewSchedule
+
+        if isinstance(view, (View3D, ViewSheet, ViewSchedule)):
+            return False
+    except Exception:
+        pass
+    return True
+
+
+def _default_tag_type_id_for_rebar(doc, rebar, symbol_map_cache=None):
+    """
+    Tipo EST_A homónimo al RebarShape; fallback «01».
+    """
+    if doc is None or rebar is None:
+        return None
+    cache = symbol_map_cache if symbol_map_cache is not None else {}
+    cache_key = u"__default_est_a__"
+    sm = cache.get(cache_key)
+    if sm is None:
+        sm = symbol_map_from_family_names(doc, list(_DEFAULT_TAG_FAMILY_NAMES)) or {}
+        cache[cache_key] = sm
+    if not sm:
+        return None
+    shapes = []
+    try:
+        shapes = list(rebar_shape_name_candidates(doc, rebar) or [])
+    except Exception:
+        shapes = []
+    for shape in shapes:
+        tid = lookup_tag_type_id(sm, shape)
+        if tid is not None:
+            return tid
+    fb = lookup_tag_type_id(sm, _FALLBACK_TAG_TYPE)
+    return fb
+
+
+def tag_rebars_with_default_family(doc, view, new_rebars):
+    """
+    Una IndependentTag por barra (y por posición representada) con familia EST_A.
+    Sin leader; cabecera en ancla de la barra.
+    """
+    if doc is None or view is None or not new_rebars:
+        return 0
+    if not _view_ok_for_annotation(view):
+        return 0
+    creadas = 0
+    cache = {}
+    for rb in new_rebars:
+        if rb is None:
+            continue
+        try:
+            rb = doc.GetElement(rb.Id)
+        except Exception:
+            pass
+        if rb is None:
+            continue
+        type_id = _default_tag_type_id_for_rebar(doc, rb, cache)
+        if type_id is None:
+            continue
+        bar_indices = _tag_bar_indices_for_view(rb, view)
+        for bar_idx in bar_indices:
+            head = _rebar_tag_anchor_xyz(rb, bar_idx)
+            tag = create_rebar_independent_tag(
+                doc,
+                view,
+                rb,
+                type_id,
+                head,
+                TagOrientation.Horizontal,
+                False,
+                rotation=None,
+                bar_index=bar_idx,
+            )
+            if tag is not None:
+                try:
+                    tag.HasLeader = False
+                except Exception:
+                    pass
+                try:
+                    if head is not None:
+                        tag.TagHeadPosition = head
+                except Exception:
+                    pass
+                creadas += 1
+    return creadas
+
+
+def _apply_mra_local_fallback(doc, view, rebars, avisos):
+    """
+    MRA «Recorrido Barras» sin depender de geometria_estribos_viga
+    (mismo criterio básico: centro bbox + offset según UpDirection).
+    """
+    if avisos is None:
+        avisos = []
+    try:
+        from Autodesk.Revit.DB import (
+            BuiltInParameter,
+            DimensionStyleType,
+            MultiReferenceAnnotation,
+            MultiReferenceAnnotationOptions,
+            MultiReferenceAnnotationType,
+            StorageType,
+        )
+        from System.Collections.Generic import List
+    except Exception as ex:
+        avisos.append(u"MRA: imports fallaron ({0}).".format(_as_unicode(ex)))
+        return 0
+
+    def _norm(s):
+        try:
+            return u" ".join(_as_unicode(s).replace(u"\u00A0", u" ").split())
+        except Exception:
+            return u""
+
+    mrat = None
+    type_names = []
+    try:
+        col = FilteredElementCollector(doc).OfClass(MultiReferenceAnnotationType)
+        tgt = _norm(_MRA_TYPE_NAME_RECORRIDO).lower()
+        for t in col:
+            names = []
+            try:
+                names.append(_norm(getattr(t, u"Name", None)))
+            except Exception:
+                pass
+            for bip_name in (u"SYMBOL_NAME_PARAM", u"ALL_MODEL_TYPE_NAME"):
+                try:
+                    bip = getattr(BuiltInParameter, bip_name, None)
+                    if bip is None:
+                        continue
+                    p = t.get_Parameter(bip)
+                    if p is None or not p.HasValue:
+                        continue
+                    if p.StorageType == StorageType.String:
+                        names.append(_norm(p.AsString()))
+                except Exception:
+                    continue
+            for n in names:
+                if n and n not in type_names:
+                    type_names.append(n)
+                if n and n.lower() == tgt:
+                    mrat = t
+                    break
+            if mrat is not None:
+                break
+    except Exception as ex:
+        avisos.append(u"MRA: búsqueda de tipo ({0}).".format(_as_unicode(ex)))
+        return 0
+    if mrat is None:
+        avisos.append(
+            u"Multi-Rebar Annotation: no existe el tipo «{0}» en el proyecto.".format(
+                _MRA_TYPE_NAME_RECORRIDO
+            )
+        )
+        return 0
+
+    try:
+        vd = view.ViewDirection.Normalize()
+        rd = view.RightDirection.Normalize()
+        v_up = view.UpDirection
+        if v_up is None or v_up.GetLength() < 1e-12:
+            v_up = XYZ.BasisZ
+        else:
+            v_up = v_up.Normalize()
+    except Exception:
+        avisos.append(u"MRA: dirección de vista inválida.")
+        return 0
+
+    # ~300 mm hacia −Up (fuera del conjunto).
+    try:
+        from Autodesk.Revit.DB import UnitTypeId, UnitUtils
+
+        off_ft = float(
+            UnitUtils.ConvertToInternalUnits(300.0, UnitTypeId.Millimeters)
+        )
+    except Exception:
+        off_ft = 300.0 / 304.8
+
+    n_ok = 0
+    for rb in rebars or []:
+        if rb is None:
+            continue
+        try:
+            rb = doc.GetElement(rb.Id)
+        except Exception:
+            pass
+        if rb is None:
+            continue
+        rid = _element_id_int(rb.Id)
+        p_mid = None
+        try:
+            bb = rb.get_BoundingBox(view)
+            if bb is not None:
+                p_mid = (bb.Min + bb.Max) * 0.5
+        except Exception:
+            p_mid = None
+        if p_mid is None:
+            try:
+                bb0 = rb.get_BoundingBox(None)
+                if bb0 is not None:
+                    p_mid = (bb0.Min + bb0.Max) * 0.5
+            except Exception:
+                p_mid = None
+        if p_mid is None:
+            continue
+        try:
+            p_line = p_mid - v_up.Multiply(float(off_ft))
+        except Exception:
+            p_line = p_mid
+        try:
+            opts = MultiReferenceAnnotationOptions(mrat)
+        except Exception:
+            try:
+                opts = MultiReferenceAnnotationOptions()
+                opts.MultiReferenceAnnotationType = mrat.Id
+            except Exception as ex:
+                continue
+        try:
+            opts.DimensionStyleType = DimensionStyleType.Linear
+        except Exception:
+            pass
+        try:
+            opts.DimensionPlaneNormal = vd
+            opts.DimensionLineDirection = rd
+            opts.DimensionLineOrigin = p_line
+            opts.TagHeadPosition = p_line
+            opts.TagHasLeader = False
+        except Exception as ex:
+            continue
+        ids = List[ElementId]()
+        ids.Add(rb.Id)
+        try:
+            opts.SetElementsToDimension(ids)
+        except Exception as ex:
+            continue
+        try:
+            if hasattr(opts, u"ElementsMatchReferenceCategory"):
+                if not opts.ElementsMatchReferenceCategory(doc):
+                    continue
+        except Exception:
+            pass
+        try:
+            mra = MultiReferenceAnnotation.Create(doc, view.Id, opts)
+            if mra is not None:
+                n_ok += 1
+        except Exception as ex:
+            avisos.append(
+                u"MRA Id {0}: {1}".format(rid, _as_unicode(ex))
+            )
+    return int(n_ok)
+
+
+def _list_mra_type_names(doc):
+    """Nombres de tipos MultiReferenceAnnotation en el proyecto."""
+    names = []
+    try:
+        from Autodesk.Revit.DB import (
+            BuiltInParameter,
+            MultiReferenceAnnotationType,
+            StorageType,
+        )
+    except Exception:
+        return names
+
+    def _norm(s):
+        try:
+            return u" ".join(_as_unicode(s).replace(u"\u00A0", u" ").split())
+        except Exception:
+            return u""
+
+    try:
+        col = FilteredElementCollector(doc).OfClass(MultiReferenceAnnotationType)
+        for t in col:
+            try:
+                n = _norm(getattr(t, u"Name", None))
+                if n and n not in names:
+                    names.append(n)
+            except Exception:
+                pass
+            for bip_name in (u"SYMBOL_NAME_PARAM", u"ALL_MODEL_TYPE_NAME"):
+                try:
+                    bip = getattr(BuiltInParameter, bip_name, None)
+                    if bip is None:
+                        continue
+                    p = t.get_Parameter(bip)
+                    if p is None or not p.HasValue:
+                        continue
+                    if p.StorageType == StorageType.String:
+                        n = _norm(p.AsString())
+                        if n and n not in names:
+                            names.append(n)
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return names
+
+
+def apply_mra_recorrido_barras(doc, view, new_rebars, avisos=None):
+    """
+    Una MultiReferenceAnnotation «Recorrido Barras» por cada Rebar nuevo.
+    Preferir helper compartido; si no, fallback local.
+    """
+    if avisos is None:
+        avisos = []
+    if doc is None or view is None or not new_rebars:
+        return 0
+    if not _view_ok_for_annotation(view):
+        avisos.append(
+            u"MRA «{0}»: use planta/alzado/sección (no plantilla ni 3D).".format(
+                _MRA_TYPE_NAME_RECORRIDO
+            )
+        )
+        return 0
+
+    type_names = _list_mra_type_names(doc)
+
+    _ensure_extension_scripts_on_path()
+    try:
+        from geometria_estribos_viga import (
+            crear_multi_rebar_annotations_por_nombre_tipo,
+        )
+
+        n = int(
+            crear_multi_rebar_annotations_por_nombre_tipo(
+                doc,
+                view,
+                list(new_rebars),
+                avisos,
+                _MRA_TYPE_NAME_RECORRIDO,
+            )
+            or 0
+        )
+        return n
+    except Exception as ex:
+        return _apply_mra_local_fallback(doc, view, new_rebars, avisos)
+
+
+def annotate_divided_rebars(doc, view, new_rebars, tag_infos=None):
+    """
+    Etiqueta los tramos nuevos y aplica MRA de recorrido.
+
+    1. Si había IndependentTag en el original → recrear en esas vistas.
+    2. Si no se creó ninguna → etiqueta EST_A en la vista activa.
+    3. Siempre intenta MRA «Recorrido Barras» en la vista activa.
+
+    Returns:
+        dict: n_tags, n_mra, avisos, used_default_tags
+    """
+    result = {
+        u"n_tags": 0,
+        u"n_mra": 0,
+        u"avisos": [],
+        u"used_default_tags": False,
+    }
+    if doc is None or not new_rebars:
+        return result
+
+    rebars = []
+    for rb in new_rebars:
+        if rb is None:
+            continue
+        try:
+            rebars.append(doc.GetElement(rb.Id))
+        except Exception:
+            rebars.append(rb)
+    rebars = [r for r in rebars if r is not None]
+    if not rebars:
+        return result
+
+    n_tags = 0
+    if tag_infos:
+        try:
+            n_tags = int(
+                tag_divided_rebars(doc, tag_infos, rebars) or 0
+            )
+        except Exception as ex:
+            result[u"avisos"].append(
+                u"Etiquetas (recreación): {0}".format(_as_unicode(ex))
+            )
+            n_tags = 0
+
+    if n_tags <= 0 and view is not None:
+        try:
+            n_def = int(
+                tag_rebars_with_default_family(doc, view, rebars) or 0
+            )
+        except Exception as ex:
+            result[u"avisos"].append(
+                u"Etiquetas (EST_A): {0}".format(_as_unicode(ex))
+            )
+            n_def = 0
+        if n_def > 0:
+            n_tags = n_def
+            result[u"used_default_tags"] = True
+        elif not tag_infos:
+            result[u"avisos"].append(
+                u"No se crearon etiquetas (falta familia «{0}» o vista no válida).".format(
+                    _DEFAULT_TAG_FAMILY_NAMES[0]
+                )
+            )
+
+    result[u"n_tags"] = int(n_tags)
+
+    avisos_mra = []
+    try:
+        n_mra = int(
+            apply_mra_recorrido_barras(doc, view, rebars, avisos_mra)
+            or 0
+        )
+    except Exception as ex:
+        n_mra = 0
+        avisos_mra.append(u"MRA: {0}".format(_as_unicode(ex)))
+    result[u"n_mra"] = int(n_mra)
+    for av in avisos_mra:
+        if av:
+            result[u"avisos"].append(av)
+    return result

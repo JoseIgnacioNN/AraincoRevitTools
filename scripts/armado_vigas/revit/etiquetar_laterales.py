@@ -17,8 +17,10 @@ from __future__ import print_function
 import clr
 
 clr.AddReference("RevitAPI")
-from Autodesk.Revit.DB import Reference, Transaction, XYZ
+from Autodesk.Revit.DB import Reference, XYZ
 from System.Collections.Generic import List
+
+from armado_vigas.revit.txn import transaction_scope
 
 LATERAL_REBAR_TAG_FAMILY = u"EST_A_STRUCTURAL REBAR TAG_LATERAL"
 LATERAL_MULTIHOST_TAG_FAMILY = (
@@ -506,17 +508,13 @@ def etiquetar_laterales_en_vista(
         return n_ok, avisos_loc
 
     if use_transaction:
-        t = Transaction(document, u"Arainco: Etiquetar laterales vigas")
-        t.Start()
         try:
-            n_ok, avisos_loc = _run()
-            t.Commit()
+            with transaction_scope(
+                document, u"Arainco: Etiquetar laterales vigas"
+            ):
+                n_ok, avisos_loc = _run()
             return n_ok, avisos_loc, None
         except Exception as ex:
-            try:
-                t.RollBack()
-            except Exception:
-                pass
             try:
                 msg = unicode(ex)
             except Exception:

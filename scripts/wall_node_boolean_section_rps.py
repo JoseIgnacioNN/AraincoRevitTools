@@ -497,11 +497,140 @@ def _esta_unido_por_join_geometry(doc, host, other):
             return False
 
 
+def _elements_at_join_array(location_curve, end_index):
+    """``LocationCurve.get_ElementsAtJoin`` (unión de muro en punta, no Join Geometry)."""
+    if location_curve is None:
+        return None
+    try:
+        ei = int(end_index)
+    except Exception:
+        return None
+    if ei not in (0, 1):
+        return None
+    try:
+        return location_curve.get_ElementsAtJoin(ei)
+    except Exception:
+        pass
+    try:
+        return location_curve.ElementsAtJoin[ei]
+    except Exception:
+        return None
+
+
+def _iter_elements_at_join(location_curve, end_index):
+    """Elementos unidos al extremo ``0``/``1`` de la LocationCurve (ElementArray)."""
+    arr = _elements_at_join_array(location_curve, end_index)
+    if arr is None:
+        return []
+    out = []
+    try:
+        for el in arr:
+            if el is not None:
+                out.append(el)
+    except (TypeError, SystemError, AttributeError):
+        out = []
+    if out:
+        return out
+    n = 0
+    try:
+        n = int(arr.Size)
+    except Exception:
+        try:
+            n = int(arr.Count)
+        except Exception:
+            n = 0
+    for i in range(n):
+        el = None
+        try:
+            el = arr.get_Item(i)
+        except Exception:
+            try:
+                el = arr[i]
+            except Exception:
+                el = None
+        if el is not None:
+            out.append(el)
+    return out
+
+
+def _ids_wall_join_at_end(host, end_index):
+    """ElementId de elementos en la unión de muro del extremo ``0``/``1``."""
+    if host is None:
+        return []
+    loc = getattr(host, u"Location", None)
+    if not isinstance(loc, LocationCurve):
+        return []
+    ids = []
+    seen = set()
+    host_i = _element_id_to_int(getattr(host, u"Id", None))
+    for el in _iter_elements_at_join(loc, end_index):
+        try:
+            eid = el.Id
+        except Exception:
+            continue
+        if eid is None or eid == ElementId.InvalidElementId:
+            continue
+        ii = _element_id_to_int(eid)
+        if ii is not None and host_i is not None and ii == host_i:
+            continue
+        if ii is not None:
+            if ii in seen:
+                continue
+            seen.add(ii)
+        ids.append(eid)
+    return ids
+
+
+def _coleccion_ids_wall_joins_extremos(host):
+    """Uniones de muro en inicio y fin (ElementsAtJoin 0 y 1)."""
+    out = []
+    seen = set()
+    for end_index in (0, 1):
+        for eid in _ids_wall_join_at_end(host, end_index):
+            ii = _element_id_to_int(eid)
+            if ii is not None:
+                if ii in seen:
+                    continue
+                seen.add(ii)
+            out.append(eid)
+    return out
+
+
+def _esta_unido_por_wall_join_en_extremo(host, other, extremo):
+    """True si ``other`` está en ElementsAtJoin del extremo ``inicio``/``fin`` del host."""
+    if host is None or other is None:
+        return False
+    if extremo == u"inicio":
+        end_index = 0
+    elif extremo == u"fin":
+        end_index = 1
+    else:
+        return False
+    try:
+        other_id = other.Id
+    except Exception:
+        return False
+    for eid in _ids_wall_join_at_end(host, end_index):
+        if _element_ids_equal(eid, other_id):
+            return True
+    return False
+
+
+def _esta_unido_por_wall_join(host, other):
+    """True si hay unión de muro (punta) entre host y other, en cualquier extremo."""
+    if host is None or other is None:
+        return False
+    return _esta_unido_por_wall_join_en_extremo(
+        host, other, u"inicio",
+    ) or _esta_unido_por_wall_join_en_extremo(host, other, u"fin")
+
+
 def _es_muro_lateral_en_extremos(doc, host, base_line, other_wall, tol_end):
     """
     Muro “en encuentro” respecto al anfitrión:
 
-    - Si ``AreElementsJoined``: se acepta salvo unión longitudinal paralela (cara larga).
+    - Si hay **unión de muro** (``ElementsAtJoin``) o ``AreElementsJoined``:
+      se acepta salvo unión longitudinal paralela (cara larga).
     - Si no está unido: proximidad de curva o de bbox a e0/e1 con tolerancia ampliada, **o**
       encuentro en **T / cara lateral** a mitad de tramo (eje del otro casi ortogonal, proyección
       interior del eje, separación de orden de los espesores).
@@ -523,7 +652,9 @@ def _es_muro_lateral_en_extremos(doc, host, base_line, other_wall, tol_end):
     tol_curve = _tol_extremo_curva_muros(host, other_wall, tol_end)
     tol_bbox = max(tol_curve, float(tol_end) * 2.2)
 
-    if _esta_unido_por_join_geometry(doc, host, other_wall):
+    if _esta_unido_por_join_geometry(doc, host, other_wall) or _esta_unido_por_wall_join(
+        host, other_wall
+    ):
         if _es_union_longitudinal_paralelo(host, base_line, oc, tol_end):
             return False
         return True
@@ -2113,6 +2244,19 @@ def _elementos_para_union(doc, host, wall_line, section_plane=None):
         seen.add(host.Id)
     except Exception:
         pass
+
+    for jid in _coleccion_ids_wall_joins_extremos(host):
+        el = doc.GetElement(jid)
+        if el is None or el.Id in seen:
+            continue
+        if not isinstance(el, Wall):
+            continue
+        if _es_muro_lateral_en_extremos(doc, host, wall_line, el, tol_end):
+            if not _muro_apilado_bajo_muro_principal(
+                host, el, tol_z
+            ) and not _muro_apilado_sobre_muro_principal(host, el, tol_z):
+                elementos.append(el)
+                seen.add(el.Id)
 
     for jid in _coleccion_ids_unidas(doc, host):
         el = doc.GetElement(jid)

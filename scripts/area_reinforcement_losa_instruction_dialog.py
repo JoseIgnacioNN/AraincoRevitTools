@@ -4,14 +4,15 @@
 _DIALOG = u"Arainco: Malla en Losa"
 
 _SELECTION_CONTENT = (
-    u"Esta herramienta crea mallas de Area Reinforcement en losas de hormigón.\n\n"
+    u"Esta herramienta crea mallas de Area Reinforcement en losas de hormigón "
+    u"y losas de cimentación (Structural Foundation slab).\n\n"
     u"Flujo:\n"
-    u"1. Tras Aceptar, elija losas (Floor) en el modelo. Finalice con Finish "
-    u"en la barra de opciones (ESC cancela).\n"
+    u"1. Tras Aceptar, elija losas o losas de cimentación en el modelo. "
+    u"Finalice con Finish en la barra de opciones (ESC cancela).\n"
     u"2. Configure malla superior e inferior: diámetro y espaciado.\n"
     u"3. Pulse «Colocar armaduras» para crear las mallas y etiquetarlas en planta.\n\n"
-    u"Requisitos: losas con sketch cerrado, AreaReinforcementType, RebarBarType "
-    u"y RebarHookType en el proyecto."
+    u"Requisitos: losas o losas de cimentación con sketch cerrado, "
+    u"AreaReinforcementType, RebarBarType y RebarHookType en el proyecto."
 )
 
 
@@ -45,7 +46,7 @@ def show_message_dialog(title, instruction, ok_text=u"Entendido", uiapp=None):
 
 def show_selection_instructions(uiapp=None, hwnd_revit=None):
     """
-    Instrucciones previas a la selección de losas.
+    Instrucciones previas a la selección de losas o losas de cimentación.
     Devuelve ``True`` si el usuario pulsa Aceptar; ``False`` si cancela.
     """
     if hwnd_revit is None and uiapp is not None:
@@ -58,7 +59,7 @@ def show_selection_instructions(uiapp=None, hwnd_revit=None):
 
     return show_ok_cancel_dialog(
         _DIALOG,
-        u"Seleccione una o más losas a armar.",
+        u"Seleccione una o más losas o losas de cimentación a armar.",
         content=_SELECTION_CONTENT,
         ok_text=u"Aceptar",
         cancel_text=u"Cancelar",

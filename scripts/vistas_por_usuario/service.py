@@ -49,9 +49,10 @@ from crear_vistas_revision_estructural import (
     _apply_view_range_cielo,
     _apply_view_range_piso,
     _collect_levels_sorted,
+    _create_plan_view,
     _find_view_family_type_by_name,
     _is_lowest_project_level,
-    _level_above,
+    _level_above_for_cielo,
     _mm_to_internal,
     _normalize_compare_name,
     _regenerate_doc_safe,
@@ -1180,7 +1181,7 @@ def create_user_views(doc, request):
                 piso_lowest = _is_lowest_project_level(level, levels_all)
 
                 def _make_piso(lev=level, nm=name_piso, lowest=piso_lowest):
-                    vp = ViewPlan.Create(doc, vft_piso.Id, lev.Id)
+                    vp = _create_plan_view(doc, vft_piso, lev.Id, nm)
                     vp.Name = nm
                     _apply_view_range_piso(
                         vp, lev, off_piso_1500, off_piso_neg_1500, lowest
@@ -1205,10 +1206,12 @@ def create_user_views(doc, request):
             if key_cielo in used:
                 result.skipped.append(name_cielo + u" (ya existía)")
             else:
-                lvl_up = _level_above(level, levels_all)
+                lvl_up = _level_above_for_cielo(
+                    level, levels_all, off_cut_cielo, off_top_depth
+                )
 
                 def _make_cielo(lev=level, lup=lvl_up, nm=name_cielo):
-                    vc = ViewPlan.Create(doc, vft_cielo.Id, lev.Id)
+                    vc = _create_plan_view(doc, vft_cielo, lev.Id, nm)
                     vc.Name = nm
                     _apply_view_range_cielo(
                         vc,

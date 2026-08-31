@@ -23,6 +23,7 @@ from Autodesk.Revit.DB.Structure import MultiplanarOption, Rebar
 
 ARMADURA_ARAINCO_PARAM = u"Armadura_Arainco"
 ARMADURA_CAPA_PARAM = u"Armadura_Capa"
+ARMADURA_CAPAS_PARAM = u"Capas"
 ARMADURA_MALLA_PARAM = u"Armadura_Malla"
 ARMADURA_MALLA_TIPO_PARAM = u"Armadura_Malla_Tipo"
 ARMADURA_MALLA_ORIENTACION_PARAM = u"Armadura_Malla_Orientacion"
@@ -34,6 +35,7 @@ ARMADURA_MALLA_ORIENT_V = u"V."
 ARMADURA_MALLA_ORIENT_H = u"H."
 _APPDOMAIN_CONJUNTO_GUID_KEY = u"Arainco_ArmadoMurosV3_Conjunto_GUID"
 _APPDOMAIN_ARMADURA_EJE_KEY = u"Arainco_ArmadoMurosV3_Armadura_Eje"
+_APPDOMAIN_ARMADURA_EJE_STAMP_KEY = u"Arainco_ArmadoMurosV3_Armadura_Eje_Stamp"
 
 
 def _norm_param_def_name(name):
@@ -189,13 +191,43 @@ def leer_armadura_eje_desde_vista(view):
     return _param_value_as_text(p)
 
 
+def vista_tiene_parametro_armadura_eje(view):
+    """True si la vista declara el parámetro de instancia ``Armadura_Eje``."""
+    if view is None:
+        return False
+    return _find_element_parameter(view, ARMADURA_EJE_PARAM) is not None
+
+
+def _set_armadura_eje_corrida_cache(valor, stamp_active):
+    try:
+        AppDomain.CurrentDomain.SetData(_APPDOMAIN_ARMADURA_EJE_KEY, valor)
+        AppDomain.CurrentDomain.SetData(_APPDOMAIN_ARMADURA_EJE_STAMP_KEY, bool(stamp_active))
+    except Exception:
+        pass
+
+
+def corrida_debe_estampar_armadura_eje():
+    """True si la corrida leyó ``Armadura_Eje`` en la vista de trabajo."""
+    try:
+        return bool(AppDomain.CurrentDomain.GetData(_APPDOMAIN_ARMADURA_EJE_STAMP_KEY))
+    except Exception:
+        return False
+
+
 def iniciar_armadura_eje_ejecucion(uidoc=None, view=None, eje_valor=None):
     """
     Cachea ``Armadura_Eje`` de la vista activa para estampar rebars de la corrida.
 
     Prioridad: ``eje_valor`` explícito → ``view`` → ``uidoc.ActiveView``.
+    Solo activa estampado si la vista tiene el parámetro ``Armadura_Eje``.
     """
-    valor = None
+    vista = view
+    if vista is None and uidoc is not None:
+        try:
+            vista = uidoc.ActiveView
+        except Exception:
+            vista = None
+
     if eje_valor is not None:
         try:
             valor = unicode(eje_valor).strip()
@@ -203,56 +235,63 @@ def iniciar_armadura_eje_ejecucion(uidoc=None, view=None, eje_valor=None):
             try:
                 valor = str(eje_valor or u"").strip()
             except Exception:
-                valor = None
-        if not valor:
-            valor = None
+                valor = u""
+        _set_armadura_eje_corrida_cache(valor, True)
+        return valor or None
+
+    if not vista_tiene_parametro_armadura_eje(vista):
+        _set_armadura_eje_corrida_cache(None, False)
+        return None
+
+    valor = leer_armadura_eje_desde_vista(vista)
     if valor is None:
-        vista = view
-        if vista is None and uidoc is not None:
-            try:
-                vista = uidoc.ActiveView
-            except Exception:
-                vista = None
-        valor = leer_armadura_eje_desde_vista(vista)
-    try:
-        AppDomain.CurrentDomain.SetData(_APPDOMAIN_ARMADURA_EJE_KEY, valor)
-    except Exception:
-        pass
-    return valor
+        valor = u""
+    _set_armadura_eje_corrida_cache(valor, True)
+    return valor or None
 
 
 def obtener_armadura_eje_actual():
-    """Valor ``Armadura_Eje`` cacheado de la corrida o ``None``."""
+    """Valor ``Armadura_Eje`` cacheado de la corrida o ``None`` si no aplica."""
+    if not corrida_debe_estampar_armadura_eje():
+        return None
     try:
         val = AppDomain.CurrentDomain.GetData(_APPDOMAIN_ARMADURA_EJE_KEY)
     except Exception:
         val = None
-    if not val:
-        return None
+    if val is None:
+        return u""
     try:
         t = unicode(val).strip()
     except Exception:
         try:
             t = str(val or u"").strip()
         except Exception:
-            return None
-    return t or None
+            return u""
+    return t
 
 
 def finalizar_armadura_eje_ejecucion():
     """Limpia el valor ``Armadura_Eje`` de corrida al terminar la ejecución."""
-    try:
-        AppDomain.CurrentDomain.SetData(_APPDOMAIN_ARMADURA_EJE_KEY, None)
-    except Exception:
-        pass
+    _set_armadura_eje_corrida_cache(None, False)
 
 
 def stamp_armadura_eje(rebar, eje_valor=None):
     """Escribe ``Armadura_Eje`` en un ``Rebar`` (valor explícito o cache de corrida)."""
     if rebar is None or not isinstance(rebar, Rebar):
         return False
-    valor = eje_valor if eje_valor is not None else obtener_armadura_eje_actual()
-    if not valor:
+    if eje_valor is not None:
+        try:
+            valor = unicode(eje_valor).strip()
+        except Exception:
+            try:
+                valor = str(eje_valor or u"").strip()
+            except Exception:
+                valor = u""
+    elif corrida_debe_estampar_armadura_eje():
+        valor = obtener_armadura_eje_actual()
+        if valor is None:
+            valor = u""
+    else:
         return False
     return _set_rebar_string_param(rebar, ARMADURA_EJE_PARAM, valor)
 
@@ -496,6 +535,35 @@ def set_armadura_capa_desde_layer(rebar, layer_index):
     if rebar is None or not isinstance(rebar, Rebar):
         return False
     return stamp_armadura_capa_desde_layer(rebar, layer_index)
+
+
+def stamp_armadura_capas_si_multilayer(element, n_layers):
+    """
+    Escribe ``Capas`` (conteo de capas del conjunto) solo si ``n_layers >= 2``.
+
+    Aplica a ``Rebar`` o detail de empalme con el parámetro en plantilla.
+    """
+    if element is None:
+        return False
+    try:
+        n = int(n_layers)
+    except Exception:
+        return False
+    if n < 2:
+        return False
+    p = _find_element_parameter(element, ARMADURA_CAPAS_PARAM)
+    if p is None or p.IsReadOnly:
+        return False
+    try:
+        if p.StorageType == StorageType.Integer:
+            p.Set(int(n))
+            return True
+    except Exception:
+        pass
+    for val in (unicode(n), u"{0}C".format(n)):
+        if _set_element_string_param(element, ARMADURA_CAPAS_PARAM, val):
+            return True
+    return False
 
 
 def stamp_armadura_nivel(rebar, level_name):

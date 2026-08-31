@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-View Unobscured en la vista activa — interruptor según icono (ojo).
+Ver / Ocultar Armadura en la vista activa — interruptor según icono.
 
-Ojo cerrado → aplica; ojo abierto → quita. Sin diálogo de acción.
+Icono off («Ver Armadura») → aplica Unobscured.
+Icono on («Ocultar Armadura») → quita Unobscured.
+Sin diálogo de acción.
 
 Revit 2024+ | pyRevit / IronPython.
 Entrada: ``37_RebarUnobscuredVista.smartbutton/script.py`` (botón ligero).
@@ -18,11 +20,14 @@ from bimtools_rebar_3d_visibility import (
     collect_reinforcement_in_view,
 )
 
-__title__ = u"Arainco: View Unobscured barras"
-__title_apply__ = u"Arainco: Aplicar View Unobscured barras"
-__title_remove__ = u"Arainco: Quitar View Unobscured barras"
+__title__ = u"Arainco: Ver Armadura"
+__title_apply__ = u"Arainco: Ver Armadura"
+__title_remove__ = u"Arainco: Ocultar Armadura"
 
+_TITLE_OFF = u"Ver\nArmadura"
+_TITLE_ON = u"Ocultar\nArmadura"
 _ENV_ON = u"BIMTOOLS_REBAR_UNOBSCURED_ON"
+_AD_BUTTON = u"BIMTOOLS_REBAR_UNOBSCURED_UI_BUTTON"
 _ICON_LARGE = 32
 
 
@@ -112,12 +117,37 @@ def _is_eye_open():
         return False
 
 
+def _ribbon_title(is_open):
+    return _TITLE_ON if is_open else _TITLE_OFF
+
+
+def _set_ribbon_titles(is_open):
+    """Actualiza el texto del botón en la cinta (off=Ver, on=Ocultar)."""
+    title = _ribbon_title(is_open)
+    try:
+        from System import AppDomain
+
+        btn = AppDomain.CurrentDomain.GetData(_AD_BUTTON)
+        if btn is not None and hasattr(btn, "set_title"):
+            btn.set_title(title)
+    except Exception:
+        pass
+    try:
+        from pyrevit import script
+
+        for btn in script.get_all_buttons() or []:
+            if btn is not None and hasattr(btn, "set_title"):
+                btn.set_title(title)
+    except Exception:
+        pass
+
+
 def _set_eye_state(is_open):
-    """Actualiza envvar + icono on/off. No lanza."""
+    """Actualiza envvar + icono + título on/off. No lanza."""
     try:
         from pyrevit import script
     except Exception:
-        return
+        script = None
     try:
         from pyrevit.coreutils.ribbon import ICON_LARGE
 
@@ -125,14 +155,17 @@ def _set_eye_state(is_open):
     except Exception:
         icon_size = _ICON_LARGE
 
-    try:
-        script.set_envvar(_ENV_ON, bool(is_open))
-        script.toggle_icon(bool(is_open), icon_size=icon_size)
-    except Exception:
+    is_open = bool(is_open)
+    if script is not None:
         try:
-            script.set_envvar(_ENV_ON, bool(is_open))
+            script.set_envvar(_ENV_ON, is_open)
+            script.toggle_icon(is_open, icon_size=icon_size)
         except Exception:
-            pass
+            try:
+                script.set_envvar(_ENV_ON, is_open)
+            except Exception:
+                pass
+    _set_ribbon_titles(is_open)
 
 
 def run(revit_app):
@@ -169,7 +202,7 @@ def run(revit_app):
         )
         return
 
-    # Ojo cerrado → aplicar; ojo abierto → quitar.
+    # Off («Ver Armadura») → aplicar; on («Ocultar Armadura») → quitar.
     eye_open = _is_eye_open()
     unobscured = not eye_open
     tx_name = __title_apply__ if unobscured else __title_remove__

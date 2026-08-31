@@ -19,6 +19,22 @@ En cada elevación etiqueta:
 El ``ViewFamilyType`` se elige leyendo «Section Filter» de la planta activa
 y buscando un tipo Building Section cuyo nombre contenga ese valor.
 
+En cada elevación se heredan los filtros de la plantilla de vista y se
+aplica además un filtro ``Armadura_Eje`` (Not Equals sobre Structural Rebar,
+visibilidad apagada), igual que Filtro Armadura Eje. Si la plantilla rige
+«V/G Overrides Filters», se desmarca en la plantilla para poder crear un
+filtro distinto por vista, conservando los filtros originales de esa plantilla.
+
+El nivel de detalle de las elevaciones es Coarse a través de la plantilla:
+si el Detail Level de la plantilla no es Coarse, se cambia a Coarse.
+
+En cada elevación se escribe ``Title on Sheet`` en mayúsculas:
+``ELEVACION EJE`` + nombre del eje (p. ej. ``ELEVACION EJE 1``).
+
+Tras crear la vista se ocultan los ejes que no intersectan sólidos de
+muros o Structural Framing no paralelos al plano; el eje origen permanece
+visible.
+
 Transacciones: ``TransactionGroup`` (``Arainco: Elevación Eje``) + una
 ``Transaction`` por eje + ``Assimilate()`` → un solo Undo; si un eje falla,
 se continúa con el resto.
@@ -32,6 +48,7 @@ clr.AddReference("RevitAPI")
 clr.AddReference("RevitAPIUI")
 
 from Autodesk.Revit.DB import (
+    BuiltInParameter,
     ElementId,
     FailureProcessingResult,
     FailureResolutionType,
@@ -43,6 +60,7 @@ from Autodesk.Revit.DB import (
     TransactionGroup,
     TransactionStatus,
     View,
+    ViewDetailLevel,
     ViewSection,
 )
 
@@ -57,7 +75,9 @@ from seccion_detalle_extremo_muro import leer_section_filter_texto
 _TOOL_TITLE = u"Arainco: Elevación Eje"
 _TX_NAME = u"Arainco: Elevación Eje"
 _VISTA_MID = u"ELEVACION EJE"
+_TITLE_ON_SHEET_PREFIX = u"ELEVACION EJE"
 _PARAM_ARMADURA_EJE = u"Armadura_Eje"
+_PARAM_TITLE_ON_SHEET = u"Title on Sheet"
 _PROGRESS_ACCENT_RGB = (91, 192, 222)
 _WARNING_SWALLOWER = None
 
@@ -452,6 +472,271 @@ def _aplicar_escala(view, scale_ratio):
         return False
 
 
+def _eid_int_safe(eid):
+    if eid is None:
+        return None
+    try:
+        return int(eid.IntegerValue)
+    except Exception:
+        pass
+    try:
+        return int(eid.Value)
+    except Exception:
+        return None
+
+
+def _eid_es_invalido(eid):
+    if eid is None:
+        return True
+    try:
+        if eid == ElementId.InvalidElementId:
+            return True
+    except Exception:
+        pass
+    n = _eid_int_safe(eid)
+    return n is None or n == -1
+
+
+def _detail_level_es_coarse(level):
+    if level is None:
+        return False
+    try:
+        if level == ViewDetailLevel.Coarse:
+            return True
+    except Exception:
+        pass
+    try:
+        if int(level) == int(ViewDetailLevel.Coarse):
+            return True
+    except Exception:
+        pass
+    try:
+        raw = level.ToString() if hasattr(level, u"ToString") else level
+        s = _as_unicode(raw).strip().lower()
+        if u"." in s:
+            s = s.split(u".")[-1]
+        return s == u"coarse"
+    except Exception:
+        return False
+
+
+def _view_template_de(view):
+    if view is None:
+        return None
+    try:
+        tid = view.ViewTemplateId
+    except Exception:
+        return None
+    if _eid_es_invalido(tid):
+        return None
+    try:
+        el = view.Document.GetElement(tid)
+    except Exception:
+        el = None
+    if el is None or not isinstance(el, View):
+        return None
+    try:
+        if not el.IsTemplate:
+            return None
+    except Exception:
+        pass
+    return el
+
+
+def _view_detail_level_param_id():
+    bip = getattr(BuiltInParameter, u"VIEW_DETAIL_LEVEL", None)
+    if bip is None:
+        return None
+    try:
+        return ElementId(bip)
+    except Exception:
+        pass
+    try:
+        return ElementId(int(bip))
+    except Exception:
+        return None
+
+
+def _incluir_parametro_en_plantilla(template, param_id):
+    """
+    Incluye el parámetro en la plantilla (lo quita de no controlados).
+
+    Returns:
+        True si se modificó la lista de no controlados.
+    """
+    if template is None or _eid_es_invalido(param_id):
+        return False
+    want = _eid_int_safe(param_id)
+    if want is None:
+        return False
+    from System.Collections.Generic import List
+
+    ids = List[ElementId]()
+    quitado = False
+    try:
+        for eid in template.GetNonControlledTemplateParameterIds():
+            n = _eid_int_safe(eid)
+            if n == want:
+                quitado = True
+                continue
+            if n is None:
+                continue
+            ids.Add(eid)
+    except Exception:
+        return False
+    if not quitado:
+        return False
+    try:
+        template.SetNonControlledTemplateParameterIds(ids)
+        return True
+    except Exception:
+        pass
+    try:
+        from System.Collections.Generic import HashSet
+
+        hs = HashSet[ElementId]()
+        for eid in ids:
+            hs.Add(eid)
+        template.SetNonControlledTemplateParameterIds(hs)
+        return True
+    except Exception:
+        return False
+
+
+def _set_detail_level_coarse(target):
+    """Asigna ``ViewDetailLevel.Coarse``. Returns (ok, already_coarse)."""
+    if target is None:
+        return False, False
+    try:
+        current = target.DetailLevel
+    except Exception:
+        current = None
+    if _detail_level_es_coarse(current):
+        return True, True
+    try:
+        target.DetailLevel = ViewDetailLevel.Coarse
+    except Exception:
+        return False, False
+    try:
+        return _detail_level_es_coarse(target.DetailLevel), False
+    except Exception:
+        return True, False
+
+
+def ensure_plantilla_detail_level_coarse(view):
+    """
+    Fija Detail Level Coarse en la plantilla de la vista (si no lo está).
+
+    Si no hay plantilla, lo aplica en la propia vista.
+
+    Debe llamarse dentro de una ``Transaction`` abierta.
+
+    Returns:
+        dict: ok, changed, already_coarse, included, template_name,
+        no_template, error
+    """
+    info = {
+        u"ok": False,
+        u"changed": False,
+        u"already_coarse": False,
+        u"included": False,
+        u"template_name": None,
+        u"no_template": False,
+        u"error": None,
+    }
+    if view is None:
+        info[u"error"] = u"Vista no válida."
+        return info
+
+    template = _view_template_de(view)
+    if template is None:
+        info[u"no_template"] = True
+        ok, already = _set_detail_level_coarse(view)
+        info[u"ok"] = bool(ok)
+        info[u"already_coarse"] = bool(already)
+        info[u"changed"] = bool(ok) and not already
+        if not ok:
+            info[u"error"] = u"No se pudo asignar Detail Level Coarse (sin plantilla)."
+        return info
+
+    try:
+        info[u"template_name"] = _as_unicode(template.Name)
+    except Exception:
+        info[u"template_name"] = u"(plantilla)"
+
+    param_id = _view_detail_level_param_id()
+    if param_id is not None:
+        try:
+            info[u"included"] = bool(
+                _incluir_parametro_en_plantilla(template, param_id)
+            )
+        except Exception:
+            info[u"included"] = False
+
+    ok, already = _set_detail_level_coarse(template)
+    info[u"already_coarse"] = bool(already)
+    info[u"changed"] = (bool(ok) and not already) or bool(info.get(u"included"))
+    info[u"ok"] = bool(ok)
+    if not ok:
+        ok_view, _already_view = _set_detail_level_coarse(view)
+        info[u"ok"] = bool(ok_view)
+        if ok_view:
+            info[u"changed"] = True
+        else:
+            info[u"error"] = (
+                u"No se pudo asignar Detail Level Coarse en la plantilla."
+            )
+    return info
+
+
+def titulo_lamina_elevacion(nombre_eje):
+    """Title on Sheet en mayúsculas: ``ELEVACION EJE`` + nombre del eje."""
+    eje = _as_unicode(nombre_eje).strip() or u"EJE"
+    return u"{0} {1}".format(_TITLE_ON_SHEET_PREFIX, eje).upper()
+
+
+def _parametro_title_on_sheet(view):
+    """Parámetro de instancia Title on Sheet (BuiltIn o por nombre)."""
+    if view is None:
+        return None
+    try:
+        p = view.get_Parameter(BuiltInParameter.VIEW_DESCRIPTION)
+        if p is not None:
+            return p
+    except Exception:
+        pass
+    try:
+        return view.LookupParameter(_PARAM_TITLE_ON_SHEET)
+    except Exception:
+        return None
+
+
+def estampar_title_on_sheet(view, nombre_eje):
+    """
+    Escribe ``ELEVACION EJE {eje}`` en Title on Sheet (siempre mayúsculas).
+
+    Returns:
+        True si se escribió; False si falta el parámetro o no se pudo setear.
+    """
+    if view is None:
+        return False
+    valor = titulo_lamina_elevacion(nombre_eje)
+    p = _parametro_title_on_sheet(view)
+    if p is None or p.IsReadOnly:
+        return False
+    try:
+        if p.StorageType == StorageType.String:
+            p.Set(valor)
+            return True
+    except Exception:
+        pass
+    try:
+        p.SetValueString(valor)
+        return True
+    except Exception:
+        return False
+
+
 def estampar_armadura_eje(view, nombre_eje):
     """
     Escribe el nombre del eje en el parámetro de instancia ``Armadura_Eje``.
@@ -826,6 +1111,15 @@ def ejecutar_crear_elevaciones(uidoc, ejes, scale_ratio, crear_contorno=True):
             u"No se pudo cargar el módulo de etiquetas: {0}"
         ).format(_as_unicode(ex_tag)), []
 
+    try:
+        from elevacion_eje_ocultar_ejes import (
+            ocultar_ejes_sin_interseccion,
+        )
+    except Exception as ex_hide_imp:
+        return False, (
+            u"No se pudo cargar el módulo de ejes: {0}"
+        ).format(_as_unicode(ex_hide_imp)), []
+
     # Lecturas fuera de transacción (documento no modificable).
     bbox = bbox_modelo_documento(doc)
     if bbox is None:
@@ -854,9 +1148,31 @@ def ejecutar_crear_elevaciones(uidoc, ejes, scale_ratio, crear_contorno=True):
     if beam_sym is None:
         beam_tags_symbol_err = err_beam or u"Tipo de etiqueta viga no encontrado."
 
+    filtro_mod = None
+    filtro_ctx = None
+    filtro_ctx_err = None
+    try:
+        import filtro_armadura_eje as filtro_mod
+        filtro_ctx, ferr_i, ferr_c = filtro_mod.prepare_armadura_eje_filter_context(doc)
+        if filtro_ctx is None:
+            filtro_ctx_err = ferr_i or ferr_c or (
+                u"No se pudo preparar el filtro Armadura_Eje."
+            )
+    except Exception as ex_fctx:
+        filtro_mod = None
+        filtro_ctx = None
+        filtro_ctx_err = _as_unicode(ex_fctx)
+
     creadas = []
     fallos = []
     sin_param = []
+    sin_title = []
+    filtro_ok = 0
+    filtro_fallos = []
+    plantillas_desbloqueadas = []
+    heredo_plantilla = False
+    plantillas_coarse = []
+    coarse_fallos = []
     contorno_ok = 0
     contorno_fallos = []
     tags_ok = 0
@@ -866,7 +1182,9 @@ def ejecutar_crear_elevaciones(uidoc, ejes, scale_ratio, crear_contorno=True):
     beam_tags_ok = 0
     beam_tags_fail = 0
     beam_tags_skip = 0
-    total_steps = len(pares) * 3
+    ejes_ocultos = 0
+    ejes_ocultar_fallos = []
+    total_steps = len(pares) * 4
     step = 0
 
     tg = TransactionGroup(doc, _TX_NAME)
@@ -875,7 +1193,7 @@ def ejecutar_crear_elevaciones(uidoc, ejes, scale_ratio, crear_contorno=True):
         with ElevacionEjeProgress(total_steps, title_prefix=_TOOL_TITLE) as progress:
             progress.update(0)
             for i_eje, (nombre, grid) in enumerate(pares):
-                step_end = (i_eje + 1) * 3
+                step_end = (i_eje + 1) * 4
                 step += 1
                 progress.update(step, label=nombre)
                 label = nombre_vista_elevacion(sf_text, nombre)
@@ -917,6 +1235,29 @@ def ejecutar_crear_elevaciones(uidoc, ejes, scale_ratio, crear_contorno=True):
                     _aplicar_escala(vs, scale)
                     if not estampar_armadura_eje(vs, nombre):
                         sin_param.append(nombre)
+                    if not estampar_title_on_sheet(vs, nombre):
+                        sin_title.append(nombre)
+
+                    pending_coarse = None
+                    try:
+                        pending_coarse = ensure_plantilla_detail_level_coarse(vs)
+                    except Exception as ex_coarse:
+                        pending_coarse = {
+                            u"ok": False,
+                            u"error": _as_unicode(ex_coarse),
+                        }
+
+                    pending_filtro = None
+                    if filtro_mod is not None and filtro_ctx is not None:
+                        try:
+                            pending_filtro = filtro_mod.apply_armadura_eje_filter_to_view(
+                                doc, vs, nombre, filtro_ctx
+                            )
+                        except Exception as ex_filt:
+                            pending_filtro = (
+                                False,
+                                {u"error": _as_unicode(ex_filt)},
+                            )
 
                     try:
                         doc.Regenerate()
@@ -1013,8 +1354,75 @@ def ejecutar_crear_elevaciones(uidoc, ejes, scale_ratio, crear_contorno=True):
                     except Exception:
                         pass
 
+                    step += 1
+                    progress.update(step, label=u"{0} · ejes".format(nombre))
+                    try:
+                        doc.Regenerate()
+                    except Exception:
+                        pass
+                    try:
+                        hide_info = ocultar_ejes_sin_interseccion(
+                            doc, vs, exclude_grid=grid
+                        )
+                    except Exception as ex_hide:
+                        hide_info = {
+                            u"ok": False,
+                            u"n_hidden": 0,
+                            u"error": _as_unicode(ex_hide),
+                        }
+                    if hide_info.get(u"ok"):
+                        ejes_ocultos += int(hide_info.get(u"n_hidden") or 0)
+                    else:
+                        ejes_ocultar_fallos.append(
+                            u"{0}: {1}".format(
+                                nombre,
+                                hide_info.get(u"error")
+                                or u"no se pudieron ocultar ejes",
+                            )
+                        )
+
                     if _safe_commit_txn(t):
                         creadas.append(vs)
+                        if pending_coarse:
+                            cinfo = pending_coarse or {}
+                            if cinfo.get(u"ok"):
+                                tpl_c = cinfo.get(u"template_name")
+                                if (
+                                    cinfo.get(u"changed")
+                                    and tpl_c
+                                    and tpl_c not in plantillas_coarse
+                                ):
+                                    plantillas_coarse.append(tpl_c)
+                            else:
+                                coarse_fallos.append(
+                                    u"{0}: {1}".format(
+                                        nombre,
+                                        cinfo.get(u"error")
+                                        or u"no se pudo asignar Coarse",
+                                    )
+                                )
+                        if pending_filtro is not None:
+                            ok_f, finfo = pending_filtro
+                            finfo = finfo or {}
+                            if ok_f:
+                                filtro_ok += 1
+                                if finfo.get(u"template_unlocked"):
+                                    tpl_name = finfo.get(u"template_name")
+                                    if (
+                                        tpl_name
+                                        and tpl_name not in plantillas_desbloqueadas
+                                    ):
+                                        plantillas_desbloqueadas.append(tpl_name)
+                                if int(finfo.get(u"inherited_count") or 0) > 0:
+                                    heredo_plantilla = True
+                            else:
+                                filtro_fallos.append(
+                                    u"{0}: {1}".format(
+                                        nombre,
+                                        (finfo or {}).get(u"error")
+                                        or u"no se pudo aplicar el filtro",
+                                    )
+                                )
                     else:
                         fallos.append(
                             u"{0}: commit de transacción falló".format(nombre)
@@ -1076,6 +1484,39 @@ def ejecutar_crear_elevaciones(uidoc, ejes, scale_ratio, crear_contorno=True):
             u" Sin «Armadura_Eje» en {0} vista(s) "
             u"(parámetro ausente o no escribible)."
         ).format(len(sin_param))
+    if not sin_title:
+        msg = msg + u" Title on Sheet: ELEVACION EJE + eje."
+    else:
+        msg = msg + (
+            u" Sin Title on Sheet en {0} vista(s) "
+            u"(parámetro ausente o no escribible)."
+        ).format(len(sin_title))
+    if filtro_ctx_err:
+        msg = msg + u" Filtro Armadura_Eje omitido: {0}.".format(filtro_ctx_err)
+    else:
+        msg = msg + u" Filtro Armadura_Eje: {0}/{1}.".format(filtro_ok, n)
+        if heredo_plantilla:
+            msg = msg + u" Filtros de plantilla heredados."
+        if plantillas_desbloqueadas:
+            msg = msg + (
+                u" Plantilla(s) editada(s) para permitir filtros por vista: {0}."
+            ).format(u", ".join(plantillas_desbloqueadas))
+        if filtro_fallos:
+            preview = u"; ".join(filtro_fallos[:3])
+            if len(filtro_fallos) > 3:
+                preview = preview + u"…"
+            msg = msg + u" Fallos filtro: {0}.".format(preview)
+    if plantillas_coarse:
+        msg = msg + u" Detail Level Coarse en plantilla: {0}.".format(
+            u", ".join(plantillas_coarse),
+        )
+    elif not coarse_fallos:
+        msg = msg + u" Detail Level Coarse."
+    if coarse_fallos:
+        preview = u"; ".join(coarse_fallos[:3])
+        if len(coarse_fallos) > 3:
+            preview = preview + u"…"
+        msg = msg + u" Fallos Detail Level: {0}.".format(preview)
     msg = msg + u" Contorno: {0}/{1}.".format(contorno_ok, n)
     if contorno_fallos:
         preview = u"; ".join(contorno_fallos[:3])
@@ -1100,6 +1541,12 @@ def ejecutar_crear_elevaciones(uidoc, ejes, scale_ratio, crear_contorno=True):
         if beam_tags_fail:
             msg = msg + u", {0} fallos".format(beam_tags_fail)
         msg = msg + u"."
+    msg = msg + u" Ejes ocultos: {0}.".format(ejes_ocultos)
+    if ejes_ocultar_fallos:
+        preview = u"; ".join(ejes_ocultar_fallos[:3])
+        if len(ejes_ocultar_fallos) > 3:
+            preview = preview + u"…"
+        msg = msg + u" Fallos ejes: {0}.".format(preview)
     if tags_fallos:
         preview = u"; ".join(tags_fallos[:3])
         if len(tags_fallos) > 3:

@@ -15,8 +15,8 @@ En sección/alzado (mismo criterio que **Armado columnas**):
 - Cotas **lineales horizontales** (tipo «Linear - Confinamiento») **debajo** de la viga
   (offset 500 mm respecto al borde inferior visible del lote; 850 mm si hay cota de
   empalme inferior en la misma viga).
-- Cotas de **empalme inferior**: a 500 mm bajo el borde inferior (más cerca del armado);
-  la cota de confinamiento queda 350 mm más abajo (``LAP_CONFINEMENT_DIM_GAP_INF_MM``).
+- Cotas de **empalme inferior**: a 300 mm bajo el borde inferior (más cerca del armado);
+  la cota de confinamiento queda debajo con gap ``LAP_CONFINEMENT_DIM_GAP_INF_MM``.
 - Etiquetas **sin leader**, orientación **horizontal**, cabecera en el **centro del lote**
   sobre la misma línea Y que la cota.
 """
@@ -50,6 +50,8 @@ from Autodesk.Revit.DB.Structure import Rebar
 from System.Collections.Generic import List
 
 STIRRUP_TAG_OFFSET_BELOW_BEAM_MM = 500.0
+# Cota de empalme inferior: más corta que la cota de estribos (500).
+LAP_DIM_OFFSET_BELOW_BEAM_MM = 300.0
 LAP_CONFINEMENT_DIM_GAP_INF_MM = 350.0
 _INFERIOR_LAP_DIM_HOST_IDS = set()
 
@@ -222,10 +224,11 @@ def compute_inferior_lap_dim_offset_mm(view, host, lap_mid_world):
     """
     Offset en mm (modelo) para la cota de empalme en cara inferior.
 
-    La línea de cota queda a ``STIRRUP_TAG_OFFSET_BELOW_BEAM_MM`` (500 mm) bajo
+    La línea de cota queda a ``LAP_DIM_OFFSET_BELOW_BEAM_MM`` (300 mm) bajo
     el borde inferior visible del host — más cerca del armado. La cota de
-    confinamiento en la misma viga se coloca ``LAP_CONFINEMENT_DIM_GAP_INF_MM``
-    (350 mm) más abajo (850 mm total), medido en la dirección Up de la vista.
+    confinamiento en la misma viga se coloca más abajo
+    (``STIRRUP_TAG_OFFSET_BELOW_BEAM_MM`` + ``LAP_CONFINEMENT_DIM_GAP_INF_MM``
+    si hay empalme), medido en la dirección Up de la vista.
     """
     if view is None or host is None or lap_mid_world is None:
         return None
@@ -233,7 +236,7 @@ def compute_inferior_lap_dim_offset_mm(view, host, lap_mid_world):
     if min_y is None:
         return None
     _, y_rebar = _view_local_xy(view, lap_mid_world)
-    y_lap = float(min_y) - float(_mm_to_ft(STIRRUP_TAG_OFFSET_BELOW_BEAM_MM))
+    y_lap = float(min_y) - float(_mm_to_ft(LAP_DIM_OFFSET_BELOW_BEAM_MM))
     delta_ft = float(y_rebar) - y_lap
     if delta_ft < _mm_to_ft(20.0):
         return None

@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Mockup · Pills Tn (n + ø por capa)</title>
+<style>
+  :root {
+    --bg: #071018;
+    --panel: #0b1620;
+    --card: #0f1c28;
+    --border: #21465c;
+    --fg: #e2e8f0;
+    --mid: #94a3b8;
+    --lo: #64748b;
+    --sup: #22d3ee;
+    --inf: #fb7185;
+    --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: var(--fg);
+    background:
+      radial-gradient(800px 360px at 0% 0%, #0e3a4d44, transparent 55%),
+      radial-gradient(700px 340px at 100% 10%, #3a152044, transparent 50%),
+      var(--bg);
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 18px 16px 40px; }
+  h1 { margin: 0 0 6px; font-size: 1.1rem; font-weight: 700; letter-spacing: -0.02em; }
+  .lead { margin: 0 0 16px; color: var(--mid); font-size: 0.86rem; line-height: 1.45; max-width: 62ch; }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 14px;
+    align-items: start;
+  }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .stage {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 16px 36px #00000055;
+  }
+  .stage-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 12px; border-bottom: 1px solid var(--border); background: #08141e;
+  }
+  .stage-bar strong { font-size: 0.82rem; }
+  .stage-bar span { font-size: 0.74rem; color: var(--mid); }
+  .elev {
+    position: relative;
+    padding: 28px 18px 40px;
+    min-height: 320px;
+    background:
+      linear-gradient(#0a1822, #0a1822) padding-box,
+      repeating-linear-gradient(90deg, transparent 0 39px, #122838 39px 40px);
+  }
+  .face-row {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 10px;
+    align-items: end;
+    margin-bottom: 28px;
+  }
+  .face-row.inf { align-items: start; margin-bottom: 0; margin-top: 28px; }
+  .face-lbl {
+    font-size: 0.7rem; color: var(--lo); text-transform: uppercase;
+    letter-spacing: 0.08em; padding-top: 6px;
+  }
+  .bands {
+    display: flex;
+    gap: 8px;
+    min-height: 48px;
+    align-items: flex-end;
+  }
+  .face-row.inf .bands { align-items: flex-start; }
+  .band {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+  }
+  .face-row.inf .band { flex-direction: column-reverse; }
+  .trazo {
+    width: 100%;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--sup);
+    opacity: 0.75;
+  }
+  .band.sel .trazo { height: 3px; opacity: 1; }
+  .face-row.inf .trazo { background: var(--inf); }
+  .beam {
+    height: 44px;
+    margin: 0 64px 0 74px;
+    border: 1.5px solid #5bb8d4;
+    border-radius: 3px;
+    background: #0c1a26cc;
+    position: relative;
+  }
+  .beam::after {
+    content: "Silueta viga (referencia)";
+    position: absolute; inset: 0; display: grid; place-items: center;
+    font-size: 0.72rem; color: var(--lo);
+  }
+
+  /* —— Variantes de pill —— */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    max-width: 100%;
+    border: 1px solid;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 11px;
+    line-height: 1.15;
+    white-space: nowrap;
+    user-select: none;
+  }
+  .pill.sup { border-color: #0ea5b8; color: #f8fafc; background: #0b1624ee; }
+  .band.sel .pill.sup { background: var(--sup); border-color: var(--sup); color: #0b1220; }
+  .pill.inf { border-color: #e11d48aa; color: #f8fafc; background: #0b1624ee; }
+  .band.sel .pill.inf { background: var(--inf); border-color: var(--inf); color: #0b1220; }
+
+  /* A: una línea compacta */
+  .v-a .pill { padding: 3px 8px; min-height: 22px; }
+  .v-a .layers { display: none; }
+
+  /* B: stack por capa (recomendado) */
+  .v-b .pill-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    max-width: 100%;
+  }
+  .v-b .pill { padding: 2px 7px; min-height: 18px; font-size: 10px; }
+  .v-b .pill.head { font-size: 10px; opacity: 0.95; }
+  .v-b .pill.layer { font-weight: 650; border-radius: 3px; }
+  .v-b .pill.layer .cap {
+    font-weight: 800; opacity: 0.7; margin-right: 2px; font-size: 9px;
+  }
+
+  /* C: multi-línea en un solo chip */
+  .v-c .pill {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1px;
+    padding: 3px 7px 4px;
+    white-space: normal;
+    min-width: 72px;
+    text-align: center;
+  }
+  .v-c .pill .title { font-size: 10px; letter-spacing: 0.02em; }
+  .v-c .pill .row {
+    font-size: 10px; font-weight: 650;
+    display: flex; justify-content: center; gap: 4px;
+  }
+  .v-c .pill .row span.dim { opacity: 0.75; font-weight: 600; font-size: 9px; }
+
+  /* D: head + badged layers horizontal */
+  .v-d .pill-wrap {
+    display: flex; flex-direction: column; align-items: center; gap: 3px; max-width: 100%;
+  }
+  .v-d .pill.head { padding: 2px 8px; min-height: 18px; font-size: 10px; }
+  .v-d .layer-row {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 2px; max-width: 100%;
+  }
+  .v-d .chip {
+    font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
+    border: 1px solid currentColor; opacity: 0.92;
+  }
+  .band.sel.v-d .chip { background: #0b1220cc; color: inherit; }
+
+  .muted { color: var(--lo); font-weight: 600; }
+  .tag-tras {
+    font-size: 9px; font-weight: 800; opacity: 0.8; letter-spacing: 0.02em;
+  }
+
+  .side { display: flex; flex-direction: column; gap: 10px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 13px;
+  }
+  .card h2 {
+    margin: 0 0 8px; font-size: 0.72rem; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--lo);
+  }
+  .card p, .card li { margin: 0; font-size: 0.8rem; color: var(--mid); line-height: 1.45; }
+  .card ul { margin: 0; padding-left: 1.1rem; }
+  .card li + li { margin-top: 4px; }
+  .opts { display: flex; flex-direction: column; gap: 6px; }
+  label.opt {
+    display: flex; gap: 8px; align-items: flex-start;
+    padding: 8px 9px; border-radius: 8px; border: 1px solid var(--border);
+    background: #0a1520; cursor: pointer;
+  }
+  label.opt:hover { border-color: #3b7a96; }
+  label.opt.active { border-color: var(--sup); background: #0a2430; }
+  label.opt input { margin-top: 2px; }
+  label.opt strong { display: block; font-size: 0.8rem; color: var(--fg); }
+  label.opt span { display: block; font-size: 0.72rem; color: var(--mid); margin-top: 2px; line-height: 1.35; }
+  .status {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.72rem; color: #a5f3fc;
+    background: #082f49; border: 1px solid #0e7490; border-radius: 6px;
+    padding: 8px 10px; min-height: 2.8em; white-space: pre-wrap;
+  }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  button {
+    appearance: none; border: 1px solid #475569; background: #1e293b; color: var(--fg);
+    font: inherit; font-size: 0.78rem; font-weight: 600; padding: 7px 11px;
+    border-radius: 7px; cursor: pointer;
+  }
+  button:hover { border-color: #94a3b8; }
+  button.primary { border-color: #0891b2; background: #0e7490; }
+  .note { margin-top: 12px; font-size: 0.74rem; color: var(--lo); line-height: 1.4; }
+  code { font-size: 0.9em; color: #a5f3fc; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Mockup · pills de tramos Tn (cantidad + ø, multi-capa)</h1>
+    <p class="lead">
+      Hoy la pill muestra solo <code>T1 ·ø16·tras</code>. El objetivo es reflejar la
+      configuración real del tramo: <b>n × ø</b> por capa. Compara las variantes en el
+      alzado mock y elige la que implementamos en Armado Vigas.
+    </p>
+
+    <div class="grid">
+      <section class="stage">
+        <div class="stage-bar">
+          <div>
+            <strong>Alzado · bandas Tn</strong>
+            <span> · variante <b id="varName">B · stack por capa</b></span>
+          </div>
+          <span id="selHint">clic en banda para seleccionar</span>
+        </div>
+        <div class="elev" id="elev">
+          <!-- SUP -->
+          <div class="face-row">
+            <div class="face-lbl" style="color:var(--sup)">SUP</div>
+            <div class="bands" id="bandsSup"></div>
+          </div>
+          <div class="beam"></div>
+          <!-- INF -->
+          <div class="face-row inf">
+            <div class="face-lbl" style="color:var(--inf)">INF</div>
+            <div class="bands" id="bandsInf"></div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="side">
+        <div class="card">
+          <h2>Variante de pill</h2>
+          <div class="opts" id="opts">
+            <label class="opt" data-v="a">
+              <input type="radio" name="v" value="a"/>
+              <div>
+                <strong>A · Una línea (actual mejorado)</strong>
+                <span><code>T1 · 3ø16 · tras</code> — capas unidas con “+”</span>
+              </div>
+            </label>
+            <label class="opt active" data-v="b">
+              <input type="radio" name="v" value="b" checked/>
+              <div>
+                <strong>B · Stack por capa (recomendado)</strong>
+                <span>Cabeza <code>T1 · tras</code> + filas <code>C1 3ø16</code> / <code>C2 2ø12</code></span>
+              </div>
+            </label>
+            <label class="opt" data-v="c">
+              <input type="radio" name="v" value="c"/>
+              <div>
+                <strong>C · Un chip multi-línea</strong>
+                <span>Un solo bloque con título + capas dentro</span>
+              </div>
+            </label>
+            <label class="opt" data-v="d">
+              <input type="radio" name="v" value="d"/>
+              <div>
+                <strong>D · Head + chips horizontales</strong>
+                <span><code>T1</code> y debajo mini-chips por capa</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Estado</h2>
+          <div class="status" id="status">—</div>
+          <div class="btns">
+            <button type="button" class="primary" id="btnToggleLayers">Alternar multi-capa en T2</button>
+            <button type="button" id="btnReset">Reset datos demo</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Convención de texto</h2>
+          <ul>
+            <li><code>nøø</code> → <b>3ø16</b> (cantidad + diámetro)</li>
+            <li><code>C1 / C2</code> → 1.ª y 2.ª capa</li>
+            <li><code>·tras</code> → tramo nacido de empalme (como hoy)</li>
+            <li>Si solo 1 capa: no hace falta etiqueta C1 (salvo stack)</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+
+    <p class="note">
+      Archivo: <code>scripts/armado_vigas/ui/mock_tramo_pills.html</code> — solo mock;
+      la implementación real tocaría <code>_build_band_pill_label</code> en
+      <code>canvas_view.py</code> y la altura de banda en <code>layout.py</code> si el stack crece.
+    </p>
+  </div>
+
+<script>
+(function () {
+  // Datos demo: capas = [{n, diam}, ...]
+  const data = {
+    sup: [
+      { id: 1, fromEmpalme: true,  layers: [{ n: 3, diam: 16 }] },
+      { id: 2, fromEmpalme: false, layers: [{ n: 4, diam: 16 }, { n: 2, diam: 12 }] },
+      { id: 3, fromEmpalme: false, layers: [{ n: 2, diam: 20 }] },
+    ],
+    inf: [
+      { id: 1, fromEmpalme: false, layers: [{ n: 3, diam: 16 }] },
+      { id: 2, fromEmpalme: true,  layers: [{ n: 3, diam: 16 }, { n: 3, diam: 12 }] },
+    ],
+  };
+
+  let variant = "b";
+  let sel = { face: "sup", id: 2 };
+
+  const names = {
+    a: "A · Una línea",
+    b: "B · Stack por capa",
+    c: "C · Chip multi-línea",
+    d: "D · Head + chips",
+  };
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  function fmtLayer(layer) {
+    return layer.n + "ø" + layer.diam;
+  }
+
+  function fmtCompact(layers) {
+    return layers.map(fmtLayer).join(" + ");
+  }
+
+  function pillHtml(tramo, face) {
+    const faceCls = face === "sup" ? "sup" : "inf";
+    const tras = tramo.fromEmpalme ? '<span class="tag-tras">·tras</span>' : "";
+    const layers = tramo.layers || [];
+    const one = layers.length <= 1;
+
+    if (variant === "a") {
+      // T1 · 3ø16 · tras  |  T2 · 4ø16 + 2ø12
+      const body = layers.length ? " · " + esc(fmtCompact(layers)) : "";
+      return (
+        '<div class="pill ' + faceCls + '">T' + tramo.id + body + " " + tras + "</div>"
+      );
+    }
+
+    if (variant === "b") {
+      // Stack recomendado
+      let parts = [];
+      parts.push(
+        '<div class="pill head ' + faceCls + '">T' + tramo.id + (tras ? " " + tras : "") + "</div>"
+      );
+      if (one) {
+        const L = layers[0] || { n: "?", diam: "?" };
+        parts.push(
+          '<div class="pill layer ' + faceCls + '">' + esc(fmtLayer(L)) + "</div>"
+        );
+      } else {
+        layers.forEach(function (L, i) {
+          parts.push(
+            '<div class="pill layer ' + faceCls + '">' +
+              '<span class="cap">C' + (i + 1) + "</span>" +
+              esc(fmtLayer(L)) +
+            "</div>"
+          );
+        });
+      }
+      return '<div class="pill-stack">' + parts.join("") + "</div>";
+    }
+
+    if (variant === "c") {
+      let rows = layers.map(function (L, i) {
+        const prefix = one ? "" : '<span class="dim">C' + (i + 1) + "</span>";
+        return '<div class="row">' + prefix + esc(fmtLayer(L)) + "</div>";
+      }).join("");
+      return (
+        '<div class="pill ' + faceCls + '">' +
+          '<div class="title">T' + tramo.id + (tras ? " " + tras : "") + "</div>" +
+          rows +
+        "</div>"
+      );
+    }
+
+    // D
+    let chips = layers.map(function (L, i) {
+      const label = one ? fmtLayer(L) : "C" + (i + 1) + " " + fmtLayer(L);
+      return '<span class="chip">' + esc(label) + "</span>";
+    }).join("");
+    return (
+      '<div class="pill-wrap">' +
+        '<div class="pill head ' + faceCls + '">T' + tramo.id + (tras ? " " + tras : "") + "</div>" +
+        '<div class="layer-row">' + chips + "</div>" +
+      "</div>"
+    );
+  }
+
+  function renderFace(face, host) {
+    const list = data[face];
+    host.className = "bands v-" + variant;
+    host.innerHTML = "";
+    list.forEach(function (tramo) {
+      const band = document.createElement("div");
+      band.className = "band v-" + variant;
+      if (sel.face === face && sel.id === tramo.id) band.classList.add("sel");
+      band.innerHTML = pillHtml(tramo, face) + '<div class="trazo"></div>';
+      band.addEventListener("click", function () {
+        sel = { face: face, id: tramo.id };
+        render();
+      });
+      host.appendChild(band);
+    });
+  }
+
+  function statusFor(tramo, face) {
+    if (!tramo) return "—";
+    const layers = tramo.layers || [];
+    const lines = layers.map(function (L, i) {
+      return "  C" + (i + 1) + ": " + L.n + " barras · ø" + L.diam;
+    });
+    return (
+      face.toUpperCase() + " · T" + tramo.id +
+      (tramo.fromEmpalme ? " · desde empalme" : "") +
+      "\n" + lines.join("\n") +
+      "\n→ pill: " + names[variant]
+    );
+  }
+
+  function render() {
+    document.getElementById("varName").textContent = names[variant];
+    renderFace("sup", document.getElementById("bandsSup"));
+    renderFace("inf", document.getElementById("bandsInf"));
+
+    const list = data[sel.face] || [];
+    const tramo = list.find(function (t) { return t.id === sel.id; }) || list[0];
+    document.getElementById("status").textContent = statusFor(tramo, sel.face);
+    document.getElementById("selHint").textContent =
+      "Sel: " + sel.face.toUpperCase() + " T" + (tramo ? tramo.id : "—");
+
+    document.querySelectorAll("label.opt").forEach(function (el) {
+      el.classList.toggle("active", el.getAttribute("data-v") === variant);
+      const input = el.querySelector("input");
+      if (input) input.checked = el.getAttribute("data-v") === variant;
+    });
+  }
+
+  document.getElementById("opts").addEventListener("change", function (ev) {
+    if (ev.target && ev.target.name === "v") {
+      variant = ev.target.value;
+      render();
+    }
+  });
+  document.getElementById("opts").addEventListener("click", function (ev) {
+    const lab = ev.target.closest("label.opt");
+    if (!lab) return;
+    variant = lab.getAttribute("data-v");
+    render();
+  });
+
+  document.getElementById("btnToggleLayers").addEventListener("click", function () {
+    const t2 = data.sup.find(function (t) { return t.id === 2; });
+    if (!t2) return;
+    if (t2.layers.length > 1) {
+      t2.layers = [{ n: 4, diam: 16 }];
+    } else {
+      t2.layers = [{ n: 4, diam: 16 }, { n: 2, diam: 12 }];
+    }
+    sel = { face: "sup", id: 2 };
+    render();
+  });
+
+  document.getElementById("btnReset").addEventListener("click", function () {
+    data.sup[1].layers = [{ n: 4, diam: 16 }, { n: 2, diam: 12 }];
+    data.inf[1].layers = [{ n: 3, diam: 16 }, { n: 3, diam: 12 }];
+    variant = "b";
+    sel = { face: "sup", id: 2 };
+    render();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

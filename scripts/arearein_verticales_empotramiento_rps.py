@@ -311,13 +311,18 @@ def _copy_layout_rebar_shape_driven(src, dst):
         elif rule_name == u"MaximumSpacing":
             a1.SetLayoutAsMaximumSpacing(sp, alen, b_side, inc0, inc1)
         elif rule_name in (u"Number", u"FixedNumber"):
-            a1.SetLayoutAsFixedNumber(nbars, alen, b_side, inc0, inc1)
+            if nbars <= 1:
+                a1.SetLayoutAsSingle()
+            else:
+                a1.SetLayoutAsFixedNumber(nbars, alen, b_side, inc0, inc1)
         elif rule_name == u"NumberWithSpacing":
             a1.SetLayoutAsNumberWithSpacing(nbars, sp, alen, b_side, inc0, inc1)
         elif rule_name == u"MinimumClearSpacing":
             a1.SetLayoutAsMinimumClearSpacing(sp, alen, b_side, inc0, inc1)
         else:
-            if rule_name:
+            if nbars <= 1:
+                a1.SetLayoutAsSingle()
+            elif rule_name:
                 try:
                     a1.SetLayoutAsFixedNumber(nbars, alen, b_side, inc0, inc1)
                 except System.Exception:

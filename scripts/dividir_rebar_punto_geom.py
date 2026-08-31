@@ -12,6 +12,8 @@ Usado por ``dividir_rebar_punto_core`` y por validación offline.
 
 from __future__ import print_function
 
+import math
+
 _MM_TO_FT = 1.0 / 304.8
 _FT_TO_MM = 304.8
 
@@ -47,6 +49,17 @@ def normalize_lap_mode(mode):
         u"backward": LAP_MODE_ENDPOINT_NEXT,
     }
     return aliases.get(key, LAP_MODE_SYMMETRIC)
+
+
+def ceil_mm_to_nearest_10(mm_value):
+    """Redondeo hacia arriba al múltiplo de 10 mm más cercano (UI editable)."""
+    try:
+        x = float(mm_value)
+    except Exception:
+        return 0.0
+    if x <= 0.0:
+        return 0.0
+    return float(math.ceil(x / 10.0) * 10.0)
 
 
 def lap_zone_around_cut(cut, lap_len, lap_mode=None):
@@ -306,6 +319,90 @@ def build_spans_mm(total_mm, cuts_mm):
         }
     )
     return spans
+
+
+def span_fabrication_extension_mm(span_index, n_spans, lap_mm, lap_mode=None):
+    """
+    Estirón (mm) que el traslape añade al vano nominal de centerline del tramo.
+
+    ``fabricated_mm = nominal_mm + extension_mm`` para el mismo índice de tramo.
+    """
+    try:
+        n = int(n_spans)
+        i = int(span_index)
+        lap = float(lap_mm)
+    except Exception:
+        return 0.0
+    if n <= 0 or i < 0 or i >= n or lap <= 0:
+        return 0.0
+    half = 0.5 * lap
+    last = n - 1
+    mode = normalize_lap_mode(lap_mode)
+    if mode == LAP_MODE_ENDPOINT_PREV:
+        return lap if i < last else 0.0
+    if mode == LAP_MODE_ENDPOINT_NEXT:
+        return lap if i > 0 else 0.0
+    if i == 0 or i == last:
+        return half
+    return lap
+
+
+def fabricated_lengths_mm(total_mm, cuts_mm, lap_mm, lap_mode=None):
+    """Longitudes fabricadas (mm) de cada tramo, con estirón por traslape."""
+    if not cuts_mm:
+        return []
+    try:
+        intervals = piece_intervals_with_lap(
+            total_mm, cuts_mm, lap_mm, lap_mode=lap_mode
+        )
+    except Exception:
+        return []
+    return [max(0.0, float(b) - float(a)) for a, b in intervals]
+
+
+def set_span_fabricated_length_mm(
+    total_mm,
+    cuts_mm,
+    span_index,
+    new_fab_len_mm,
+    lap_mm,
+    min_piece_mm=100.0,
+    lap_mode=None,
+):
+    """
+    Ajusta el largo fabricado del tramo (incluye traslape) moviendo el corte límite.
+
+    Returns:
+        (ok, mensaje, cuts_mm_nuevos)
+    """
+    spans = build_spans_mm(total_mm, cuts_mm)
+    if not spans:
+        return False, u"Sin vanos.", list(cuts_mm or [])
+    try:
+        idx = int(span_index)
+        fab_target = float(new_fab_len_mm)
+        lap = float(lap_mm)
+    except Exception:
+        return False, u"Parámetros numéricos inválidos.", list(cuts_mm or [])
+    if idx < 0 or idx >= len(spans):
+        return False, u"Vano inválido.", list(cuts_mm or [])
+    ext = span_fabrication_extension_mm(idx, len(spans), lap, lap_mode=lap_mode)
+    nominal_target = fab_target - ext
+    if nominal_target < 0:
+        return (
+            False,
+            u"Longitud fabricada menor que el traslape del tramo.",
+            list(cuts_mm or []),
+        )
+    return set_span_length_mm(
+        total_mm,
+        cuts_mm,
+        idx,
+        nominal_target,
+        lap_mm,
+        min_piece_mm,
+        lap_mode=lap_mode,
+    )
 
 
 def tramo_label(span_index):
@@ -660,25 +757,84 @@ def build_plan_polyline_mm(points_xyz_mm, normal=None):
     }
 
 
-def fit_polyline_to_canvas(
+def project_xyz_mm_to_uv(xyz_mm, origin_mm, u_axis, v_axis):
+    """Proyecta un punto 3D (mm) al plano UV definido por origen + ejes unitarios."""
+    try:
+        ox, oy, oz = (
+            float(origin_mm[0]),
+            float(origin_mm[1]),
+            float(origin_mm[2]),
+        )
+        px, py, pz = float(xyz_mm[0]), float(xyz_mm[1]), float(xyz_mm[2])
+    except Exception:
+        return 0.0, 0.0
+    d = (px - ox, py - oy, pz - oz)
+    return (_v3_dot(d, u_axis), _v3_dot(d, v_axis))
+
+
+def build_plan_polyline_from_frame_mm(points_xyz_mm, origin_mm, u_axis, v_axis):
+    """
+    Polilínea 2D (mm) en un marco UV explícito (típico: vista activa Revit).
+    """
+    cleaned = []
+    for p in points_xyz_mm or []:
+        try:
+            pt = (float(p[0]), float(p[1]), float(p[2]))
+        except Exception:
+            continue
+        if cleaned and _dist3(cleaned[-1], pt) < 1e-6:
+            continue
+        cleaned.append(pt)
+    if len(cleaned) < 2:
+        return None
+    uv = [
+        project_xyz_mm_to_uv(p, origin_mm, u_axis, v_axis) for p in cleaned
+    ]
+    if len(uv) >= 2 and polyline_arc_lengths(uv)[-1] < 1e-6:
+        return None
+    arcs = polyline_arc_lengths(uv)
+    return {
+        u"points_uv": [[float(u), float(v)] for u, v in uv],
+        u"plane": u"view",
+        u"total_mm": float(arcs[-1]) if arcs else 0.0,
+        u"arc_mm": [float(a) for a in arcs],
+        u"flip_v": True,
+        u"origin_mm": [
+            float(origin_mm[0]),
+            float(origin_mm[1]),
+            float(origin_mm[2]),
+        ],
+        u"u_axis": tuple(u_axis),
+        u"v_axis": tuple(v_axis),
+    }
+
+
+def compute_canvas_mapping(
     points_uv, canvas_w, canvas_h, margin, swap_uv=False, flip_v=False
 ):
     """
-    Escala uniforme + centrado. Devuelve puntos en píxeles canvas y el scale (px/mm).
-
-    ``flip_v``: invierte V al mapear a Y de pantalla (útil si V es Z de Revit).
+    Escala uniforme + centrado para un conjunto de puntos UV (bbox).
 
     Returns:
-        (points_px, scale_px_per_mm)
+        dict con scale, ox, oy, swap_uv, flip_v
     """
-    if not points_uv:
-        return [], 1.0
     pts = []
-    for p in points_uv:
-        u, v = float(p[0]), float(p[1])
+    for p in points_uv or []:
+        try:
+            u, v = float(p[0]), float(p[1])
+        except Exception:
+            continue
         if swap_uv:
             u, v = v, u
         pts.append((u, v))
+    if not pts:
+        return {
+            u"scale": 1.0,
+            u"ox": float(margin),
+            u"oy": float(margin),
+            u"swap_uv": bool(swap_uv),
+            u"flip_v": bool(flip_v),
+        }
     us = [p[0] for p in pts]
     vs = [p[1] for p in pts]
     u0, u1 = min(us), max(us)
@@ -690,13 +846,82 @@ def fit_polyline_to_canvas(
     scale = min(usable_w / du, usable_h / dv)
     ox = float(margin) + 0.5 * (usable_w - du * scale) - u0 * scale
     if flip_v:
-        # Mayor V → menor Y canvas (arriba en pantalla)
         oy = float(margin) + 0.5 * (usable_h - dv * scale) + v1 * scale
-        out = [(ox + p[0] * scale, oy - p[1] * scale) for p in pts]
     else:
         oy = float(margin) + 0.5 * (usable_h - dv * scale) - v0 * scale
-        out = [(ox + p[0] * scale, oy + p[1] * scale) for p in pts]
-    return out, scale
+    return {
+        u"scale": float(scale),
+        u"ox": float(ox),
+        u"oy": float(oy),
+        u"swap_uv": bool(swap_uv),
+        u"flip_v": bool(flip_v),
+    }
+
+
+def map_uv_to_canvas_px(u, v, mapping):
+    """Aplica el mapeo devuelto por ``compute_canvas_mapping``."""
+    if not mapping:
+        return 0.0, 0.0
+    try:
+        u, v = float(u), float(v)
+    except Exception:
+        return 0.0, 0.0
+    if mapping.get(u"swap_uv"):
+        u, v = v, u
+    scale = float(mapping.get(u"scale") or 1.0)
+    ox = float(mapping.get(u"ox") or 0.0)
+    oy = float(mapping.get(u"oy") or 0.0)
+    if mapping.get(u"flip_v"):
+        return ox + u * scale, oy - v * scale
+    return ox + u * scale, oy + v * scale
+
+
+def map_polyline_uv_to_canvas_px(points_uv, mapping):
+    out = []
+    for p in points_uv or []:
+        try:
+            out.append(map_uv_to_canvas_px(p[0], p[1], mapping))
+        except Exception:
+            continue
+    return out
+
+
+def fit_polyline_to_canvas(
+    points_uv,
+    canvas_w,
+    canvas_h,
+    margin,
+    swap_uv=False,
+    flip_v=False,
+    bbox_uv=None,
+):
+    """
+    Escala uniforme + centrado. Devuelve puntos en píxeles canvas y el scale (px/mm).
+
+    ``bbox_uv``: puntos extra solo para calcular escala/centrado (contexto hormigón).
+
+    ``flip_v``: invierte V al mapear a Y de pantalla (útil si V es Z de Revit).
+
+    Returns:
+        (points_px, scale_px_per_mm)
+    """
+    bbox = []
+    for p in points_uv or []:
+        bbox.append(p)
+    for p in bbox_uv or []:
+        bbox.append(p)
+    if not points_uv:
+        if not bbox:
+            return [], 1.0
+        mapping = compute_canvas_mapping(
+            bbox, canvas_w, canvas_h, margin, swap_uv=swap_uv, flip_v=flip_v
+        )
+        return [], float(mapping.get(u"scale") or 1.0)
+    mapping = compute_canvas_mapping(
+        bbox, canvas_w, canvas_h, margin, swap_uv=swap_uv, flip_v=flip_v
+    )
+    out = map_polyline_uv_to_canvas_px(points_uv, mapping)
+    return out, float(mapping.get(u"scale") or 1.0)
 
 
 def point_at_arc_length_uv(points_uv, arc_mm, s_mm):

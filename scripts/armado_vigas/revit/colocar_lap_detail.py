@@ -22,14 +22,17 @@ from armado_vigas.domain.layers import (
     ensure_beam_layers,
 )
 from armado_vigas.geometry.longitudinales import (
+    empalme_cut_shift_ft_for_layer,
     merged_fiber_line,
+    orient_line_run_left_to_right,
     resolve_ref_beam_for_chain,
 )
 from armado_vigas.revit.rebar_resources import resolve_bar_type_mm
 
 _MAX_WARNINGS = 8
 _LAP_DIM_SCALE_REFERENCE = 50
-_LAP_DIM_OFFSET_MM_AT_REF_SCALE = 450.0
+# Separación cota–barra @ escala 1:50 (menor = cota más pegada al empalme).
+_LAP_DIM_OFFSET_MM_AT_REF_SCALE = 280.0
 
 try:
     from barras_bordes_losa_gancho_empotramiento import _find_fixed_lap_detail_symbol_id
@@ -109,11 +112,30 @@ def _lap_mm_for_layer(document, ref_beam, layer_num, es_cara_inferior, default_l
         else beam_layer_diam_sup(ref_beam, layer_num)
     )
     lap_mm = float(default_lap_mm or 0.0)
+    try:
+        from armado_vigas.domain.concrete_lengths import (
+            lap_mm_for_diameter,
+            session_concrete_grade,
+        )
+
+        if diam is not None:
+            L = lap_mm_for_diameter(diam, session_concrete_grade())
+            if L is not None and float(L) > 0:
+                return float(L)
+    except Exception:
+        pass
     if document is not None and diam is not None:
         bt = resolve_bar_type_mm(document, diam)
         if bt is not None and _traslapo_longitudinal_mm_desde_bar_type is not None:
             try:
-                lmc, _ = _traslapo_longitudinal_mm_desde_bar_type(bt)
+                from armado_vigas.domain.concrete_lengths import session_concrete_grade
+
+                try:
+                    lmc, _ = _traslapo_longitudinal_mm_desde_bar_type(
+                        bt, concrete_grade=session_concrete_grade()
+                    )
+                except TypeError:
+                    lmc, _ = _traslapo_longitudinal_mm_desde_bar_type(bt)
                 if lmc and float(lmc) > 0:
                     lap_mm = float(lmc)
             except Exception:
@@ -187,27 +209,34 @@ def build_lap_jobs_for_empalme_run(
     lap_mm,
     rebar_by_tramo_layer,
     domain_by_id=None,
+    session=None,
 ):
     """
     Construye specs de empalme a partir de rebars ya colocados por tramo/capa.
+
+    Traslape por nudo = tabla del **mayor Ø** de tramos adyacentes.
 
     ``rebar_by_tramo_layer``: ``{(es_inf, layer_num, tramo_id): rebar}``.
     """
     if (
         not run_tramos
         or len(run_tramos) < 2
-        or not lap_mm
-        or float(lap_mm) <= 0
         or _parametros_corte_por_planos_empalme_location is None
         or _puntos_segmento_traslape_sobre_work is None
     ):
         return []
+
+    try:
+        default_lap = float(lap_mm or 0.0)
+    except Exception:
+        default_lap = 0.0
 
     merged, n_face = merged_fiber_line(
         document, chain, es_cara_inferior, rex_mm, rebar_bar_type
     )
     if merged is None or n_face is None:
         return []
+    merged = orient_line_run_left_to_right(merged, sorted_beams, run_indices)
 
     emp_elems = _empalme_elements_for_run(sorted_beams, run_indices, empalme_beam_ids)
     if not emp_elems:
@@ -224,7 +253,13 @@ def build_lap_jobs_for_empalme_run(
     if not cuts:
         return []
 
-    tramos_ord = sorted(run_tramos, key=lambda t: int(t.get("id") or 0))
+    tramos_ord = sorted(
+        run_tramos,
+        key=lambda t: (
+            min(t.get("beamIndices") or [10 ** 9]),
+            int(t.get("id") or 0),
+        ),
+    )
     if len(cuts) != len(tramos_ord) - 1:
         return []
 
@@ -237,27 +272,108 @@ def build_lap_jobs_for_empalme_run(
         if es_cara_inferior
         else beam_n_capas_sup(ref_beam)
     )
+    # Capas max de todos los tramos
+    for t in tramos_ord:
+        try:
+            from armado_vigas.geometry.longitudinales import (
+                _chain_elements_for_indices,
+            )
+
+            tr_ch = _chain_elements_for_indices(
+                sorted_beams, t.get("beamIndices") or []
+            )
+            rb = resolve_ref_beam_for_chain(
+                tr_ch, domain_by_id or {}, es_cara_inferior
+            )
+            if rb is not None:
+                ensure_beam_layers(rb)
+                n_c = (
+                    beam_n_capas_inf(rb) if es_cara_inferior else beam_n_capas_sup(rb)
+                )
+                if int(n_c) > int(n_capas):
+                    n_capas = int(n_c)
+        except Exception:
+            pass
+
     step_mm = float(_OFFSET_SUPLES_SEGUNDA_CAPA_MM)
     es_inf = bool(es_cara_inferior)
     jobs = []
 
+    from armado_vigas.geometry.longitudinales import _lap_mm_list_for_run_layer
+
+    # Anclas de cota = tramo de 1.ª capa por nudo (sin desfase de capa par).
+    # Capas 2+ reusan dim_pa/dim_pb para alinear horizontalmente la cota.
+    dim_anchor_by_cut = {}
+    try:
+        laps_l1 = _lap_mm_list_for_run_layer(
+            document,
+            tramos_ord,
+            1,
+            es_cara_inferior,
+            sorted_beams,
+            domain_by_id or {},
+            default_lap,
+            session=session,
+            n_cuts=len(cuts),
+        )
+    except Exception:
+        laps_l1 = []
     for j, cut_param in enumerate(cuts):
-        tr_lo = tramos_ord[j]
-        tr_hi = tramos_ord[j + 1]
-        tid_lo = tr_lo.get("id")
-        tid_hi = tr_hi.get("id")
-        if tid_lo is None or tid_hi is None:
+        try:
+            lap_l1 = float(laps_l1[j]) if j < len(laps_l1) else default_lap
+        except Exception:
+            lap_l1 = default_lap
+        if lap_l1 <= 1e-9:
+            lap_l1 = _lap_mm_for_layer(
+                document, ref_beam, 1, es_cara_inferior, default_lap
+            )
+        if not lap_l1 or float(lap_l1) <= 0:
             continue
-        for layer_num in range(1, n_capas + 1):
+        pa_d, pb_d = _puntos_segmento_traslape_sobre_work(
+            merged, float(cut_param), float(lap_l1)
+        )
+        if pa_d is not None and pb_d is not None:
+            dim_anchor_by_cut[j] = (pa_d, pb_d)
+
+    for layer_num in range(1, max(1, int(n_capas)) + 1):
+        laps_layer = _lap_mm_list_for_run_layer(
+            document,
+            tramos_ord,
+            layer_num,
+            es_cara_inferior,
+            sorted_beams,
+            domain_by_id or {},
+            default_lap,
+            session=session,
+            n_cuts=len(cuts),
+        )
+        for j, cut_param in enumerate(cuts):
+            tr_lo = tramos_ord[j]
+            tr_hi = tramos_ord[j + 1]
+            tid_lo = tr_lo.get("id")
+            tid_hi = tr_hi.get("id")
+            if tid_lo is None or tid_hi is None:
+                continue
             ra = rebar_by_tramo_layer.get((es_inf, layer_num, tid_lo))
             rb = rebar_by_tramo_layer.get((es_inf, layer_num, tid_hi))
             if ra is None or rb is None:
                 continue
-            lap_layer = _lap_mm_for_layer(
-                document, ref_beam, layer_num, es_cara_inferior, lap_mm
+            try:
+                lap_layer = float(laps_layer[j]) if j < len(laps_layer) else default_lap
+            except Exception:
+                lap_layer = default_lap
+            if lap_layer <= 1e-9:
+                lap_layer = _lap_mm_for_layer(
+                    document, ref_beam, layer_num, es_cara_inferior, default_lap
+                )
+            if not lap_layer or float(lap_layer) <= 0:
+                continue
+            # Misma alternancia que modelado/canvas: capas pares +1 solape.
+            cut_layer = float(cut_param) + float(
+                empalme_cut_shift_ft_for_layer(layer_num, lap_layer) or 0.0
             )
             pa, pb = _puntos_segmento_traslape_sobre_work(
-                merged, float(cut_param), lap_layer
+                merged, cut_layer, lap_layer
             )
             if pa is None or pb is None:
                 continue
@@ -270,14 +386,21 @@ def build_lap_jobs_for_empalme_run(
                     pb = pb + d_cap
                 except Exception:
                     pass
+            dim_pa, dim_pb = pa, pb
+            anchor = dim_anchor_by_cut.get(j)
+            if anchor is not None:
+                dim_pa, dim_pb = anchor[0], anchor[1]
             jobs.append({
                 u"ra": ra,
                 u"rb": rb,
                 u"pa": pa,
                 u"pb": pb,
+                u"dim_pa": dim_pa,
+                u"dim_pb": dim_pb,
                 u"n_face": n_face,
                 u"layer_num": layer_num,
                 u"es_cara_inferior": es_inf,
+                u"lap_mm": float(lap_layer),
             })
     return jobs
 
@@ -291,6 +414,8 @@ def _create_lap_dimension(
     n_face,
     es_cara_inferior=False,
     host=None,
+    dim_pa=None,
+    dim_pb=None,
 ):
     if (
         lap_inst is None
@@ -305,9 +430,15 @@ def _create_lap_dimension(
     if ref_l is None or ref_r is None:
         return None, ref_err
 
+    # Línea de cota: ancla de 1.ª capa (dim_pa/dim_pb) para alinear multicapa.
+    lap_a = dim_pa if dim_pa is not None else pa
+    lap_b = dim_pb if dim_pb is not None else pb
+    if lap_a is None or lap_b is None:
+        lap_a, lap_b = pa, pb
+
     axis_u = None
     try:
-        dv = pb - pa
+        dv = lap_b - lap_a
         if dv.GetLength() > 1e-9:
             axis_u = dv.Normalize()
     except Exception:
@@ -334,16 +465,16 @@ def _create_lap_dimension(
         view,
         ref_l,
         ref_r,
-        pa,
-        pb,
+        lap_a,
+        lap_b,
         axis_u,
         lateral_hint=None,
         line_offset_mm=_lap_dim_offset_mm(
             view,
             es_cara_inferior=es_cara_inferior,
             host=host,
-            pa=pa,
-            pb=pb,
+            pa=lap_a,
+            pb=lap_b,
         ),
         inward_dir_xy=inward_xy,
         inward_dir_3d=inward_3d,
@@ -417,6 +548,8 @@ def colocar_marcadores_empalme_vigas(document, view, lap_jobs):
         ra = spec.get(u"ra")
         rb = spec.get(u"rb")
         n_face = spec.get(u"n_face")
+        dim_pa = spec.get(u"dim_pa") or pa
+        dim_pb = spec.get(u"dim_pb") or pb
         ok_d, err_d, lap_inst = _place_line_based_detail_component(
             document, view, lap_sym, pa, pb,
         )
@@ -432,46 +565,54 @@ def colocar_marcadores_empalme_vigas(document, view, lap_jobs):
 
         host = _resolve_rebar_host(document, ra) or _resolve_rebar_host(document, rb)
         dim_eid = None
-        dim_eid, dim_err = _create_lap_dimension(
-            document,
-            view,
-            lap_inst,
-            pa,
-            pb,
-            n_face,
-            es_cara_inferior=bool(spec.get(u"es_cara_inferior")),
-            host=host,
-        )
-        if dim_eid is not None:
-            result[u"n_dims_ok"] += 1
-            if bool(spec.get(u"es_cara_inferior")) and host is not None:
-                try:
-                    from armado_vigas.revit.etiquetar_confinamiento import (
-                        register_inferior_lap_dim_host,
-                    )
+        # Con 3+ capas: detail en todas; cotas solo en 1.ª y 2.ª (evita solape gráfico).
+        try:
+            layer_num = int(spec.get(u"layer_num") or 1)
+        except Exception:
+            layer_num = 1
+        if layer_num <= 2:
+            dim_eid, dim_err = _create_lap_dimension(
+                document,
+                view,
+                lap_inst,
+                pa,
+                pb,
+                n_face,
+                es_cara_inferior=bool(spec.get(u"es_cara_inferior")),
+                host=host,
+                dim_pa=dim_pa,
+                dim_pb=dim_pb,
+            )
+            if dim_eid is not None:
+                result[u"n_dims_ok"] += 1
+                if bool(spec.get(u"es_cara_inferior")) and host is not None:
+                    try:
+                        from armado_vigas.revit.etiquetar_confinamiento import (
+                            register_inferior_lap_dim_host,
+                        )
 
-                    register_inferior_lap_dim_host(host)
+                        register_inferior_lap_dim_host(host)
+                    except Exception:
+                        pass
+                try:
+                    dim_el = document.GetElement(dim_eid)
+                    if dim_el is not None:
+                        result[u"elements_created"].append(dim_el)
                 except Exception:
                     pass
-            try:
-                dim_el = document.GetElement(dim_eid)
-                if dim_el is not None:
-                    result[u"elements_created"].append(dim_el)
-            except Exception:
-                pass
-        elif dim_err:
-            result[u"n_dims_fail"] += 1
-            if u"Left/Right" in (dim_err or u"") and aviso_refs is None:
-                aviso_refs = dim_err
-            elif len(result[u"messages"]) < _MAX_WARNINGS:
-                cara = u"inf" if spec.get(u"es_cara_inferior") else u"sup"
-                result[u"messages"].append(
-                    u"Cota traslape ({0} capa {1}): {2}".format(
-                        cara,
-                        spec.get(u"layer_num") or u"?",
-                        dim_err,
-                    ),
-                )
+            elif dim_err:
+                result[u"n_dims_fail"] += 1
+                if u"Left/Right" in (dim_err or u"") and aviso_refs is None:
+                    aviso_refs = dim_err
+                elif len(result[u"messages"]) < _MAX_WARNINGS:
+                    cara = u"inf" if spec.get(u"es_cara_inferior") else u"sup"
+                    result[u"messages"].append(
+                        u"Cota traslape ({0} capa {1}): {2}".format(
+                            cara,
+                            layer_num,
+                            dim_err,
+                        ),
+                    )
 
         if (
             ra is not None

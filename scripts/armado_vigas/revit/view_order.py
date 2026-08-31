@@ -244,9 +244,21 @@ def assign_beam_col_endpoints(beams, apoyos, view=None):
     """
     Asigna ``colStart`` / ``colEnd`` por orden espacial (rank ``u``), no por
     índice de selección. Debe llamarse después de :func:`assign_beam_view_order`.
+
+    Las losas no entran en la cadena de extremos (solo canvas).
     """
     beams = list(beams or [])
-    apoyos = assign_apoyo_view_order(list(apoyos or []), view)
+
+    def _keep_apoyo(a):
+        try:
+            k = unicode((a or {}).get("kind") or u"").lower()
+        except Exception:
+            k = u""
+        return k not in (u"floor", u"losa", u"slab")
+
+    apoyos = assign_apoyo_view_order(
+        [a for a in (apoyos or []) if _keep_apoyo(a)], view
+    )
     sorted_apoyos = sorted(apoyos, key=lambda a: a.get("u", 0))
     sorted_beams = sorted(beams, key=lambda b: b.get("u", 0))
     n = len(sorted_apoyos)

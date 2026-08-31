@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Dividir Rebar en un punto con traslape por diámetro (tabla BIMTools).
+Dividir y Traslapar — core (traslape por diámetro, tabla BIMTools).
 
 Camino geométrico 2024+: proyectar punto → partir centerline → extender ±L/2
 → CreateFromCurves ×2 → borrar original.
@@ -24,6 +24,7 @@ from System.Collections.Generic import List
 from Autodesk.Revit.DB import (
     BooleanOperationsType,
     BooleanOperationsUtils,
+    BuiltInCategory,
     BuiltInFailures,
     CurveLoop,
     ElementId,
@@ -34,8 +35,10 @@ from Autodesk.Revit.DB import (
     GeometryCreationUtilities,
     IFailuresPreprocessor,
     Line,
+    Mesh,
     Options,
     Plane,
+    PlanarFace,
     SketchPlane,
     Solid,
     StorageType,
@@ -43,10 +46,13 @@ from Autodesk.Revit.DB import (
     TransactionGroup,
     UnitTypeId,
     UnitUtils,
+    UV,
     View,
     ViewDetailLevel,
     ViewSchedule,
+    ViewSection,
     ViewSheet,
+    ViewType,
     XYZ,
 )
 from Autodesk.Revit.DB.Structure import (
@@ -61,18 +67,20 @@ from Autodesk.Revit.UI.Selection import ISelectionFilter, ObjectType
 
 from bimtools_rebar_hook_lengths import traslape_mm_from_nominal_diameter_mm
 from dividir_rebar_punto_geom import (
+    build_plan_polyline_from_frame_mm,
     build_spans_mm,
     ft_to_mm,
     mm_to_internal,
     normalize_lap_mode,
     piece_intervals_with_lap,
+    project_xyz_mm_to_uv,
     set_span_length_mm,
     split_distances_with_lap,
     validate_cut_with_lap,
     validate_cuts_with_lap,
 )
 
-_TRANSACTION_NAME = u"Arainco: Dividir barra con traslape"
+_TRANSACTION_NAME = u"Arainco: Dividir y Traslapar"
 _PREVIEW_TG_NAME = u"Arainco: Vista previa cortes (temporal)"
 _PREVIEW_TX_NAME = u"Arainco: Marca temporal de corte"
 _MIN_PIECE_MM = 100.0
@@ -80,11 +88,119 @@ _ARMADURA_CONJUNTO_GUID_PARAM = u"Armadura_Conjunto_GUID"
 # Prisma de sonda ~20×20×20 mm centrado en el startpoint del tramo.
 _HOST_PROBE_HALF_MM = 10.0
 _HOST_PROBE_HEIGHT_MM = 20.0
+_PROGRESS_ACCENT_RGB = (91, 192, 222)
+_PROGRESS_PHASES = 7
+
+
+def _pbar_enabled():
+    try:
+        from pyrevit import forms as _forms  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
+class DividirRebarProgress(object):
+    """ProgressBar pyRevit (acento BIMTools); no-op si no está disponible."""
+
+    def __init__(self, total=None, title_prefix=None):
+        self._total = max(1, int(total or _PROGRESS_PHASES))
+        self._index = 0
+        self._pb = None
+        self._open = False
+        self._title_prefix = title_prefix or _TRANSACTION_NAME
+
+    def __enter__(self):
+        if not _pbar_enabled() or self._total < 1:
+            return self
+        try:
+            from pyrevit import forms as _pyrevit_forms
+
+            self._pb = _pyrevit_forms.ProgressBar(
+                title=self._title(0),
+                cancellable=False,
+            )
+            try:
+                from System.Windows.Media import Color, SolidColorBrush
+
+                r, g, b = _PROGRESS_ACCENT_RGB
+                self._pb.Resources[u"pyRevitAccentBrush"] = SolidColorBrush(
+                    Color.FromRgb(r, g, b),
+                )
+            except Exception:
+                pass
+            self._pb.__enter__()
+            self._open = True
+        except Exception:
+            self._pb = None
+            self._open = False
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._open and self._pb is not None:
+            try:
+                self._pb.__exit__(exc_type, exc_val, exc_tb)
+            except Exception:
+                pass
+        self._open = False
+        self._pb = None
+        return False
+
+    def _title(self, index):
+        return u"{0} {1}/{2}".format(
+            self._title_prefix,
+            int(index) + 1,
+            int(self._total),
+        )
+
+    def step(self, phase_label):
+        """Avanza una fase y actualiza título de la barra."""
+        if self._pb is None:
+            return
+        i = int(self._index)
+        self._index = i + 1
+        base = u"{0} — {1}".format(self._title(i), phase_label or u"")
+        try:
+            if hasattr(self._pb, u"update_progress"):
+                try:
+                    self._pb.update_progress(i + 1, max_value=self._total)
+                except TypeError:
+                    try:
+                        self._pb.update_progress(i + 1, max=self._total)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        try:
+            self._pb.title = base
+        except Exception:
+            pass
+
+
+def _progress_step(progress, label):
+    if progress is None:
+        return
+    try:
+        progress.step(label)
+    except Exception:
+        pass
 _HOST_INTERSECT_VOL_TOL_FT3 = 1e-12
 _OUTSIDE_HOST_FAILURE_IDS = None
 _MARKER_PNG_CACHE = {}
 _CROSS_HALF_MM = 120.0
 _LAP_TICK_MM = 40.0
+
+_CATS_CONCRETE_IN_VIEW = (
+    BuiltInCategory.OST_Walls,  # muros
+    BuiltInCategory.OST_StructuralFraming,  # vigas
+    BuiltInCategory.OST_StructuralFoundation,  # fundaciones
+    BuiltInCategory.OST_StructuralColumns,  # columnas
+    BuiltInCategory.OST_Floors,  # losas
+)
+_CONTEXT_MAX_ELEMENTS = 250
+_CONTEXT_MIN_EDGE_MM = 1.0
+# Cara de corte en sección/alzado: normal casi paralela a ViewDirection.
+_SECTION_CUT_FACE_DOT_MIN = 0.65
 
 
 # ---------------------------------------------------------------------------
@@ -1790,6 +1906,990 @@ def suggest_bar_orientation(curves):
     return u"horizontal"
 
 
+def _geometry_options_for_view(view):
+    opts = Options()
+    try:
+        opts.ComputeReferences = False
+    except Exception:
+        pass
+    try:
+        opts.DetailLevel = ViewDetailLevel.Fine
+    except Exception:
+        pass
+    try:
+        opts.IncludeNonVisibleObjects = True
+    except Exception:
+        pass
+    if view is not None:
+        try:
+            opts.View = view
+        except Exception:
+            pass
+    return opts
+
+
+def _is_section_elevation_view(view):
+    """Vista 2D ortográfica tipo sección o alzado (incluye ViewSection de elevación eje)."""
+    if view is None:
+        return False
+    try:
+        if isinstance(view, ViewSection):
+            return True
+    except Exception:
+        pass
+    try:
+        vt = view.ViewType
+        return vt == ViewType.Section or vt == ViewType.Elevation
+    except Exception:
+        return False
+
+
+def _texto_material_indica_hormigon(text):
+    try:
+        s = _as_unicode(text).strip().lower()
+    except Exception:
+        return False
+    if not s:
+        return False
+    keys = (
+        u"hormigon",
+        u"hormigón",
+        u"concrete",
+        u"h°",
+        u"h.",
+    )
+    return any(k in s for k in keys)
+
+
+def _mat_o_texto_sugiere_hormigon(material, param, _document):
+    if param is not None and param.HasValue:
+        for attr in (u"AsString", u"AsValueString"):
+            try:
+                t = getattr(param, attr)()
+                if t and _texto_material_indica_hormigon(t):
+                    return True
+            except Exception:
+                pass
+    if material is None:
+        return False
+    try:
+        n = material.Name
+    except Exception:
+        n = None
+    if n and _texto_material_indica_hormigon(n):
+        return True
+    try:
+        from Autodesk.Revit.DB.Structure import StructuralMaterialType
+
+        if hasattr(material, u"StructuralMaterialType"):
+            if material.StructuralMaterialType == StructuralMaterialType.Concrete:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _wall_has_concrete_structure_material(wall):
+    """Muro con capa estructural de hormigón (compound structure o nombre de tipo)."""
+    if wall is None:
+        return False
+    try:
+        from Autodesk.Revit.DB import MaterialFunctionAssignment, Wall
+
+        if not isinstance(wall, Wall):
+            return False
+        wt = wall.WallType
+        if wt is None:
+            return False
+        if _texto_material_indica_hormigon(wt.Name or u""):
+            return True
+        cs = wt.GetCompoundStructure()
+        if cs is None:
+            return False
+        doc = wall.Document
+        if doc is None:
+            return False
+        try:
+            n_layers = int(cs.LayerCount)
+        except Exception:
+            n_layers = 0
+        for i in range(n_layers):
+            try:
+                fn = cs.GetLayerFunction(i)
+            except Exception:
+                fn = None
+            if fn != MaterialFunctionAssignment.Structure:
+                continue
+            try:
+                mid = cs.GetMaterialId(i)
+            except Exception:
+                mid = None
+            if mid is None or mid == ElementId.InvalidElementId:
+                continue
+            mat = doc.GetElement(mid)
+            if mat is not None and _texto_material_indica_hormigon(mat.Name or u""):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _element_is_concrete_for_elevation_canvas(elem):
+    """
+    Hormigón estructural visible en alzado/sección: muros, vigas, fundaciones,
+    columnas y losas (mismo criterio que contorno / Armado Vigas).
+    """
+    if elem is None:
+        return False
+    try:
+        from Autodesk.Revit.DB.Structure import StructuralMaterialType
+
+        sm = elem.StructuralMaterialType
+        if sm == StructuralMaterialType.Concrete:
+            return True
+    except Exception:
+        pass
+    try:
+        from Autodesk.Revit.DB import BuiltInParameter
+
+        p = elem.get_Parameter(BuiltInParameter.STRUCTURAL_MATERIAL_PARAM)
+        if p is not None and p.HasValue:
+            try:
+                vs = p.AsValueString()
+                if vs and _texto_material_indica_hormigon(vs):
+                    return True
+            except Exception:
+                pass
+            try:
+                s = p.AsString()
+                if s and _texto_material_indica_hormigon(s):
+                    return True
+            except Exception:
+                pass
+    except Exception:
+        pass
+    for key in (u"Structural Material", u"Material estructural"):
+        try:
+            p = elem.LookupParameter(key)
+            if p and p.HasValue:
+                try:
+                    vs = p.AsValueString()
+                except Exception:
+                    vs = None
+                if vs and _texto_material_indica_hormigon(vs):
+                    return True
+        except Exception:
+            pass
+    try:
+        from Autodesk.Revit.DB import BuiltInParameter, Floor, FloorType
+
+        doc0 = elem.Document
+        if doc0 is not None and elem is not None:
+            tid = elem.GetTypeId()
+            if tid is not None and tid != ElementId.InvalidElementId:
+                et = doc0.GetElement(tid)
+                if et is not None:
+                    p2 = et.get_Parameter(BuiltInParameter.STRUCTURAL_MATERIAL_PARAM)
+                    if p2 is not None and p2.HasValue:
+                        if p2.StorageType == StorageType.ElementId:
+                            mid = p2.AsElementId()
+                            if mid is not None and mid != ElementId.InvalidElementId:
+                                m = doc0.GetElement(mid)
+                                if m is not None and _mat_o_texto_sugiere_hormigon(
+                                    m, p2, doc0
+                                ):
+                                    return True
+                        for attr in (u"AsString", u"AsValueString"):
+                            try:
+                                t = getattr(p2, attr)()
+                                if t and _texto_material_indica_hormigon(t):
+                                    return True
+                            except Exception:
+                                pass
+        _bip_fs = getattr(BuiltInParameter, u"FLOOR_PARAM_IS_STRUCTURAL", None)
+        if _bip_fs is not None and doc0 is not None and isinstance(elem, Floor):
+            p_st = elem.get_Parameter(_bip_fs)
+            if p_st is not None and p_st.HasValue:
+                try:
+                    if p_st.AsInteger() == 1:
+                        return True
+                except Exception:
+                    pass
+        if doc0 is not None and elem is not None:
+            tid = elem.GetTypeId()
+            if tid is not None and tid != ElementId.InvalidElementId:
+                et = doc0.GetElement(tid)
+                if isinstance(et, FloorType):
+                    if _bip_fs is not None:
+                        p_t = et.get_Parameter(_bip_fs)
+                        if p_t is not None and p_t.HasValue:
+                            try:
+                                if p_t.AsInteger() == 1:
+                                    return True
+                            except Exception:
+                                pass
+                    if _texto_material_indica_hormigon(et.Name or u""):
+                        return True
+    except Exception:
+        pass
+    try:
+        from Autodesk.Revit.DB import Wall
+
+        if isinstance(elem, Wall):
+            return _wall_has_concrete_structure_material(elem)
+    except Exception:
+        pass
+    return False
+
+
+def _element_is_structural_concrete(elem):
+    """Alias legado → criterio ampliado de canvas de elevación."""
+    return _element_is_concrete_for_elevation_canvas(elem)
+
+
+def _transform_xyz(xyz, tr):
+    if xyz is None:
+        return None
+    if tr is None:
+        return xyz
+    try:
+        return tr.OfPoint(xyz)
+    except Exception:
+        return xyz
+
+
+def _xyz_to_mm_tuple(xyz):
+    if xyz is None:
+        return None
+    try:
+        return (
+            internal_to_mm(float(xyz.X)),
+            internal_to_mm(float(xyz.Y)),
+            internal_to_mm(float(xyz.Z)),
+        )
+    except Exception:
+        return None
+
+
+def _curve_tessellate_xyz_mm(crv, transform=None):
+    """Puntos discretos de una curva Revit en mm (mundo)."""
+    if crv is None:
+        return []
+    pts = []
+    try:
+        raw = list(crv.Tessellate())
+    except Exception:
+        raw = []
+    if not raw:
+        try:
+            raw = [crv.GetEndPoint(0), crv.GetEndPoint(1)]
+        except Exception:
+            raw = []
+    for p in raw:
+        pw = _transform_xyz(p, transform)
+        t = _xyz_to_mm_tuple(pw)
+        if t is not None:
+            pts.append(t)
+    cleaned = []
+    for t in pts:
+        if cleaned and _dist3_mm(cleaned[-1], t) < 0.5:
+            continue
+        cleaned.append(t)
+    return cleaned
+
+
+def _dist3_mm(a, b):
+    return (
+        (float(a[0]) - float(b[0])) ** 2
+        + (float(a[1]) - float(b[1])) ** 2
+        + (float(a[2]) - float(b[2])) ** 2
+    ) ** 0.5
+
+
+def _geometry_options_model():
+    """Geometría de modelo (sin corte de vista) — respaldo si la vista no devuelve sólidos."""
+    return _geometry_options_fine()
+
+
+def _is_solid_geom(g):
+    if g is None:
+        return False
+    try:
+        if isinstance(g, Solid):
+            return True
+    except Exception:
+        pass
+    try:
+        return type(g).__name__ == u"Solid"
+    except Exception:
+        return False
+
+
+def _is_mesh_geom(g):
+    if g is None:
+        return False
+    try:
+        if isinstance(g, Mesh):
+            return True
+    except Exception:
+        pass
+    try:
+        return type(g).__name__ == u"Mesh"
+    except Exception:
+        return False
+
+
+def _is_curve_geom(g):
+    if g is None:
+        return False
+    try:
+        if hasattr(g, u"GetEndPoint") and hasattr(g, u"Tessellate"):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _walk_solid_segments(solid, transform=None):
+    """Aristas de caras + bordes del sólido (contorno visible en sección)."""
+    if solid is None:
+        return
+    try:
+        if float(solid.Volume) <= 1e-12:
+            return
+    except Exception:
+        pass
+    try:
+        faces = solid.Faces
+    except Exception:
+        faces = None
+    if faces is not None:
+        try:
+            face_list = list(faces)
+        except Exception:
+            face_list = []
+        for face in face_list:
+            loops = None
+            try:
+                loops = face.GetEdgesAsCurveLoops()
+            except Exception:
+                loops = None
+            if loops is None:
+                continue
+            try:
+                loop_list = list(loops)
+            except Exception:
+                loop_list = []
+            for loop in loop_list:
+                try:
+                    curves = list(loop)
+                except Exception:
+                    curves = []
+                for crv in curves:
+                    pts = _curve_tessellate_xyz_mm(crv, transform)
+                    if len(pts) >= 2:
+                        yield pts
+    try:
+        edges = solid.Edges
+    except Exception:
+        edges = None
+    if edges is not None:
+        try:
+            edge_list = list(edges)
+        except Exception:
+            edge_list = []
+        for edge in edge_list:
+            try:
+                ec = edge.AsCurve()
+            except Exception:
+                ec = None
+            pts = _curve_tessellate_xyz_mm(ec, transform)
+            if len(pts) >= 2:
+                yield pts
+
+
+def _walk_mesh_segments(mesh, transform=None):
+    if mesh is None:
+        return
+    verts_mm = []
+    try:
+        nvert = int(mesh.Vertices.Count)
+    except Exception:
+        nvert = 0
+    for i in range(nvert):
+        try:
+            v = mesh.Vertices[i]
+        except Exception:
+            continue
+        t = _xyz_to_mm_tuple(_transform_xyz(v, transform))
+        if t is not None:
+            verts_mm.append(t)
+    if not verts_mm:
+        return
+    try:
+        nt = int(mesh.NumTriangles)
+    except Exception:
+        return
+    seen = set()
+    for ti in range(nt):
+        try:
+            tri = mesh.get_Triangle(ti)
+        except Exception:
+            continue
+        try:
+            ia = int(tri.get_Index(0))
+            ib = int(tri.get_Index(1))
+            ic = int(tri.get_Index(2))
+        except Exception:
+            continue
+        for a, b in ((ia, ib), (ib, ic), (ic, ia)):
+            key = (min(a, b), max(a, b))
+            if key in seen:
+                continue
+            seen.add(key)
+            if a < 0 or b < 0 or a >= len(verts_mm) or b >= len(verts_mm):
+                continue
+            seg = [verts_mm[a], verts_mm[b]]
+            if _dist3_mm(seg[0], seg[1]) >= 0.5:
+                yield seg
+
+
+def _transform_normal_xyz(n, tr):
+    if n is None:
+        return None
+    if tr is None:
+        return n
+    try:
+        nx = (
+            float(tr.BasisX.X) * float(n.X)
+            + float(tr.BasisY.X) * float(n.Y)
+            + float(tr.BasisZ.X) * float(n.Z)
+        )
+        ny = (
+            float(tr.BasisX.Y) * float(n.X)
+            + float(tr.BasisY.Y) * float(n.Y)
+            + float(tr.BasisZ.Y) * float(n.Z)
+        )
+        nz = (
+            float(tr.BasisX.Z) * float(n.X)
+            + float(tr.BasisY.Z) * float(n.Y)
+            + float(tr.BasisZ.Z) * float(n.Z)
+        )
+        return XYZ(nx, ny, nz)
+    except Exception:
+        return n
+
+
+def _face_world_normal(face, transform=None):
+    if face is None:
+        return None
+    n = None
+    try:
+        if isinstance(face, PlanarFace):
+            n = face.FaceNormal
+    except Exception:
+        n = None
+    if n is None:
+        try:
+            bb = face.GetBoundingBox()
+            if bb is not None:
+                u_mid = 0.5 * (float(bb.Min.U) + float(bb.Max.U))
+                v_mid = 0.5 * (float(bb.Min.V) + float(bb.Max.V))
+                derivs = face.ComputeDerivatives(UV(u_mid, v_mid))
+                n = derivs.Normal
+        except Exception:
+            n = None
+    if n is None:
+        return None
+    n = _transform_normal_xyz(n, transform)
+    return _vector_unit(n)
+
+
+def _walk_solid_section_visible_segments(solid, view_dir, transform=None):
+    """
+    En sección/alzado: aristas de caras de corte (normal ∥ ViewDirection).
+    Si no hay caras de corte, todas las aristas del sólido de vista.
+    """
+    if solid is None:
+        return
+    try:
+        if float(solid.Volume) <= 1e-12:
+            return
+    except Exception:
+        pass
+    vd = _vector_unit(view_dir)
+    cut_segs = []
+    all_segs = []
+    try:
+        face_list = list(solid.Faces)
+    except Exception:
+        face_list = []
+    for face in face_list:
+        normal = _face_world_normal(face, transform)
+        is_cut = False
+        if normal is not None and vd is not None:
+            is_cut = abs(_vector_dot(normal, vd)) >= _SECTION_CUT_FACE_DOT_MIN
+        loops = None
+        try:
+            loops = face.GetEdgesAsCurveLoops()
+        except Exception:
+            loops = None
+        if loops is None:
+            continue
+        try:
+            loop_list = list(loops)
+        except Exception:
+            loop_list = []
+        for loop in loop_list:
+            try:
+                curves = list(loop)
+            except Exception:
+                curves = []
+            for crv in curves:
+                pts = _curve_tessellate_xyz_mm(crv, transform)
+                if len(pts) >= 2:
+                    all_segs.append(pts)
+                    if is_cut:
+                        cut_segs.append(pts)
+    target = cut_segs if cut_segs else all_segs
+    for pts in target:
+        yield pts
+
+
+def _walk_section_visible_geometry(geom_elem, view_dir, transform=None):
+    """Geometría de vista en sección/alzado: cortes + mallas."""
+    if geom_elem is None:
+        return
+    items = []
+    try:
+        for g in geom_elem:
+            items.append(g)
+    except Exception:
+        try:
+            n = int(geom_elem.Size)
+        except Exception:
+            n = 0
+        for i in range(n):
+            try:
+                items.append(geom_elem[i])
+            except Exception:
+                pass
+    for g in items:
+        if g is None:
+            continue
+        if _is_solid_geom(g):
+            for pts in _walk_solid_section_visible_segments(g, view_dir, transform):
+                yield pts
+            continue
+        if _is_mesh_geom(g):
+            for pts in _walk_mesh_segments(g, transform):
+                yield pts
+            continue
+        if _is_curve_geom(g) and not _is_solid_geom(g) and not _is_mesh_geom(g):
+            pts = _curve_tessellate_xyz_mm(g, transform)
+            if len(pts) >= 2:
+                yield pts
+            continue
+        if isinstance(g, GeometryInstance):
+            try:
+                tr_inst = g.Transform
+            except Exception:
+                tr_inst = None
+            tr = tr_inst
+            if transform is not None and tr_inst is not None:
+                try:
+                    tr = transform.Multiply(tr_inst)
+                except Exception:
+                    tr = tr_inst
+            elif transform is not None:
+                tr = transform
+            try:
+                inst = g.GetInstanceGeometry()
+            except Exception:
+                inst = None
+            if inst is None:
+                try:
+                    inst = g.GetSymbolGeometry()
+                except Exception:
+                    inst = None
+            for seg in _walk_section_visible_geometry(inst, view_dir, tr):
+                yield seg
+
+
+def _geometry_section_view_segments_mm(elem, opts, view_dir):
+    if elem is None or opts is None:
+        return []
+    try:
+        geo = elem.get_Geometry(opts)
+    except Exception:
+        geo = None
+    if geo is None:
+        return []
+    segs = []
+    for seg in _walk_section_visible_geometry(geo, view_dir, None):
+        segs.append(seg)
+    return segs
+
+
+def _element_bbox_corners_xyz_mm(elem, view):
+    """Esquinas del bounding box del elemento en mm (modelo)."""
+    bb = None
+    if view is not None:
+        try:
+            bb = elem.get_BoundingBox(view)
+        except Exception:
+            bb = None
+    if bb is None:
+        try:
+            bb = elem.get_BoundingBox(None)
+        except Exception:
+            bb = None
+    if bb is None:
+        return []
+    try:
+        mn, mx = bb.Min, bb.Max
+        corners_ft = [
+            XYZ(float(mn.X), float(mn.Y), float(mn.Z)),
+            XYZ(float(mx.X), float(mn.Y), float(mn.Z)),
+            XYZ(float(mx.X), float(mx.Y), float(mn.Z)),
+            XYZ(float(mn.X), float(mx.Y), float(mn.Z)),
+            XYZ(float(mn.X), float(mn.Y), float(mx.Z)),
+            XYZ(float(mx.X), float(mn.Y), float(mx.Z)),
+            XYZ(float(mx.X), float(mx.Y), float(mx.Z)),
+            XYZ(float(mn.X), float(mx.Y), float(mx.Z)),
+        ]
+    except Exception:
+        return []
+    out = []
+    for c in corners_ft:
+        t = _xyz_to_mm_tuple(c)
+        if t is not None:
+            out.append(t)
+    return out
+
+
+def _element_view_extents_uv_mm(elem, view, origin_mm, u_axis, v_axis):
+    """
+    Extensión AABB proyectada Right×Up (mm), origen = inicio de barra.
+
+    Mismo criterio que ``armado_vigas.revit.elev_geometry.element_view_extents``.
+    """
+    corners = _element_bbox_corners_xyz_mm(elem, view)
+    if not corners:
+        return None
+    us = []
+    vs = []
+    for t in corners:
+        u, v = project_xyz_mm_to_uv(t, origin_mm, u_axis, v_axis)
+        us.append(float(u))
+        vs.append(float(v))
+    if not us or not vs:
+        return None
+    return min(us), max(us), min(vs), max(vs)
+
+
+def _uv_rect_edge_polylines(u0, u1, v0, v1):
+    try:
+        u0, u1 = float(u0), float(u1)
+        v0, v1 = float(v0), float(v1)
+    except Exception:
+        return []
+    if u1 < u0:
+        u0, u1 = u1, u0
+    if v1 < v0:
+        v0, v1 = v1, v0
+    return [
+        [[u0, v0], [u1, v0]],
+        [[u1, v0], [u1, v1]],
+        [[u1, v1], [u0, v1]],
+        [[u0, v1], [u0, v0]],
+    ]
+
+
+def _element_bbox_uv_polylines(elem, view, origin_mm, u_axis, v_axis):
+    """Rectángulo 2D (UV mm) del bbox del elemento en el plano de la vista."""
+    ext = _element_view_extents_uv_mm(elem, view, origin_mm, u_axis, v_axis)
+    if ext is None:
+        return []
+    u0, u1, v0, v1 = ext
+    if (u1 - u0) < _CONTEXT_MIN_EDGE_MM and (v1 - v0) < _CONTEXT_MIN_EDGE_MM:
+        return []
+    return _uv_rect_edge_polylines(u0, u1, v0, v1)
+
+
+def _element_bbox_segments_mm(elem, view=None, transform=None):
+    """Wireframe del bounding box del elemento en mm."""
+    if elem is None:
+        return []
+    bb = None
+    try:
+        bb = elem.get_BoundingBox(view)
+    except Exception:
+        bb = None
+    if bb is None:
+        try:
+            bb = elem.get_BoundingBox(None)
+        except Exception:
+            bb = None
+    if bb is None:
+        return []
+    try:
+        mn, mx = bb.Min, bb.Max
+        corners = [
+            XYZ(float(mn.X), float(mn.Y), float(mn.Z)),
+            XYZ(float(mx.X), float(mn.Y), float(mn.Z)),
+            XYZ(float(mx.X), float(mx.Y), float(mn.Z)),
+            XYZ(float(mn.X), float(mx.Y), float(mn.Z)),
+            XYZ(float(mn.X), float(mn.Y), float(mx.Z)),
+            XYZ(float(mx.X), float(mn.Y), float(mx.Z)),
+            XYZ(float(mx.X), float(mx.Y), float(mx.Z)),
+            XYZ(float(mn.X), float(mx.Y), float(mx.Z)),
+        ]
+    except Exception:
+        return []
+    edges = (
+        (0, 1), (1, 2), (2, 3), (3, 0),
+        (4, 5), (5, 6), (6, 7), (7, 4),
+        (0, 4), (1, 5), (2, 6), (3, 7),
+    )
+    out = []
+    for i, j in edges:
+        try:
+            a = _xyz_to_mm_tuple(_transform_xyz(corners[i], transform))
+            b = _xyz_to_mm_tuple(_transform_xyz(corners[j], transform))
+        except Exception:
+            continue
+        if a is not None and b is not None and _dist3_mm(a, b) >= 0.5:
+            out.append([a, b])
+    return out
+
+
+def _geometry_segments_mm(elem, opts):
+    """Listas de puntos mm por segmento de geometría del elemento."""
+    if elem is None or opts is None:
+        return []
+    try:
+        geo = elem.get_Geometry(opts)
+    except Exception:
+        geo = None
+    if geo is None:
+        return []
+    segs = []
+    for seg in _walk_geometry_curves(geo, None):
+        segs.append(seg)
+    return segs
+
+
+def _walk_geometry_curves(geom_elem, transform=None):
+    """Recorre geometría de elemento y devuelve listas de puntos mm por curva."""
+    if geom_elem is None:
+        return
+    items = []
+    try:
+        for g in geom_elem:
+            items.append(g)
+    except Exception:
+        try:
+            n = int(geom_elem.Size)
+        except Exception:
+            n = 0
+        for i in range(n):
+            try:
+                items.append(geom_elem[i])
+            except Exception:
+                pass
+    for g in items:
+        if g is None:
+            continue
+        if _is_curve_geom(g) and not _is_solid_geom(g) and not _is_mesh_geom(g):
+            pts = _curve_tessellate_xyz_mm(g, transform)
+            if len(pts) >= 2:
+                yield pts
+            continue
+        if _is_solid_geom(g):
+            for pts in _walk_solid_segments(g, transform):
+                yield pts
+            continue
+        if _is_mesh_geom(g):
+            for pts in _walk_mesh_segments(g, transform):
+                yield pts
+            continue
+        if isinstance(g, GeometryInstance):
+            try:
+                tr_inst = g.Transform
+            except Exception:
+                tr_inst = None
+            tr = tr_inst
+            if transform is not None and tr_inst is not None:
+                try:
+                    tr = transform.Multiply(tr_inst)
+                except Exception:
+                    tr = tr_inst
+            elif transform is not None:
+                tr = transform
+            try:
+                inst = g.GetInstanceGeometry()
+            except Exception:
+                inst = None
+            if inst is None:
+                try:
+                    inst = g.GetSymbolGeometry()
+                except Exception:
+                    inst = None
+            for seg in _walk_geometry_curves(inst, tr):
+                yield seg
+
+
+def _vector_dot(a, b):
+    try:
+        return float(a.X) * float(b.X) + float(a.Y) * float(b.Y) + float(a.Z) * float(b.Z)
+    except Exception:
+        return 0.0
+
+
+def _vector_unit(xyz):
+    if xyz is None:
+        return None
+    try:
+        ln = (float(xyz.X) ** 2 + float(xyz.Y) ** 2 + float(xyz.Z) ** 2) ** 0.5
+    except Exception:
+        return None
+    if ln < 1e-12:
+        return None
+    return XYZ(float(xyz.X) / ln, float(xyz.Y) / ln, float(xyz.Z) / ln)
+
+
+def _build_view_projection_frame(view, origin_xyz_ft):
+    """
+    Marco UV alineado con la vista activa (Right/Up en pantalla).
+
+    En sección o alzado usa directamente RightDirection y UpDirection de Revit
+    (mismo sistema que el alzado en pantalla).
+
+    Returns:
+        (origin_mm, u_axis, v_axis) o None
+    """
+    if view is None or origin_xyz_ft is None:
+        return None
+    try:
+        n = _vector_unit(view.ViewDirection)
+        right = _vector_unit(view.RightDirection)
+        up = _vector_unit(view.UpDirection)
+    except Exception:
+        return None
+    if n is None or right is None or up is None:
+        return None
+    try:
+        if _is_section_elevation_view(view):
+            u = right
+            v = up
+            if _vector_dot(v, up) < 0.0:
+                v = XYZ(-float(v.X), -float(v.Y), -float(v.Z))
+        else:
+            u = XYZ(
+                float(right.X) - float(n.X) * _vector_dot(right, n),
+                float(right.Y) - float(n.Y) * _vector_dot(right, n),
+                float(right.Z) - float(n.Z) * _vector_dot(right, n),
+            )
+            u = _vector_unit(u)
+            if u is None:
+                u = right
+            v = n.CrossProduct(u)
+            v = _vector_unit(v)
+            if v is None:
+                return None
+            if _vector_dot(v, up) < 0.0:
+                u = XYZ(-float(u.X), -float(u.Y), -float(u.Z))
+                v = n.CrossProduct(u)
+                v = _vector_unit(v)
+        origin_mm = _xyz_to_mm_tuple(origin_xyz_ft)
+        if origin_mm is None:
+            return None
+        u_ax = (float(u.X), float(u.Y), float(u.Z))
+        v_ax = (float(v.X), float(v.Y), float(v.Z))
+        return origin_mm, u_ax, v_ax
+    except Exception:
+        return None
+
+
+def _polyline_uv_from_xyz_mm(points_xyz_mm, origin_mm, u_axis, v_axis):
+    uv = []
+    for p in points_xyz_mm or []:
+        uv.append(project_xyz_mm_to_uv(p, origin_mm, u_axis, v_axis))
+    if len(uv) < 2:
+        return None
+    try:
+        du = float(uv[-1][0]) - float(uv[0][0])
+        dv = float(uv[-1][1]) - float(uv[0][1])
+        seg_len = (du * du + dv * dv) ** 0.5
+    except Exception:
+        seg_len = 0.0
+    if seg_len < _CONTEXT_MIN_EDGE_MM:
+        return None
+    return [[float(u), float(v)] for u, v in uv]
+
+
+def _collect_concrete_context_polylines_uv(
+    doc, view, origin_mm, u_axis, v_axis, skip_element_id=None
+):
+    """
+    Polilíneas UV (mm) del hormigón visible en ``view`` para el esquema de UI.
+
+    Muros, vigas, fundaciones, columnas y losas de hormigón: silueta AABB
+    proyectada Right×Up (como Armado Vigas).
+    """
+    if doc is None or view is None or origin_mm is None:
+        return [], 0, []
+    polylines = []
+    fill_rects_uv = []
+    n_elems = 0
+    try:
+        skip_int = _element_id_int(skip_element_id) if skip_element_id else None
+    except Exception:
+        skip_int = None
+    for cat in _CATS_CONCRETE_IN_VIEW:
+        try:
+            coll = (
+                FilteredElementCollector(doc, view.Id)
+                .OfCategory(cat)
+                .WhereElementIsNotElementType()
+            )
+        except Exception:
+            continue
+        try:
+            elems = list(coll)
+        except Exception:
+            elems = []
+        for elem in elems:
+            if elem is None:
+                continue
+            if skip_int is not None:
+                try:
+                    if _element_id_int(elem.Id) == skip_int:
+                        continue
+                except Exception:
+                    pass
+            if not _element_is_concrete_for_elevation_canvas(elem):
+                continue
+            n_elems += 1
+            if n_elems > _CONTEXT_MAX_ELEMENTS:
+                break
+            ext = _element_view_extents_uv_mm(
+                elem, view, origin_mm, u_axis, v_axis
+            )
+            if ext is not None:
+                u0, u1, v0, v1 = ext
+                if (u1 - u0) >= _CONTEXT_MIN_EDGE_MM or (
+                    v1 - v0
+                ) >= _CONTEXT_MIN_EDGE_MM:
+                    fill_rects_uv.append(
+                        [float(u0), float(u1), float(v0), float(v1)]
+                    )
+        if n_elems > _CONTEXT_MAX_ELEMENTS:
+            break
+    return polylines, n_elems, fill_rects_uv
+
+
 def _curves_to_xyz_mm(curves):
     """Vértices de la polilínea centerline en mm (mundo Revit)."""
     pts = []
@@ -1820,7 +2920,7 @@ def _curves_to_xyz_mm(curves):
     return pts
 
 
-def prepare_division_session(doc, rebar, concrete_grade=None):
+def prepare_division_session(doc, rebar, concrete_grade=None, view=None):
     """
     Datos para la UI multipunto (sin crear elementos).
 
@@ -1840,21 +2940,57 @@ def prepare_division_session(doc, rebar, concrete_grade=None):
     total_ft = sum(_curve_length(c) for c in curves)
     total_mm = internal_to_mm(total_ft)
     plan = None
-    try:
-        from dividir_rebar_punto_geom import build_plan_polyline_mm
-
-        n = _rebar_normal(rebar)
-        normal_t = None
-        if n is not None:
+    context_polylines_uv = []
+    context_fill_rects_uv = []
+    context_n_elems = 0
+    xyz_mm = _curves_to_xyz_mm(curves)
+    origin_xyz_ft = None
+    if curves:
+        try:
+            origin_xyz_ft = _curve_endpoints(curves[0])[0]
+        except Exception:
+            origin_xyz_ft = None
+    frame = None
+    if view is not None and origin_xyz_ft is not None:
+        frame = _build_view_projection_frame(view, origin_xyz_ft)
+    if frame is not None and xyz_mm:
+        origin_mm, u_axis, v_axis = frame
+        try:
+            plan = build_plan_polyline_from_frame_mm(xyz_mm, origin_mm, u_axis, v_axis)
+        except Exception:
+            plan = None
+        if plan:
             try:
-                normal_t = (float(n.X), float(n.Y), float(n.Z))
+                (
+                    context_polylines_uv,
+                    context_n_elems,
+                    context_fill_rects_uv,
+                ) = _collect_concrete_context_polylines_uv(
+                    doc,
+                    view,
+                    origin_mm,
+                    u_axis,
+                    v_axis,
+                    skip_element_id=rebar.Id,
+                )
             except Exception:
-                normal_t = None
-        plan = build_plan_polyline_mm(
-            _curves_to_xyz_mm(curves), normal=normal_t
-        )
-    except Exception:
-        plan = None
+                context_polylines_uv = []
+                context_fill_rects_uv = []
+                context_n_elems = 0
+    if plan is None:
+        try:
+            from dividir_rebar_punto_geom import build_plan_polyline_mm
+
+            n = _rebar_normal(rebar)
+            normal_t = None
+            if n is not None:
+                try:
+                    normal_t = (float(n.X), float(n.Y), float(n.Z))
+                except Exception:
+                    normal_t = None
+            plan = build_plan_polyline_mm(xyz_mm, normal=normal_t)
+        except Exception:
+            plan = None
     session = {
         u"rebar_id": rebar.Id,
         u"rebar_id_int": _element_id_int(rebar.Id),
@@ -1865,6 +3001,13 @@ def prepare_division_session(doc, rebar, concrete_grade=None):
         u"n_positions": _cantidad_posiciones(rebar),
         u"layout": _layout_rule_name(rebar),
         u"concrete_grade": concrete_grade,
+        u"context_polylines_uv": context_polylines_uv,
+        u"context_fill_rects_uv": context_fill_rects_uv,
+        u"context_n_elems": int(context_n_elems),
+        u"context_n_polylines": len(context_polylines_uv) + len(context_fill_rects_uv),
+        u"view_is_section_elevation": bool(
+            view is not None and _is_section_elevation_view(view)
+        ),
     }
     if plan and plan.get(u"points_uv"):
         session[u"plan_points_uv"] = plan[u"points_uv"]
@@ -2784,12 +3927,14 @@ def divide_rebar_at_cuts(
     lap_mode=None,
     place_lap_dims=True,
     lap_dim_prefer_above=False,
+    progress=None,
 ):
     """
     Divide ``rebar`` en N cortes (mm desde el inicio de la centerline) con traslape.
 
     ``place_lap_dims``: si False, coloca Detail de empalme sin cotas.
     ``lap_dim_prefer_above``: cotas hacia Up de la vista (sobre barras).
+    ``progress``: ``DividirRebarProgress`` opcional (fases durante el proceso).
 
     Returns:
         (ok, mensaje, ids_nuevos_list_or_None, meta_or_None)
@@ -2798,6 +3943,8 @@ def divide_rebar_at_cuts(
         return False, u"Parámetros incompletos.", None, None
     if not cuts_mm:
         return False, u"Indique al menos un punto de corte.", None, None
+
+    _progress_step(progress, u"Preparando")
 
     ok, err, _curves = check_eligibility(doc, rebar)
     if not ok:
@@ -2954,6 +4101,7 @@ def divide_rebar_at_cuts(
     t.Start()
     try:
         new_rebars = []
+        _progress_step(progress, u"Creando tramos")
         for i, chain in enumerate(chains):
             is_first = i == 0
             is_last = i == n_pieces - 1
@@ -2994,6 +4142,7 @@ def divide_rebar_at_cuts(
                 return False, u"CreateFromCurves devolvió None (tramo {0}).".format(i + 1), None, None
             new_rebars.append(rb)
 
+        _progress_step(progress, u"Layout y parámetros")
         rule_src = _layout_rule_name(rebar)
         need_layout = n_pos > 1 or rule_src == u"MaximumSpacing"
         if need_layout:
@@ -3053,6 +4202,7 @@ def divide_rebar_at_cuts(
             shape_info[u"target_a"] = shape_targets[0]
             shape_info[u"target_b"] = shape_targets[-1]
 
+        _progress_step(progress, u"Presentación y empalmes")
         # Tras layout/shape + Regenerate: heredar Show Middle / FirstLast / etc.
         if presentation_snaps:
             try:
@@ -3117,6 +4267,7 @@ def divide_rebar_at_cuts(
                 lap_detail_info[u"n_fail"] = len(lap_segments)
                 lap_detail_info[u"errors"].append(_as_unicode(ex_lap_place))
 
+        _progress_step(progress, u"Finalizando división")
         doc.Delete(old_id)
         t.Commit()
     except Exception as ex:
@@ -3128,6 +4279,10 @@ def divide_rebar_at_cuts(
 
     n_unobscured = 0
     n_tags = 0
+    n_mra = 0
+    annotate_avisos = []
+    used_default_tags = False
+    _progress_step(progress, u"Visibilidad en vista")
     if target_view_id is not None:
         try:
             target_view = doc.GetElement(target_view_id)
@@ -3146,21 +4301,39 @@ def divide_rebar_at_cuts(
                     pass
                 n_unobscured = 0
 
-    if tag_infos:
-        t3 = Transaction(doc, u"Arainco: Etiquetar barras divididas")
-        t3.Start()
-        try:
-            from dividir_rebar_punto_tags import tag_divided_rebars
+    _progress_step(progress, u"Etiquetas y MRA")
+    # Etiquetas + MRA «Recorrido Barras» (siempre; soft-fail).
+    t3 = Transaction(doc, u"Arainco: Etiquetar y MRA tras división")
+    t3.Start()
+    try:
+        from dividir_rebar_punto_tags import annotate_divided_rebars
 
-            rebars2 = [doc.GetElement(eid) for eid in new_ids]
-            n_tags = tag_divided_rebars(doc, tag_infos, rebars2)
-            t3.Commit()
-        except Exception:
+        rebars2 = [doc.GetElement(eid) for eid in new_ids]
+        ann_view = None
+        if target_view_id is not None:
             try:
-                t3.RollBack()
+                ann_view = doc.GetElement(target_view_id)
             except Exception:
-                pass
-            n_tags = 0
+                ann_view = None
+        if not isinstance(ann_view, View):
+            ann_view = view if isinstance(view, View) else None
+        ann = annotate_divided_rebars(
+            doc, ann_view, rebars2, tag_infos=tag_infos
+        ) or {}
+        n_tags = int(ann.get(u"n_tags") or 0)
+        n_mra = int(ann.get(u"n_mra") or 0)
+        annotate_avisos = list(ann.get(u"avisos") or [])
+        used_default_tags = bool(ann.get(u"used_default_tags"))
+        t3.Commit()
+    except Exception:
+        try:
+            t3.RollBack()
+        except Exception:
+            pass
+        n_tags = 0
+        n_mra = 0
+        annotate_avisos = []
+        used_default_tags = False
 
     meta = dict(meta or {})
     meta[u"diameter_mm"] = d_mm
@@ -3177,6 +4350,9 @@ def divide_rebar_at_cuts(
     ]
     meta[u"armadura_params_copied"] = int(n_armadura_params)
     meta[u"tags_created"] = int(n_tags)
+    meta[u"mra_created"] = int(n_mra)
+    meta[u"annotate_avisos"] = list(annotate_avisos)
+    meta[u"used_default_tags"] = bool(used_default_tags)
     meta[u"shape_rule"] = shape_info
     meta[u"conjunto_guid"] = conjunto_guid
     meta[u"n_peer_rebars"] = len(peer_rebars or [])
@@ -3273,6 +4449,34 @@ def divide_rebar_at_cuts(
         msg = u"{0} · etiquetas ×{1}".format(msg, n_tags)
     elif tag_infos:
         msg = u"{0} · aviso: no se recrearon etiquetas".format(msg)
+    elif annotate_avisos:
+        tag_av = None
+        for av in annotate_avisos:
+            try:
+                al = _as_unicode(av).lower()
+            except Exception:
+                al = u""
+            if u"etiqueta" in al:
+                tag_av = av
+                break
+        if tag_av:
+            msg = u"{0} · aviso: {1}".format(msg, tag_av)
+    if n_mra > 0:
+        msg = u"{0} · MRA recorrido ×{1}".format(msg, n_mra)
+    else:
+        mra_av = None
+        for av in annotate_avisos:
+            try:
+                al = _as_unicode(av).lower()
+            except Exception:
+                al = u""
+            if u"mra" in al or u"multi-rebar" in al or u"recorrido" in al:
+                mra_av = av
+                break
+        if mra_av:
+            msg = u"{0} · aviso: {1}".format(msg, mra_av)
+        elif target_view_id is not None:
+            msg = u"{0} · aviso: MRA «Recorrido Barras» no aplicado".format(msg)
     n_lap_ok = int(lap_detail_info.get(u"n_ok") or 0)
     n_lap_fail = int(lap_detail_info.get(u"n_fail") or 0)
     n_dims_ok = int(lap_detail_info.get(u"n_dims_ok") or 0)

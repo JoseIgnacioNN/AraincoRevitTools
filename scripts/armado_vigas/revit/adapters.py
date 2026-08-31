@@ -14,6 +14,7 @@ from Autodesk.Revit.DB import BuiltInCategory, FamilyInstance, LocationCurve
 _FRAMING_CAT = int(BuiltInCategory.OST_StructuralFraming)
 _COL_CAT = int(BuiltInCategory.OST_StructuralColumns)
 _WALL_CAT = int(BuiltInCategory.OST_Walls)
+_FLOOR_CAT = int(BuiltInCategory.OST_Floors)
 
 
 def elements_from_refs(document, refs_or_elements):
@@ -94,46 +95,61 @@ def _element_label(el, prefix):
 
 
 def _apoyo_span_mm_in_view(el, view):
-    """Ancho del apoyo en el plano de la vista activa (mm)."""
-    if view is None:
+    """Ancho del apoyo proyectado sobre RightDirection de la vista (mm)."""
+    if view is None or el is None:
         return None
     try:
-        bbox = el.get_BoundingBox(view)
-        if bbox is None:
+        from armado_vigas.revit.elev_geometry import element_view_extents
+
+        ext = element_view_extents(el, view)
+        if not ext:
             return None
-        dx = abs(float(bbox.Max.X) - float(bbox.Min.X))
-        dy = abs(float(bbox.Max.Y) - float(bbox.Min.Y))
-        span_ft = min(dx, dy) if dx > 1e-9 and dy > 1e-9 else max(dx, dy)
-        if span_ft < 1e-9:
-            return None
-        return int(round(span_ft * 304.8))
+        w = int(ext.get("widthMm") or 0)
+        return w if w > 0 else None
     except Exception:
         return None
 
 
 def apoyos_from_elements(elements, document=None, view=None):
-    """Lista ordenada de apoyos (columnas/muros) con id legible."""
+    """Lista ordenada de apoyos (columnas/muros/losas) con id legible + proyección vista."""
+    from armado_vigas.revit.elev_geometry import enrich_apoyo_view_geometry
+
     apoyos = []
     for el in elements or []:
         try:
             cid = int(el.Category.Id.IntegerValue)
         except Exception:
             continue
-        span_mm = _apoyo_span_mm_in_view(el, view)
         if cid == _COL_CAT:
             entry = {"id": _element_label(el, u"C"), "kind": "column", "element": el}
-            if span_mm:
-                entry["widthMm"] = span_mm
             apoyos.append(entry)
         elif cid == _WALL_CAT:
             entry = {"id": _element_label(el, u"M"), "kind": "wall", "element": el}
-            if span_mm:
-                entry["thicknessMm"] = span_mm
             apoyos.append(entry)
+        elif cid == _FLOOR_CAT:
+            entry = {"id": _element_label(el, u"L"), "kind": "floor", "element": el}
+            apoyos.append(entry)
+    for entry in apoyos:
+        enrich_apoyo_view_geometry(entry, view)
+        # Fallback si no hubo bbox de vista
+        if not entry.get("widthMm"):
+            span_mm = _apoyo_span_mm_in_view(entry.get("element"), view)
+            if span_mm:
+                entry["widthMm"] = span_mm
+                if entry.get("kind") == "wall":
+                    entry["thicknessMm"] = span_mm
+                elif entry.get("kind") == "floor" and not entry.get("thicknessMm"):
+                    # Espesor de losa ≈ altura proyectada (V) si se calculó.
+                    try:
+                        h = int(entry.get("heightMm") or 0)
+                        if h > 0:
+                            entry["thicknessMm"] = h
+                    except Exception:
+                        pass
     return apoyos
 
 
-def domain_beams_from_framing(document, framing_elements, apoyos=None):
+def domain_beams_from_framing(document, framing_elements, apoyos=None, view=None):
     apoyos = apoyos or []
     beams = []
     for i, el in enumerate(framing_elements or []):
@@ -150,7 +166,7 @@ def domain_beams_from_framing(document, framing_elements, apoyos=None):
                 name = p.AsString().strip() or name
         except Exception:
             pass
-        beams.append({
+        beam = {
             "id": name,
             "elementIdInt": _element_id_int(el),
             "element": el,
@@ -166,16 +182,27 @@ def domain_beams_from_framing(document, framing_elements, apoyos=None):
             "estExtSpacing": ESTRIBO_SPACING_DEFAULT_EXT,
             "estCentDiam": 8,
             "estCentSpacing": ESTRIBO_SPACING_DEFAULT_CENT,
-            "estConfin": u"Perimetral",
+            "estZonasMode": u"auto",
+            "estConfin": u"Dibujo libre",
+            "estConfDraft": {"perimetral": False, "pairs": [], "ties": []},
             "supleInfEnabled": False,
             "diamSupleInf": 16,
             "nSupleInf": 2,
             "supleSupEnabled": False,
-            "supleSupStartEnabled": True,
-            "supleSupEndEnabled": True,
+            "supleSupStartEnabled": False,
+            "supleSupEndEnabled": False,
             "diamSupleSup": 16,
             "nSupleSup": 2,
             "colStart": u"",
             "colEnd": u"",
-        })
+        }
+        beams.append(beam)
+    if view is not None:
+        try:
+            from armado_vigas.revit.elev_geometry import enrich_beam_view_geometry
+
+            for beam in beams:
+                enrich_beam_view_geometry(beam, view, document=document)
+        except Exception:
+            pass
     return beams

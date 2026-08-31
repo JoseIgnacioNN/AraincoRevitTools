@@ -3,7 +3,7 @@
 Material estructural Concrete y extracción de sólidos — subconjunto portable.
 
 Extraído de ``geometria_colision_vigas`` para el paquete autocontenido de
-``20_ContornoHormigonVista.pushbutton`` (sin depender de scripts/ de la extensión).
+``02_RedibujarContorno.pushbutton`` (botón ligero; lógica en ``scripts/``).
 """
 
 from Autodesk.Revit.DB import (

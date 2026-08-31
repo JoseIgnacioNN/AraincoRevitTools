@@ -2,7 +2,7 @@
 """
 GUID de corrida (``Armadura_Conjunto_GUID``) — compartido por herramientas de armadura.
 
-Copia mínima de ``armado_muros_rebar_params`` / FloorGeometryCanvas ``conjunto_guid``
+Copia mínima de ``armado_muros_rebar_params`` / ``conjunto_guid``
 sin depender de otros pushbuttons.
 """
 
@@ -18,6 +18,7 @@ ARMADURA_MALLA_PARAM = u"Armadura_Malla"
 ARMADURA_ARAINCO_PARAM = u"Armadura_Arainco"
 ARMADURA_UBICACION_PARAM = u"Armadura_Ubicacion"
 ARMADURA_NIVEL_PARAM = u"Armadura_Nivel"
+ARMADURA_POSICION_PARAM = u"Armadura_Posicion"
 ARMADURA_UBICACION_INFERIOR = u"F"
 ARMADURA_UBICACION_SUPERIOR = u"F'"
 _APPDOMAIN_CONJUNTO_GUID_KEY = u"Arainco_ArmadoColumnas_Conjunto_GUID"
@@ -312,3 +313,10 @@ def stamp_armadura_nivel(element, valor):
     if element is None or not valor:
         return False
     return _set_element_string_param(element, ARMADURA_NIVEL_PARAM, valor)
+
+
+def stamp_armadura_posicion(element, valor):
+    """Escribe ``Armadura_Posicion`` (p. ej. ``i`` / ``s``) si el parámetro es editable."""
+    if element is None or not valor:
+        return False
+    return _set_element_string_param(element, ARMADURA_POSICION_PARAM, valor)

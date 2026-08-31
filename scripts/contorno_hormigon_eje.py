@@ -383,16 +383,43 @@ def _planar_face_mas_grande_sobre_plano(solid_cut, plane_ref, tol_dist):
     return best
 
 
-def _buscar_cara_corte(solid_merged, plane_ref, origin):
+def _buscar_cara_corte(solid_merged, plane_ref, origin, preferred_normal=None):
+    """
+    Corta el sólido y busca la cara planar de sección.
+
+    ``preferred_normal``: si se indica (p. ej. ViewDirection), se prueba antes
+    que ±Normal del plano del eje (menos intentos fallidos caros).
+    """
     if solid_merged is None or plane_ref is None:
         return None
     pn = _vector_unitario(plane_ref.Normal)
     if pn is None:
         return None
+    normals = []
+    pref = _vector_unitario(preferred_normal) if preferred_normal is not None else None
+    if pref is not None:
+        normals.append(pref)
+        normals.append(XYZ(-pref.X, -pref.Y, -pref.Z))
+    normals.append(pn)
+    normals.append(XYZ(-pn.X, -pn.Y, -pn.Z))
+    # Deduplicar casi-paralelas.
+    ordered = []
+    for nn in normals:
+        if nn is None:
+            continue
+        dup = False
+        for prev in ordered:
+            try:
+                if abs(abs(float(nn.DotProduct(prev))) - 1.0) < 1e-6:
+                    dup = True
+                    break
+            except Exception:
+                pass
+        if not dup:
+            ordered.append(nn)
     tols = [_TOL_DIST_PLANO_FT, 0.05, 0.12, 0.25]
     for td in tols:
-        for flip in (False, True):
-            nn = XYZ(-pn.X, -pn.Y, -pn.Z) if flip else pn
+        for nn in ordered:
             try:
                 cut_plane = Plane.CreateByNormalAndOrigin(nn, origin)
             except Exception:
@@ -486,11 +513,11 @@ def _proyectar_curva_a_plano(curve, plane):
         return None
 
 
-def _nombre_grupo_unico(document, base):
-    nombre = _as_unicode(base).strip()
-    if not nombre:
-        nombre = u"CONTORNO"
+def recopilar_nombres_grupos(document):
+    """Set de nombres de ``GroupType`` existentes."""
     existentes = set()
+    if document is None:
+        return existentes
     try:
         from Autodesk.Revit.DB import GroupType
 
@@ -501,11 +528,35 @@ def _nombre_grupo_unico(document, base):
                 pass
     except Exception:
         pass
+    return existentes
+
+
+def _nombre_grupo_unico(document, base, nombres_existentes=None):
+    """
+    Nombre de grupo único.
+
+    Si se pasa ``nombres_existentes`` (set mutable), se reutiliza y se actualiza.
+    """
+    nombre = _as_unicode(base).strip()
+    if not nombre:
+        nombre = u"CONTORNO"
+    if nombres_existentes is None:
+        existentes = recopilar_nombres_grupos(document)
+    else:
+        existentes = nombres_existentes
     if nombre not in existentes:
+        try:
+            existentes.add(nombre)
+        except Exception:
+            pass
         return nombre
     for i in range(2, 1000):
         candidato = u"{0} ({1})".format(nombre, i)
         if candidato not in existentes:
+            try:
+                existentes.add(candidato)
+            except Exception:
+                pass
             return candidato
     return nombre
 

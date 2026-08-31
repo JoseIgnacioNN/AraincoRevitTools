@@ -24,7 +24,11 @@ def _beam_to_canvas_dict(beam, index):
         "estExtSpacing": int(beam.get("estExtSpacing") or ESTRIBO_SPACING_DEFAULT_EXT),
         "estCentDiam": int(beam.get("estCentDiam") or 8),
         "estCentSpacing": int(beam.get("estCentSpacing") or ESTRIBO_SPACING_DEFAULT_CENT),
-        "estConfin": beam.get("estConfin") or u"Perimetral",
+        "estZonasMode": beam.get("estZonasMode") or u"auto",
+        "estConfin": beam.get("estConfin") or u"Dibujo libre",
+        "estConfDraft": beam.get("estConfDraft") or {
+            "perimetral": False, "pairs": [], "ties": []
+        },
         "supleInfEnabled": bool(beam.get("supleInfEnabled")),
         "diamSupleInf": int(beam.get("diamSupleInf") or 16),
         "nSupleInf": int(beam.get("nSupleInf") or 2),

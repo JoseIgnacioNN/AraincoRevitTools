@@ -68,6 +68,15 @@ def _largo_pata_l_tabla_mm(meta, diam_mm):
         except Exception:
             pass
     try:
+        from armado_vigas.domain.concrete_lengths import (
+            hook_mm_for_diameter,
+            session_concrete_grade,
+        )
+
+        return float(hook_mm_for_diameter(diam_mm, session_concrete_grade()))
+    except Exception:
+        pass
+    try:
         from geometria_empotramiento_extremos import _hook_mm_desde_diametro
 
         return float(_hook_mm_desde_diametro(diam_mm))
@@ -200,9 +209,70 @@ def _centerline_chain(rebar, pos_idx=0):
     return [crvs[i] for i in range(crvs.Count)]
 
 
+def _curva_invertida(curve):
+    """Invierte una curva manteniendo el tipo (CreateReversed o Line)."""
+    if curve is None:
+        return None
+    try:
+        rev = curve.CreateReversed()
+        if rev is not None:
+            return rev
+    except Exception:
+        pass
+    try:
+        return Line.CreateBound(curve.GetEndPoint(1), curve.GetEndPoint(0))
+    except Exception:
+        return None
+
+
+def _cadena_invertida(chain):
+    """Invierte orden y sentido de cada curva (polilínea sigue conectada)."""
+    if not chain:
+        return None
+    out = []
+    for c in reversed(list(chain)):
+        rc = _curva_invertida(c)
+        if rc is None:
+            return None
+        out.append(rc)
+    return out
+
+
+def _ensure_longest_is_major_segment(chain):
+    """
+    Revit toma la **primera curva** como Major Segment.
+
+    En longitudinales SUP/INF el major debe ser el tramo más largo (eje de viga),
+    nunca la pata L. Si el más largo está al final, se invierte la cadena.
+    Si está en el medio (U: pata–vano–pata) no se puede poner primero sin
+    romper la polilínea; se deja el orden (shape 03).
+    """
+    if not chain or len(chain) < 2:
+        return chain
+    lengths = []
+    for c in chain:
+        try:
+            lengths.append(float(c.Length))
+        except Exception:
+            lengths.append(0.0)
+    i_max = 0
+    for i in range(1, len(lengths)):
+        if lengths[i] > lengths[i_max]:
+            i_max = i
+    if i_max <= 0:
+        return chain
+    if i_max == len(chain) - 1:
+        rev = _cadena_invertida(chain)
+        return rev if rev else chain
+    return chain
+
+
 def _cadena_con_patas_l(chain, n_face, largo_inicio_mm, largo_fin_mm, leg_dir_fn=None):
     """
     Inserta segmentos de pata L al inicio y/o fin de ``chain`` (lista de ``Curve``).
+
+    Al devolver, el tramo más largo queda primero (Major Segment), salvo U con
+    vano en el medio.
     """
     if not chain:
         return None, u"Sin curvas de eje."
@@ -240,6 +310,7 @@ def _cadena_con_patas_l(chain, n_face, largo_inicio_mm, largo_fin_mm, leg_dir_fn
 
     if le_i <= 1e-9 and le_f <= 1e-9:
         return None, u"Sin patas L solicitadas."
+    out = _ensure_longest_is_major_segment(out)
     return out, None
 
 
@@ -442,7 +513,13 @@ def _try_create_from_rebar_shape_named(
 
 
 def _crear_rebar_desde_cadena(
-    document, host, rebar_src, new_chain, norm_candidates=None, shape_name_priority=None
+    document,
+    host,
+    rebar_src,
+    new_chain,
+    norm_candidates=None,
+    shape_name_priority=None,
+    allow_rebar_shape=True,
 ):
     if (
         document is None
@@ -480,7 +557,7 @@ def _crear_rebar_desde_cadena(
     for nvec in norms:
         for o0, o1 in orient_pairs:
             new_rb = None
-            if shape_name_priority:
+            if allow_rebar_shape and shape_name_priority:
                 new_rb = _try_create_from_rebar_shape_named(
                     document,
                     new_chain,
@@ -494,7 +571,7 @@ def _crear_rebar_desde_cadena(
                 )
             if new_rb is not None:
                 return new_rb
-            if _try_create_l_from_rebar_shape_2seg is not None:
+            if allow_rebar_shape and _try_create_l_from_rebar_shape_2seg is not None:
                 try:
                     new_rb = _try_create_l_from_rebar_shape_2seg(
                         document, new_chain, host, nvec, bar_type, style, o0, o1
@@ -527,6 +604,7 @@ def aplicar_patas_l_polilinea(
     leg_dir_fn=None,
     layout_fallback=None,
     norm_candidatos=None,
+    allow_rebar_shape=True,
 ):
     """
     Sustituye ``rebar`` por una polilínea con patas L en extremos con gancho (sin ``RebarHookType``).
@@ -558,7 +636,7 @@ def aplicar_patas_l_polilinea(
         return rebar, err_chain or u"Cadena L inválida."
 
     shape_prio = None
-    if gi and gf:
+    if allow_rebar_shape and gi and gf:
         shape_prio = REBAR_SHAPE_NOMBRE_DEFECTO
 
     orig_id = rebar.Id
@@ -569,6 +647,7 @@ def aplicar_patas_l_polilinea(
         new_chain,
         norm_candidates=norm_candidatos,
         shape_name_priority=shape_prio,
+        allow_rebar_shape=allow_rebar_shape,
     )
     if new_rb is None:
         return rebar, u"CreateFromCurves (polilínea L) devolvió None (n_curvas={0}).".format(
@@ -576,10 +655,11 @@ def aplicar_patas_l_polilinea(
         )
 
     ok_lay, err_lay = _copy_layout_rebar_shape_driven(rebar, new_rb)
-    if not ok_lay and layout_fallback is not None:
+    if layout_fallback is not None:
         try:
             ok_lay = bool(layout_fallback(new_rb))
-            err_lay = u"" if ok_lay else u"Fallback de layout falló."
+            if not ok_lay:
+                err_lay = err_lay or u"Layout tras pata L falló."
         except Exception as ex:
             ok_lay = False
             err_lay = unicode(ex)

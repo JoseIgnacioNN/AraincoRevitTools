@@ -194,8 +194,12 @@ def ensure_paths(pushbutton_dir_path=None):
             if sub not in ordered:
                 ordered.append(sub)
         ordered.append(local)
-    if ext and ext not in ordered:
-        ordered.append(ext)
+    if ext:
+        for sub in _portable_import_roots(ext):
+            if sub not in ordered:
+                ordered.append(sub)
+        if ext not in ordered:
+            ordered.append(ext)
     if muros and muros not in ordered:
         ordered.append(muros)
     for d in reversed(ordered):

@@ -22,9 +22,14 @@ def aplicar_colision_extremos_fibra(
     diam_mm,
     resolver_inicio=True,
     resolver_fin=True,
+    end_mode_start=None,
+    end_mode_end=None,
 ):
     """
     Aplica :func:`aplicar_extremos_a_linea_fusionada` (reglas Armado vigas sup/inf).
+
+    ``end_mode_start`` / ``end_mode_end``: `auto`|`emp`|`pata_l` sobre extremos
+    **0/1 de la curva** (no del canvas).
 
     Returns:
         ``(linea, meta_inicio, meta_fin)``
@@ -37,4 +42,6 @@ def aplicar_colision_extremos_fibra(
         diam_mm,
         resolver_inicio=resolver_inicio,
         resolver_fin=resolver_fin,
+        end_mode_start=end_mode_start,
+        end_mode_end=end_mode_end,
     )

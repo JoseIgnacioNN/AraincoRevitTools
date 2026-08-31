@@ -3,7 +3,11 @@
 
 from __future__ import division
 
-from armado_vigas.domain.laterales import lateral_clear_mm_for_chain
+from armado_vigas.domain.laterales import (
+    LATERALES_DIAM_DEFAULT,
+    lateral_clear_mm_for_chain,
+    session_n_laterales,
+)
 from armado_vigas.revit.laterales_colision import build_lateral_collision_ctx
 from armado_vigas.revit.rebar_resources import resolve_bar_type_mm
 
@@ -19,9 +23,11 @@ except Exception:
     _place_lateral_on_beam_aligned_chain = None
 
 
-def colocar_laterales(document, session):
+def colocar_laterales(document, session, view=None):
     """
     Coloca laterales por cadena colineal (dos Rebar por cara ±ancho).
+
+    ``view``: vista activa para forzar Unobscured OFF al finalizar (opcional).
 
     Returns:
         ``(n_barras, avisos, rebars_laterales, err)`` — ``rebars_laterales`` aparte de longitudinales.
@@ -40,12 +46,11 @@ def colocar_laterales(document, session):
     ):
         return 0, [], [], u"No se cargó armadura_vigas_capas (laterales)."
 
-    try:
-        n_lat = max(1, int(session.nLaterales or 1))
-    except Exception:
-        n_lat = 1
+    n_lat = session_n_laterales(session, 0)
+    if n_lat < 1:
+        return 0, [], [], None
 
-    diam = getattr(session, "diamLaterales", None) or 16
+    diam = getattr(session, "diamLaterales", None) or LATERALES_DIAM_DEFAULT
     bar_type = resolve_bar_type_mm(document, diam)
     if bar_type is None:
         return (
@@ -65,8 +70,14 @@ def colocar_laterales(document, session):
     beams_by_id = getattr(session, "domain_beams_by_element_id", None) or {}
 
     for chain in chains:
-        clear_mm = lateral_clear_mm_for_chain(beams_by_id, chain)
+        clear_mm = lateral_clear_mm_for_chain(
+            beams_by_id, chain, bar_diam_mm=diam,
+        )
         collision_ctx = build_lateral_collision_ctx(session, chain, diam)
+        # Recolecta avisos de estirón/empotramiento (mismas reglas SUP/INF).
+        chain_avisos = []
+        if collision_ctx is not None:
+            collision_ctx[u"avisos"] = chain_avisos
         if len(chain) == 1:
             n, err = _place_lateral_on_beam(
                 document,
@@ -90,6 +101,11 @@ def colocar_laterales(document, session):
                 collision_ctx=collision_ctx,
             )
         total += int(n or 0)
+        if chain_avisos:
+            # Deduplicar mensajes de extremos (una vez por cadena).
+            for msg in chain_avisos:
+                if msg and msg not in avisos:
+                    avisos.append(msg)
         if err:
             if n:
                 avisos.append(err)
@@ -99,5 +115,29 @@ def colocar_laterales(document, session):
                 except Exception:
                     ids = u"?"
                 avisos.append(u"[{0}] laterales: {1}".format(ids, err))
+
+    # Al crear, Revit suele dejar Unobscured ON; quitarlo de inmediato en la vista.
+    if collected and view is not None and document is not None:
+        try:
+            from bimtools_rebar_3d_visibility import ensure_rebar_obscured_in_view
+
+            ensure_rebar_obscured_in_view(document, collected, view)
+        except Exception:
+            pass
+        for rb in collected:
+            if rb is None:
+                continue
+            try:
+                el = document.GetElement(rb.Id) or rb
+            except Exception:
+                el = rb
+            try:
+                el.SetUnobscuredInView(view, False)
+            except Exception:
+                pass
+            try:
+                el.SetSolidInView(view, False)
+            except Exception:
+                pass
 
     return total, avisos, collected, None

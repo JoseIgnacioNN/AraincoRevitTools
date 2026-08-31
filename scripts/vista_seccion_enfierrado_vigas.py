@@ -43,7 +43,7 @@ from Autodesk.Revit.DB import (
 )
 
 # Si es False, ``crear_vistas_seccion_revision_wall_foundation`` no crea vistas (solo zapata corrida).
-CREAR_SECCION_REVISION_WALL_FOUNDATION = True
+CREAR_SECCION_REVISION_WALL_FOUNDATION = False
 
 # Far Clip Offset por defecto en vistas de sección generadas (mm).
 _FAR_CLIP_OFFSET_MM_DEFECTO = 100.0

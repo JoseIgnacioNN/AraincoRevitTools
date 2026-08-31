@@ -46,14 +46,13 @@ def run_pyrevit(revit_globals):
     import clr
 
     clr.AddReference("RevitAPIUI")
-    from Autodesk.Revit.UI import TaskDialog
 
     from armado_vigas.revit.selection import (
         pick_lote_inicial,
-        show_selection_instructions,
         validate_initial_selection,
     )
     from armado_vigas.revit.session import SESSION
+    from armado_vigas.ui.instruction_dialog import DIALOG_TITLE, show_info
 
     uiapp = _resolve_uiapp(revit_globals)
     pb = os.environ.get("ARAINCO_ARMADO_VIGAS_PB_DIR")
@@ -72,7 +71,11 @@ def run_pyrevit(revit_globals):
 
     uidoc = uiapp.ActiveUIDocument
     if uidoc is None:
-        TaskDialog.Show(u"Arainco: Armado vigas", u"No hay documento activo con vista.")
+        show_info(
+            u"No hay documento activo con vista.",
+            title=DIALOG_TITLE,
+            uiapp=uiapp,
+        )
         return
 
     from armado_vigas.ui.window import get_existing_armado_vigas_window, show_armado_vigas_window
@@ -81,16 +84,13 @@ def run_pyrevit(revit_globals):
         return show_armado_vigas_window(uiapp, pb)
 
     SESSION.reset()
-    if not show_selection_instructions(uiapp):
-        return
-
     refs = pick_lote_inicial(uidoc)
     if not refs:
         return
 
     ok, msg = validate_initial_selection(uidoc.Document, refs, uidoc.ActiveView)
     if not ok:
-        TaskDialog.Show(u"Arainco: Armado vigas", msg)
+        show_info(msg, title=DIALOG_TITLE, uiapp=uiapp)
         return
 
     try:
@@ -100,7 +100,12 @@ def run_pyrevit(revit_globals):
             err = unicode(ex)
         except NameError:
             err = str(ex)
-        TaskDialog.Show(u"Arainco: Armado vigas", u"Error al procesar la selección:\n\n{0}".format(err))
+        show_info(
+            u"Error al procesar la selección.",
+            err,
+            title=DIALOG_TITLE,
+            uiapp=uiapp,
+        )
         return
 
     try:

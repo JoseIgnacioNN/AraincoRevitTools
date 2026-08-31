@@ -1,30 +1,65 @@
 # -*- coding: utf-8 -*-
-"""Barras laterales del alma — cantidad, separación y diámetro de confinamiento."""
+"""Barras laterales del alma — cantidad (ceil H/200 − 1) y clear de cara H/segs."""
 
 from __future__ import division
 
 import math
 
-from armado_vigas.domain.layers import beam_n_capas_inf, beam_n_capas_sup
 from armado_vigas.domain.stirrups import compute_stirrup_zones, section_height_mm
 
-LATERAL_CLEAR_FLEX_MM = 100.0
+# Paso de segmentación del canto (mm).
 LATERAL_COUNT_STEP_MM = 200.0
-LAYER_OFFSET_MM = 50.0
-LATERALES_COUNT_MIN = 1
+# Recubrimiento lateral alineado con armadura_vigas_capas (_COVER_MM_FIXED).
+LATERAL_COVER_MM = 25.0
+LATERALES_COUNT_MIN = 0
 LATERALES_COUNT_MAX = 99
-LATERALES_DIAM_DEFAULT = 16
+LATERALES_DIAM_DEFAULT = 10
+
+# Residuo mínimo del span útil (mm) para que SetLayoutAsFixedNumber no colapse.
+_LATERAL_MIN_STRIP_MM = 4.0
+
+# --- Legacy (comentarios / fallback si no hay H) ---
+LATERAL_CLEAR_FROM_LAST_LAYER_MM = 50.0
+LAYER_OFFSET_MM = 50.0
+LATERAL_CLEAR_FLEX_MM = LATERAL_CLEAR_FROM_LAST_LAYER_MM
+
+
+def lateral_segments(h_mm):
+    """
+    Nº de segmentos: ``ceil(H / 200)`` (entero más próximo hacia arriba).
+
+    Ej.: 700 → ceil(3.5) = 4.
+    """
+    if h_mm is None or h_mm <= 0:
+        return 0
+    return int(math.ceil(float(h_mm) / LATERAL_COUNT_STEP_MM))
+
+
+def lateral_face_clear_mm(h_mm):
+    """
+    Distancia (mm) cara de hormigón → lateral extremo del set:
+    ``H / max(1, ceil(H/200))``.
+
+    Ej.: 700 → 700/4 = 175 mm (simétrico sup e inf).
+    """
+    if h_mm is None or h_mm <= 0:
+        return 0.0
+    segs = lateral_segments(h_mm)
+    if segs < 1:
+        segs = 1
+    return float(h_mm) / float(segs)
 
 
 def suggest_n_laterales(h_mm):
     """
-    Cantidad sugerida: ``ceil(h_mm / 200) - 1``, mínimo 1.
-    Ej.: 720 mm → ceil(3.6) − 1 = 3.
+    Cantidad: ``ceil(H / 200) − 1`` (mín. 0).
+
+    Ej.: 700 → 4 − 1 = 3.  H ≤ 200 → segs=1 → n=0.
     """
     if h_mm is None or h_mm <= 0:
         return LATERALES_COUNT_MIN
-    n = int(math.ceil(float(h_mm) / LATERAL_COUNT_STEP_MM)) - 1
-    return max(LATERALES_COUNT_MIN, min(LATERALES_COUNT_MAX, n))
+    n = lateral_segments(h_mm) - 1
+    return max(LATERALES_COUNT_MIN, min(LATERALES_COUNT_MAX, int(n)))
 
 
 def suggest_n_laterales_from_beams(domain_beams):
@@ -39,22 +74,84 @@ def suggest_n_laterales_from_beams(domain_beams):
     return suggest_n_laterales(h_max)
 
 
-def lateral_clear_mm(beam):
-    """
-    Hueco vertical (mm) entre fibras flexión y zona de laterales, además del recubrimiento
-    que ya aplica ``armadura_vigas_capas``. Incluye 100 mm fijos y desplazamiento de capas
-    (+(nCapas−1)·50 mm hacia el centro).
-    """
-    ensure = beam or {}
-    n_sup = max(1, int(beam_n_capas_sup(ensure)))
-    n_inf = max(1, int(beam_n_capas_inf(ensure)))
-    layer_extra = max(n_sup - 1, n_inf - 1) * LAYER_OFFSET_MM
-    return float(LATERAL_CLEAR_FLEX_MM) + float(layer_extra)
+def beam_section_height_mm(beam):
+    """Alto de sección (mm) del tipo de viga del dict de dominio."""
+    if not beam:
+        return 0.0
+    try:
+        return float(section_height_mm(beam.get("type")))
+    except Exception:
+        return 0.0
 
 
-def lateral_clear_mm_for_chain(domain_beams_by_id, chain_elems):
-    """Máximo ``lateral_clear_mm`` entre vigas de una cadena colineal."""
-    clear = LATERAL_CLEAR_FLEX_MM
+def lateral_ys_from_face_mm(h_mm, n_lat):
+    """
+    Coordenadas Y (mm desde cara superior) de cada lateral del set.
+
+    Clears simétricos ``face_clear``; reparto FixedNumber entre extremos.
+    """
+    try:
+        n = int(n_lat or 0)
+    except Exception:
+        n = 0
+    if n < 1 or h_mm is None or h_mm <= 0:
+        return []
+    h = float(h_mm)
+    clear = lateral_face_clear_mm(h)
+    span = h - 2.0 * clear
+    if span <= 0.5:
+        return [h * 0.5]
+    if n <= 1:
+        return [clear + span * 0.5]
+    step = span / float(n - 1)
+    return [clear + i * step for i in range(n)]
+
+
+def lateral_clear_mm(beam, bar_diam_mm=None):
+    """
+    Extra vertical (mm) para ``armadura_vigas_capas`` (tras recubrimiento+½ø).
+
+    El modelo aplica ``posición_desde_cara = cover + ½ø + clear``.
+    Queremos ``posición = face_clear = H/segs``, entonces:
+
+        clear = face_clear − cover − ½ø  (clamped, con span mín. residual)
+
+    """
+    h = beam_section_height_mm(beam)
+    if h <= 0:
+        return float(LATERAL_CLEAR_FROM_LAST_LAYER_MM)
+    return lateral_api_clear_mm(h, bar_diam_mm=bar_diam_mm)
+
+
+def lateral_api_clear_mm(h_mm, bar_diam_mm=None, cover_mm=None):
+    """Clear extra (mm) que, sumado a cover+½ø, sitúa el extremo del set a face_clear."""
+    if h_mm is None or h_mm <= 0:
+        return float(LATERAL_CLEAR_FROM_LAST_LAYER_MM)
+    h = float(h_mm)
+    face = lateral_face_clear_mm(h)
+    cov = float(cover_mm if cover_mm is not None else LATERAL_COVER_MM)
+    try:
+        d = float(bar_diam_mm if bar_diam_mm is not None else LATERALES_DIAM_DEFAULT)
+    except Exception:
+        d = float(LATERALES_DIAM_DEFAULT)
+    half_d = 0.5 * max(d, 0.0)
+    # Posición deseada desde cara = face → extra = face − cover − ½ø
+    extra = face - cov - half_d
+    # Dejar un hueco mínimo entre n_bot y n_top (layout 1 barra o set).
+    max_extra = 0.5 * h - cov - half_d - 0.5 * float(_LATERAL_MIN_STRIP_MM)
+    if max_extra < 0.0:
+        max_extra = 0.0
+    if extra < 0.0:
+        extra = 0.0
+    if extra > max_extra:
+        extra = max_extra
+    return float(extra)
+
+
+def lateral_clear_mm_for_chain(domain_beams_by_id, chain_elems, bar_diam_mm=None):
+    """Máximo clear API entre vigas de una cadena colineal (misma franja cantil)."""
+    clear = 0.0
+    any_beam = False
     for el in chain_elems or []:
         try:
             eid = int(el.Id.IntegerValue)
@@ -62,8 +159,25 @@ def lateral_clear_mm_for_chain(domain_beams_by_id, chain_elems):
             continue
         beam = (domain_beams_by_id or {}).get(eid)
         if beam is not None:
-            clear = max(clear, lateral_clear_mm(beam))
+            any_beam = True
+            clear = max(clear, float(lateral_clear_mm(beam, bar_diam_mm=bar_diam_mm)))
+    if not any_beam:
+        # Fallback sin domain: paso 200 clásico poco útil; cover-linked legacy.
+        return float(LATERAL_CLEAR_FROM_LAST_LAYER_MM)
     return clear
+
+
+def session_n_laterales(session, default=0):
+    """Lee ``session.nLaterales`` sin que ``0`` se convierta por ``or`` en otro valor."""
+    if session is None:
+        return int(default)
+    try:
+        v = getattr(session, "nLaterales", None)
+        if v is None:
+            return int(default)
+        return max(LATERALES_COUNT_MIN, min(LATERALES_COUNT_MAX, int(v)))
+    except Exception:
+        return int(default)
 
 
 def conf_diam_mm(beam):

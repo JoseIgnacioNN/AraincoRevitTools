@@ -11,6 +11,10 @@ Flujo:
      (regla Not Equals sobre Structural Rebar).
   4. Aplicar el filtro a cada vista candidata con visibilidad apagada y quitar
      de esa vista otros filtros ``Armadura_Eje …`` previos.
+  5. Si la plantilla de vista incluye «V/G Overrides Filters», desmarcarlo
+     para poder aplicar un filtro distinto por vista.
+  6. Heredar en cada vista los filtros que ya tenía la plantilla (visibilidad,
+     activación y overrides) y, además, aplicar el filtro ``Armadura_Eje``.
 """
 
 from __future__ import print_function
@@ -32,6 +36,7 @@ from Autodesk.Revit.DB import (
     ParameterFilterElement,
     ParameterFilterRuleFactory,
     ParameterFilterUtilities,
+    OverrideGraphicSettings,
     SharedParameterElement,
     StorageType,
     Transaction,
@@ -609,6 +614,603 @@ def _apply_filter_to_view(view, filter_elem):
     return already
 
 
+def _eid_int(eid):
+    if eid is None:
+        return None
+    try:
+        return int(eid.IntegerValue)
+    except Exception:
+        pass
+    try:
+        return int(eid.Value)
+    except Exception:
+        return None
+
+
+def _is_invalid_eid(eid):
+    if eid is None:
+        return True
+    try:
+        if eid == ElementId.InvalidElementId:
+            return True
+    except Exception:
+        pass
+    n = _eid_int(eid)
+    return n is None or n == -1
+
+
+def _vg_filters_bip_id():
+    bip = getattr(BuiltInParameter, u"VIS_GRAPHICS_FILTERS", None)
+    if bip is None:
+        return None
+    try:
+        return ElementId(bip)
+    except Exception:
+        pass
+    try:
+        return ElementId(int(bip))
+    except Exception:
+        return None
+
+
+def _param_name_es_vg_filters(name):
+    n = _canon_key(name)
+    if not n:
+        return False
+    tiene_filtro = (u"filter" in n) or (u"filtro" in n)
+    if not tiene_filtro:
+        return False
+    return (
+        (u"v/g" in n)
+        or (u"vg " in n)
+        or n.startswith(u"vg")
+        or (u"overrides" in n)
+        or (u"visib" in n)
+        or (u"gráfico" in n)
+        or (u"grafico" in n)
+        or (u"reemplazo" in n)
+        or (u"sustituc" in n)
+    )
+
+
+def _resolve_vg_filters_param_id(template):
+    """ElementId del parámetro de plantilla «V/G Overrides Filters»."""
+    known = _vg_filters_bip_id()
+    known_int = _eid_int(known) if known is not None else None
+
+    param_ids = []
+    try:
+        param_ids = list(template.GetTemplateParameterIds())
+    except Exception:
+        param_ids = []
+
+    if known_int is not None:
+        for eid in param_ids:
+            if _eid_int(eid) == known_int:
+                return eid
+        return known
+
+    by_int = {}
+    try:
+        for p in template.Parameters:
+            try:
+                pid = p.Id
+            except Exception:
+                continue
+            nint = _eid_int(pid)
+            if nint is None:
+                continue
+            try:
+                pname = p.Definition.Name
+            except Exception:
+                pname = u""
+            by_int[nint] = (pid, pname)
+    except Exception:
+        pass
+
+    for eid in param_ids:
+        nint = _eid_int(eid)
+        hit = by_int.get(nint)
+        if hit is None:
+            continue
+        _pid, pname = hit
+        if _param_name_es_vg_filters(pname):
+            return eid
+    return None
+
+
+def _get_view_template(view):
+    if view is None:
+        return None
+    try:
+        tid = view.ViewTemplateId
+    except Exception:
+        return None
+    if _is_invalid_eid(tid):
+        return None
+    try:
+        el = view.Document.GetElement(tid)
+    except Exception:
+        el = None
+    if el is None or not isinstance(el, View):
+        return None
+    try:
+        if not el.IsTemplate:
+            return None
+    except Exception:
+        pass
+    return el
+
+
+def _non_controlled_ints(template):
+    out = set()
+    try:
+        for eid in template.GetNonControlledTemplateParameterIds():
+            n = _eid_int(eid)
+            if n is not None:
+                out.add(n)
+    except Exception:
+        pass
+    return out
+
+
+def _template_parameter_ints(template):
+    out = set()
+    try:
+        for eid in template.GetTemplateParameterIds():
+            n = _eid_int(eid)
+            if n is not None:
+                out.add(n)
+    except Exception:
+        pass
+    return out
+
+
+def plantilla_controla_filtros_vg(template):
+    """
+    True si la plantilla incluye (rige) «V/G Overrides Filters».
+
+    Un parámetro de plantilla está controlado si aparece en
+    ``GetTemplateParameterIds`` y no en ``GetNonControlledTemplateParameterIds``.
+    """
+    if template is None:
+        return False
+    vg_id = _resolve_vg_filters_param_id(template)
+    if vg_id is None:
+        return False
+    vg_int = _eid_int(vg_id)
+    if vg_int is None:
+        return False
+    if vg_int in _non_controlled_ints(template):
+        return False
+    tmpl_ids = _template_parameter_ints(template)
+    if tmpl_ids:
+        return vg_int in tmpl_ids
+    return True
+
+
+def vista_filtros_controlados_por_plantilla(view):
+    """True si la vista no puede recibir filtros propios por su plantilla."""
+    return plantilla_controla_filtros_vg(_get_view_template(view))
+
+
+def desbloquear_filtros_en_plantilla(template):
+    """
+    Desmarca «V/G Overrides Filters» en la plantilla para permitir
+    filtros distintos por vista.
+
+    Debe llamarse dentro de una ``Transaction`` abierta.
+
+    Returns:
+        (changed: bool, error: unicode or None)
+    """
+    if template is None:
+        return False, None
+    if not plantilla_controla_filtros_vg(template):
+        return False, None
+
+    vg_id = _resolve_vg_filters_param_id(template)
+    if vg_id is None:
+        return False, (
+            u"No se encontró el parámetro «V/G Overrides Filters» "
+            u"en la plantilla de vista."
+        )
+
+    vg_int = _eid_int(vg_id)
+    ids = List[ElementId]()
+    seen = set()
+    try:
+        for eid in template.GetNonControlledTemplateParameterIds():
+            n = _eid_int(eid)
+            if n is None or n in seen:
+                continue
+            seen.add(n)
+            ids.Add(eid)
+    except Exception as ex:
+        return False, _as_unicode(ex)
+
+    if vg_int not in seen:
+        ids.Add(vg_id)
+
+    try:
+        template.SetNonControlledTemplateParameterIds(ids)
+    except Exception:
+        try:
+            from System.Collections.Generic import HashSet
+
+            hs = HashSet[ElementId]()
+            for eid in ids:
+                hs.Add(eid)
+            template.SetNonControlledTemplateParameterIds(hs)
+        except Exception as ex:
+            return False, _as_unicode(ex)
+
+    if plantilla_controla_filtros_vg(template):
+        return False, (
+            u"La plantilla sigue rigiendo los filtros tras intentar "
+            u"desmarcar «V/G Overrides Filters»."
+        )
+    return True, None
+
+
+def ensure_vista_permite_filtros_propios(view):
+    """
+    Si la plantilla de la vista rige los filtros, la edita para no incluirlos.
+
+    Returns:
+        dict: ok, unlocked, template_name, error
+    """
+    result = {
+        u"ok": True,
+        u"unlocked": False,
+        u"template_name": None,
+        u"error": None,
+    }
+    template = _get_view_template(view)
+    if template is None:
+        return result
+    try:
+        result[u"template_name"] = _as_unicode(template.Name)
+    except Exception:
+        result[u"template_name"] = u"(plantilla)"
+
+    if not plantilla_controla_filtros_vg(template):
+        return result
+
+    changed, err = desbloquear_filtros_en_plantilla(template)
+    if err:
+        result[u"ok"] = False
+        result[u"error"] = err
+        return result
+    result[u"unlocked"] = bool(changed)
+    return result
+
+
+def _view_has_filter(view, fid):
+    want = _eid_int(fid)
+    if view is None or want is None:
+        return False
+    try:
+        for existing in view.GetFilters():
+            if _eid_int(existing) == want:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _filter_ids_ordered(view):
+    if view is None:
+        return []
+    try:
+        return list(view.GetOrderedFilters())
+    except Exception:
+        pass
+    try:
+        return list(view.GetFilters())
+    except Exception:
+        return []
+
+
+def _copy_filter_overrides(source_view, fid):
+    if source_view is None or _is_invalid_eid(fid):
+        return None
+    try:
+        ovr = source_view.GetFilterOverrides(fid)
+    except Exception:
+        return None
+    if ovr is None:
+        return None
+    try:
+        return OverrideGraphicSettings(ovr)
+    except Exception:
+        return ovr
+
+
+def snapshot_filters_from_view(source_view):
+    """
+    Copia estado de filtros (orden, visibilidad, activación, overrides).
+
+    No incluye filtros gestionados ``Armadura_Eje …``: esos se aplican
+    por vista según el valor del eje.
+    """
+    entries = []
+    if source_view is None:
+        return entries
+    try:
+        doc = source_view.Document
+    except Exception:
+        doc = None
+    for fid in _filter_ids_ordered(source_view):
+        if _is_invalid_eid(fid):
+            continue
+        fname = u""
+        if doc is not None:
+            try:
+                fe = doc.GetElement(fid)
+                if fe is not None:
+                    fname = _as_unicode(fe.Name)
+            except Exception:
+                fname = u""
+        if _is_managed_filter_name(fname):
+            continue
+        rec = {
+            u"id": fid,
+            u"visible": True,
+            u"enabled": True,
+            u"overrides": None,
+        }
+        try:
+            rec[u"visible"] = bool(source_view.GetFilterVisibility(fid))
+        except Exception:
+            pass
+        try:
+            rec[u"enabled"] = bool(source_view.GetIsFilterEnabled(fid))
+        except Exception:
+            pass
+        rec[u"overrides"] = _copy_filter_overrides(source_view, fid)
+        entries.append(rec)
+    return entries
+
+
+def inherit_filter_snapshot_to_view(view, entries):
+    """
+    Aplica en ``view`` los filtros heredados de la plantilla.
+
+    Returns:
+        int: filtros añadidos o actualizados.
+    """
+    applied = 0
+    if view is None:
+        return 0
+    for rec in entries or []:
+        fid = rec.get(u"id")
+        if _is_invalid_eid(fid):
+            continue
+        try:
+            if not _view_has_filter(view, fid):
+                view.AddFilter(fid)
+            try:
+                view.SetIsFilterEnabled(fid, bool(rec.get(u"enabled", True)))
+            except Exception:
+                pass
+            try:
+                view.SetFilterVisibility(fid, bool(rec.get(u"visible", True)))
+            except Exception:
+                pass
+            ovr = rec.get(u"overrides")
+            if ovr is not None:
+                try:
+                    view.SetFilterOverrides(fid, OverrideGraphicSettings(ovr))
+                except Exception:
+                    try:
+                        view.SetFilterOverrides(fid, ovr)
+                    except Exception:
+                        pass
+            applied += 1
+        except Exception:
+            continue
+    return applied
+
+
+def _iter_views_using_template(doc, template):
+    if doc is None or template is None:
+        return
+    tid_int = _eid_int(template.Id)
+    if tid_int is None:
+        return
+    try:
+        views = FilteredElementCollector(doc).OfClass(View).ToElements()
+    except Exception:
+        return
+    for view in views:
+        if view is None:
+            continue
+        try:
+            if view.IsTemplate:
+                continue
+        except Exception:
+            continue
+        try:
+            if _eid_int(view.ViewTemplateId) == tid_int:
+                yield view
+        except Exception:
+            continue
+
+
+def inherit_template_filters_to_views(doc, template, snapshot, views=None):
+    """
+    Replica los filtros de la plantilla en las vistas indicadas
+    (o en todas las que usan esa plantilla).
+    """
+    n = 0
+    targets = views
+    if targets is None:
+        targets = list(_iter_views_using_template(doc, template))
+    for view in targets or []:
+        n += inherit_filter_snapshot_to_view(view, snapshot)
+    return n
+
+
+def _looks_like_template_filter_lock(ex):
+    s = _canon_key(_as_unicode(ex))
+    if not s:
+        return False
+    return (
+        (u"template" in s)
+        or (u"plantilla" in s)
+        or (u"controlled" in s)
+        or (u"cannot be modified" in s)
+        or (u"no se puede modificar" in s)
+        or (u"no se pueden modificar" in s)
+    )
+
+
+def prepare_armadura_eje_filter_context(doc):
+    """
+    Resuelve parámetro y categorías para crear filtros (solo lectura).
+
+    Returns:
+        (ctx, instruction_error, content_error)
+        ctx es dict o None.
+    """
+    cat_list = _categoria_rebar_ids()
+    param_id, storage_type = _resolve_target_param(doc, cat_list, PARAM_NAME)
+    if param_id is None:
+        return (
+            None,
+            u"No se encontró el parámetro «{0}» en Structural Rebar.".format(
+                PARAM_NAME
+            ),
+            u"Compruebe que el parámetro compartido exista en el proyecto "
+            u"y esté asignado a la categoría Structural Rebar.",
+        )
+    ctx = {
+        u"cat_list": cat_list,
+        u"param_id": param_id,
+        u"storage_type": storage_type,
+        u"cache": {},
+        u"template_names_unlocked": [],
+        u"templates_inherited": set(),
+    }
+    return ctx, None, None
+
+
+def apply_armadura_eje_filter_to_view(doc, view, eje_valor, ctx):
+    """
+    Crea/actualiza el ``ParameterFilterElement`` del eje y lo aplica a la vista
+    (visibilidad apagada). Hereda los filtros de la plantilla. Si la plantilla
+    rige los filtros, los desmarca para permitir el filtro por eje.
+
+    Debe llamarse dentro de una ``Transaction`` abierta.
+
+    Returns:
+        (ok: bool, info: dict)
+        info: created_new, template_unlocked, template_name,
+        inherited_count, error
+    """
+    info = {
+        u"created_new": False,
+        u"template_unlocked": False,
+        u"template_name": None,
+        u"inherited_count": 0,
+        u"error": None,
+    }
+    if doc is None or view is None or ctx is None:
+        info[u"error"] = u"Datos incompletos para el filtro."
+        return False, info
+
+    eje_text = _as_unicode(eje_valor).strip()
+    if not eje_text:
+        info[u"error"] = u"Sin valor de «{0}».".format(PARAM_NAME)
+        return False, info
+
+    try:
+        if not bool(view.AreGraphicsOverridesAllowed()):
+            info[u"error"] = u"La vista no admite filtros de visibilidad."
+            return False, info
+    except Exception:
+        pass
+
+    template = _get_view_template(view)
+    snapshot = []
+    if template is not None:
+        snapshot = snapshot_filters_from_view(template)
+
+    unlock = ensure_vista_permite_filtros_propios(view)
+    if unlock.get(u"unlocked"):
+        info[u"template_unlocked"] = True
+        info[u"template_name"] = unlock.get(u"template_name")
+        name = info[u"template_name"]
+        names = ctx.get(u"template_names_unlocked")
+        if name and isinstance(names, list) and name not in names:
+            names.append(name)
+    if not unlock.get(u"ok"):
+        info[u"template_name"] = unlock.get(u"template_name")
+        info[u"error"] = unlock.get(u"error") or (
+            u"La plantilla de vista impide crear filtros por vista."
+        )
+        return False, info
+
+    def _inherit_template_filters():
+        inherited_on = ctx.get(u"templates_inherited")
+        if not isinstance(inherited_on, set):
+            inherited_on = set()
+            ctx[u"templates_inherited"] = inherited_on
+        tid = _eid_int(template.Id) if template is not None else None
+        if (
+            template is not None
+            and tid is not None
+            and info.get(u"template_unlocked")
+            and tid not in inherited_on
+        ):
+            inherit_template_filters_to_views(doc, template, snapshot)
+            inherited_on.add(tid)
+        info[u"inherited_count"] = inherit_filter_snapshot_to_view(view, snapshot)
+
+    def _do_apply():
+        _inherit_template_filters()
+        filter_elem, created_new = _ensure_filter_for_eje(
+            doc,
+            ctx[u"cat_list"],
+            ctx[u"param_id"],
+            ctx[u"storage_type"],
+            eje_text,
+            ctx[u"cache"],
+        )
+        _remove_other_armadura_eje_filters_from_view(view, filter_elem.Id)
+        _apply_filter_to_view(view, filter_elem)
+        return created_new
+
+    try:
+        info[u"created_new"] = _do_apply()
+    except Exception as ex:
+        if not _looks_like_template_filter_lock(ex):
+            info[u"error"] = _as_unicode(ex)
+            return False, info
+        unlock2 = ensure_vista_permite_filtros_propios(view)
+        if unlock2.get(u"unlocked"):
+            info[u"template_unlocked"] = True
+            info[u"template_name"] = unlock2.get(u"template_name")
+            name = info[u"template_name"]
+            names = ctx.get(u"template_names_unlocked")
+            if name and isinstance(names, list) and name not in names:
+                names.append(name)
+            if not snapshot and template is None:
+                template = _get_view_template(view)
+                snapshot[:] = snapshot_filters_from_view(template) if template else []
+        if not unlock2.get(u"ok"):
+            info[u"error"] = unlock2.get(u"error") or _as_unicode(ex)
+            return False, info
+        try:
+            info[u"created_new"] = _do_apply()
+        except Exception as ex2:
+            info[u"error"] = _as_unicode(ex2)
+            return False, info
+
+    return True, info
+
+
 def collect_building_sections_with_eje(doc):
     """
     Building Sections no plantilla con ``Armadura_Eje`` no vacío.
@@ -691,19 +1293,10 @@ def apply_filters_to_building_sections(doc):
             u"deban filtrar armadura por eje.".format(PARAM_NAME),
         )
 
-    cat_list = _categoria_rebar_ids()
-    param_id, storage_type = _resolve_target_param(doc, cat_list, PARAM_NAME)
-    if param_id is None:
-        return (
-            False,
-            u"No se encontró el parámetro «{0}» en Structural Rebar.".format(
-                PARAM_NAME
-            ),
-            u"Compruebe que el parámetro compartido exista en el proyecto "
-            u"y esté asignado a la categoría Structural Rebar.",
-        )
+    ctx, err_i, err_c = prepare_armadura_eje_filter_context(doc)
+    if ctx is None:
+        return False, err_i or u"No se pudo preparar el filtro.", err_c or u""
 
-    filter_cache = {}
     applied = []
     errors = []
     filters_created = 0
@@ -714,15 +1307,21 @@ def apply_filters_to_building_sections(doc):
         for view, eje_valor in targets:
             view_name = _view_display_name(view)
             try:
-                filter_elem, created_new = _ensure_filter_for_eje(
-                    doc, cat_list, param_id, storage_type, eje_valor, filter_cache
+                ok_f, finfo = apply_armadura_eje_filter_to_view(
+                    doc, view, eje_valor, ctx
                 )
-                if created_new:
-                    filters_created += 1
-
-                _remove_other_armadura_eje_filters_from_view(view, filter_elem.Id)
-                _apply_filter_to_view(view, filter_elem)
-                applied.append((view_name, eje_valor))
+                if ok_f:
+                    if (finfo or {}).get(u"created_new"):
+                        filters_created += 1
+                    applied.append((view_name, eje_valor))
+                else:
+                    errors.append(
+                        u"{0}: {1}".format(
+                            view_name,
+                            (finfo or {}).get(u"error")
+                            or u"no se pudo aplicar el filtro",
+                        )
+                    )
             except Exception as ex:
                 errors.append(u"{0}: {1}".format(view_name, _as_unicode(ex)))
 
@@ -763,7 +1362,7 @@ def apply_filters_to_building_sections(doc):
             )
         )
 
-    n_filters = len(filter_cache)
+    n_filters = len(ctx.get(u"cache") or {})
     instruction = (
         u"Filtro aplicado en {0} Building Section(s) "
         u"({1} valor(es) de «{2}»)."
@@ -774,12 +1373,214 @@ def apply_filters_to_building_sections(doc):
         content_parts.append(
             u"Filtros de proyecto creados: {0}.".format(filters_created)
         )
+    unlocked = ctx.get(u"template_names_unlocked") or []
+    if unlocked:
+        content_parts.append(
+            u"Plantilla(s) editada(s) para permitir filtros por vista: {0}.".format(
+                u", ".join(unlocked)
+            )
+        )
     if errors:
         content_parts.append(
             u"Omitidas / error:\n{0}".format(u"\n".join(errors))
         )
 
     return True, instruction, u"\n\n".join(content_parts)
+
+
+def _name_contains_armadura_eje(name):
+    token = _as_unicode(PARAM_NAME).strip().lower()
+    if not token:
+        return False
+    return token in _as_unicode(name).strip().lower()
+
+
+def _host_allows_filter_edit(host):
+    if host is None:
+        return False
+    try:
+        if not bool(host.AreGraphicsOverridesAllowed()):
+            return False
+    except Exception:
+        pass
+    return True
+
+
+def _read_filter_enabled(host, fid):
+    try:
+        return bool(host.GetIsFilterEnabled(fid))
+    except Exception:
+        return True
+
+
+def _write_filter_enabled(host, fid, enabled):
+    if host is None or _is_invalid_eid(fid):
+        return False
+    try:
+        host.SetIsFilterEnabled(fid, bool(enabled))
+        return True
+    except Exception:
+        return False
+
+
+def _resolve_filter_edit_host(view):
+    """Vista activa o su plantilla si esta rige los filtros V/G."""
+    if vista_filtros_controlados_por_plantilla(view):
+        template = _get_view_template(view)
+        if template is not None and _host_allows_filter_edit(template):
+            return template
+    if view is not None and _host_allows_filter_edit(view):
+        return view
+    return None
+
+
+def collect_applied_armadura_eje_filters(view):
+    """
+    Filtros aplicados en ``view`` cuyo nombre contiene ``Armadura_Eje``.
+
+    Returns:
+        list[dict]: fid, name, host, was_enabled
+    """
+    found = []
+    if view is None:
+        return found
+    try:
+        doc = view.Document
+    except Exception:
+        return found
+
+    for fid in _filter_ids_ordered(view):
+        if _is_invalid_eid(fid):
+            continue
+        try:
+            fe = doc.GetElement(fid)
+        except Exception:
+            fe = None
+        if fe is None:
+            continue
+        try:
+            fname = _as_unicode(fe.Name)
+        except Exception:
+            continue
+        if not _name_contains_armadura_eje(fname):
+            continue
+        host = _resolve_filter_edit_host(view)
+        if host is None:
+            continue
+        found.append(
+            {
+                u"fid": fid,
+                u"name": fname,
+                u"host": host,
+                u"was_enabled": _read_filter_enabled(host, fid),
+            }
+        )
+    return found
+
+
+def _commit_filter_enabled_changes(doc, items, enable, tx_name, uidoc=None):
+    """
+    ``items``: dicts con fid, host, was_enabled.
+    Si ``enable`` es False, desactiva los que estaban activos.
+    Si ``enable`` es True, reactiva solo los que ``was_enabled`` era True.
+    """
+    pending = []
+    for rec in items or []:
+        fid = rec.get(u"fid")
+        host = rec.get(u"host")
+        if host is None or _is_invalid_eid(fid):
+            continue
+        if enable:
+            if not bool(rec.get(u"was_enabled", True)):
+                continue
+            want = True
+        else:
+            if not bool(rec.get(u"was_enabled", True)):
+                continue
+            want = False
+        if _read_filter_enabled(host, fid) == want:
+            continue
+        pending.append((host, fid, want))
+
+    if not pending or doc is None:
+        return 0
+
+    tx = Transaction(doc, tx_name)
+    tx.Start()
+    changed = 0
+    try:
+        for host, fid, want in pending:
+            if _write_filter_enabled(host, fid, want):
+                changed += 1
+        if changed:
+            tx.Commit()
+        else:
+            tx.RollBack()
+    except Exception:
+        try:
+            if tx.HasStarted():
+                tx.RollBack()
+        except Exception:
+            pass
+        raise
+
+    if changed and uidoc is not None:
+        try:
+            uidoc.RefreshActiveView()
+        except Exception:
+            pass
+    return changed
+
+
+def suspend_armadura_eje_filters_in_active_view(uidoc):
+    """
+    Desactiva temporalmente los filtros aplicados cuyo nombre contiene
+    ``Armadura_Eje`` en la vista activa.
+
+    Returns:
+        dict: token para ``restore_armadura_eje_filters`` (puede estar vacío).
+    """
+    token = {u"uidoc": uidoc, u"doc": None, u"items": []}
+    if uidoc is None:
+        return token
+    try:
+        view = uidoc.ActiveView
+    except Exception:
+        view = None
+    if view is None:
+        return token
+    try:
+        token[u"doc"] = view.Document
+    except Exception:
+        token[u"doc"] = None
+    items = collect_applied_armadura_eje_filters(view)
+    token[u"items"] = items
+    if not items:
+        return token
+    _commit_filter_enabled_changes(
+        token[u"doc"],
+        items,
+        enable=False,
+        tx_name=u"Arainco: Desactivar filtro Armadura_Eje",
+        uidoc=uidoc,
+    )
+    return token
+
+
+def restore_armadura_eje_filters(token):
+    """Reactiva los filtros ``Armadura_Eje`` que estaban activos al suspender."""
+    if not token:
+        return 0
+    items = token.get(u"items") or []
+    if not items:
+        return 0
+    return _commit_filter_enabled_changes(
+        token.get(u"doc"),
+        items,
+        enable=True,
+        tx_name=u"Arainco: Activar filtro Armadura_Eje",
+        uidoc=token.get(u"uidoc"),
+    )
 
 
 def run(revit_app):

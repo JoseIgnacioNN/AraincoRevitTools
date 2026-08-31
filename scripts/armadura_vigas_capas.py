@@ -15,10 +15,11 @@ Laterales: misma lógica de eje y apoyos que las capas (extensión, hosts vecino
 # Recubrimiento fijo (mm) para esta herramienta.
 _COVER_MM_FIXED = 25.0
 
-# Separación adicional (mm) entre laterales y la primera capa sup/inf (además del recubrimiento).
-_LATERAL_CLEAR_FROM_FLEXURAL_MM = 100.0
+# Separación (mm) laterales: por defecto en clear extra (tras cover+½ø).
+# Armado vigas calcula face_clear = H/ceil(H/200) y convierte a extra vía domain.laterales.
+_LATERAL_CLEAR_FROM_FLEXURAL_MM = 50.0
 
-# Paso (mm) para proponer nº de laterales: floor(altura_mm / paso) − 1 (mín. 1).
+# Paso (mm) para nº de laterales: ceil(altura_mm / paso) − 1.
 _LATERAL_COUNT_STEP_MM = 200.0
 
 import os
@@ -644,12 +645,12 @@ def _read_width_depth_ft(document, elem, curve):
 
 
 def _default_n_lat_from_depth_mm(depth_mm):
-    """Nº sugerido de laterales por cara: floor(altura_mm / 200) − 1; mínimo 1."""
+    """Nº sugerido de laterales: ceil(altura_mm / 200) − 1; mínimo 0."""
     if depth_mm <= 0:
-        return 1
+        return 0
     step = float(_LATERAL_COUNT_STEP_MM)
-    n = int(math.floor(float(depth_mm) / step)) - 1
-    return max(1, n)
+    n = int(math.ceil(float(depth_mm) / step)) - 1
+    return max(0, n)
 
 
 def _default_n_lat_from_beams(document, beam_ids):
@@ -1867,6 +1868,55 @@ def _apply_fixed_number_layout(rebar, n_bars, array_length_ft):
     return _try_all_combos()
 
 
+def _apply_lateral_fixed_number_layout(
+    rebar,
+    document,
+    n_bars,
+    array_len,
+    n_plane,
+    ref_lat,
+    usable_half,
+):
+    """
+    Layout fijo en canto (``n_plane``), validando que el set quede en la franja útil
+    de la cara lateral (misma lógica que longitudinales en ancho).
+    """
+    if n_bars <= 1:
+        return _apply_fixed_number_layout(rebar, n_bars, array_len)
+    if n_plane is None or ref_lat is None:
+        return _apply_fixed_number_layout(rebar, n_bars, array_len)
+    try:
+        uh = float(usable_half)
+    except Exception:
+        uh = 0.0
+    if uh <= 1e-9:
+        return _apply_fixed_number_layout(rebar, n_bars, array_len)
+    try:
+        n_unit = n_plane.Normalize()
+    except Exception:
+        return _apply_fixed_number_layout(rebar, n_bars, array_len)
+    tol = 3.0 / 304.8
+    min_s = -uh + tol
+    max_s = uh - tol
+    if max_s <= min_s:
+        return _apply_fixed_number_layout(rebar, n_bars, array_len)
+    try:
+        from armado_vigas.revit.colocar_rebar import _apply_fixed_number_layout_inward
+
+        return _apply_fixed_number_layout_inward(
+            rebar,
+            document,
+            n_bars,
+            array_len,
+            n_unit,
+            ref_lat,
+            min_s,
+            max_s,
+        )
+    except Exception:
+        return _apply_fixed_number_layout(rebar, n_bars, array_len)
+
+
 def _create_layer_rebar_set(
     document,
     host,
@@ -2197,7 +2247,8 @@ def _create_lateral_rebar_set(
     collision_ctx=None,
 ):
     """
-    Una instancia Rebar por cara lateral; reparto en canto con SetLayoutAsFixedNumber (normal = n).
+    Una instancia Rebar por cara lateral; reparto en canto (normal = n).
+    Con ``n_bars == 1`` usa layout Single; con ``n_bars > 1``, Fixed Number.
     Ancho/canto desde bbox de vigas solamente (no columnas vecinas en la unión).
     Sin plan_shift. Sin ``RebarHook``: recta con ``crear_rebar_desde_curva_linea_con_ganchos``
     (ganchos desactivados) y pata L como polilínea (``aplicar_patas_l_polilinea``).
@@ -2336,6 +2387,7 @@ def _create_lateral_rebar_set(
 
     # plan_shift (centro bbox en ancho) empuja la línea fuera de la cara lateral; no usar aquí.
     _lat_shift = XYZ(0, 0, 0)
+    ref_lat = curve_mid + w_lay * w_s + n_plane * float(n_strip_mid)
 
     if n_bars <= 1:
         array_len = 0.0
@@ -2368,7 +2420,9 @@ def _create_lateral_rebar_set(
             pass
         return 0
 
-    if not _apply_fixed_number_layout(r, n_bars, array_len):
+    if not _apply_lateral_fixed_number_layout(
+        r, document, n_bars, array_len, n_plane, ref_lat, usable_half
+    ):
         try:
             document.Delete(r.Id)
         except Exception:
@@ -2411,9 +2465,15 @@ def _create_lateral_rebar_set(
                 return None
 
             def _relayout_lateral(rb_new):
-                if n_bars <= 1:
-                    return True
-                return _apply_fixed_number_layout(rb_new, n_bars, array_len)
+                return _apply_lateral_fixed_number_layout(
+                    rb_new,
+                    document,
+                    n_bars,
+                    array_len,
+                    n_plane,
+                    ref_lat,
+                    usable_half,
+                )
 
             r2, err_pata = fn_pata(
                 document,
@@ -2426,8 +2486,9 @@ def _create_lateral_rebar_set(
                 meta_fin=meta_f_use,
                 diam_mm=diam_mm,
                 leg_dir_fn=_leg_dir_lateral,
-                layout_fallback=_relayout_lateral if n_bars > 1 else None,
+                layout_fallback=_relayout_lateral,
                 norm_candidatos=_norm_list_lateral_layout(n_plane),
+                allow_rebar_shape=False,
             )
             if not err_pata:
                 r = r2

@@ -39,6 +39,9 @@ _MODULES_TO_PURGE = (
     "armado_muros_v3_elevation",
     "armado_muros_v3_troceo",
     "armado_muros_v3_segments",
+    "mallas_en_muros_rail_ui",
+    "mallas_en_muros_ui_xaml",
+    "mallas_en_muros_run",
     "arearein_verticales_empotramiento_rps",
     "bimtools_wpf_dark_theme",
     "bimtools_rebar_hook_lengths",
@@ -55,6 +58,7 @@ _MODULES_TO_PURGE = (
     "embed_anchorage_link_schema",
     "lap_detail_link_schema",
     "bootstrap_paths",
+    "filtro_armadura_eje",
 )
 
 # Fingerprint en memoria de proceso (sin AppDomain: evita fallo al importar sin clr System).
