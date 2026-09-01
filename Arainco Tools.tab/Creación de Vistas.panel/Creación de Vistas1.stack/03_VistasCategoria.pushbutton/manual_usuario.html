@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Arainco: Vistas por categoría</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #5BC0DE;
+            --accent-dim: #95B8CC;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: 920px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.75em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 32px;
+        }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        code {
+            background: #0E1B32;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 1px 6px;
+            font-size: 0.92em;
+            color: var(--text);
+        }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        .step {
+            background: var(--bg-panel);
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin: 10px 0;
+            border: 1px solid var(--border);
+        }
+        .step-num {
+            display: inline-block;
+            background: var(--accent);
+            color: var(--bg-dark);
+            width: 24px;
+            height: 24px;
+            text-align: center;
+            line-height: 24px;
+            border-radius: 50%;
+            font-weight: bold;
+            font-size: 0.9em;
+            margin-right: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 0.9em;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 10px 12px;
+            text-align: left;
+        }
+        th {
+            background: var(--bg-panel);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        td { color: var(--text-dim); }
+        .tip {
+            background: rgba(91, 192, 222, 0.1);
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            padding: 12px;
+            margin: 12px 0;
+            color: var(--text-dim);
+        }
+        .tip::before { content: "Tip — "; font-weight: 700; color: var(--accent); }
+        .footer {
+            margin-top: 40px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+            font-size: 0.9em;
+            color: var(--muted);
+        }
+        .meta {
+            color: var(--muted);
+            font-size: 0.9em;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Manual — Arainco: Vistas por categoría</h1>
+    <p class="meta">BIMTools · Creación de Vistas · Revit 2024–2026</p>
+
+    <div class="intro">
+        <strong>Vistas por categoría</strong> arma el conjunto de entregable
+        <code>01_ENTREGABLE</code> para una o varias categorías, con la misma
+        zona, niveles y escala: plantas estructurales Cielo y Piso (en
+        <code>01_LO</code>, armadura superior e inferior), plantillas
+        de vista y tipos Detail / Building Section. No crea las secciones ni
+        los detalles en sí; deja tipos y plantillas para herramientas como
+        Elevación Eje.
+    </div>
+
+    <h2>1. Antes de usar</h2>
+    <ul>
+        <li>Tipos de planta estructural con nombre exacto:
+            <code>Structural Plan (Cielo)</code> y
+            <code>Structural Plan (Piso)</code>.</li>
+        <li>Plantillas semilla (nombre exacto):
+            <code>Architectural Reflected Ceiling Plan</code>,
+            <code>Structural Foundation Plan</code>,
+            <code>Architectural Detail</code> y
+            <code>Architectural Section</code>.</li>
+        <li>Tipos base para duplicar: <code>Architectural Detail</code> y
+            <code>Architectural Section</code> (o equivalentes Detail / Section).</li>
+        <li>Parámetros de vista: <code>Clasificacion</code>,
+            <code>Subclasificacion</code>, <code>Zona</code> y
+            <code>Section Filter</code>.</li>
+        <li>En <code>01_LO</code>: parámetro de barra
+            <code>Armadura_Ubicacion</code> con valores <code>F</code> (inferior)
+            y <code>F'</code> (superior).</li>
+        <li>Al menos un nivel en el documento.</li>
+    </ul>
+
+    <h2>2. Cómo usarla</h2>
+
+    <div class="step">
+        <span class="step-num">1</span>
+        <strong>Abrir la herramienta</strong> — El subtítulo recuerda
+        <code>01_ENTREGABLE · Cielo + Piso por nivel</code>.
+        El botón <strong>Manual</strong> (abajo a la izquierda) abre este documento.
+    </div>
+    <div class="step">
+        <span class="step-num">2</span>
+        <strong>Marcar categorías</strong> — Puede ser más de una. El filtro
+        busca por código o nombre. Seleccionar todo / Ninguna aplica solo a
+        las filas visibles. Todas las marcadas usan la misma zona, niveles y escala.
+    </div>
+    <div class="step">
+        <span class="step-num">3</span>
+        <strong>Zona</strong> — Si el proyecto no está partido en zonas, deje
+        <code>GENERAL</code>. El valor entra en nombres, parámetros y
+        <code>Section Filter</code> (<code>{categoría}_{zona}</code>).
+    </div>
+    <div class="step">
+        <span class="step-num">4</span>
+        <strong>Escala y niveles</strong> — Escala 1:50 por defecto (hasta 1:200).
+        Por cada nivel marcado se crean <em>dos</em> plantas Cielo y Piso
+        (en <code>01_LO</code>: <em>cuatro</em> — Cielo/Piso con armadura
+        inferior y superior).
+        El pie muestra el recuento de plantas.
+    </div>
+    <div class="step">
+        <span class="step-num">5</span>
+        <strong>Crear vistas</strong> — El formulario se cierra. Al terminar,
+        un resumen lista vistas, plantillas, tipos y lo omitido.
+    </div>
+
+    <h2>3. Qué se crea por categoría</h2>
+    <p>
+        Ejemplo con categoría <code>01_LO</code>, zona <code>GENERAL</code> y
+        nivel <code>NIVEL 01</code>. En <strong>LO</strong> se generan
+        <strong>cuatro</strong> plantas por nivel: Cielo y Piso, cada una con
+        armadura inferior y superior:
+    </p>
+    <table>
+        <thead>
+            <tr>
+                <th>Elemento</th>
+                <th>Resultado</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Cielo · armadura inferior</td>
+                <td><code>01_LO_NIVEL 01_GENERAL_CIELO_INFERIOR</code>
+                    (tipo Structural Plan Cielo)</td>
+            </tr>
+            <tr>
+                <td>Cielo · armadura superior</td>
+                <td><code>01_LO_NIVEL 01_GENERAL_CIELO_SUPERIOR</code>
+                    (tipo Structural Plan Cielo)</td>
+            </tr>
+            <tr>
+                <td>Piso · armadura inferior</td>
+                <td><code>01_LO_NIVEL 01_GENERAL_PISO_INFERIOR</code>
+                    (tipo Structural Plan Piso)</td>
+            </tr>
+            <tr>
+                <td>Piso · armadura superior</td>
+                <td><code>01_LO_NIVEL 01_GENERAL_PISO_SUPERIOR</code>
+                    (tipo Structural Plan Piso)</td>
+            </tr>
+            <tr>
+                <td>Plantillas LO (planta)</td>
+                <td>Cuatro plantillas por zona:
+                    <code>01_ENTREGABLE_01_LO_STRUCTURAL PLAN (CIELO)_GENERAL_SUPERIOR</code>,
+                    <code>…_INFERIOR</code> y equivalentes PISO
+                    (Detail y Building Section sin sufijo)</td>
+            </tr>
+            <tr>
+                <td>Tipos</td>
+                <td><code>Detail (01_LO_GENERAL)</code> y
+                    <code>Building Section (01_LO_GENERAL)</code>,
+                    con plantilla por defecto</td>
+            </tr>
+            <tr>
+                <td>Filtro de vista</td>
+                <td>Nombre <code>01_LO_GENERAL</code>: oculta secciones cuyo
+                    <code>Section Filter</code> no es esa clave (se aplica a las plantillas)</td>
+            </tr>
+            <tr>
+                <td>Filtros Rebar (LO)</td>
+                <td>En plantillas superior/inferior:
+                    <code>01_LO_GENERAL_ARM_UBIC_SUPERIOR</code> (oculta rebars con
+                    <code>Armadura_Ubicacion</code> ≠ <code>F'</code>) y
+                    <code>01_LO_GENERAL_ARM_UBIC_INFERIOR</code> (≠ <code>F</code>).
+                    Regla «does not equal» + visibilidad apagada.</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>
+        En el resto de categorías el patrón de nombre sigue siendo
+        <code>{categoría}_CIELO_{nivel}_{zona}</code> y
+        <code>{categoría}_PISO_{nivel}_{zona}</code>
+        (p. ej. <code>00_PG_CIELO_NIVEL 01_GENERAL</code>).
+    </p>
+
+    <h2>4. Parámetros que escribe</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Parámetro</th>
+                <th>Valor</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>Clasificacion</code></td>
+                <td>Siempre <code>01_ENTREGABLE</code></td>
+            </tr>
+            <tr>
+                <td><code>Subclasificacion</code></td>
+                <td>Código de categoría (<code>01_LO</code>, <code>02_MA</code>…)</td>
+            </tr>
+            <tr>
+                <td><code>Zona</code></td>
+                <td>El texto del formulario</td>
+            </tr>
+            <tr>
+                <td><code>Section Filter</code></td>
+                <td><code>{categoría}_{zona}</code></td>
+            </tr>
+            <tr>
+                <td><code>Title on Sheet</code></td>
+                <td>Con 2 niveles: <code>PLANTA FUNDACION</code> y
+                    <code>PLANTA RADIER</code> (en LO se añade
+                    <code> INFERIOR</code> / <code> SUPERIOR</code>).
+                    Con más niveles: en LO,
+                    <code>PLANTA ESTRUCTURA INFERIOR/SUPERIOR</code> + nivel;
+                    en el resto,
+                    <code>PLANTA ESTRUCTURA CIELO/PISO</code> + nombre del nivel</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>
+        En tipos Detail/Sección también asigna <code>Discipline</code> (valor de detalle).
+        La escala del formulario se aplica a cada planta creada.
+    </p>
+
+    <h2>5. Rango de vista</h2>
+    <ul>
+        <li><strong>Piso:</strong> corte a +1500 mm del nivel. En el nivel más bajo
+            del proyecto, fondo y profundidad ilimitados; en el resto, −1500 mm.</li>
+        <li><strong>Cielo:</strong> corte a +1000 mm. El tope usa el nivel superior
+            (+300 mm) o, si no hay, un respaldo de 4000 mm.</li>
+    </ul>
+
+    <h2>6. No vuelve a generar el mismo par</h2>
+    <p>
+        Si ya hay una vista de proyecto (no plantilla) con
+        <code>Section Filter = {categoría}_{zona}</code>, o con la misma
+        <code>Subclasificacion</code> y <code>Zona</code>, esa categoría se omite
+        para esa zona. El mensaje pide duplicar las vistas existentes si hace falta
+        otra copia.
+    </p>
+    <p>
+        Con varias categorías: las que ya existen se omiten y el resto sí se crea.
+        Solo falla del todo si <em>todas</em> las marcadas ya estaban generadas.
+    </p>
+    <div class="tip">
+        Cambiar la zona permite un segundo conjunto (p. ej. <code>01_LO_TORRE_A</code>
+        frente a <code>01_LO_GENERAL</code>).
+    </div>
+
+    <h2>7. Deshacer</h2>
+    <p>
+        Un solo comando (<code>Arainco: Vistas por categoría</code>) revierte
+        plantas, plantillas, tipos y filtros de esa ejecución.
+    </p>
+
+    <h2>8. Si algo no sale como esperas</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Qué ves</th>
+                <th>Qué revisar</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Faltan ViewFamilyType Cielo/Piso</td>
+                <td>Renombrar o crear tipos <code>Structural Plan (Cielo)</code> y
+                    <code>Structural Plan (Piso)</code></td>
+            </tr>
+            <tr>
+                <td>No se crean plantillas de planta</td>
+                <td>Deben existir las semillas RCP y Structural Foundation Plan</td>
+            </tr>
+            <tr>
+                <td>Categoría-zona ya generada</td>
+                <td>Use otra zona, o duplique vistas a mano; la herramienta no pisa el juego existente</td>
+            </tr>
+            <tr>
+                <td>Sin tipos Detail/Sección</td>
+                <td>Falta el tipo Architectural Detail / Architectural Section; las plantas igual se intentan</td>
+            </tr>
+            <tr>
+                <td>Parámetros vacíos</td>
+                <td>Los parámetros compartidos deben estar ligados a vistas y tipos de vista</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p class="footer">Arainco · Vistas por categoría</p>
+</body>
+</html>

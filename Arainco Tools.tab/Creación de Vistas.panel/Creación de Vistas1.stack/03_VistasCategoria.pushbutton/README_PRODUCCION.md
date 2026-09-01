@@ -5,7 +5,7 @@
 - Entrada: `script.py` (parche bootstrap solo en DEST; origen intacto)
 - Bootstrap: `bimtools_access_bootstrap.py`
 - Inteligencia: `scripts/` ofuscados
-- Modulos ofuscados: 20
+- Modulos ofuscados: 39
 - Autor: José Ignacio Núñez
 
 ## Contenido

@@ -7,8 +7,10 @@ Lógica en scripts/vistas_por_categoria_ui.py y scripts/vistas_por_categoria/.
 __title__ = u"Arainco: Vistas por categoría"
 __author__ = "BIMTools"
 __doc__ = (
-    u"Crea plantas Cielo/Piso por nivel, plantillas y tipos Detail/Sección "
-    u"para las categorías y zona seleccionadas (clasificación 01_ENTREGABLE)."
+    u"Plantas Cielo y Piso 01_ENTREGABLE por categoría y zona "
+    u"(en LO: Cielo/Piso × inferior/superior, 4 por nivel), "
+    u"con plantillas y tipos Detail/Sección. No regenera un "
+    u"par categoría-zona que ya exista."
 )
 
 import os
@@ -48,6 +50,10 @@ if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
 
     if _scripts_dir not in sys.path:
         sys.path.insert(0, _scripts_dir)
+
+    import bimtools_paths
+
+    bimtools_paths.set_pushbutton_dir(os.path.dirname(os.path.abspath(__file__)))
 
     # Hot-reload: lógica de la herramienta (no purgar tema WPF / helpers compartidos)
     for _key in list(sys.modules.keys()):
