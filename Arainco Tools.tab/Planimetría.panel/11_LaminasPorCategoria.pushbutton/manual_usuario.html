@@ -73,9 +73,10 @@
 <body>
     <h1>Arainco: Láminas por categoría</h1>
     <div class="intro">
-        Crea láminas vacías (sin vistas) con el nombre <code>CONTENIDO LAMINA</code>,
-        numeración <code>PG-001</code>, cajetín elegido y datos de firma/fecha.
-        Equivale al script Dynamo <em>Láminas por categoría</em>.
+        Crea láminas vacías (sin vistas) con numeración <code>PG-001</code>,
+        cajetín elegido, datos de firma/fecha y un nombre por cada lámina.
+        Si no escribe un nombre, se usa <code>CONTENIDO LAMINA</code>.
+        Equivale al script Dynamo <em>Láminas por categoría</em>, con nombres individuales.
     </div>
 
     <h2>Requisitos</h2>
@@ -89,8 +90,9 @@
     <ol>
         <li>Elija el tipo de formato (cajetín).</li>
         <li>Elija la categoría (el código corto, p. ej. <code>PG</code>, se escribe en Clasificacion y en el número).</li>
-        <li>Indique cuántas láminas crear.</li>
-        <li>Complete Calculó, Revisó, Aprobó, Dibujó y la fecha.</li>
+        <li>Indique cuántas láminas crear (máximo 40 por ejecución).</li>
+        <li>A la izquierda: formato, categoría, cantidad, firmas y fecha (comunes al lote).</li>
+        <li>A la derecha: cada fila muestra el correlativo y el nombre. El valor inicial es <code>CONTENIDO LAMINA</code>; cámbielo solo en las láminas que lo necesiten. Un nombre vacío se sustituye por <code>CONTENIDO LAMINA</code>.</li>
         <li>Pulse <strong>Crear láminas</strong>.</li>
     </ol>
 
@@ -99,7 +101,8 @@
         Se buscan láminas con <code>Clasificacion</code> igual a la categoría elegida,
         se toma el mayor sufijo numérico tras el guion y se continúa
         (<code>PG-012</code> → siguiente <code>PG-013</code>). Pad a 3 dígitos.
-        El nombre es siempre <code>CONTENIDO LAMINA</code>.
+        El nombre de cada lámina se escribe en la lista. No hace falta que sea único
+        (Revit lo permite). Cajetín, firmas y fecha son los mismos para el lote.
     </p>
     <p>
         Si una lámina de esa categoría tiene un número que no es <code>CAT-NNN</code>
@@ -120,6 +123,7 @@
     <h2>Parámetros escritos</h2>
     <table>
         <tr><th>Parámetro</th><th>Origen</th></tr>
+        <tr><td>Sheet Name</td><td>Nombre de la fila (o CONTENIDO LAMINA si está vacío)</td></tr>
         <tr><td>Approved By</td><td>Aprobó</td></tr>
         <tr><td>Designed By</td><td>Calculó</td></tr>
         <tr><td>Checked By</td><td>Revisó</td></tr>
