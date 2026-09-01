@@ -1,65 +1,51 @@
 # -*- coding: utf-8 -*-
+# === BIZARDS_OBFUSCATED_MODULE ===
+# Modulo de produccion ofuscado (no es codigo fuente legible).
+# Generado por prod_builder — no editar.
+# Decoder portable: CPython 3 + IronPython/pyRevit (str/bytes indexing).
+from __future__ import print_function
+import base64 as _b64
+import zlib as _zlib
+
+
+def _biz_ord(x):
+    # int (Py3 bytes) o char (Py2/IronPython str)
+    return x if isinstance(x, int) else ord(x)
+
+
+def _biz_xor_decode(payload, key):
+    klen = len(key)
+    out = [_biz_ord(payload[i]) ^ _biz_ord(key[i % klen]) for i in range(len(payload))]
+    try:
+        return bytes(bytearray(out))
+    except Exception:
+        return "".join(chr(v) for v in out)
+
+
+_K = _b64.b64decode("Qml6YXJkcy5Ub29sLlByb2QuT2JmdXNjYXRpb24udjE=")
+_P = _b64.b64decode(
 """
-Tokens visuales por defecto — BIMTools / Arainco.
-
-Estilo general escalable para **herramientas nuevas** con formulario WPF.
-No aplicar retroactivamente a UIs existentes sin armonización explícita.
-
-La cinta blanca superior es la barra nativa de Windows (Window estándar, sin
-``WindowStyle="None"``). El cuerpo de la ventana usa el tema oscuro.
-
-Implementación: ``bimtools_wpf_shell.py`` · Regla: ``.cursor/rules/bimtools-ui.mdc``
-"""
-
-# ── Tipografía ────────────────────────────────────────────────────────────────
-
-FONT_FAMILY = u"Segoe UI"
-FONT_SIZE_BASE = 12
-FONT_SIZE_TITLE = 18
-FONT_SIZE_SUBTITLE = 11
-FONT_SIZE_BODY = 11
-FONT_SIZE_HINT = 10
-FONT_SIZE_STATUS = 10
-
-FONT_WEIGHT_TITLE = u"Bold"
-FONT_WEIGHT_LABEL = u"SemiBold"
-
-# ── Superficies ───────────────────────────────────────────────────────────────
-
-BG_APP = u"#071018"
-BG_PANEL = u"#0a1620"
-BG_PANEL_ELEVATED = u"#0E1B32"
-BG_GROUP_HEADER = u"#11253D"
-BG_INPUT = u"#050E18"
-
-# ── Bordes ────────────────────────────────────────────────────────────────────
-
-BORDER = u"#21465C"
-BORDER_INPUT = u"#1A3A4D"
-
-# ── Texto ─────────────────────────────────────────────────────────────────────
-
-FG_TITLE = u"#E8F4F8"
-FG_BODY = u"#95B8CC"
-FG_MUTED = u"#64748b"
-FG_ON_ACCENT = u"#0A1A2F"
-
-# ── Acentos ───────────────────────────────────────────────────────────────────
-
-ACCENT_PRIMARY = u"#5BC0DE"
-ACCENT_SLIDER = u"#22D3EE"
-BTN_MANUAL = u"#2A5C3D"
-
-# ── Espaciado y forma ─────────────────────────────────────────────────────────
-
-PAD_WINDOW = 18
-PAD_PANEL = 12
-PAD_PANEL_COMPACT = 10
-CORNER_PANEL = 4
-CORNER_GROUP = 6
-
-# ── Ventana ───────────────────────────────────────────────────────────────────
-
-WINDOW_CHROME_TITLE = u"Arainco"
-WINDOW_SHOW_IN_TASKBAR = False
-WINDOW_RESIZE_DEFAULT = u"CanResize"
+OrOnNz/qqBhAsYR4IaLUWl4whF11QjN19TDm6rScV/hzu/el4w30Bnlly1jnNOcsgCxyIjAoB7zY
+PSc9hOlofDnrYyFCqJzNR7CUlFCE8cSaO+sAqceQOEn/qrrCbHriduQynTNXdtkY+us/K+ni38Mp
+1XRkCw+eZ8Le5erOfJ9DILjTJmh/Lf/tHm1pyiMmXH7acCibS+b9PGuSkGlcFHtY4HQ2JSX8L82V
+EcMQdGhFYWpF9HyrDod3qnguXLhjYCioI3j2ZcLK89tJK1IpIGXTgzY32GZL93X4SP+fWRUn5gUE
+6KiKzaP7eihV5Vb/VlNrvhfn1mc17ToS/vqIMJVBqy8zItktIOffD/cODj2UfbwliV9tnK2CLZE8
+MxIVC+r9pHHDnGILC7sgvM91712Kavff3S3Bvg826vc/XiRDo9vBVWYxi/HD+55gadU6XKOMDUc8
+nbvI3H3iUcvxaT/N5m6A41evK5Hp7DBp25lomvZwlC/lmS/apnk5C22ttADotUUDh86T2MCWr9iX
+jUznrpNdHNL0mmyvE4Nphy3v1Z9mCmPWN4bMz1Y7nPRm2fE+DsVlGLF7Admn5bhDCanpm7fMhCXZ
+UQSYr1Hh94gjO3mOvDJbued5s69Vwqsf4KITxBtvzRnLHiQIzTWZlO0bs7EL8CY5fyyjGzSQhprw
+BhnVq7Di2NIAw80bY1kD59J5nLjlK1TClXp1jQsIvmCFzFXEiIKG8gDsmVhDXV8WX5/y8EDp7bzu
+nZOjGBx85LMSt2ewZVyrvdqQkeSZj0bqh/i6OW7QpM4LNwaiUN/xNzpeJfmIOz2+W+n1HrealEJx
++41pows6vHOTG0S5LeVvLbo54q5iiiMJGxvqhAyAFpddQWfBswmqvGHLlCe6Ff0z56Ngb0FWAOru
+ePjbgmhzI/zfBZpeBK6hcg1jr6BdxureNwlqoYS7dlPlY94dWfyHPKY2Trc+oI1e4iME0t+OwYov
+V0KEodYChYciK6mqVPojKE5k/xSUgm1SQeqtw9MNCJLCUP6vmdyMO3UhTDzCY+CTfwSJ0IlZW6E1
+tLS8mIZZMIUcGP49BCKW8hVVpNsnF5dpHvQsRVNLZYYUbuoAhmqK1Wwl
+""".replace("\n", "").replace("\r", "")
+)
+_P = _biz_xor_decode(_P, _K)
+_SRC = _zlib.decompress(_P)
+# type(u"") = unicode en Py2/IronPython, str en Py3. No usar isinstance(..., str):
+# en IronPython zlib devuelve str (bytes UTF-8) y compile() lo leeria como cp1252.
+if not isinstance(_SRC, type(u"")):
+    _SRC = _SRC.decode("utf-8")
+exec(compile(_SRC, 'bimtools_ui_tokens.py', "exec"), globals())

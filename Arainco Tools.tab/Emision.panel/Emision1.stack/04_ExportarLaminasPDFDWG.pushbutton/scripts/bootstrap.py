@@ -1,97 +1,60 @@
 # -*- coding: utf-8 -*-
-"""Bootstrap de rutas e imports para pushbutton portable 04_ExportarLaminasPDFDWG."""
-
+# === BIZARDS_OBFUSCATED_MODULE ===
+# Modulo de produccion ofuscado (no es codigo fuente legible).
+# Generado por prod_builder — no editar.
+# Decoder portable: CPython 3 + IronPython/pyRevit (str/bytes indexing).
 from __future__ import print_function
-
-import os
-import sys
-
-# Solo módulos de esta herramienta (hot-reload). No usar startswith("lib")/("ui")
-# sin punto: borraría lib2to3, uiautomation, etc. y puede dejar diálogos pyRevit en blanco.
-_MODULES_TO_PURGE = (
-    "run",
-    "export_laminas_run_04",
-    "bootstrap",
-    "bootstrap_path",
-    # Capas locales
-    "lib",
-    "mvvm",
-    "ui",
-    "infra",
-    # Copias planas de acceso / tema (scripts/)
-    "corporate_access",
-    "bimtools_script_guard",
-    "bimtools_instruction_dialog",
-    "bimtools_ui_tokens",
-    "bimtools_wpf_shell",
-    "bimtools_wpf_dark_theme",
-    "revit_wpf_window_position",
-    # Nombres planos (versiones anteriores)
-    "export_laminas_app",
-    "export_laminas_run",
-    "export_laminas_portable_path",
-    "export_laminas_view",
-    "export_laminas_vm",
-    "export_laminas_services",
-    "export_laminas_strategies",
-    "export_laminas_commands",
-    "export_laminas_instruction_dialog",
-    "componer_nombre_lamina_ui",
-    "exportar_laminas_pdf_dwg",
-    "export_laminas_naming_schema",
-    "sheet_export_manager",
-    "listado_planos_excel_core",
-    "bimtools_paths",
-    # Nombres históricos (imp.load_source en versiones anteriores)
-    "bimtools_exportar_laminas_pdf_dwg__04pushbutton",
-    "bimtools_componer_nombre_lamina_ui__04pushbutton",
-    "bimtools_listado_planos_excel_core__04export_laminas",
-    "bimtools_exportlam_services__04",
-    "bimtools_exportlam_strategies__04",
-    "bimtools_exportlam_commands__04",
-    "bimtools_exportlam_vm__04",
-    "bimtools_exportlam_view__04",
-    "bimtools_paths__ExportarLaminasPDFDWG",
-    "bimtools_paths__ComponerNombreLamina",
-)
-
-# Paquetes locales bajo scripts/: solo raíz exacta o hijos con punto.
-_PACKAGE_ROOTS = (
-    "lib",
-    "mvvm",
-    "ui",
-    "infra",
-)
+import base64 as _b64
+import zlib as _zlib
 
 
-def setup_export_laminas_paths():
-    """Inserta ``<pushbutton>/scripts/`` al frente de ``sys.path``."""
+def _biz_ord(x):
+    # int (Py3 bytes) o char (Py2/IronPython str)
+    return x if isinstance(x, int) else ord(x)
+
+
+def _biz_xor_decode(payload, key):
+    klen = len(key)
+    out = [_biz_ord(payload[i]) ^ _biz_ord(key[i % klen]) for i in range(len(payload))]
     try:
-        scripts_dir = os.path.dirname(os.path.abspath(__file__))
-    except NameError:
-        scripts_dir = os.getcwd()
-    if scripts_dir and os.path.isdir(scripts_dir):
-        try:
-            while scripts_dir in sys.path:
-                sys.path.remove(scripts_dir)
-        except Exception:
-            pass
-        sys.path.insert(0, scripts_dir)
-    return scripts_dir
+        return bytes(bytearray(out))
+    except Exception:
+        return "".join(chr(v) for v in out)
 
 
-def purge_export_laminas_modules():
-    for name in _MODULES_TO_PURGE:
-        try:
-            if name in sys.modules:
-                del sys.modules[name]
-        except Exception:
-            pass
-    for key in list(sys.modules.keys()):
-        for root in _PACKAGE_ROOTS:
-            if key == root or key.startswith(root + "."):
-                try:
-                    del sys.modules[key]
-                except Exception:
-                    pass
-                break
+_K = _b64.b64decode("Qml6YXJkcy5Ub29sLlByb2QuT2JmdXNjYXRpb24udjE=")
+_P = _b64.b64decode(
+"""
+OrPnNr/2rxpE0ZRFepO36T0ph+c8Ldkh0LFs/ToOKmMZc6OL63UYZRL9CN7VHu4X4JJXTz+HjI8z
+hQipONHeTv3/xEElOy2/Bh5OY/n0x5TPwZMo1KwfHTO+c8Q3bSjY2Bg/L5CkvxuFwgoKZcokcOQu
+XjDyN2JtKeQ/u/6NGqOu3NBo15+lmE5HSs5AxMTLtWwVPvPQZilHPTE5SJDvNtFNjtZFW8zRoZkY
+lulLiJmZlRAMr3g6cOO7z+c4Q8DsAEpezCatWUQeQnUHDPGVy2mdiBy/mLHpaxyscTpFlcNDPXc3
+eSJyIxXeNeya2rAoz48ZBK8i2Sl5AOuV1gKf2WYO3wJa/RV6nFIHzdrCo6YTEukPWnqWAzghqOUf
+xucZ1pg48H5DJZs1xDnzNj1CfKyNRQE/rCXglLgM3bvz6Dd1BHyqR3A/ETNap9Eu/cNzzBf938My
+Fe33aZPP5fRcZFuzE1pYETwFxOg+bkh8XVZ+TQtDTBRsdV2TDyBX/YHlXMj8ZAv2KiNzDtKodxjc
+odB/CdpU/n92t/biw8ZGU9U/YfhII5Fj5e5vIfUC3zjcZ1rDMXDBKcA91V1o7ZsRKX8R+wibKBGA
+PLIFiQwOskyyBMmuqm0RegQ9+x+2TfWoIbgg6tuEMYmN2oja1PEJHusoo0zvqODYIZChSTcjn5Qt
+P2KW7QYoJDhv9Qm3B3dwL0ZjG+vJxDlKyd+ub0IP1ytdFLMD+xjxhvGgWalmaHX08lgmjAvxWgM7
+zS2272OT9hb12nmHvzClYVSUYX8BLILoNePD3pRA26SgZ4d+unpPHY2lp7hS5F0pxe7lLxBwq1OJ
+bFO8Nzkpd7PJMUE/lmLvWmMp49d6b5MkD6SMJZ/XB5/PHwC2C0DlIIGQctpnHzBJxSpt+jFVXNfh
+XRBqVcdChshlPNxt7C8jwpcZ3ae9eO0QfAqOMfapJWasln0YRcg0pn9CUiObNVkBacnKSvsQ10V2
+pwMeuhkW8pG4NzFgv1gBaq2eK+u860fNhDwgwSBSNFE8pFrN8MAiMzLPrv6QbhNJIpLIGKlK7tRK
+HBdN+QSSn0whC/I0HwpPBJkQTQ+cLJvjH4E9ua/G9linZXIDpq/CSShhhNOsFtc85m7pvnXQVjc6
+BIWw26cVPXQFn9qqoZxjlE1cVM4dvA2sLf4bVzf7FX6NUWMGshI6+b2uH0Vto5vCYbkBmFHIwJ42
+ATfOaNGPyGZ26Dlq8dDjH0uRXSukQ6TJTmI0bfS0i3sch+igeemHHwLb9seGJkJ5MC7AKTBK7JtF
+hMOKcRl5Yso+nHQe3RsTY+/XRKd5boZjPYLIq8MMMKVTNuFE6X3khTbcszDblzSyh2W91/fb8Guq
+HG+DUA+mG8+IUjpsz2vKEoR0RNkC8KmlRw0ETsuPZnKbtYdJhFNfSL9qVkpqKP2ywVzY97CSiUlW
+R2H+zBGn4m99o76rGs84vz7aArcxovnvqJYlEmXeb1PBs8DWJtlHij5aoJLS0Hj7xbgKg9nmcMBp
+yTZidICx/AxeQWT9OsFyAxxydYMHcZjUNE5DExRsOF+xkAsvB/panXAwqlc6trrgRUy/X0nydnkt
+CpQXddXpzylPVlq/c91aCa8Xq3KN4XhGSw9wp2hasmPI7BnNWWSGYZ5lMvbyAgxUwyULePEbks3n
+8F7D1j5b6Xsaxg76LGe4JWwfQg19LJ7qXRgAIkLNkoT+NragSn/BNyWqvB+m8s3bp18UT93iwR7K
+NiMuvLtozCvrIIU8K+XqzDT2eWzyOq9bFbS82xpr0XeR4UoG
+""".replace("\n", "").replace("\r", "")
+)
+_P = _biz_xor_decode(_P, _K)
+_SRC = _zlib.decompress(_P)
+# type(u"") = unicode en Py2/IronPython, str en Py3. No usar isinstance(..., str):
+# en IronPython zlib devuelve str (bytes UTF-8) y compile() lo leeria como cp1252.
+if not isinstance(_SRC, type(u"")):
+    _SRC = _SRC.decode("utf-8")
+exec(compile(_SRC, 'bootstrap.py', "exec"), globals())

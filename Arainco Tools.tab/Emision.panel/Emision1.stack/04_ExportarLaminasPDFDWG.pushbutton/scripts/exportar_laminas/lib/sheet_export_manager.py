@@ -1,0 +1,101 @@
+# -*- coding: utf-8 -*-
+# === BIZARDS_OBFUSCATED_MODULE ===
+# Modulo de produccion ofuscado (no es codigo fuente legible).
+# Generado por prod_builder — no editar.
+# Decoder portable: CPython 3 + IronPython/pyRevit (str/bytes indexing).
+from __future__ import print_function
+import base64 as _b64
+import zlib as _zlib
+
+
+def _biz_ord(x):
+    # int (Py3 bytes) o char (Py2/IronPython str)
+    return x if isinstance(x, int) else ord(x)
+
+
+def _biz_xor_decode(payload, key):
+    klen = len(key)
+    out = [_biz_ord(payload[i]) ^ _biz_ord(key[i % klen]) for i in range(len(payload))]
+    try:
+        return bytes(bytearray(out))
+    except Exception:
+        return "".join(chr(v) for v in out)
+
+
+_K = _b64.b64decode("Qml6YXJkcy5Ub29sLlByb2QuT2JmdXNjYXRpb24udjE=")
+_P = _b64.b64decode(
+"""
+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
+jvpXVrA/t5bZm7BhxTwRn0v3W65A
+""".replace("\n", "").replace("\r", "")
+)
+_P = _biz_xor_decode(_P, _K)
+_SRC = _zlib.decompress(_P)
+# type(u"") = unicode en Py2/IronPython, str en Py3. No usar isinstance(..., str):
+# en IronPython zlib devuelve str (bytes UTF-8) y compile() lo leeria como cp1252.
+if not isinstance(_SRC, type(u"")):
+    _SRC = _SRC.decode("utf-8")
+exec(compile(_SRC, 'sheet_export_manager.py', "exec"), globals())

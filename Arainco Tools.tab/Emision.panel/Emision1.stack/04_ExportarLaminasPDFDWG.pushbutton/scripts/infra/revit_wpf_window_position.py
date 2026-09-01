@@ -1,997 +1,145 @@
 # -*- coding: utf-8 -*-
+# === BIZARDS_OBFUSCATED_MODULE ===
+# Modulo de produccion ofuscado (no es codigo fuente legible).
+# Generado por prod_builder — no editar.
+# Decoder portable: CPython 3 + IronPython/pyRevit (str/bytes indexing).
+from __future__ import print_function
+import base64 as _b64
+import zlib as _zlib
+
+
+def _biz_ord(x):
+    # int (Py3 bytes) o char (Py2/IronPython str)
+    return x if isinstance(x, int) else ord(x)
+
+
+def _biz_xor_decode(payload, key):
+    klen = len(key)
+    out = [_biz_ord(payload[i]) ^ _biz_ord(key[i % klen]) for i in range(len(payload))]
+    try:
+        return bytes(bytearray(out))
+    except Exception:
+        return "".join(chr(v) for v in out)
+
+
+_K = _b64.b64decode("Qml6YXJkcy5Ub29sLlByb2QuT2JmdXNjYXRpb24udjE=")
+_P = _b64.b64decode(
 """
-Alinea ventanas WPF con la esquina superior izquierda del área de dibujo
-de la vista activa de Revit (UIView.GetWindowRectangle), con conversión DPI.
-
-Fallback: CenterScreen si no hay rectángulo o HWND.
-"""
-
-import clr
-
-clr.AddReference("PresentationCore")
-clr.AddReference("WindowsBase")
-
-
-def revit_main_hwnd(uiapp):
-    """HWND de la ventana principal de Revit (IntPtr o compatible)."""
-    hwnd = None
-    try:
-        if uiapp is not None and hasattr(uiapp, "MainWindowHandle"):
-            hwnd = uiapp.MainWindowHandle
-    except Exception:
-        pass
-    if not hwnd or (hasattr(hwnd, "ToInt64") and hwnd.ToInt64() == 0):
-        try:
-            import System.Diagnostics
-
-            proc = System.Diagnostics.Process.GetCurrentProcess()
-            hwnd = proc.MainWindowHandle
-        except Exception:
-            pass
-    if hwnd and (not hasattr(hwnd, "ToInt64") or hwnd.ToInt64() != 0):
-        return hwnd
-    return None
-
-
-def _get_active_ui_view_screen_rect(uidoc):
-    if uidoc is None:
-        return None
-    try:
-        active_id = uidoc.ActiveView.Id
-        try:
-            active_id_int = int(active_id.Value)
-        except Exception:
-            try:
-                active_id_int = int(active_id.IntegerValue)
-            except Exception:
-                active_id_int = None
-        for uiv in uidoc.GetOpenUIViews():
-            try:
-                if active_id_int is not None:
-                    try:
-                        vid = uiv.ViewId
-                        try:
-                            vid_int = int(vid.Value)
-                        except Exception:
-                            vid_int = int(vid.IntegerValue)
-                        if vid_int == active_id_int:
-                            return uiv.GetWindowRectangle()
-                    except Exception:
-                        pass
-                # Fallback: igualdad directa (algunas versiones funcionan bien así)
-                if uiv.ViewId == active_id:
-                    return uiv.GetWindowRectangle()
-            except Exception:
-                continue
-    except Exception:
-        pass
-    return None
-
-
-def _screen_pixels_to_wpf_dip(left_px, top_px, hwnd):
-    try:
-        # Preferir DPI por-monitor (vista puede estar en otro monitor con escala distinta).
-        dpi_x, dpi_y = _get_monitor_dpi_for_point(float(left_px), float(top_px))
-        if dpi_x and dpi_y:
-            # WPF usa DIP: 96 DIP = 96 px a 100% (96 DPI).
-            return (float(left_px) * 96.0 / float(dpi_x)), (float(top_px) * 96.0 / float(dpi_y))
-
-        # Fallback: usar transform del hwnd (normalmente Revit main window).
-        from System.Windows import Point
-        from System.Windows.Interop import HwndSource
-
-        hs = HwndSource.FromHwnd(hwnd)
-        if hs is None or hs.CompositionTarget is None:
-            return float(left_px), float(top_px)
-        pt = hs.CompositionTarget.TransformFromDevice.Transform(Point(float(left_px), float(top_px)))
-        return float(pt.X), float(pt.Y)
-    except Exception:
-        return float(left_px), float(top_px)
-
-
-def _get_monitor_dpi_for_point(x_px, y_px):
-    """Devuelve (dpiX, dpiY) del monitor que contiene el punto (screen px).
-
-    Usa GetDpiForMonitor (Shcore.dll) cuando está disponible (Windows 8.1+).
-    Retorna (None, None) si falla.
-    """
-    try:
-        import System
-        from System import IntPtr
-        from System.Runtime.InteropServices import Marshal
-
-        # POINT struct (int x, int y)
-        class _POINT(System.ValueType):
-            _fields_ = [("x", System.Int32), ("y", System.Int32)]
-
-        # MonitorFromPoint via user32
-        user32 = System.Runtime.InteropServices.DllImportAttribute("user32.dll")
-    except Exception:
-        # IronPython no soporta declarar structs así; usar P/Invoke via ctypes si disponible.
-        pass
-
-    # Implementación robusta con ctypes (disponible en IronPython 2.7).
-    try:
-        import ctypes
-        from ctypes import wintypes
-
-        user32 = ctypes.WinDLL("user32", use_last_error=True)
-        shcore = ctypes.WinDLL("Shcore", use_last_error=True)
-
-        class POINT(ctypes.Structure):
-            _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
-
-        MONITOR_DEFAULTTONEAREST = 2
-        MDT_EFFECTIVE_DPI = 0
-
-        MonitorFromPoint = user32.MonitorFromPoint
-        MonitorFromPoint.argtypes = [POINT, wintypes.DWORD]
-        MonitorFromPoint.restype = wintypes.HMONITOR
-
-        GetDpiForMonitor = shcore.GetDpiForMonitor
-        GetDpiForMonitor.argtypes = [wintypes.HMONITOR, wintypes.INT, ctypes.POINTER(wintypes.UINT), ctypes.POINTER(wintypes.UINT)]
-        GetDpiForMonitor.restype = wintypes.HRESULT
-
-        pt = POINT(int(round(float(x_px))), int(round(float(y_px))))
-        hmon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST)
-        if not hmon:
-            return None, None
-        dpi_x = wintypes.UINT()
-        dpi_y = wintypes.UINT()
-        hr = GetDpiForMonitor(hmon, MDT_EFFECTIVE_DPI, ctypes.byref(dpi_x), ctypes.byref(dpi_y))
-        if int(hr) != 0:
-            return None, None
-        dx = int(dpi_x.value) if int(dpi_x.value) > 0 else None
-        dy = int(dpi_y.value) if int(dpi_y.value) > 0 else None
-        return dx, dy
-    except Exception:
-        return None, None
-
-
-def _hwnd_to_int(hwnd):
-    if hwnd is None:
-        return 0
-    try:
-        return int(hwnd.ToInt64())
-    except Exception:
-        try:
-            return int(hwnd)
-        except Exception:
-            return 0
-
-
-def _wpf_window_hwnd(win):
-    try:
-        from System import IntPtr
-        from System.Windows.Interop import WindowInteropHelper
-
-        h = WindowInteropHelper(win).Handle
-        if h == IntPtr.Zero:
-            return 0
-        return _hwnd_to_int(h)
-    except Exception:
-        return 0
-
-
-def _primary_work_area_px():
-    """Área de trabajo del monitor primario en píxeles de pantalla."""
-    try:
-        import ctypes
-        from ctypes import wintypes
-
-        class RECT(ctypes.Structure):
-            _fields_ = [
-                ("left", wintypes.LONG),
-                ("top", wintypes.LONG),
-                ("right", wintypes.LONG),
-                ("bottom", wintypes.LONG),
-            ]
-
-        rect = RECT()
-        if not ctypes.windll.user32.SystemParametersInfoW(
-            0x0030, 0, ctypes.byref(rect), 0,
-        ):
-            return None
-        return (
-            float(rect.left),
-            float(rect.top),
-            float(rect.right - rect.left),
-            float(rect.bottom - rect.top),
-        )
-    except Exception:
-        return None
-
-
-def _monitor_work_area_px(hwnd):
-    """Rectángulo del área de trabajo (px pantalla) del monitor de ``hwnd``.
-
-    Retorna ``(left, top, width, height)`` o ``None``.
-    """
-    if hwnd is not None:
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            user32 = ctypes.WinDLL("user32", use_last_error=True)
-            MONITOR_DEFAULTTONEAREST = 2
-
-            class RECT(ctypes.Structure):
-                _fields_ = [
-                    ("left", wintypes.LONG),
-                    ("top", wintypes.LONG),
-                    ("right", wintypes.LONG),
-                    ("bottom", wintypes.LONG),
-                ]
-
-            class MONITORINFO(ctypes.Structure):
-                _fields_ = [
-                    ("cbSize", wintypes.DWORD),
-                    ("rcMonitor", RECT),
-                    ("rcWork", RECT),
-                    ("dwFlags", wintypes.DWORD),
-                ]
-
-            MonitorFromWindow = user32.MonitorFromWindow
-            MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
-            MonitorFromWindow.restype = wintypes.HMONITOR
-            GetMonitorInfoW = user32.GetMonitorInfoW
-            GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.POINTER(MONITORINFO)]
-            GetMonitorInfoW.restype = wintypes.BOOL
-
-            h = _hwnd_to_int(hwnd)
-            if h:
-                hmon = MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST)
-                if hmon:
-                    mi = MONITORINFO()
-                    mi.cbSize = ctypes.sizeof(MONITORINFO)
-                    if GetMonitorInfoW(hmon, ctypes.byref(mi)):
-                        rc = mi.rcWork
-                        return (
-                            float(rc.left),
-                            float(rc.top),
-                            float(rc.right - rc.left),
-                            float(rc.bottom - rc.top),
-                        )
-        except Exception:
-            pass
-    return None
-
-
-def snap_wpf_window_left_half(win, hwnd_revit=None, half_width=True):
-    u"""Snap real (Win+←): ``SetWindowPos`` en px de pantalla, sin conversión DIP.
-
-    Acopla al borde izquierdo del área de trabajo del monitor de Revit.
-    Con ``half_width=True``, ancho = 50 %% del área útil; alto = 100 %%.
-    Retorna True si se aplicó sobre el HWND de la ventana WPF.
-    """
-    area = _monitor_work_area_px(hwnd_revit)
-    if area is None:
-        area = _primary_work_area_px()
-    if area is None:
-        position_wpf_window_snap_left(win, hwnd_revit, half_width=half_width)
-        return False
-
-    left_px, top_px, width_px, height_px = area
-    snap_l = int(round(left_px))
-    snap_t = int(round(top_px))
-    snap_w = max(320, int(round(width_px * 0.5 if half_width else width_px)))
-    snap_h = max(200, int(round(height_px)))
-
-    wh = _wpf_window_hwnd(win)
-    if not wh:
-        return False
-
-    try:
-        import ctypes
-
-        user32 = ctypes.windll.user32
-        SWP_NOZORDER = 0x0004
-        SWP_NOACTIVATE = 0x0010
-        flags = SWP_NOZORDER | SWP_NOACTIVATE
-        if not user32.SetWindowPos(wh, 0, snap_l, snap_t, snap_w, snap_h, flags):
-            return False
-    except Exception:
-        return False
-
-    try:
-        from System.Windows import WindowStartupLocation, WindowState
-
-        win.WindowStartupLocation = WindowStartupLocation.Manual
-        if win.WindowState != WindowState.Normal:
-            win.WindowState = WindowState.Normal
-        if half_width:
-            try:
-                left_dip, _ = _screen_pixels_to_wpf_dip(
-                    float(snap_l), float(snap_t), hwnd_revit,
-                )
-                right_dip, _ = _screen_pixels_to_wpf_dip(
-                    float(snap_l + snap_w), float(snap_t), hwnd_revit,
-                )
-                snap_w_dip = max(320.0, right_dip - left_dip)
-                if float(win.MinWidth) > snap_w_dip:
-                    win.MinWidth = snap_w_dip
-            except Exception:
-                pass
-    except Exception:
-        pass
-    return True
-
-
-def bind_snap_wpf_window_left_half(win, hwnd_revit=None, half_width=True, before_snap=None):
-    u"""Enlaza SourceInitialized y Loaded para aplicar snap nativo cuando exista HWND."""
-    if win is None:
-        return
-
-    def _apply(sender, evt):
-        if before_snap is not None:
-            try:
-                before_snap()
-            except Exception:
-                pass
-        snap_wpf_window_left_half(win, hwnd_revit, half_width=half_width)
-
-    try:
-        from System.Windows import RoutedEventHandler
-
-        h = RoutedEventHandler(_apply)
-        win.SourceInitialized += h
-        win.Loaded += h
-        try:
-            win.ContentRendered += h
-        except Exception:
-            pass
-    except Exception:
-        pass
-
-
-def position_wpf_window_snap_left(win, hwnd=None, half_width=True):
-    u"""Snap: intenta ``SetWindowPos``; si no hay HWND, delega en WPF (DIP)."""
-    if snap_wpf_window_left_half(win, hwnd, half_width=half_width):
-        return
-    try:
-        from System.Windows import SystemParameters, WindowStartupLocation
-    except Exception:
-        return
-
-    area = _monitor_work_area_px(hwnd)
-    if area is not None:
-        left_px, top_px, width_px, height_px = area
-        left_dip, top_dip = _screen_pixels_to_wpf_dip(left_px, top_px, hwnd)
-        right_dip, bottom_dip = _screen_pixels_to_wpf_dip(
-            left_px + width_px, top_px + height_px, hwnd,
-        )
-        work_w_dip = max(1.0, right_dip - left_dip)
-        work_h_dip = max(1.0, bottom_dip - top_dip)
-    else:
-        try:
-            wa = SystemParameters.WorkArea
-            left_dip = float(wa.Left)
-            top_dip = float(wa.Top)
-            work_w_dip = max(1.0, float(wa.Width))
-            work_h_dip = max(1.0, float(wa.Height))
-        except Exception:
-            return
-
-    try:
-        win.WindowStartupLocation = WindowStartupLocation.Manual
-        win.Left = left_dip
-        win.Top = top_dip
-        win.Height = work_h_dip
-        if half_width:
-            snap_w = max(320.0, work_w_dip * 0.5)
-            win.Width = snap_w
-            try:
-                cur_min = float(win.MinWidth)
-                if cur_min > snap_w:
-                    win.MinWidth = snap_w
-            except Exception:
-                win.MinWidth = snap_w
-        try:
-            from System.Windows import WindowState
-
-            if win.WindowState != WindowState.Normal:
-                win.WindowState = WindowState.Normal
-        except Exception:
-            pass
-    except Exception:
-        pass
-
-
-def position_wpf_window_snap_left_work_area(win, hwnd=None, full_height=False):
-    u"""Compatibilidad: delega en snap mitad izquierda."""
-    snap_wpf_window_left_half(win, hwnd, half_width=True)
-
-
-def position_wpf_window_top_center_work_area(win):
-    u"""Centra el formulario en horizontal sobre el área de trabajo y alinea su borde superior al de dicha área."""
-    try:
-        from System.Windows import SystemParameters, WindowStartupLocation
-
-        wa = SystemParameters.WorkArea
-        win.WindowStartupLocation = WindowStartupLocation.Manual
-        w = float(win.Width)
-        if w <= 1.0:
-            try:
-                fw = float(win.ActualWidth)
-                if fw > 1.0:
-                    w = fw
-            except Exception:
-                pass
-        wa_left = float(wa.Left)
-        wa_top = float(wa.Top)
-        wa_width = float(wa.Width)
-        left = wa_left + (wa_width - w) / 2.0
-        if left < wa_left:
-            left = wa_left
-        max_left = wa_left + wa_width - w
-        if max_left < wa_left:
-            max_left = wa_left
-        if left > max_left:
-            left = max_left
-        win.Left = left
-        win.Top = wa_top
-    except Exception:
-        pass
-
-
-def position_wpf_window_center_work_area(win):
-    u"""Centra el formulario en el área de trabajo (horizontal y vertical)."""
-    try:
-        from System.Windows import SystemParameters, WindowStartupLocation
-
-        wa = SystemParameters.WorkArea
-        win.WindowStartupLocation = WindowStartupLocation.Manual
-        w = float(win.Width)
-        h = float(win.Height)
-        if w <= 1.0:
-            try:
-                fw = float(win.ActualWidth)
-                if fw > 1.0:
-                    w = fw
-            except Exception:
-                pass
-        if h <= 1.0:
-            try:
-                fh = float(win.ActualHeight)
-                if fh > 1.0:
-                    h = fh
-            except Exception:
-                pass
-        wa_left = float(wa.Left)
-        wa_top = float(wa.Top)
-        wa_width = float(wa.Width)
-        wa_height = float(wa.Height)
-        left = wa_left + (wa_width - w) / 2.0
-        top = wa_top + (wa_height - h) / 2.0
-        if left < wa_left:
-            left = wa_left
-        if top < wa_top:
-            top = wa_top
-        max_left = wa_left + wa_width - w
-        max_top = wa_top + wa_height - h
-        if max_left < wa_left:
-            max_left = wa_left
-        if max_top < wa_top:
-            max_top = wa_top
-        if left > max_left:
-            left = max_left
-        if top > max_top:
-            top = max_top
-        win.Left = left
-        win.Top = top
-    except Exception:
-        pass
-
-
-def position_wpf_window_center_on_monitor(win, hwnd=None):
-    u"""Centra ``win`` en el área de trabajo del monitor que contiene ``hwnd`` (p. ej. Revit)."""
-    if win is None:
-        return False
-    area = _monitor_work_area_px(hwnd)
-    if area is None:
-        area = _primary_work_area_px()
-    if area is None:
-        position_wpf_window_center_work_area(win)
-        return False
-    left_px, top_px, width_px, height_px = area
-    left_dip, top_dip, wa_w_dip, wa_h_dip = _work_area_dip_rect(
-        left_px, top_px, width_px, height_px, hwnd,
-    )
-    try:
-        from System.Windows import WindowStartupLocation
-
-        w = float(win.Width)
-        h = float(win.Height)
-        if w <= 1.0:
-            try:
-                fw = float(win.ActualWidth)
-                if fw > 1.0:
-                    w = fw
-            except Exception:
-                w = 400.0
-        if h <= 1.0:
-            try:
-                fh = float(win.ActualHeight)
-                if fh > 1.0:
-                    h = fh
-            except Exception:
-                h = 180.0
-        win.WindowStartupLocation = WindowStartupLocation.Manual
-        left = left_dip + max(0.0, (wa_w_dip - w) * 0.5)
-        top = top_dip + max(0.0, (wa_h_dip - h) * 0.5)
-        max_left = left_dip + max(0.0, wa_w_dip - w)
-        max_top = top_dip + max(0.0, wa_h_dip - h)
-        win.Left = min(left, max_left)
-        win.Top = min(top, max_top)
-        return True
-    except Exception:
-        return False
-
-
-def bind_center_wpf_on_revit_monitor(win, hwnd_revit=None):
-    u"""Centra en el monitor de Revit al cargar (útil con ``SizeToContent``)."""
-    if win is None:
-        return
-
-    def _apply(sender, args):
-        position_wpf_window_center_on_monitor(win, hwnd_revit)
-
-    try:
-        from System.Windows import RoutedEventHandler
-
-        h = RoutedEventHandler(_apply)
-        win.Loaded += h
-        try:
-            win.ContentRendered += h
-        except Exception:
-            pass
-    except Exception:
-        position_wpf_window_center_on_monitor(win, hwnd_revit)
-
-
-def _revit_monitor_work_area(hwnd_revit=None):
-    u"""Área de trabajo (px) del monitor que contiene la ventana de Revit."""
-    area = _monitor_work_area_px(hwnd_revit)
-    if area is None:
-        area = _primary_work_area_px()
-    return area
-
-
-def bind_maximize_wpf_on_revit_monitor(win, hwnd_revit=None):
-    u"""Maximizar en el área de trabajo del monitor de Revit (no snap izquierdo ni monitor primario)."""
-    if win is None:
-        return False
-
-    def _on_state_changed(sender, args):
-        try:
-            from System import Double
-            from System.Windows import WindowStartupLocation, WindowState
-        except Exception:
-            return
-        try:
-            if win.WindowState != WindowState.Maximized:
-                return
-        except Exception:
-            return
-        area = _revit_monitor_work_area(hwnd_revit)
-        if area is None:
-            return
-        left_px, top_px, width_px, height_px = area
-        try:
-            win.MaxWidth = Double.PositiveInfinity
-            win.MaxHeight = Double.PositiveInfinity
-            win.WindowStartupLocation = WindowStartupLocation.Manual
-        except Exception:
-            pass
-        wh = _wpf_window_hwnd(win)
-        if wh:
-            try:
-                import ctypes
-
-                user32 = ctypes.windll.user32
-                SWP_NOZORDER = 0x0004
-                if user32.SetWindowPos(
-                    wh,
-                    0,
-                    int(round(left_px)),
-                    int(round(top_px)),
-                    max(320, int(round(width_px))),
-                    max(200, int(round(height_px))),
-                    SWP_NOZORDER,
-                ):
-                    return
-            except Exception:
-                pass
-        if _fill_wpf_window_work_area_wpf(
-            win, left_px, top_px, width_px, height_px, hwnd_revit,
-        ):
-            try:
-                win.WindowState = WindowState.Maximized
-            except Exception:
-                pass
-
-    try:
-        from System import EventHandler
-
-        win.StateChanged += EventHandler(_on_state_changed)
-        return True
-    except Exception:
-        return False
-
-
-def _screen_work_area_tuple(screen):
-    """``(left, top, width, height)`` en px de pantalla desde un ``Screen`` WinForms."""
-    try:
-        wa = screen.WorkingArea
-        return (
-            float(wa.X),
-            float(wa.Y),
-            float(wa.Width),
-            float(wa.Height),
-        )
-    except Exception:
-        return None
-
-
-def has_multiple_monitors():
-    u"""True si Windows reporta 2 o más monitores."""
-    try:
-        import clr
-        clr.AddReference("System.Windows.Forms")
-        from System.Windows.Forms import Screen
-        return len(Screen.AllScreens) >= 2
-    except Exception:
-        return False
-
-
-def get_secondary_screen_for_revit(hwnd_revit=None):
-    u"""Monitor distinto al que contiene la ventana de Revit, o ``None``."""
-    try:
-        import clr
-        clr.AddReference("System.Windows.Forms")
-        from System.Windows.Forms import Screen
-
-        screens = list(Screen.AllScreens or [])
-        if len(screens) < 2:
-            return None
-        revit_scr = None
-        h = _hwnd_to_int(hwnd_revit)
-        if h:
-            try:
-                revit_scr = Screen.FromHandle(h)
-            except Exception:
-                revit_scr = None
-        if revit_scr is None:
-            revit_scr = Screen.PrimaryScreen
-
-        def _same_monitor(a, b):
-            if a is None or b is None:
-                return False
-            try:
-                if a.DeviceName == b.DeviceName:
-                    return True
-            except Exception:
-                pass
-            try:
-                ba, bb = a.Bounds, b.Bounds
-                return (
-                    int(ba.X) == int(bb.X)
-                    and int(ba.Y) == int(bb.Y)
-                    and int(ba.Width) == int(bb.Width)
-                    and int(ba.Height) == int(bb.Height)
-                )
-            except Exception:
-                return False
-
-        for scr in screens:
-            if not _same_monitor(scr, revit_scr):
-                return scr
-        return None
-    except Exception:
-        return None
-
-
-def _work_area_dip_rect(left_px, top_px, width_px, height_px, hwnd_ref=None):
-    left_dip, top_dip = _screen_pixels_to_wpf_dip(left_px, top_px, hwnd_ref)
-    right_dip, bottom_dip = _screen_pixels_to_wpf_dip(
-        left_px + width_px, top_px + height_px, hwnd_ref,
-    )
-    return (
-        left_dip,
-        top_dip,
-        max(1.0, right_dip - left_dip),
-        max(1.0, bottom_dip - top_dip),
-    )
-
-
-def preposition_wpf_window_on_work_area(win, left_px, top_px, width_px, height_px, hwnd_ref=None):
-    u"""Antes de ``Show()``: coloca la ventana en el monitor destino (coord. virtuales DIP).
-
-    Evita que WPF asocie la ventana al monitor primario antes de maximizar/llenar.
-    """
-    if win is None:
-        return
-    try:
-        from System.Windows import WindowStartupLocation, WindowState
-
-        try:
-            from System import Double
-
-            win.MaxWidth = Double.PositiveInfinity
-            win.MaxHeight = Double.PositiveInfinity
-        except Exception:
-            pass
-        left_dip, top_dip, w_dip, h_dip = _work_area_dip_rect(
-            left_px, top_px, width_px, height_px, hwnd_ref,
-        )
-        win.WindowStartupLocation = WindowStartupLocation.Manual
-        win.WindowState = WindowState.Normal
-        win.Left = left_dip
-        win.Top = top_dip
-        win.Width = w_dip
-        win.Height = h_dip
-    except Exception:
-        pass
-
-
-def fill_wpf_window_on_work_area_px(win, left_px, top_px, width_px, height_px, hwnd_ref=None):
-    u"""Llena el área de trabajo (px pantalla) con ``SetWindowPos`` — fiable en multi-monitor."""
-    wh = _wpf_window_hwnd(win)
-    if wh:
-        try:
-            import ctypes
-
-            user32 = ctypes.windll.user32
-            SWP_SHOWWINDOW = 0x0040
-            SWP_NOZORDER = 0x0004
-            flags = SWP_SHOWWINDOW | SWP_NOZORDER
-            user32.SetWindowPos(
-                wh,
-                0,
-                int(round(left_px)),
-                int(round(top_px)),
-                max(320, int(round(width_px))),
-                max(200, int(round(height_px))),
-                flags,
-            )
-            try:
-                from System.Windows import WindowState
-
-                if win.WindowState != WindowState.Normal:
-                    win.WindowState = WindowState.Normal
-            except Exception:
-                pass
-            return True
-        except Exception:
-            pass
-    return _fill_wpf_window_work_area_wpf(
-        win, left_px, top_px, width_px, height_px, hwnd_ref,
-    )
-
-
-def _fill_wpf_window_work_area_wpf(win, left_px, top_px, width_px, height_px, hwnd_ref=None):
-    u"""Fallback WPF: tamaño manual al área de trabajo (sin ``WindowState.Maximized``)."""
-    if win is None:
-        return False
-    try:
-        from System.Windows import WindowStartupLocation, WindowState
-
-        try:
-            from System import Double
-
-            win.MaxWidth = Double.PositiveInfinity
-            win.MaxHeight = Double.PositiveInfinity
-        except Exception:
-            pass
-        left_dip, top_dip, w_dip, h_dip = _work_area_dip_rect(
-            left_px, top_px, width_px, height_px, hwnd_ref,
-        )
-        win.WindowStartupLocation = WindowStartupLocation.Manual
-        win.WindowState = WindowState.Normal
-        win.Left = left_dip
-        win.Top = top_dip
-        win.Width = w_dip
-        win.Height = h_dip
-        return True
-    except Exception:
-        return False
-
-
-def maximize_wpf_window_on_work_area_px(win, left_px, top_px, width_px, height_px, hwnd_ref=None):
-    u"""Alias: llena el área de trabajo (evita ``SW_MAXIMIZE`` que suele ir al monitor primario)."""
-    return fill_wpf_window_on_work_area_px(
-        win, left_px, top_px, width_px, height_px, hwnd_ref,
-    )
-
-
-def _maximize_wpf_window_wpf_fallback(win, left_px, top_px, width_px, height_px, hwnd_ref=None):
-    u"""Fallback WPF para llenar área de trabajo."""
-    if width_px is None or height_px is None:
-        return _fill_wpf_window_work_area_wpf(win, left_px, top_px, 800.0, 600.0, hwnd_ref)
-    return _fill_wpf_window_work_area_wpf(
-        win, left_px, top_px, width_px, height_px, hwnd_ref,
-    )
-
-
-def bind_maximize_wpf_on_secondary_monitor(win, hwnd_revit=None):
-    u"""Si hay monitor secundario (≠ Revit), despliega ``win`` maximizado ahí.
-
-    Retorna True si se enlazó el posicionamiento; False si solo hay un monitor.
-    """
-    if win is None:
-        return False
-    secondary = get_secondary_screen_for_revit(hwnd_revit)
-    if secondary is None:
-        return False
-    area = _screen_work_area_tuple(secondary)
-    if area is None:
-        return False
-    left_px, top_px, width_px, height_px = area
-
-    # Crítico: posicionar ANTES de Show() para que WPF no ancle al monitor primario.
-    preposition_wpf_window_on_work_area(
-        win, left_px, top_px, width_px, height_px, hwnd_revit,
-    )
-
-    applied = [False]
-
-    def _apply(sender, evt):
-        if applied[0]:
-            return
-        if fill_wpf_window_on_work_area_px(
-            win, left_px, top_px, width_px, height_px, hwnd_revit,
-        ):
-            applied[0] = True
-            return
-        if _wpf_window_hwnd(win):
-            if _maximize_wpf_window_wpf_fallback(
-                win, left_px, top_px, width_px, height_px, hwnd_revit,
-            ):
-                applied[0] = True
-
-    try:
-        from System.Windows import RoutedEventHandler
-
-        h = RoutedEventHandler(_apply)
-        win.SourceInitialized += h
-        win.Loaded += h
-        try:
-            win.ContentRendered += h
-        except Exception:
-            pass
-    except Exception:
-        return _maximize_wpf_window_wpf_fallback(
-            win, left_px, top_px, width_px, height_px, hwnd_revit,
-        )
-    return True
-
-
-def position_wpf_window_top_left_at_active_view(win, uidoc, hwnd, match_active_view_width=False):
-    """Alinea esquina superior izquierda del formulario con la de la vista activa.
-
-    Si ``match_active_view_width`` es True, además fija el ancho del ``Window`` al del
-    rectángulo de la vista (UIView) en píxeles de pantalla convertidos a DIP) y usa
-    ``SizeToContent.Height`` para que la altura siga al contenido sin recortar.
-
-    Si no hay rectángulo y ``match_active_view_width`` es True, se restaura
-    ``SizeToContent.WidthAndHeight`` y se centra en pantalla.
-    """
-    try:
-        from System.Windows import SizeToContent, WindowStartupLocation
-    except Exception:
-        SizeToContent = None
-        WindowStartupLocation = None
-    rect = _get_active_ui_view_screen_rect(uidoc)
-    if rect is None:
-        if match_active_view_width and SizeToContent is not None:
-            try:
-                win.SizeToContent = SizeToContent.WidthAndHeight
-            except Exception:
-                pass
-        if WindowStartupLocation is not None:
-            try:
-                win.WindowStartupLocation = WindowStartupLocation.CenterScreen
-            except Exception:
-                pass
-        return
-    try:
-        left_px = float(rect.Left)
-        top_px = float(rect.Top)
-        right_px = float(rect.Right)
-        bottom_px = float(rect.Bottom)
-    except Exception:
-        if match_active_view_width and SizeToContent is not None:
-            try:
-                win.SizeToContent = SizeToContent.WidthAndHeight
-            except Exception:
-                pass
-        if WindowStartupLocation is not None:
-            try:
-                win.WindowStartupLocation = WindowStartupLocation.CenterScreen
-            except Exception:
-                pass
-        return
-    width_px = max(0.0, right_px - left_px)
-    # Nota: hwnd puede ser None en algunos contextos; la conversión usa primero DPI por monitor.
-    left_dip, top_dip = _screen_pixels_to_wpf_dip(left_px, top_px, hwnd)
-    right_dip, bottom_dip = _screen_pixels_to_wpf_dip(right_px, bottom_px, hwnd)
-    width_dip = max(0.0, right_dip - left_dip)
-    if match_active_view_width and SizeToContent is not None and width_dip > 0.0:
-        try:
-            win.SizeToContent = SizeToContent.Height
-        except Exception:
-            pass
-        try:
-            min_w = float(win.MinWidth)
-        except Exception:
-            min_w = 0.0
-        try:
-            from System.Windows import SystemParameters
-
-            max_w = float(SystemParameters.WorkArea.Width) - 16.0
-        except Exception:
-            max_w = width_dip
-        try:
-            win.Width = max(min_w, min(width_dip, max_w))
-        except Exception:
-            pass
-    if WindowStartupLocation is not None:
-        try:
-            win.WindowStartupLocation = WindowStartupLocation.Manual
-        except Exception:
-            pass
-    try:
-        win.Left = left_dip
-        win.Top = top_dip
-    except Exception:
-        pass
-
-
-def position_wpf_window_center_on_active_view(win, uidoc, hwnd, width_dip, height_dip):
-    """Centra el rectángulo del formulario (en DIP) en el área de dibujo de la vista activa.
-
-    Usa el mismo rectángulo y conversión DPI que ``position_wpf_window_top_left_at_active_view``.
-    Si no hay vista activa o rectángulo, ``CenterScreen``.
-    """
-    try:
-        from System.Windows import WindowStartupLocation
-    except Exception:
-        WindowStartupLocation = None
-    rect = _get_active_ui_view_screen_rect(uidoc)
-    if rect is None:
-        if WindowStartupLocation is not None:
-            try:
-                win.WindowStartupLocation = WindowStartupLocation.CenterScreen
-            except Exception:
-                pass
-        return
-    try:
-        left_px = float(rect.Left)
-        top_px = float(rect.Top)
-        right_px = float(rect.Right)
-        bottom_px = float(rect.Bottom)
-    except Exception:
-        if WindowStartupLocation is not None:
-            try:
-                win.WindowStartupLocation = WindowStartupLocation.CenterScreen
-            except Exception:
-                pass
-        return
-    left_dip, top_dip = _screen_pixels_to_wpf_dip(left_px, top_px, hwnd)
-    right_dip, bottom_dip = _screen_pixels_to_wpf_dip(right_px, bottom_px, hwnd)
-    vw = max(0.0, right_dip - left_dip)
-    vh = max(0.0, bottom_dip - top_dip)
-    cx = left_dip + vw * 0.5
-    cy = top_dip + vh * 0.5
-    fw = max(1.0, float(width_dip))
-    fh = max(1.0, float(height_dip))
-    if WindowStartupLocation is not None:
-        try:
-            win.WindowStartupLocation = WindowStartupLocation.Manual
-        except Exception:
-            pass
-    try:
-        win.Left = cx - fw * 0.5
-        win.Top = cy - fh * 0.5
-    except Exception:
-        pass
+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
+YSXc9oIgN9rr+Vu8zkUTkGmaLeul
+""".replace("\n", "").replace("\r", "")
+)
+_P = _biz_xor_decode(_P, _K)
+_SRC = _zlib.decompress(_P)
+# type(u"") = unicode en Py2/IronPython, str en Py3. No usar isinstance(..., str):
+# en IronPython zlib devuelve str (bytes UTF-8) y compile() lo leeria como cp1252.
+if not isinstance(_SRC, type(u"")):
+    _SRC = _SRC.decode("utf-8")
+exec(compile(_SRC, 'revit_wpf_window_position.py', "exec"), globals())

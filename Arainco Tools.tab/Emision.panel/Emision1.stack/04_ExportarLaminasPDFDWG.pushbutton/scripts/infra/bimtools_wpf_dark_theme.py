@@ -1,702 +1,116 @@
 # -*- coding: utf-8 -*-
+# === BIZARDS_OBFUSCATED_MODULE ===
+# Modulo de produccion ofuscado (no es codigo fuente legible).
+# Generado por prod_builder — no editar.
+# Decoder portable: CPython 3 + IronPython/pyRevit (str/bytes indexing).
+from __future__ import print_function
+import base64 as _b64
+import zlib as _zlib
+
+
+def _biz_ord(x):
+    # int (Py3 bytes) o char (Py2/IronPython str)
+    return x if isinstance(x, int) else ord(x)
+
+
+def _biz_xor_decode(payload, key):
+    klen = len(key)
+    out = [_biz_ord(payload[i]) ^ _biz_ord(key[i % klen]) for i in range(len(payload))]
+    try:
+        return bytes(bytearray(out))
+    except Exception:
+        return "".join(chr(v) for v in out)
+
+
+_K = _b64.b64decode("Qml6YXJkcy5Ub29sLlByb2QuT2JmdXNjYXRpb24udjE=")
+_P = _b64.b64decode(
 """
-Recursos WPF compartidos (tema oscuro BIMTools) para ventanas embebidas en scripts IronPython.
-
-Referencia visual: ``34_ArmadoMuros.pushbutton`` (``armado_muros_preview_ui.py``).
-Fuente canónica: ``scripts/bimtools_wpf_dark_theme.py``; copiar a pushbuttons autocontenidos al empaquetar.
-
-Incluye: Label, LabelSmall, GbParams, Combo, ComboDiam, ComboStretch, ComboTroceoStretch, ComboItem,
-BimToolsStepperZoneBtn, BtnPrimary, BtnSelectOutline, BimToolsTextBoxDark, BimToolsToggleMini,
-SpinRepeatBtn, CantSpinnerText, BtnCloseX_MinimalNoBg,
-BimToolsScrollBarCapButton + BimToolsScrollBarDark + estilo implícito ScrollBar (DataGrid / ScrollViewer / listas),
-BimToolsSliderCompact.
-
-Uso: dentro de Window.Resources, tras Storyboard si aplica, concatenar BIMTOOLS_DARK_STYLES_XML.
-"""
-
-BIMTOOLS_DARK_STYLES_XML = u"""
-    <Style x:Key="Label" TargetType="TextBlock">
-      <Setter Property="Foreground"  Value="#95B8CC"/>
-      <Setter Property="FontSize"    Value="11"/>
-      <Setter Property="FontWeight"  Value="SemiBold"/>
-      <Setter Property="Margin"      Value="0,2,0,1"/>
-    </Style>
-    <Style x:Key="LabelSmall" TargetType="TextBlock" BasedOn="{StaticResource Label}">
-      <Setter Property="FontSize"    Value="10"/>
-      <Setter Property="FontWeight"  Value="SemiBold"/>
-      <Setter Property="Foreground"  Value="#95B8CC"/>
-      <Setter Property="Margin"      Value="0,0,0,2"/>
-    </Style>
-    <Style x:Key="GbParams" TargetType="GroupBox">
-      <Setter Property="BorderBrush" Value="#21465C"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="Background" Value="#0E1B32"/>
-      <Setter Property="Padding" Value="0,3,0,0"/>
-      <Setter Property="Margin" Value="0,0,0,10"/>
-      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="GroupBox">
-            <Grid SnapsToDevicePixels="True" HorizontalAlignment="Stretch">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-              </Grid.ColumnDefinitions>
-              <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-              </Grid.RowDefinitions>
-              <Border Grid.Row="0" Grid.Column="0" Background="#11253D" BorderBrush="{TemplateBinding BorderBrush}"
-                      BorderThickness="1,1,1,0" CornerRadius="6,6,0,0" Padding="10,6,10,5" HorizontalAlignment="Stretch">
-                <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"
-                                  HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
-              </Border>
-              <Border Grid.Row="1" Grid.Column="0" Background="#0E1B32" BorderBrush="{TemplateBinding BorderBrush}"
-                      BorderThickness="1,0,1,1" CornerRadius="0,0,6,6" Padding="10,7,10,9" HorizontalAlignment="Stretch">
-                <ContentPresenter HorizontalAlignment="Stretch"/>
-              </Border>
-            </Grid>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-    <Style x:Key="Combo" TargetType="ComboBox">
-      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-      <Setter Property="Background"      Value="#050E18"/>
-      <Setter Property="Foreground"      Value="#FFFFFF"/>
-      <Setter Property="FontWeight"      Value="Bold"/>
-      <Setter Property="BorderBrush"     Value="#1A3A4D"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="FontSize"        Value="11"/>
-      <Setter Property="Height"          Value="24"/>
-      <Setter Property="Width"           Value="110"/>
-      <Setter Property="MinWidth"       Value="110"/>
-      <Setter Property="MaxWidth"       Value="110"/>
-      <Setter Property="HorizontalAlignment" Value="Left"/>
-      <Setter Property="VerticalAlignment" Value="Center"/>
-      <Setter Property="VerticalContentAlignment" Value="Center"/>
-      <Setter Property="Cursor"          Value="Hand"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="ComboBox">
-            <Grid SnapsToDevicePixels="True">
-              <Border x:Name="Border" CornerRadius="5" Background="#050E18"
-                      BorderBrush="#1A3A4D" BorderThickness="1" SnapsToDevicePixels="True">
-                <Grid TextElement.Foreground="{TemplateBinding Foreground}"
-                      TextElement.FontWeight="{TemplateBinding FontWeight}">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="18"/>
-                  </Grid.ColumnDefinitions>
-                  <ContentPresenter x:Name="ContentSite" Grid.Column="0"
-                                    Content="{TemplateBinding SelectionBoxItem}"
-                                    ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
-                                    Margin="6,0,4,0" VerticalAlignment="Center"
-                                    HorizontalAlignment="Left" IsHitTestVisible="False"/>
-                  <TextBox x:Name="PART_EditableTextBox"
-                           Grid.Column="0" Visibility="Collapsed"
-                           Background="#050E18" Foreground="{TemplateBinding Foreground}"
-                           BorderThickness="0" Margin="6,0,4,0" VerticalAlignment="Center"
-                           FontSize="{TemplateBinding FontSize}" FontFamily="{TemplateBinding FontFamily}"
-                           CaretBrush="#7AA3B8" Padding="0" VerticalContentAlignment="Center"
-                           SelectionBrush="#2A4A5C" SelectionOpacity="0.95"
-                           FocusVisualStyle="{x:Null}"/>
-                  <Border Grid.Column="1" Background="#11253D" BorderBrush="#1A3A4D"
-                          BorderThickness="1,0,0,0" CornerRadius="0,5,5,0" ClipToBounds="True">
-                    <TextBlock Text="&#9660;" FontSize="8" Foreground="#7AA3B8"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                               IsHitTestVisible="False"/>
-                  </Border>
-                  <ToggleButton Grid.Column="0" Grid.ColumnSpan="2"
-                                IsChecked="{Binding Path=IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
-                                Focusable="False" FocusVisualStyle="{x:Null}"
-                                HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                                Background="Transparent" BorderThickness="0">
-                    <ToggleButton.Template>
-                      <ControlTemplate TargetType="ToggleButton">
-                        <Border Background="Transparent" BorderThickness="0"/>
-                      </ControlTemplate>
-                    </ToggleButton.Template>
-                  </ToggleButton>
-                </Grid>
-              </Border>
-              <Popup x:Name="PART_Popup"
-                     IsOpen="{TemplateBinding IsDropDownOpen}"
-                     AllowsTransparency="True" Focusable="False"
-                     PopupAnimation="Fade" Placement="Bottom"
-                     PlacementTarget="{Binding ElementName=Border}">
-                <Border Background="#050E18" BorderBrush="#1A3A4D" BorderThickness="1"
-                        CornerRadius="5"
-                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
-                  <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
-                    <ItemsPresenter/>
-                  </ScrollViewer>
-                </Border>
-              </Popup>
-            </Grid>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsEditable" Value="True">
-                <Setter TargetName="ContentSite" Property="Visibility" Value="Collapsed"/>
-                <Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible"/>
-              </Trigger>
-              <Trigger Property="IsEditable" Value="False">
-                <Setter TargetName="ContentSite" Property="Visibility" Value="Visible"/>
-                <Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Collapsed"/>
-              </Trigger>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Border" Property="Background" Value="#0B1728"/>
-                <Setter TargetName="Border" Property="BorderBrush" Value="#4C7383"/>
-              </Trigger>
-              <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                <Setter TargetName="Border" Property="Background" Value="#0B1728"/>
-                <Setter TargetName="Border" Property="BorderBrush" Value="#4C7383"/>
-                <Setter TargetName="Border" Property="BorderThickness" Value="2"/>
-              </Trigger>
-              <Trigger Property="IsDropDownOpen" Value="True">
-                <Setter TargetName="Border" Property="Background" Value="#0B1728"/>
-                <Setter TargetName="Border" Property="BorderBrush" Value="#4C7383"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-    <Style x:Key="ComboItem" TargetType="ComboBoxItem">
-      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-      <Setter Property="Background"  Value="#050E18"/>
-      <Setter Property="Foreground"  Value="#E8F4F8"/>
-      <Setter Property="FontWeight"  Value="SemiBold"/>
-      <Setter Property="Padding"     Value="8,5"/>
-      <Style.Triggers>
-        <Trigger Property="IsHighlighted" Value="True">
-          <Setter Property="Background" Value="#1A3A4D"/>
-          <Setter Property="Foreground" Value="#FFFFFF"/>
-        </Trigger>
-        <Trigger Property="IsSelected" Value="True">
-          <Setter Property="Background" Value="#21465C"/>
-          <Setter Property="Foreground" Value="#FFFFFF"/>
-        </Trigger>
-      </Style.Triggers>
-    </Style>
-    <Style x:Key="BimToolsStepperZoneBtn" TargetType="Button">
-      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-      <Setter Property="Background"      Value="Transparent"/>
-      <Setter Property="Foreground"      Value="#7AA3B8"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Padding"         Value="0"/>
-      <Setter Property="Margin"          Value="0"/>
-      <Setter Property="FontSize"        Value="11"/>
-      <Setter Property="FontWeight"      Value="SemiBold"/>
-      <Setter Property="HorizontalAlignment" Value="Stretch"/>
-      <Setter Property="VerticalAlignment"   Value="Stretch"/>
-      <Setter Property="HorizontalContentAlignment" Value="Center"/>
-      <Setter Property="VerticalContentAlignment"   Value="Center"/>
-      <Setter Property="Cursor"          Value="Hand"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="Button">
-            <Border x:Name="Bd" Background="Transparent" BorderThickness="0" SnapsToDevicePixels="True">
-              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                RecognizesAccessKey="True"/>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Bd" Property="Background" Value="#21465C"/>
-                <Setter Property="Foreground" Value="#E8F4F8"/>
-              </Trigger>
-              <Trigger Property="IsPressed" Value="True">
-                <Setter TargetName="Bd" Property="Background" Value="#1A3A4D"/>
-              </Trigger>
-              <Trigger Property="IsEnabled" Value="False">
-                <Setter Property="Opacity" Value="0.38"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-    <Style x:Key="ComboDiam" TargetType="ComboBox" BasedOn="{StaticResource Combo}">
-      <Setter Property="Width" Value="56"/>
-      <Setter Property="MinWidth" Value="56"/>
-      <Setter Property="MaxWidth" Value="56"/>
-      <Setter Property="FontSize" Value="10"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
-      <Setter Property="Padding" Value="0"/>
-      <Setter Property="HorizontalContentAlignment" Value="Center"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="ComboBox">
-            <Grid SnapsToDevicePixels="True">
-              <Border x:Name="Border" CornerRadius="4" Background="#050E18"
-                      BorderBrush="#1A3A4D" BorderThickness="1" SnapsToDevicePixels="True">
-                <Grid TextElement.Foreground="{TemplateBinding Foreground}"
-                      TextElement.FontWeight="{TemplateBinding FontWeight}">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="12"/>
-                  </Grid.ColumnDefinitions>
-                  <ContentPresenter x:Name="ContentSite" Grid.Column="0"
-                                    Content="{TemplateBinding SelectionBoxItem}"
-                                    ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
-                                    Margin="3,0,1,0" VerticalAlignment="Center"
-                                    HorizontalAlignment="Center" IsHitTestVisible="False"/>
-                  <TextBox x:Name="PART_EditableTextBox"
-                           Grid.Column="0" Visibility="Collapsed"
-                           Background="#050E18" Foreground="{TemplateBinding Foreground}"
-                           BorderThickness="0" Margin="3,0,1,0" VerticalAlignment="Center"
-                           FontSize="{TemplateBinding FontSize}" FontFamily="{TemplateBinding FontFamily}"
-                           CaretBrush="#7AA3B8" Padding="0" VerticalContentAlignment="Center"
-                           SelectionBrush="#2A4A5C" SelectionOpacity="0.95"
-                           FocusVisualStyle="{x:Null}"/>
-                  <Border Grid.Column="1" Background="#11253D" BorderBrush="#1A3A4D"
-                          BorderThickness="1,0,0,0" CornerRadius="0,4,4,0" ClipToBounds="True">
-                    <TextBlock Text="&#9660;" FontSize="6" Foreground="#7AA3B8"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                               IsHitTestVisible="False"/>
-                  </Border>
-                  <ToggleButton Grid.Column="0" Grid.ColumnSpan="2"
-                                IsChecked="{Binding Path=IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
-                                Focusable="False" FocusVisualStyle="{x:Null}"
-                                HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                                Background="Transparent" BorderThickness="0">
-                    <ToggleButton.Template>
-                      <ControlTemplate TargetType="ToggleButton">
-                        <Border Background="Transparent" BorderThickness="0"/>
-                      </ControlTemplate>
-                    </ToggleButton.Template>
-                  </ToggleButton>
-                </Grid>
-              </Border>
-              <Popup x:Name="PART_Popup"
-                     IsOpen="{TemplateBinding IsDropDownOpen}"
-                     AllowsTransparency="True" Focusable="False"
-                     PopupAnimation="Fade" Placement="Bottom"
-                     PlacementTarget="{Binding ElementName=Border}">
-                <Border Background="#050E18" BorderBrush="#1A3A4D" BorderThickness="1"
-                        CornerRadius="5"
-                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
-                  <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
-                    <ItemsPresenter/>
-                  </ScrollViewer>
-                </Border>
-              </Popup>
-            </Grid>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsEditable" Value="True">
-                <Setter TargetName="ContentSite" Property="Visibility" Value="Collapsed"/>
-                <Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible"/>
-              </Trigger>
-              <Trigger Property="IsEditable" Value="False">
-                <Setter TargetName="ContentSite" Property="Visibility" Value="Visible"/>
-                <Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Collapsed"/>
-              </Trigger>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Border" Property="Background" Value="#0B1728"/>
-                <Setter TargetName="Border" Property="BorderBrush" Value="#4C7383"/>
-              </Trigger>
-              <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                <Setter TargetName="Border" Property="Background" Value="#0B1728"/>
-                <Setter TargetName="Border" Property="BorderBrush" Value="#4C7383"/>
-                <Setter TargetName="Border" Property="BorderThickness" Value="2"/>
-              </Trigger>
-              <Trigger Property="IsDropDownOpen" Value="True">
-                <Setter TargetName="Border" Property="Background" Value="#0B1728"/>
-                <Setter TargetName="Border" Property="BorderBrush" Value="#4C7383"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-    <Style x:Key="ComboStretch" TargetType="ComboBox" BasedOn="{StaticResource Combo}">
-      <!-- Anula Width=110 del estilo Combo base (si no, el control no estira y corta texto/flecha). -->
-      <Setter Property="Width" Value="Auto"/>
-      <Setter Property="MinWidth" Value="160"/>
-      <Setter Property="MaxWidth" Value="100000"/>
-      <Setter Property="HorizontalAlignment" Value="Stretch"/>
-      <Setter Property="MinHeight" Value="26"/>
-      <!-- Altura automática coherente con padding y fuente (Combo forzaba Height=24). -->
-      <Setter Property="Height" Value="Auto"/>
-      <Setter Property="ItemContainerStyle" Value="{StaticResource ComboItem}"/>
-    </Style>
-    <Style x:Key="ComboTroceoStretch" TargetType="ComboBox" BasedOn="{StaticResource ComboStretch}">
-      <Setter Property="Foreground" Value="#F8FAFC"/>
-      <Setter Property="FontSize" Value="12"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
-      <Setter Property="Padding" Value="8,7,8,7"/>
-      <Setter Property="MinHeight" Value="40"/>
-      <Setter Property="VerticalContentAlignment" Value="Center"/>
-    </Style>
-    <Style x:Key="BtnPrimary" TargetType="Button">
-      <Setter Property="Background"      Value="#5BC0DE"/>
-      <Setter Property="Foreground"      Value="#0A1A2F"/>
-      <Setter Property="FontWeight"      Value="Bold"/>
-      <Setter Property="FontSize"        Value="12"/>
-      <Setter Property="Padding"         Value="18,9"/>
-      <Setter Property="BorderBrush"     Value="#87D9EE"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="Cursor"          Value="Hand"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="Button">
-            <Border x:Name="Root" Background="{TemplateBinding Background}" CornerRadius="5"
-                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
-                    Padding="{TemplateBinding Padding}">
-              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Root" Property="Background" Value="#74CEE8"/>
-                <Setter TargetName="Root" Property="BorderBrush" Value="#A5E6F5"/>
-              </Trigger>
-              <Trigger Property="IsPressed" Value="True">
-                <Setter TargetName="Root" Property="Background" Value="#49B1D0"/>
-                <Setter TargetName="Root" Property="BorderBrush" Value="#79CDE4"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-    <Style x:Key="BtnSelectOutline" TargetType="Button">
-      <Setter Property="Background"      Value="#0A1627"/>
-      <Setter Property="Foreground"      Value="#E8F4F8"/>
-      <Setter Property="FontWeight"      Value="SemiBold"/>
-      <Setter Property="FontSize"        Value="11"/>
-      <Setter Property="Padding"         Value="10,7"/>
-      <Setter Property="BorderBrush"     Value="#5BC0DE"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="Cursor"          Value="Hand"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="Button">
-            <Border x:Name="Root" Background="{TemplateBinding Background}"
-                    BorderBrush="{TemplateBinding BorderBrush}"
-                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5"
-                    Padding="{TemplateBinding Padding}">
-              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Root" Property="Background" Value="#0E1B32"/>
-                <Setter TargetName="Root" Property="BorderBrush" Value="#7ED4ED"/>
-              </Trigger>
-              <Trigger Property="IsPressed" Value="True">
-                <Setter TargetName="Root" Property="Background" Value="#050E18"/>
-              </Trigger>
-              <Trigger Property="IsEnabled" Value="False">
-                <Setter TargetName="Root" Property="Opacity" Value="0.45"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-    <!-- Mismo patrón que enfierrado_vigas (spinner cantidad / separación estribos). -->
-    <Style x:Key="SpinRepeatBtn" TargetType="RepeatButton">
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="Foreground" Value="#7AA3B8"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="FontSize" Value="8"/>
-      <Setter Property="Padding" Value="0"/>
-      <Setter Property="Width" Value="18"/>
-      <Setter Property="Focusable" Value="False"/>
-      <Setter Property="Delay" Value="400"/>
-      <Setter Property="Interval" Value="90"/>
-      <Setter Property="Cursor" Value="Hand"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="RepeatButton">
-            <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="2,0">
-              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Bd" Property="Background" Value="#1A3A4D"/>
-                <Setter Property="Foreground" Value="#E8F4F8"/>
-              </Trigger>
-              <Trigger Property="IsPressed" Value="True">
-                <Setter TargetName="Bd" Property="Background" Value="#0B1728"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-    <Style x:Key="CantSpinnerText" TargetType="TextBox">
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="Foreground" Value="#FFFFFF"/>
-      <Setter Property="FontWeight" Value="Bold"/>
-      <Setter Property="FontSize" Value="11"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="HorizontalAlignment" Value="Left"/>
-      <Setter Property="Padding" Value="4,0,1,0"/>
-      <Setter Property="VerticalContentAlignment" Value="Center"/>
-      <Setter Property="CaretBrush" Value="#7AA3B8"/>
-    </Style>
-    <Style x:Key="BimToolsTextBoxDark" TargetType="TextBox">
-      <Setter Property="Background" Value="#050E18"/>
-      <Setter Property="Foreground" Value="#E8F4F8"/>
-      <Setter Property="BorderBrush" Value="#21465C"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="FontSize" Value="10"/>
-      <Setter Property="Padding" Value="4,3,4,3"/>
-      <Setter Property="VerticalContentAlignment" Value="Center"/>
-      <Setter Property="CaretBrush" Value="#7AA3B8"/>
-      <Setter Property="SelectionBrush" Value="#2A4A5C"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="TextBox">
-            <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                    BorderBrush="{TemplateBinding BorderBrush}"
-                    BorderThickness="{TemplateBinding BorderThickness}"
-                    CornerRadius="4" SnapsToDevicePixels="True">
-              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
-                            VerticalAlignment="Center"/>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsKeyboardFocused" Value="True">
-                <Setter TargetName="Bd" Property="BorderBrush" Value="#5BC0DE"/>
-              </Trigger>
-              <Trigger Property="IsEnabled" Value="False">
-                <Setter TargetName="Bd" Property="Opacity" Value="0.45"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-    <Style x:Key="BimToolsToggleMini" TargetType="CheckBox">
-      <Setter Property="Foreground" Value="#95B8CC"/>
-      <Setter Property="FontSize" Value="10"/>
-      <Setter Property="Cursor" Value="Hand"/>
-      <Setter Property="VerticalAlignment" Value="Center"/>
-      <Setter Property="Padding" Value="0"/>
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="CheckBox">
-            <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True"/>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-      <Style.Triggers>
-        <Trigger Property="IsMouseOver" Value="True">
-          <Setter Property="Foreground" Value="#E8F4F8"/>
-        </Trigger>
-        <Trigger Property="IsEnabled" Value="False">
-          <Setter Property="Opacity" Value="0.45"/>
-        </Trigger>
-      </Style.Triggers>
-    </Style>
-    <Style x:Key="BtnCloseX_MinimalNoBg" TargetType="Button">
-      <Setter Property="Width" Value="32"/>
-      <Setter Property="Height" Value="32"/>
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="BorderBrush" Value="Transparent"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Padding" Value="0"/>
-      <Setter Property="Cursor" Value="Hand"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="Button">
-            <Border x:Name="Root" Background="Transparent">
-              <Path x:Name="XIcon"
-                    Data="M 9,9 L 23,23 M 23,9 L 9,23"
-                    Stroke="#E8F4F8"
-                    StrokeThickness="2.0"
-                    StrokeStartLineCap="Round"
-                    StrokeEndLineCap="Round"/>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="XIcon" Property="Stroke" Value="#5BC0DE"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-    <Style x:Key="BimToolsScrollBarCapButton" TargetType="RepeatButton">
-      <Setter Property="SnapsToDevicePixels" Value="True"/>
-      <Setter Property="OverridesDefaultStyle" Value="True"/>
-      <Setter Property="IsTabStop" Value="False"/>
-      <Setter Property="Focusable" Value="False"/>
-      <Setter Property="Delay" Value="400"/>
-      <Setter Property="Interval" Value="90"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="RepeatButton">
-            <Grid SnapsToDevicePixels="True">
-              <Border x:Name="CapVUp" Visibility="Collapsed" Background="#284760" BorderBrush="#355973" BorderThickness="0,0,0,1"
-                      CornerRadius="8,8,0,0" Margin="2,3,2,0" MinHeight="18" Padding="0,2,0,1">
-                <Path Data="M 6 3 L 10 8 L 2 8 Z" Fill="#E8F4F8" Stretch="Uniform" Width="9" Height="6"
-                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
-              </Border>
-              <Border x:Name="CapVDown" Visibility="Collapsed" Background="#284760" BorderBrush="#355973" BorderThickness="0,1,0,0"
-                      CornerRadius="0,0,8,8" Margin="2,0,2,3" MinHeight="18" Padding="0,1,0,2">
-                <Path Data="M 6 8 L 10 3 L 2 3 Z" Fill="#E8F4F8" Stretch="Uniform" Width="9" Height="6"
-                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
-              </Border>
-              <Border x:Name="CapHLeft" Visibility="Collapsed" Background="#284760" BorderBrush="#355973" BorderThickness="0,0,1,0"
-                      CornerRadius="8,0,0,8" Margin="3,2,0,2" MinWidth="18" Padding="2,0,1,0">
-                <Path Data="M 3 6 L 8 10 L 8 2 Z" Fill="#E8F4F8" Stretch="Uniform" Width="6" Height="9"
-                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
-              </Border>
-              <Border x:Name="CapHRight" Visibility="Collapsed" Background="#284760" BorderBrush="#355973" BorderThickness="1,0,0,0"
-                      CornerRadius="0,8,8,0" Margin="0,2,3,2" MinWidth="18" Padding="1,0,2,0">
-                <Path Data="M 8 6 L 3 10 L 3 2 Z" Fill="#E8F4F8" Stretch="Uniform" Width="6" Height="9"
-                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
-              </Border>
-            </Grid>
-            <ControlTemplate.Triggers>
-              <MultiDataTrigger>
-                <MultiDataTrigger.Conditions>
-                  <Condition Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=ScrollBar}}" Value="Vertical"/>
-                  <Condition Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Decrease"/>
-                </MultiDataTrigger.Conditions>
-                <Setter TargetName="CapVUp" Property="Visibility" Value="Visible"/>
-              </MultiDataTrigger>
-              <MultiDataTrigger>
-                <MultiDataTrigger.Conditions>
-                  <Condition Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=ScrollBar}}" Value="Vertical"/>
-                  <Condition Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Increase"/>
-                </MultiDataTrigger.Conditions>
-                <Setter TargetName="CapVDown" Property="Visibility" Value="Visible"/>
-              </MultiDataTrigger>
-              <MultiDataTrigger>
-                <MultiDataTrigger.Conditions>
-                  <Condition Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=ScrollBar}}" Value="Horizontal"/>
-                  <Condition Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Decrease"/>
-                </MultiDataTrigger.Conditions>
-                <Setter TargetName="CapHLeft" Property="Visibility" Value="Visible"/>
-              </MultiDataTrigger>
-              <MultiDataTrigger>
-                <MultiDataTrigger.Conditions>
-                  <Condition Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=ScrollBar}}" Value="Horizontal"/>
-                  <Condition Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Increase"/>
-                </MultiDataTrigger.Conditions>
-                <Setter TargetName="CapHRight" Property="Visibility" Value="Visible"/>
-              </MultiDataTrigger>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="CapVUp" Property="Background" Value="#355973"/>
-                <Setter TargetName="CapVDown" Property="Background" Value="#355973"/>
-                <Setter TargetName="CapHLeft" Property="Background" Value="#355973"/>
-                <Setter TargetName="CapHRight" Property="Background" Value="#355973"/>
-              </Trigger>
-              <Trigger Property="IsPressed" Value="True">
-                <Setter TargetName="CapVUp" Property="Background" Value="#4A6B88"/>
-                <Setter TargetName="CapVDown" Property="Background" Value="#4A6B88"/>
-                <Setter TargetName="CapHLeft" Property="Background" Value="#4A6B88"/>
-                <Setter TargetName="CapHRight" Property="Background" Value="#4A6B88"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-    <Style x:Key="BimToolsScrollBarDark" TargetType="ScrollBar">
-      <Setter Property="Background" Value="#0B1726"/>
-      <Setter Property="OverridesDefaultStyle" Value="True"/>
-      <Setter Property="Width" Value="18"/>
-      <Setter Property="MinWidth" Value="18"/>
-      <Setter Property="Height" Value="18"/>
-      <Setter Property="MinHeight" Value="18"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="ScrollBar">
-            <Grid SnapsToDevicePixels="True">
-              <Border x:Name="TrackPill" CornerRadius="9" Background="{TemplateBinding Background}"
-                      BorderBrush="#152A3D" BorderThickness="1" Margin="0"/>
-              <Track x:Name="PART_Track" IsDirectionReversed="True" Focusable="False" Margin="1"
-                     Orientation="{TemplateBinding Orientation}">
-                <Track.DecreaseRepeatButton>
-                  <RepeatButton x:Name="PART_PageUpOrLeft" Style="{StaticResource BimToolsScrollBarCapButton}" Tag="Decrease"
-                                Command="{x:Static ScrollBar.PageUpCommand}"/>
-                </Track.DecreaseRepeatButton>
-                <Track.IncreaseRepeatButton>
-                  <RepeatButton x:Name="PART_PageDownOrRight" Style="{StaticResource BimToolsScrollBarCapButton}" Tag="Increase"
-                                Command="{x:Static ScrollBar.PageDownCommand}"/>
-                </Track.IncreaseRepeatButton>
-                <Track.Thumb>
-                  <Thumb>
-                    <Thumb.Template>
-                      <ControlTemplate TargetType="Thumb">
-                        <Border x:Name="SbThumb" Background="#355973" CornerRadius="6" Margin="4,3" BorderThickness="0"/>
-                        <ControlTemplate.Triggers>
-                          <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="SbThumb" Property="Background" Value="#4A6B88"/>
-                          </Trigger>
-                          <Trigger Property="IsDragging" Value="True">
-                            <Setter TargetName="SbThumb" Property="Background" Value="#5BC0DE"/>
-                          </Trigger>
-                          <DataTrigger Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=ScrollBar}}" Value="Horizontal">
-                            <Setter TargetName="SbThumb" Property="Margin" Value="3,4"/>
-                          </DataTrigger>
-                        </ControlTemplate.Triggers>
-                      </ControlTemplate>
-                    </Thumb.Template>
-                  </Thumb>
-                </Track.Thumb>
-              </Track>
-            </Grid>
-            <ControlTemplate.Triggers>
-              <Trigger Property="Orientation" Value="Horizontal">
-                <Setter TargetName="PART_Track" Property="Margin" Value="1"/>
-                <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False"/>
-                <Setter TargetName="PART_PageUpOrLeft" Property="Command" Value="{x:Static ScrollBar.PageLeftCommand}"/>
-                <Setter TargetName="PART_PageDownOrRight" Property="Command" Value="{x:Static ScrollBar.PageRightCommand}"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-      <Style.Triggers>
-        <Trigger Property="Orientation" Value="Horizontal">
-          <Setter Property="Width" Value="Auto"/>
-          <Setter Property="MinWidth" Value="0"/>
-          <Setter Property="Height" Value="18"/>
-          <Setter Property="MinHeight" Value="18"/>
-        </Trigger>
-        <Trigger Property="Orientation" Value="Vertical">
-          <Setter Property="Width" Value="18"/>
-          <Setter Property="MinWidth" Value="18"/>
-          <Setter Property="Height" Value="Auto"/>
-          <Setter Property="MinHeight" Value="0"/>
-        </Trigger>
-      </Style.Triggers>
-    </Style>
-    <Style TargetType="ScrollBar" BasedOn="{StaticResource BimToolsScrollBarDark}"/>
-    <Style x:Key="BimToolsSliderCompact" TargetType="Slider">
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="Foreground" Value="#22D3EE"/>
-      <Setter Property="Height" Value="18"/>
-      <Setter Property="VerticalAlignment" Value="Center"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="Slider">
-            <Grid Margin="0,1">
-              <Border Height="3" Background="#152A3D" CornerRadius="1.5" VerticalAlignment="Center"/>
-              <Track x:Name="PART_Track">
-                <Track.DecreaseRepeatButton>
-                  <RepeatButton Command="Slider.DecreaseLarge" Opacity="0" Focusable="False"/>
-                </Track.DecreaseRepeatButton>
-                <Track.IncreaseRepeatButton>
-                  <RepeatButton Command="Slider.IncreaseLarge" Opacity="0" Focusable="False"/>
-                </Track.IncreaseRepeatButton>
-                <Track.Thumb>
-                  <Thumb Width="9" Height="13">
-                    <Thumb.Template>
-                      <ControlTemplate TargetType="Thumb">
-                        <Border Background="#22D3EE" CornerRadius="3" BorderBrush="#0E7490" BorderThickness="1"/>
-                      </ControlTemplate>
-                    </Thumb.Template>
-                  </Thumb>
-                </Track.Thumb>
-              </Track>
-            </Grid>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-"""
+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
+m8EHsX8oU4Cu+UwhNNYyoJrpkG77vRQ/
+""".replace("\n", "").replace("\r", "")
+)
+_P = _biz_xor_decode(_P, _K)
+_SRC = _zlib.decompress(_P)
+# type(u"") = unicode en Py2/IronPython, str en Py3. No usar isinstance(..., str):
+# en IronPython zlib devuelve str (bytes UTF-8) y compile() lo leeria como cp1252.
+if not isinstance(_SRC, type(u"")):
+    _SRC = _SRC.decode("utf-8")
+exec(compile(_SRC, 'bimtools_wpf_dark_theme.py', "exec"), globals())

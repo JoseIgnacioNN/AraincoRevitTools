@@ -1,263 +1,66 @@
 # -*- coding: utf-8 -*-
-"""Diálogo modal WPF — shell estándar BIMTools (cinta blanca + cuerpo oscuro)."""
-
-import clr
-
-clr.AddReference("PresentationFramework")
-clr.AddReference("PresentationCore")
-clr.AddReference("WindowsBase")
-clr.AddReference("System")
-
-from System.Windows import RoutedEventHandler
-from System.Windows.Input import Key, KeyEventHandler
-from System.Windows.Markup import XamlReader
-
-from bimtools_ui_tokens import FG_BODY, FONT_SIZE_BODY
-from bimtools_wpf_dark_theme import BIMTOOLS_DARK_STYLES_XML
-from bimtools_wpf_shell import build_simple_tool_xaml
+# === BIZARDS_OBFUSCATED_MODULE ===
+# Modulo de produccion ofuscado (no es codigo fuente legible).
+# Generado por prod_builder — no editar.
+# Decoder portable: CPython 3 + IronPython/pyRevit (str/bytes indexing).
+from __future__ import print_function
+import base64 as _b64
+import zlib as _zlib
 
 
-def _as_unicode(text):
-    if text is None:
-        return u""
+def _biz_ord(x):
+    # int (Py3 bytes) o char (Py2/IronPython str)
+    return x if isinstance(x, int) else ord(x)
+
+
+def _biz_xor_decode(payload, key):
+    klen = len(key)
+    out = [_biz_ord(payload[i]) ^ _biz_ord(key[i % klen]) for i in range(len(payload))]
     try:
-        return unicode(text)
-    except NameError:
-        return str(text)
-
-
-def _escape_xaml(text):
-    s = _as_unicode(text)
-    return (
-        s.replace(u"&", u"&amp;")
-        .replace(u"<", u"&lt;")
-        .replace(u">", u"&gt;")
-        .replace(u'"', u"&quot;")
-        .replace(u"\r\n", u"&#10;")
-        .replace(u"\n", u"&#10;")
-        .replace(u"\r", u"&#10;")
-    )
-
-
-def _build_message_xaml(title, instruction, content, ok_text):
-    instruction = _as_unicode(instruction).strip()
-    content = _as_unicode(content).strip()
-    subtitle = u""
-    if content:
-        subtitle = instruction
-        body_text = content
-    else:
-        body_text = instruction
-
-    body_xaml = u"""
-<StackPanel>
-  <TextBlock TextWrapping="Wrap" Foreground="{fg}" FontSize="{fs}" LineHeight="17"
-             Text="{text}"/>
-</StackPanel>
-""".format(
-        fg=FG_BODY,
-        fs=FONT_SIZE_BODY,
-        text=_escape_xaml(body_text),
-    )
-
-    footer_xaml = u"""
-<Button x:Name="BtnOk" Content="{ok}" IsDefault="True"
-        Style="{{StaticResource BtnPrimary}}" MinWidth="108"/>
-""".format(ok=_escape_xaml(ok_text))
-
-    xaml = build_simple_tool_xaml(
-        title=title,
-        styles_xml=BIMTOOLS_DARK_STYLES_XML,
-        body_xaml=body_xaml,
-        footer_actions_xaml=footer_xaml,
-        width=520,
-        resize_mode=u"NoResize",
-        size_to_content_height=True,
-    )
-    return xaml, subtitle
-
-
-def _build_ok_cancel_xaml(title, instruction, content, ok_text, cancel_text):
-    instruction = _as_unicode(instruction).strip()
-    content = _as_unicode(content).strip()
-    subtitle = u""
-    if content:
-        subtitle = instruction
-        body_text = content
-    else:
-        body_text = instruction
-
-    body_xaml = u"""
-<StackPanel>
-  <TextBlock TextWrapping="Wrap" Foreground="{fg}" FontSize="{fs}" LineHeight="17"
-             Text="{text}"/>
-</StackPanel>
-""".format(
-        fg=FG_BODY,
-        fs=FONT_SIZE_BODY,
-        text=_escape_xaml(body_text),
-    )
-
-    footer_xaml = u"""
-<Button x:Name="BtnCancel" Content="{cancel}"
-        Style="{{StaticResource BtnSelectOutline}}" MinWidth="108" Margin="0,0,10,0"/>
-<Button x:Name="BtnOk" Content="{ok}" IsDefault="True"
-        Style="{{StaticResource BtnPrimary}}" MinWidth="108"/>
-""".format(
-        cancel=_escape_xaml(cancel_text),
-        ok=_escape_xaml(ok_text),
-    )
-
-    xaml = build_simple_tool_xaml(
-        title=title,
-        styles_xml=BIMTOOLS_DARK_STYLES_XML,
-        body_xaml=body_xaml,
-        footer_actions_xaml=footer_xaml,
-        width=520,
-        resize_mode=u"NoResize",
-        size_to_content_height=True,
-    )
-    return xaml, subtitle
-
-
-def _position_dialog_on_revit(win, hwnd_revit, uiapp):
-    try:
-        from revit_wpf_window_position import (
-            bind_center_wpf_on_revit_monitor,
-            position_wpf_window_center_on_monitor,
-            revit_main_hwnd,
-        )
-
-        if hwnd_revit is None and uiapp is not None:
-            hwnd_revit = revit_main_hwnd(uiapp)
-        bind_center_wpf_on_revit_monitor(win, hwnd_revit)
-        position_wpf_window_center_on_monitor(win, hwnd_revit)
+        return bytes(bytearray(out))
     except Exception:
-        pass
-    _attach_revit_owner(win, uiapp)
+        return "".join(chr(v) for v in out)
 
 
-def show_ok_cancel_dialog(
-    title,
-    instruction,
-    content=u"",
-    ok_text=u"Aceptar",
-    cancel_text=u"Cancelar",
-    hwnd_revit=None,
-    uiapp=None,
-):
-    """Diálogo modal con Aceptar/Cancelar, shell estándar BIMTools."""
-    try:
-        xaml, subtitle = _build_ok_cancel_xaml(
-            title, instruction, content, ok_text, cancel_text,
-        )
-        win = XamlReader.Parse(xaml)
-    except Exception:
-        return False
-
-    if subtitle:
-        try:
-            txt_sub = win.FindName(u"TxtSubtitle")
-            if txt_sub is not None:
-                txt_sub.Text = subtitle
-        except Exception:
-            pass
-
-    _position_dialog_on_revit(win, hwnd_revit, uiapp)
-
-    accepted = [False]
-
-    def _accept(sender, args):
-        accepted[0] = True
-        try:
-            win.Close()
-        except Exception:
-            pass
-
-    def _cancel(sender, args):
-        accepted[0] = False
-        try:
-            win.Close()
-        except Exception:
-            pass
-
-    def _on_key(sender, args):
-        if args.Key == Key.Escape:
-            _cancel(sender, args)
-            args.Handled = True
-
-    try:
-        btn_ok = win.FindName(u"BtnOk")
-        btn_cancel = win.FindName(u"BtnCancel")
-        if btn_ok is not None:
-            btn_ok.Click += RoutedEventHandler(_accept)
-        if btn_cancel is not None:
-            btn_cancel.Click += RoutedEventHandler(_cancel)
-        win.PreviewKeyDown += KeyEventHandler(_on_key)
-        win.ShowDialog()
-    except Exception:
-        return False
-
-    return bool(accepted[0])
-
-
-def _attach_revit_owner(win, uiapp):
-    if win is None or uiapp is None:
-        return
-    try:
-        from System.Windows.Interop import WindowInteropHelper
-        from revit_wpf_window_position import revit_main_hwnd
-
-        hwnd = revit_main_hwnd(uiapp)
-        if hwnd is not None:
-            WindowInteropHelper(win).Owner = hwnd
-    except Exception:
-        pass
-
-
-def show_message_dialog(
-    title,
-    instruction,
-    content=u"",
-    ok_text=u"Entendido",
-    hwnd_revit=None,
-    uiapp=None,
-):
-    """Diálogo modal informativo (solo Aceptar), shell estándar BIMTools."""
-    try:
-        xaml, subtitle = _build_message_xaml(title, instruction, content, ok_text)
-        win = XamlReader.Parse(xaml)
-    except Exception:
-        return False
-
-    if subtitle:
-        try:
-            txt_sub = win.FindName(u"TxtSubtitle")
-            if txt_sub is not None:
-                txt_sub.Text = subtitle
-        except Exception:
-            pass
-
-    _position_dialog_on_revit(win, hwnd_revit, uiapp)
-
-    def _accept(sender, args):
-        try:
-            win.Close()
-        except Exception:
-            pass
-
-    def _on_key(sender, args):
-        if args.Key == Key.Escape or args.Key == Key.Enter:
-            _accept(sender, args)
-            args.Handled = True
-
-    try:
-        btn_ok = win.FindName(u"BtnOk")
-        if btn_ok is not None:
-            btn_ok.Click += RoutedEventHandler(_accept)
-        win.PreviewKeyDown += KeyEventHandler(_on_key)
-        win.ShowDialog()
-    except Exception:
-        return False
-
-    return True
+_K = _b64.b64decode("Qml6YXJkcy5Ub29sLlByb2QuT2JmdXNjYXRpb24udjE=")
+_P = _b64.b64decode(
+"""
+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
+4A==
+""".replace("\n", "").replace("\r", "")
+)
+_P = _biz_xor_decode(_P, _K)
+_SRC = _zlib.decompress(_P)
+# type(u"") = unicode en Py2/IronPython, str en Py3. No usar isinstance(..., str):
+# en IronPython zlib devuelve str (bytes UTF-8) y compile() lo leeria como cp1252.
+if not isinstance(_SRC, type(u"")):
+    _SRC = _SRC.decode("utf-8")
+exec(compile(_SRC, 'bimtools_instruction_dialog.py', "exec"), globals())
