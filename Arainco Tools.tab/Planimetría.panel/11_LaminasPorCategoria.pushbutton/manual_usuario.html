@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Arainco: Láminas por categoría</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #5BC0DE;
+            --accent-dim: #95B8CC;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: 920px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.75em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 32px;
+        }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        code {
+            background: #0E1B32;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 1px 6px;
+            font-size: 0.92em;
+            color: var(--text);
+        }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            text-align: left;
+            color: var(--text-dim);
+            font-size: 0.95em;
+        }
+        th { color: var(--text); background: #0E1B32; }
+    </style>
+</head>
+<body>
+    <h1>Arainco: Láminas por categoría</h1>
+    <div class="intro">
+        Crea láminas vacías (sin vistas) con el nombre <code>CONTENIDO LAMINA</code>,
+        numeración <code>PG-001</code>, cajetín elegido y datos de firma/fecha.
+        Equivale al script Dynamo <em>Láminas por categoría</em>.
+    </div>
+
+    <h2>Requisitos</h2>
+    <ul>
+        <li>Plantilla / proyecto Arainco preparado para emisión.</li>
+        <li>Al menos un tipo de cajetín (Title Block), distinto de <code>EST_A_SPLASH SCREEN</code>.</li>
+        <li>Parámetro de proyecto <code>Clasificacion</code> en láminas.</li>
+    </ul>
+
+    <h2>Uso</h2>
+    <ol>
+        <li>Elija el tipo de formato (cajetín).</li>
+        <li>Elija la categoría (el código corto, p. ej. <code>PG</code>, se escribe en Clasificacion y en el número).</li>
+        <li>Indique cuántas láminas crear.</li>
+        <li>Complete Calculó, Revisó, Aprobó, Dibujó y la fecha.</li>
+        <li>Pulse <strong>Crear láminas</strong>.</li>
+    </ol>
+
+    <h2>Numeración</h2>
+    <p>
+        Se buscan láminas con <code>Clasificacion</code> igual a la categoría elegida,
+        se toma el mayor sufijo numérico tras el guion y se continúa
+        (<code>PG-012</code> → siguiente <code>PG-013</code>). Pad a 3 dígitos.
+        El nombre es siempre <code>CONTENIDO LAMINA</code>.
+    </p>
+    <p>
+        Si una lámina de esa categoría tiene un número que no es <code>CAT-NNN</code>
+        (sin guion, o sufijo no numérico como <code>PG-A01</code>), se omite para el
+        correlativo y se avisa. No se reutiliza un <code>Sheet Number</code> ya ocupado
+        en el proyecto.
+    </p>
+
+    <h2>Personas</h2>
+    <p>
+        Las listas se editan en
+        <code>BIMTools.extension/scripts/laminas_por_categoria/personas.json</code>.
+        Cada rol (<code>calculo</code>, <code>revision</code>, <code>aprobacion</code>,
+        <code>dibujo</code>) tiene <code>items</code> y <code>default_index</code>
+        (índice sobre la lista ya ordenada alfabéticamente, como en Dynamo).
+    </p>
+
+    <h2>Parámetros escritos</h2>
+    <table>
+        <tr><th>Parámetro</th><th>Origen</th></tr>
+        <tr><td>Approved By</td><td>Aprobó</td></tr>
+        <tr><td>Designed By</td><td>Calculó</td></tr>
+        <tr><td>Checked By</td><td>Revisó</td></tr>
+        <tr><td>Drawn By</td><td>Dibujó</td></tr>
+        <tr><td>Sheet Issue Date</td><td>Fecha (ENE. AAAA)</td></tr>
+        <tr><td>Clasificacion</td><td>Código de categoría (PG, LO, …)</td></tr>
+    </table>
+</body>
+</html>
