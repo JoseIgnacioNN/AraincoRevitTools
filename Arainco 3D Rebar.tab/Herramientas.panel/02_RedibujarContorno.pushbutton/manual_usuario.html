@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Arainco: Redibujar contorno</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #5BC0DE;
+            --accent-dim: #95B8CC;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: 920px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.75em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 32px;
+        }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        code {
+            background: #0E1B32;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 1px 6px;
+            font-size: 0.92em;
+            color: var(--text);
+        }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            text-align: left;
+            color: var(--text-dim);
+            font-size: 0.95em;
+        }
+        th { color: var(--text); background: #0E1B32; }
+        .note {
+            color: var(--muted);
+            font-size: 0.95em;
+            border-top: 1px solid var(--border);
+            margin-top: 36px;
+            padding-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Arainco: Redibujar contorno</h1>
+    <div class="intro">
+        Genera el contorno del hormigón visible en la vista activa: une en un solo
+        sólido los elementos con material Concrete, los corta con el plano vertical
+        del eje indicado en <code>Armadura_Eje</code> y dibuja detail lines agrupadas
+        con el nombre de la vista (mismo criterio que Elevación Eje).
+    </div>
+
+    <h2>Requisitos</h2>
+    <ul>
+        <li>Revit 2024–2026.</li>
+        <li>Vista de modelo 2D activa (planta, sección, alzado o detalle; no hoja ni leyenda).</li>
+        <li>Vista con parámetro de instancia <code>Armadura_Eje</code> y valor no vacío.</li>
+        <li>Debe existir un eje (<code>Grid</code>) en el modelo cuyo nombre coincida con ese valor.</li>
+        <li>Elementos estructurales con <em>Material for Model Behavior</em> = Concrete visibles en la vista.</li>
+    </ul>
+
+    <h2>Uso</h2>
+    <ol>
+        <li>Ejecute la herramienta en el panel <strong>3D Rebar</strong>.</li>
+        <li>Abre la vista donde quieres el contorno (por ejemplo una elevación o sección por eje).</li>
+        <li>Comprueba que <code>Armadura_Eje</code> tenga el nombre del eje correcto.</li>
+        <li>Pulsa <strong>Redibujar contorno</strong>.</li>
+        <li>Se crea o actualiza el grupo de detail lines y se cierra la ventana de la herramienta.</li>
+    </ol>
+
+    <h2>Reglas de negocio</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Aspecto</th>
+                <th>Comportamiento</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Elementos incluidos</td>
+                <td>Solo instancias con material Concrete visibles en la vista activa (muros, losas, fundaciones, etc.).</td>
+            </tr>
+            <tr>
+                <td>Plano de corte</td>
+                <td>Plano vertical del eje (<code>Grid</code>) leído desde <code>Armadura_Eje</code>, perpendicular al trazo del eje en planta.</td>
+            </tr>
+            <tr>
+                <td>Geometría</td>
+                <td>Unión booleana de sólidos; corte con <code>CutWithHalfSpace</code>; perímetro extraído de la cara de sección.</td>
+            </tr>
+            <tr>
+                <td>Salida</td>
+                <td>Detail curves en la vista activa, agrupadas con el <strong>nombre de la vista</strong> (p. ej. <code>02_MA_ELEVACION EJE 1</code>).</td>
+            </tr>
+            <tr>
+                <td>Estilo de línea</td>
+                <td>Detail lines con subcategoría <em>Medium Lines</em> (Líneas medias).</td>
+            </tr>
+            <tr>
+                <td>Regeneración</td>
+                <td>Si la vista ya tiene un grupo de contorno con el nombre de la vista, una variante numerada (<code>Nombre (2)</code>, etc.) o el nombre legacy <code>CONTORNO</code> + eje, se elimina y se crea uno nuevo.</td>
+            </tr>
+            <tr>
+                <td>Selección</td>
+                <td>Incluye todos los Concrete visibles en el cálculo del sólido; no deja elementos seleccionados al terminar.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>Notas y avisos</h2>
+    <ul>
+        <li>Si la vista no tiene <code>Armadura_Eje</code> o está vacío, la herramienta no continúa.</li>
+        <li>Si no hay un <code>Grid</code> con el mismo nombre que <code>Armadura_Eje</code>, se informa del error.</li>
+        <li>La unión booleana puede fallar si la geometría no es sólida o los cuerpos no se solapan.</li>
+        <li>No sustituye la herramienta «Contorno hormigón por eje», que permite elegir el eje manualmente en un desplegable.</li>
+        <li>Volver a ejecutar la herramienta en la misma vista actualiza el contorno (reemplaza el grupo anterior).</li>
+    </ul>
+
+    <p class="note">Arainco BIMTools · Panel 3D Rebar · Transacción en historial de deshacer: <code>Arainco: Redibujar contorno</code>.</p>
+</body>
+</html>
