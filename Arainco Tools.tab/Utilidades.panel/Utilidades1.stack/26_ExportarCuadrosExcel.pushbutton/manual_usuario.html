@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Arainco: Exportar cuadros Excel</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #5BC0DE;
+            --accent-dim: #95B8CC;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: 920px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.75em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 32px;
+        }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        code {
+            background: #0E1B32;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 1px 6px;
+            font-size: 0.92em;
+            color: var(--text);
+        }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            text-align: left;
+            color: var(--text-dim);
+            font-size: 0.95em;
+        }
+        th { color: var(--text); background: #0E1B32; }
+        .note {
+            color: var(--muted);
+            font-size: 0.95em;
+            border-top: 1px solid var(--border);
+            margin-top: 36px;
+            padding-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Arainco: Exportar cuadros Excel</h1>
+    <div class="intro">
+        Exporta las tablas del proyecto (cuadros de cantidades, cuadros de claves
+        y mediciones de materiales) a un libro Excel. Puede filtrar la lista,
+        marcar las tablas que necesita y generar un archivo con una hoja por cada
+        tabla seleccionada.
+    </div>
+
+    <h2>Requisitos</h2>
+    <ul>
+        <li>Revit 2024, 2025 o 2026 con un modelo abierto.</li>
+        <li>Microsoft Excel instalado en el equipo (la exportación usa Excel).</li>
+        <li>Tablas existentes en el proyecto (no se exportan plantillas de tabla).</li>
+        <li>Permiso de escritura en la carpeta de destino del archivo <code>.xlsx</code>.</li>
+    </ul>
+
+    <h2>Uso</h2>
+    <ol>
+        <li>Abra la herramienta. Aparece la lista de tablas del proyecto.</li>
+        <li>Filtre por nombre, categoría o tipo si la lista es larga.</li>
+        <li>Marque las tablas a exportar. El recuadro del encabezado marca o anula todas las filas visibles.</li>
+        <li>Con Mayús + clic en la casilla puede seleccionar un rango.</li>
+        <li>Elija si aplica formato Arainco o solo datos.</li>
+        <li>Pulse <strong>Examinar…</strong> y elija la ruta del archivo Excel.</li>
+        <li>Pulse <strong>Exportar</strong>. Al terminar puede abrir el libro generado.</li>
+    </ol>
+    <p>
+        <strong>Actualizar</strong> vuelve a leer las tablas del modelo.
+        Si la herramienta ya está abierta, no se crea una segunda ventana.
+    </p>
+
+    <h2>Reglas de negocio</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Tema</th>
+                <th>Comportamiento</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Qué se exporta</td>
+                <td>Tablas del proyecto (ViewSchedule). Se excluyen plantillas de tabla.</td>
+            </tr>
+            <tr>
+                <td>Libro Excel</td>
+                <td>Un archivo <code>.xlsx</code> con una hoja por cada tabla marcada. El nombre de hoja se recorta a 31 caracteres y se evitan duplicados.</td>
+            </tr>
+            <tr>
+                <td>Contenido</td>
+                <td>Se copia el texto visible de la tabla (cabeceras, filas de datos, agrupaciones y totales cuando existen).</td>
+            </tr>
+            <tr>
+                <td>Anchos de columna</td>
+                <td>Se toman de la tabla en Revit y se aplican en Excel.</td>
+            </tr>
+            <tr>
+                <td>Formato Arainco</td>
+                <td>Añade cabecera (proyecto, modelo, fecha), encabezados azules, filas alternas, resalte de totales y filtro automático. Si se desmarca, se exportan solo los datos.</td>
+            </tr>
+            <tr>
+                <td>Nombre sugerido</td>
+                <td><code>AAAA.MM.DD_&lt;modelo&gt;_cuadros.xlsx</code></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>Notas</h2>
+    <ul>
+        <li>Hace falta Excel; si no está instalado o queda bloqueado, la exportación falla.</li>
+        <li>Debe marcar al menos una tabla e indicar una carpeta de destino válida.</li>
+        <li>Durante la exportación se bloquea la ventana de Revit hasta terminar.</li>
+        <li>La herramienta no crea ni modifica tablas en el modelo; solo lee y escribe el Excel.</li>
+        <li>Si Excel tiene el archivo abierto, no se podrá sobrescribir.</li>
+    </ul>
+
+    <p class="note">
+        Use el botón Manual de la herramienta para volver a abrir este documento.
+    </p>
+</body>
+</html>
