@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Arainco: Armado columnas V2</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #5BC0DE;
+            --accent-dim: #95B8CC;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: 920px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.75em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 32px;
+        }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        code {
+            background: #0E1B32;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 1px 6px;
+            font-size: 0.92em;
+            color: var(--text);
+        }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            text-align: left;
+            color: var(--text-dim);
+            font-size: 0.95em;
+        }
+        th { color: var(--text); background: #0E1B32; }
+        .note {
+            color: var(--muted);
+            font-size: 0.95em;
+            border-top: 1px solid var(--border);
+            margin-top: 36px;
+            padding-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Arainco: Armado columnas V2</h1>
+
+    <div class="intro">
+        <p>Herramienta nueva de armado de columnas. No sustituye ni modifica Armado Columnas (Enterprise). Define el lote en alzado, dosifica en el rail y coloca longitudinales con el <strong>mismo motor</strong> que Enterprise: fusión XY, estiramientos, empalmes, patas L y evaluación de colisión contra el hormigón.</p>
+    </div>
+
+    <h2>Requisitos</h2>
+    <ul>
+        <li>Revit 2024–2026 y proyecto / plantilla Arainco.</li>
+        <li>Vista activa de alzado o sección, donde las piezas sean visibles.</li>
+        <li>Elementos de hormigón: columnas, fundaciones, vigas y losas.</li>
+    </ul>
+
+    <h2>Uso</h2>
+    <ol>
+        <li>Pulse el botón <strong>Armado Columnas V2</strong>.</li>
+        <li>Seleccione el lote en la vista. Finalice con la cinta de Revit o cancele con Esc.</li>
+        <li>Se abre la ventana: elevación a la izquierda, rail a la derecha, preview de sección de la columna activa.</li>
+        <li>Clic en una columna del canvas para seleccionarla; Ctrl+clic para sumar o quitar. Arrastre un rectángulo (marquesina) para seleccionar varias; Ctrl+arrastre une al lote actual.</li>
+        <li>A la izquierda del alzado, la <strong>cinta Tn</strong> cubre la <strong>pila colineal</strong>. Si cambia la sección entre fustes apilados (p. ej. 1000×1000 bajo 800×800), se abren T1, T2… solos para dosificar n/Ø. Eso no parte las barras. Solo un pill Empalme abre T extra de corte.</li>
+        <li>A la izquierda de cada columna, entre la cinta Tn y el fuste, hay pills de empalme. <strong>Mitad</strong> está en todas. <strong>Base</strong> no se ofrece en la columna de cota más baja del alzado (no hay fuste debajo). Clic activa; otro clic quita. En la misma columna no coexisten Base y Mitad.</li>
+        <li>Clic en el bean Tn para dosificar el <strong>Ø del tramo</strong> y la <strong>cantidad de barras en cara A y B</strong>. El preview de sección muestra el fuste cubierto por esa cinta. Arrastre una marquesina sobre varios beans para aplicar los mismos valores a varios tramos. Clic en una columna (o marquesina) solo cambia el preview si no pulsa un bean.</li>
+        <li>El preview de alzado muestra Pata L / Empotra en los extremos de las líneas según el motor (no se eligen en el rail). El <strong>nombre de línea de fierro</strong> (A, B, C…) aparece al pie de cada pista; clic para editarlo. Al Colocar se escribe en <code>Armadura_Ubicacion</code>.</li>
+        <li>En el rail use las pestañas <strong>LONGITUDINAL</strong> y <strong>CONFINAMIENTO</strong>. LONGITUDINAL muestra en el alzado las cintas Tn y el esquema de líneas de fierro. CONFINAMIENTO oculta esas capas y pinta en cada fuste las zonas C (verde, densas) y M (ámbar, zona media). Elija una o varias <strong>columnas en el alzado</strong> (clic, Ctrl+clic o marquesina) y dibuje estribos/trabas en el preview de <strong>sección</strong>. Ese dibujo se aplica a todas las columnas seleccionadas; cada una conserva su propio resultado. Los extremos de pila no se configuran en el rail: los calcula Colocar.</li>
+        <li>Pulse <strong>Colocar armadura</strong> para crear longitudinales y, si hay dibujo en Confinamiento, estribos y trabas. Si se crean barras, la herramienta se cierra.</li>
+        <li><strong>Manual</strong> abre este documento. <strong>Cerrar</strong> cierra la ventana sin colocar.</li>
+    </ol>
+
+    <h2>Reglas de negocio</h2>
+    <table>
+        <tr><th>Ámbito</th><th>Comportamiento</th></tr>
+        <tr><td>Selección</td><td>Solo hormigón: columnas, fundaciones, vigas y losas. El canvas proyecta forma, tamaño y posición de la vista (Right → X, Up → Y).</td></tr>
+        <tr><td>Tramos</td><td>Un T1 por pila si el fuste no cambia. Cambio de sección (tipo o A×B) en junta de pila abre cintas Tn para n/Ø. No envía planos de corte a Colocar. Solo pills Base/Mitad trocean Rebar.</td></tr>
+        <tr><td>Empalme / troceo</td><td>Pills a la izquierda del fuste. Mitad en todas las columnas. Base solo si hay columna más baja en el alzado (no en el pilar de vMin mínimo). Clic activa; clic otra vez apaga. Excluyentes. Base corta al pie; Mitad a media altura.</td></tr>
+        <tr><td>Contexto</td><td>Vigas, losas y fundaciones se recortan a ±2000 mm del centroide de las columnas.</td></tr>
+        <tr><td>Rail LONGITUDINAL</td><td>Cada cinta Tn: un <strong>Ø</strong> para A y B, y <strong>n distinto por cara</strong> (A = lado corto, B = lado largo). Recubrimiento de sesión (40 mm). El preview de sección sigue al Tn activo. No hay control de extremos de pila en el rail.</td></tr>
+        <tr><td>Extremos (motor)</td><td>Automáticos, igual que Enterprise. No hay Pata L / Empotra en el rail ni clic en el canvas para cambiarlos. Techo: se prueba estir +L; si el prisma choca con el sólido de columna se conserva el empotramiento; si no choca se revierte, se acorta 25 mm + Ø/2 y se pone pata L al núcleo. Arranque sin zapata: la misma prueba −Z. Pie con zapata: estir −Z = altura de fundación − 50 mm y pata L al núcleo. El preview del alzado refleja ese resultado.</td></tr>
+        <tr><td>Pie con fundación</td><td>Join / BB alineada como Enterprise. Estir −Z = altura geométrica de la zapata − 50 mm al eje; con pata L se corrige Ø/2 para 50 mm a la tangente en el nudo.</td></tr>
+        <tr><td>Rail CONFINAMIENTO</td><td>Sustituye a la pestaña EST. En el alzado no se dibujan cintas Tn ni el esquema de líneas de fierro. Sobre cada fuste se pintan las <strong>zonas de confinamiento</strong>: verde (C) con rayado más denso y etiqueta de espaciamiento; ámbar (M) para la zona media; chip 1T/2T/3T en la esquina del fuste. La leyenda C/M está en el encabezado. Selección de columnas: clic, Ctrl+clic o marquesina. El canvas de sección muestra la columna de preview; cada clic de dibujo se aplica a todas las seleccionadas. Clic 1 ancla, clic 2 cierra. Cuatro caras. Misma fila o columna = traba 135°; si no, estribo 135°. Perimetral envuelve el perímetro. El rail agrupa <strong>Dibujo</strong>, <strong>Zonificación</strong> (combo Único / 2 / 3 tramos) y bloques de zona al estilo Armado vigas: cabecera con L y fila <strong>Largo (mm)</strong> (campo numérico) + <strong>Espaciado (@)</strong>. En Único, ø y @ van en el mismo bloque. En 3 tramos el orden es cabeza → media (largo de solo lectura) → pie. El Ø de estribo es único. <strong>Modo por columna</strong> (por defecto <strong>Único</strong>: un espaciamiento en todo el fuste); 2 tramos (confinado en el pie, largo editable; el resto usa espaciamiento M); 3 tramos (solo se editan los largos de <strong>pie</strong> y <strong>cabeza</strong>; la zona media es el hueco que dejan esos extremos, no tiene largo propio). La selección múltiple copia modo y largos a todas las elegidas (cada columna recorta al alto propio). Al Colocar se crean los Rebar según el dibujo y ese modo. Estribos y trabas: 25 mm de recubrimiento a cada cara (tangente). En las patas del gancho 135° no se suma otra vez Ø/2.</td></tr>
+        <tr><td>Empalme / largo</td><td>Pills Base/Mitad = planos de corte. Cada tramo conserva su Ø. El largo de traslape L en el nudo usa el <strong>Ø mayor</strong> de las dos barras que se empalman (no se copia ese Ø al tramo menor). Hilos A/IA cortan en el plano de la columna; B/IB en el plano trasladado L. Base: tramo inferior +L. Mitad: ±L/2. L de tabla Ø × G25/G35/G45.</td></tr>
+        <tr><td>Hormigón</td><td>Dosificación del lote G25 / G35 / G45 (mismo control que Armado vigas). Por defecto <strong>G25</strong>. No es por tramo.</td></tr>
+        <tr><td>Cambio de sección</td><td>En el canvas se abre un Tn en cada junta de pila donde cambia A×B (redondeo 5 mm; lados ordenados). En el modelo, fusión XY solo si coincide (X, Y) de planta (redondeo Enterprise): el 1000×1000 bajo un 800×800 no une la fibra k con la k. Si el estir +L no choca con sólido, se revierte y pata al núcleo (retránqueo).</td></tr>
+        <tr><td>Instancia</td><td>Una sola ventana. Si la herramienta ya está abierta, se reenfoca.</td></tr>
+        <tr><td>Modelo</td><td>Colocar llama al núcleo Enterprise para longitudinales (sin réplicas de numeración) y crea el confinamiento dibujado (estribos y trabas, gancho 135°) en las columnas que tengan dibujo. Rejilla n A/B y Ø del Tn que cubre cada fuste. Tras crear el confinamiento se coloca una Multi-Rebar Annotation vertical del tipo <strong>Structural Rebar</strong> <strong>por cada tramo</strong> sobre el Rebar de estribos ya creado (Único: una por columna; 2 o 3 tramos: una en pie, media y/o cabeza), en la vista activa. Van a la <strong>derecha del lote</strong>, 500 mm del borde más saliente (columnas y estribos), en una misma vertical aunque las secciones varíen. Estribos usan RebarShape <strong>10</strong> y trabas <strong>08</strong> (tipos del proyecto; no se generan shapes nuevos). En el mismo eje de MRA, las etiquetas quedan **a la derecha de la línea de cota** (offset según escala de la vista y texto 2.5 mm; a 1:50 son 250 mm) y se apilan estribo sobre traba. No se añaden estribos extra. Tras un Colocar correcto la ventana se cierra.</td></tr>
+        <tr><td>Parámetros Rebar</td><td><code>Armadura_Arainco</code> = Yes. <code>Armadura_Malla</code> = No. <code>Armadura_Conjunto_GUID</code> = GUID de la corrida. <code>Armadura_Nivel</code> = nombre del nivel de proyecto más cercano al <strong>pie</strong> (cota Z menor) del segmento principal de la barra. <code>Armadura_Ubicacion</code> = el mismo nombre de línea de fierro que el canvas de alzado (A, B, C… o el texto editado al pie de la pista).</td></tr>
+        <tr><td>Líneas de fierro (alzado)</td><td>El esquema y el overlay salen del mismo <code>line_plans</code> que Colocar (dry-run). Nombrado automático A, B, C… por huella de longitudes; el nombre se muestra al pie de la pista y se puede editar en el canvas. Colocar escribe ese texto en <code>Armadura_Ubicacion</code> y, si está marcado el esquema en vista, en las letras del croquis. Las patas L hacia el núcleo no se dibujan (sí el tronco ya acortado). No se genera despiece 1:50 aparte.</td></tr>
+        <tr><td>Esquema en vista Revit</td><td>Casilla en el pie: <strong>Esquema líneas de fierro en vista activa</strong>. Si está marcada, Colocar dibuja el croquis a la derecha de las columnas en el alzado o sección activos. Las letras coinciden con las del canvas de elevación (incluidas las editadas). Vista en planta: no dibuja. Desmarcada: solo barras y parámetro de ubicación, sin croquis en la vista.</td></tr>
+    </table>
+
+    <h2>Notas</h2>
+    <ul>
+        <li>Armado Columnas (Enterprise) sigue disponible y no se altera con esta herramienta.</li>
+        <li>Si ningún elemento se proyecta, cambie a un alzado o sección donde el lote sea visible.</li>
+        <li>Si el lote incluye piezas que no son de hormigón, la selección se rechaza.</li>
+        <li>El botón Colocar armadura genera longitudinales (motor Enterprise) y el confinamiento dibujado en la UI. Si no hay dibujo de estribos/trabas en una columna, esa pieza no recibe confinamiento. Con confinamiento se añade una MRA «Structural Rebar» por cada tramo sobre los estribos ya creados, alineadas a la derecha del lote (offset 500 mm, colineales). Estribos y trabas se etiquetan en ese mismo eje: etiqueta simple si hay uno; multihost si hay más de uno. No se duplican barras. No se genera el despiece 1:50 aparte.</li>
+    </ul>
+
+    <p class="note">Manual — Arainco: Armado columnas V2. Longitudinales y confinamiento en modelo.</p>
+</body>
+</html>

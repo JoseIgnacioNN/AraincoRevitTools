@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mockup — líneas de fierro en alzado · Arainco: Armado columnas V2</title>
+    <style>
+        :root {
+            --bg: #071018;
+            --panel: #0a1620;
+            --shell: #08141c;
+            --accent: #5BC0DE;
+            --text: #E8F4F8;
+            --dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+            --col: #5bb8d4;
+            --col-fill: #0f2a38;
+            --beam: #7d9b8a;
+            --fnd: #d4a574;
+            --line-a: #22d3ee;
+            --line-b: #fbbf24;
+            --lap: #f87171;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+        }
+        header {
+            padding: 16px 24px 8px;
+            border-bottom: 1px solid var(--border);
+        }
+        header h1 {
+            margin: 0;
+            font-size: 1.25rem;
+            color: var(--accent);
+            font-weight: 600;
+        }
+        header p {
+            margin: 6px 0 0;
+            color: var(--dim);
+            font-size: 0.92rem;
+        }
+        .wrap {
+            display: grid;
+            grid-template-columns: 1fr 280px;
+            gap: 0;
+            min-height: calc(100vh - 72px);
+        }
+        .stage {
+            padding: 16px 20px;
+            overflow: auto;
+        }
+        .shell {
+            background: var(--shell);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            display: grid;
+            grid-template-columns: 1fr 220px;
+            min-height: 560px;
+        }
+        .canvas {
+            position: relative;
+            overflow: auto;
+            border-right: 1px solid var(--border);
+        }
+        .rail {
+            padding: 12px;
+            background: var(--panel);
+            color: var(--dim);
+            font-size: 0.8rem;
+        }
+        .rail h3 {
+            margin: 0 0 8px;
+            color: var(--accent);
+            font-size: 0.75rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .rail .tab {
+            display: inline-block;
+            padding: 3px 8px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            margin-right: 4px;
+            color: var(--muted);
+        }
+        .rail .tab.on { color: var(--text); border-color: var(--accent); }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 16px;
+            margin: 12px 0 16px;
+            align-items: center;
+            color: var(--dim);
+            font-size: 0.88rem;
+        }
+        .controls label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+        .note {
+            max-width: 920px;
+            color: var(--dim);
+            font-size: 0.88rem;
+            line-height: 1.5;
+            margin: 12px 0 0;
+        }
+        .legend {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+            font-size: 0.8rem;
+            color: var(--muted);
+        }
+        .legend i {
+            display: inline-block;
+            width: 18px;
+            height: 3px;
+            vertical-align: middle;
+            margin-right: 4px;
+        }
+        svg text { font-family: "Segoe UI", sans-serif; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Mockup — esquema de líneas de fierro (derecha del alzado)</h1>
+        <p>No es el despiece 1:50 de Enterprise. Pistas únicas A, B… alineadas en cota con el fuste de la pila activa.</p>
+    </header>
+    <div class="wrap">
+        <div class="stage">
+            <div class="controls">
+                <span>Pila activa · Ø22 G35 · L = 1960 mm</span>
+                <label><input type="checkbox" id="mid" checked> Mitad en C1</label>
+                <label><input type="checkbox" id="base"> Base en C2</label>
+                <label><input type="checkbox" id="showB" checked> Mostrar línea B (empalme +L)</label>
+            </div>
+            <div class="shell">
+                <div class="canvas" id="canvasHost"></div>
+                <aside class="rail">
+                    <h3>Rail (sin cambio)</h3>
+                    <div><span class="tab on">LONGITUDINAL</span><span class="tab">CONFINAMIENTO</span></div>
+                    <p style="margin-top:12px">A 4 · B 6 · ø22<br>Recubrimiento 40 mm<br>G35</p>
+                    <p style="color:var(--muted)">El esquema de líneas no vive aquí: queda en el canvas, a la derecha de las columnas.</p>
+                </aside>
+            </div>
+            <div class="legend">
+                <span><i style="background:var(--line-a)"></i>Línea A — nudo en el corte</span>
+                <span><i style="background:var(--line-b)"></i>Línea B — nudo +L</span>
+                <span><i style="background:var(--lap)"></i>Zona de traslape</span>
+            </div>
+            <p class="note">
+                <strong>Mitad:</strong> cada tramo se estira L/2; el solape queda centrado en el nudo.
+                <strong>Base:</strong> la barra de abajo entra +L en C2; la de arriba nace en el nudo (B nace +L).
+                Sin pills solo hay una pista (A): un tronco continuo. Las 12 fibras del perímetro no se dibujan: solo tipos únicos.
+            </p>
+        </div>
+    </div>
+    <script>
+    (function () {
+        var L_MM = 1960;
+        var COL_H_MM = 3200;
+        var SCALE = 0.085;
+        var Lpx = L_MM * SCALE;
+        var Hpx = COL_H_MM * SCALE;
+        var padT = 36;
+        var colX = 118;
+        var colW = 72;
+        var schemeX0 = colX + colW + 48;
+        var trackW = 36;
+
+        function yFromTop(mmFromBottom, totalMm) {
+            return padT + (totalMm - mmFromBottom) * SCALE;
+        }
+
+        function el(tag, attrs) {
+            var n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+            Object.keys(attrs || {}).forEach(function (k) {
+                n.setAttribute(k, attrs[k]);
+            });
+            return n;
+        }
+
+        function bar(parent, x, y0, y1, color, w) {
+            var y = Math.min(y0, y1);
+            var h = Math.abs(y1 - y0);
+            parent.appendChild(el("rect", {
+                x: x - (w || 4) / 2,
+                y: y,
+                width: w || 4,
+                height: h,
+                rx: 1.5,
+                fill: color,
+                opacity: "0.92"
+            }));
+        }
+
+        function lapBand(parent, x, y0, y1) {
+            var y = Math.min(y0, y1);
+            var h = Math.abs(y1 - y0);
+            parent.appendChild(el("rect", {
+                x: x - 10,
+                y: y,
+                width: 20,
+                height: h,
+                fill: "#f87171",
+                opacity: "0.22"
+            }));
+        }
+
+        function letter(parent, x, y, lab, color) {
+            parent.appendChild(el("circle", {
+                cx: x, cy: y, r: 11,
+                fill: "#0a1620",
+                stroke: color,
+                "stroke-width": "1.4"
+            }));
+            var t = el("text", {
+                x: x, y: y + 4,
+                "text-anchor": "middle",
+                fill: color,
+                "font-size": "11",
+                "font-weight": "700"
+            });
+            t.textContent = lab;
+            parent.appendChild(t);
+        }
+
+        function pill(parent, x, y, txt, on) {
+            parent.appendChild(el("rect", {
+                x: x, y: y - 9, width: 46, height: 18, rx: 3,
+                fill: on ? "#1a3a4c" : "#0e1b24",
+                stroke: on ? "#5BC0DE" : "#21465C",
+                "stroke-width": on ? "1.3" : "1"
+            }));
+            var t = el("text", {
+                x: x + 23, y: y + 4,
+                "text-anchor": "middle",
+                fill: on ? "#E8F4F8" : "#64748b",
+                "font-size": "8.5"
+            });
+            t.textContent = txt;
+            parent.appendChild(t);
+        }
+
+        function draw() {
+            var mid = document.getElementById("mid").checked;
+            var base = document.getElementById("base").checked;
+            var showB = document.getElementById("showB").checked;
+            var totalMm = COL_H_MM * 2;
+            var nTrack = (showB && (mid || base)) ? 2 : 1;
+            var svgW = schemeX0 + nTrack * trackW + 80;
+            var svgH = padT + totalMm * SCALE + 56;
+            var svg = el("svg", { width: svgW, height: svgH, viewBox: "0 0 " + svgW + " " + svgH });
+
+            var yTop = padT;
+            var yJoint = yFromTop(COL_H_MM, totalMm);
+            var yBot = yFromTop(0, totalMm);
+            var yMidC1 = yFromTop(COL_H_MM * 0.5, totalMm);
+
+            var tCinta = el("text", { x: 18, y: (yTop + yBot) / 2, fill: "#22d3ee", "font-size": "11", "font-weight": "700" });
+            tCinta.textContent = "T1";
+            svg.appendChild(tCinta);
+            svg.appendChild(el("line", {
+                x1: 42, y1: yTop + 8, x2: 42, y2: yBot - 8,
+                stroke: "#22d3ee", "stroke-width": "2", opacity: "0.85"
+            }));
+
+            pill(svg, 52, yMidC1, "Mitad", mid);
+            pill(svg, 52, yJoint + 14, "Base", base);
+
+            svg.appendChild(el("rect", {
+                x: colX, y: yJoint, width: colW, height: yBot - yJoint,
+                fill: "#0f2a38", stroke: "#5bb8d4", "stroke-width": "1.3"
+            }));
+            svg.appendChild(el("rect", {
+                x: colX, y: yTop, width: colW, height: yJoint - yTop,
+                fill: "#0f2a38", stroke: "#5bb8d4", "stroke-width": "1.3"
+            }));
+            var l1 = el("text", { x: colX + 6, y: yBot + 14, fill: "#95B8CC", "font-size": "10" });
+            l1.textContent = "C1";
+            svg.appendChild(l1);
+            var l2 = el("text", { x: colX + 6, y: yTop - 8, fill: "#95B8CC", "font-size": "10" });
+            l2.textContent = "C2";
+            svg.appendChild(l2);
+            svg.appendChild(el("rect", {
+                x: colX - 18, y: yBot, width: colW + 36, height: 14,
+                fill: "#2a1f14", stroke: "#d4a574", "stroke-width": "1"
+            }));
+
+            function segsFor(shiftPx) {
+                var vLo = yBot;
+                var vHi = yTop;
+                var cuts = [];
+                if (mid) cuts.push({ y: yMidC1 - shiftPx, mode: "mid" });
+                if (base) cuts.push({ y: yJoint - shiftPx, mode: "base" });
+                cuts.sort(function (a, b) { return b.y - a.y; });
+                var half = Lpx / 2;
+                var out = [];
+                var start = vLo;
+                cuts.forEach(function (c) {
+                    var prevEnd, nextStart;
+                    if (c.mode === "mid") {
+                        prevEnd = c.y - half;
+                        nextStart = c.y + half;
+                    } else {
+                        prevEnd = c.y - Lpx;
+                        nextStart = c.y;
+                    }
+                    out.push({ a: start, b: prevEnd, lapY0: prevEnd, lapY1: nextStart });
+                    start = nextStart;
+                });
+                out.push({ a: start, b: vHi, lapY0: null, lapY1: null });
+                return out;
+            }
+
+            var labs = ["A"];
+            if (showB && (mid || base)) labs.push("B");
+
+            labs.forEach(function (lab, i) {
+                var x = schemeX0 + i * trackW;
+                var color = lab === "B" ? "#fbbf24" : "#22d3ee";
+                var shift = lab === "B" ? Lpx : 0;
+                letter(svg, x, yTop - 18, lab, color);
+                var segs = segsFor(shift);
+                segs.forEach(function (s, si) {
+                    var ox = (si % 2 === 0) ? -2.5 : 2.5;
+                    if (s.lapY0 != null && s.lapY1 != null) {
+                        lapBand(svg, x, s.lapY0, s.lapY1);
+                    }
+                    bar(svg, x + ox, s.a - 2, s.b + 2, color, 4);
+                });
+            });
+
+            var cap = el("text", {
+                x: 16, y: svgH - 10,
+                fill: "#64748b", "font-size": "9"
+            });
+            cap.textContent = "Izq. alzado (cinta + pills + fuste). Der. pistas únicas, misma cota.";
+            svg.appendChild(cap);
+
+            var host = document.getElementById("canvasHost");
+            host.innerHTML = "";
+            host.appendChild(svg);
+        }
+
+        document.getElementById("mid").addEventListener("change", draw);
+        document.getElementById("base").addEventListener("change", draw);
+        document.getElementById("showB").addEventListener("change", draw);
+        draw();
+    })();
+    </script>
+</body>
+</html>
