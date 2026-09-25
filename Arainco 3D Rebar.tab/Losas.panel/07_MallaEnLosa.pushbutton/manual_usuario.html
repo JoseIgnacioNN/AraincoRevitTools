@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Arainco: Malla en Losa</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #5BC0DE;
+            --accent-dim: #95B8CC;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: 920px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.75em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 32px;
+        }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            text-align: left;
+            color: var(--text-dim);
+            font-size: 0.95em;
+        }
+        th { color: var(--text); background: #0E1B32; }
+        .note {
+            color: var(--muted);
+            font-size: 0.95em;
+            border-top: 1px solid var(--border);
+            margin-top: 36px;
+            padding-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Manual — Arainco: Malla en Losa</h1>
+
+    <div class="intro">
+        <p>
+            Prepara y coloca la <strong>malla inferior o la superior</strong>
+            de una losa como <strong>Area Reinforcement</strong>. El contorno puede ser
+            el perímetro completo de la losa, uno dibujado, o varios paños.
+            La etiqueta es una sola nota: la primera línea lleva <strong>MALLA:</strong> delante de la luz menor
+            y la segunda línea la luz mayor. En contorno completo y en dibujo, cada barra lleva pata en L
+            en los extremos que no empotran en un capitel. En por paños la barra queda recta, y la pata en L
+            solo va en el extremo del polígono que coincide con el boundary de la losa. Pulse Colocar malla.
+        </p>
+        <p>
+            Cada cara tiene Ø y espaciamiento independientes en luz menor y luz mayor.
+            Si hay capiteles rectangulares con todos los lados mayores de 1200 mm que solapan el contorno, se crea un Opening by Face
+            en la losa host (núcleo inset 600 mm) para el solape.
+        </p>
+    </div>
+
+    <h2>Requisitos</h2>
+    <ul>
+        <li>Proyecto Arainco (no documento de familia).</li>
+        <li>Vista activa de <strong>planta</strong> (planta de piso o de cimentación), no plantilla.</li>
+        <li>Revit 2024–2026.</li>
+        <li>Una losa o losa de cimentación (Structural Foundation slab) cuyo nombre de ejemplar y de tipo <strong>no</strong> contenga <strong>CAPITEL</strong>. Las zapatas aisladas y los muros de cimentación no aplican.</li>
+    </ul>
+
+    <h2>Uso</h2>
+    <ol>
+        <li>Abra la planta donde quiere armar.</li>
+        <li>Pulse <strong>Malla en Losa</strong>. Si ya hay una losa válida seleccionada, se usa; si no, elija una en el modelo. Los elementos con <strong>CAPITEL</strong> en el nombre no se pueden elegir.</li>
+        <li>Se abre la ventana <strong>maximizada</strong>. El canvas mantiene el aspecto de la losa y se centra en el área de planta.</li>
+        <li>En <strong>Contorno</strong> elija el modo:
+            <ul>
+                <li><strong>Contorno completo</strong>: el polígono de malla es el perímetro del elemento seleccionado.</li>
+                <li><strong>Dibujar</strong>: un solo contorno en el canvas, dentro de la losa. El cursor es una cruz y se engancha a extremo, medio, intersección, centro y perpendicular de losas, muros, vigas, columnas, ejes y del trazo en curso. <strong>Rectángulo</strong> son dos clics en esquinas opuestas. <strong>Polígono</strong> añade un vértice por clic; se cierra al pulsar el primer vértice (verde), con Enter o con doble clic. Retroceso deshace el último vértice; Esc cancela el trazo; <strong>Borrar contorno</strong> quita el polígono cerrado.</li>
+                <li><strong>Por paños</strong>: varios rectángulos o polígonos. Cada paño cerrado es una malla. Un clic dentro de un paño lo selecciona (trazo blanco); Supr lo elimina; <strong>Borrar paños</strong> quita todos. El Ø y el espaciamiento del rail valen para todos los paños.</li>
+            </ul>
+        </li>
+        <li>En planta se ve el contorno activo, las direcciones de luz menor/mayor (con Ø y espaciamiento) y, si hay capiteles rectangulares con lados mayores de 1200 mm, el hueco de solape inset 600 mm.</li>
+        <li>En <strong>Dibujar</strong> y <strong>Por paños</strong> la cruz sigue el cursor y el punto se engancha a la geometría visible. Rueda = zoom; clic rueda = pan; Ctrl+0 = encuadre inicial.</li>
+        <li>En el rail: bloque <strong>Host</strong> y las tarjetas <strong>Malla inferior</strong> y <strong>Malla superior</strong>. Al abrir, la inferior está activa y la superior apagada. Activar una apaga la otra. Configure Ø y espaciamiento por luz en la cara activa.</li>
+        <li>Pulse <strong>Colocar malla</strong> con al menos una cara activa. Si la malla se crea, la ventana se cierra sola.</li>
+        <li><strong>Cerrar</strong> cancela sin colocar. Lo ya colocado se deshace con el historial de Revit (<code>Arainco: Malla en Losa</code>).</li>
+    </ol>
+
+    <h2>Reglas de negocio</h2>
+    <table>
+        <tr>
+            <th>Tema</th>
+            <th>Comportamiento</th>
+        </tr>
+        <tr>
+            <td>Orientación</td>
+            <td>El canvas usa la derecha y el arriba de la vista activa, tanto si la planta mira hacia abajo como si mira hacia arriba. Lo que está a la derecha o arriba en Revit queda igual en el canvas, sin espejo.</td>
+        </tr>
+        <tr>
+            <td>Host</td>
+            <td>El Area Reinforcement se hospeda en la losa elegida. En modo <strong>Contorno completo</strong> el contorno es el perímetro exterior del croquis (o de la cara horizontal si no hay croquis). No se puede seleccionar un host cuyo nombre de ejemplar o tipo contenga CAPITEL.</td>
+        </tr>
+        <tr>
+            <td>Capitel</td>
+            <td>Un Floor cuyo nombre de <strong>ejemplar o tipo</strong> contiene <strong>CAPITEL</strong> (sin distinguir mayúsculas) no se puede seleccionar como host. En el contexto de planta se dibuja con un trazo cálido suave, del mismo peso que el resto del contexto. Solo un capitel de contorno <strong>totalmente rectangular</strong> (cuatro lados y ángulos rectos, incluido el cuadrado o el rectángulo girado en planta) cuyos <strong>cuatro lados superan 1200 mm</strong> y que solapa el host genera un Opening by Face: el hueco es el núcleo inset <strong>600 mm</strong> (anillo de empotramiento). Un capitel en L, con chaflán, de más de cuatro lados, o rectangular con algún lado de 1200 mm o menos, se muestra en el canvas y no abre hueco de malla.</td>
+        </tr>
+        <tr>
+            <td>Contexto</td>
+            <td>Se dibujan elementos visibles en la vista activa. La leyenda solo muestra categorías presentes. El encuadre inicial se centra en el Floor elegido.</td>
+        </tr>
+        <tr>
+            <td>Contorno</td>
+            <td>
+                Tres modos. <strong>Contorno completo</strong> toma el perímetro exterior del croquis (o de la cara horizontal si no hay croquis).
+                <strong>Dibujar</strong> usa un rectángulo o un polígono trazado en el canvas.
+                <strong>Por paños</strong> admite varios de esos trazos; cada uno es un Area Reinforcement. En ese modo no se crea la nota de texto: las barras libres quedan en la vista activa con <strong>View Unobscured</strong> y presentación <strong>Show Middle</strong>, cada una recibe una etiqueta de barra en el punto medio visible y una anotación MRA <strong>Recorrido Barras</strong> anclada al 30 % del segmento principal.
+                Todo contorno dibujado tiene que quedar dentro de la losa y no puede cruzar sus huecos.
+                <strong>Colocar malla</strong> crea la malla de cada contorno activo, con su nota de texto centrada.
+            </td>
+        </tr>
+        <tr>
+            <td>Armadura</td>
+            <td>Ø se elige en un combo; el espaciamiento se escribe en milímetros (solo números, 1–2000 mm, por defecto 150). Los interruptores son excluyentes: con la malla inferior activa, la superior queda apagada, y al revés. Al abrir queda activa solo la inferior. Si ambas están apagadas, no se puede colocar. Luz menor = Major en Revit; luz mayor = Minor. El canvas muestra las direcciones de la cara activa y una previsualización de huecos de solape.</td>
+        </tr>
+        <tr>
+            <td>Modelo</td>
+            <td>Crea un Area Reinforcement con el contorno activo (perímetro de la losa o polígono dibujado) y a continuación aplica <strong>Remove Area Reinforcement</strong>: quedan Rebar libres. En <strong>Contorno completo</strong> y <strong>Dibujar</strong>, la planta activa recibe <strong>una nota de texto</strong> con un estilo ya existente de <strong>2.5 mm</strong>, centrada en ese contorno. Primera línea: <code>MALLA:</code> delante de la luz menor. Segunda línea: la luz mayor, alineada bajo esa armadura. Inferior: <code>ø12@150i</code> / <code>ø12@150s</code>. Superior: <code>ø12@150s</code> / <code>ø12@150i</code>. En <strong>Por paños</strong> no hay nota de texto: cada barra libre se etiqueta en el punto medio de la presentación Show Middle, con la familia <strong>EST_A_STRUCTURAL REBAR TAG_FLOOR</strong> (tipo según la forma de la barra; si no hay coincidencia, el tipo 01). Además, cada barra libre recibe una anotación MRA del tipo <strong>Recorrido Barras</strong>, anclada al 30 % del segmento principal para no coincidir con el cruce de la otra luz. Si ese tipo no está en el proyecto, las barras se crean y la ventana avisa. Solo se modela la cara cuyo interruptor está activo (inferior o superior, nunca las dos a la vez). En <strong>Contorno completo</strong> y <strong>Dibujar</strong>, cada extremo libre recibe una <strong>pata en L</strong> de largo igual al espesor de la losa menos 50 mm: la inferior sube y la superior baja. El extremo que cae dentro de un capitel de empotramiento (rectangular, lados mayores de 1200 mm) no lleva pata. En <strong>Por paños</strong> los extremos quedan rectos, salvo el que apoya en una arista del polígono coincidente con el boundary de la losa seleccionada (perímetro y huecos del croquis): ese extremo lleva la misma pata en L. Si hay esos capiteles solapados, crea Openings by Face en esa misma losa (núcleo 600 mm) antes del AR. Transacción <code>Arainco: Malla en Losa</code>.</td>
+        </tr>
+        <tr>
+            <td>Parámetros</td>
+            <td>
+                En cada Rebar libre (tras Remove Area Reinforcement): <code>Armadura_Arainco</code> = Yes,
+                <code>Armadura_Malla</code> = Yes, <code>Armadura_Conjunto_GUID</code> (mismo GUID de la colocación),
+                <code>Armadura_Nivel</code> = nombre del nivel del Floor host.
+                Inferior: <code>Armadura_Ubicacion</code> = F; <code>Armadura_Posicion</code> = i (luz menor) / s (luz mayor).
+                Superior: <code>Armadura_Ubicacion</code> = F'; <code>Armadura_Posicion</code> = s (luz menor) / i (luz mayor).
+            </td>
+        </tr>
+        <tr>
+            <td>Instancia</td>
+            <td>Solo una ventana a la vez. Si la herramienta ya está abierta, se reactiva esa instancia.</td>
+        </tr>
+    </table>
+
+    <h2>Notas</h2>
+    <ul>
+        <li>No se puede elegir un elemento si el nombre de ejemplar o de tipo incluye CAPITEL (por ejemplo <code>CAPITEL 25</code> o un tipo <code>Losa CAPITEL</code>). Esos Floor siguen apareciendo en el canvas como contexto. El hueco de solape solo se crea si el contorno del capitel es totalmente rectangular y todos sus lados superan 1200 mm.</li>
+        <li>Si no hay planta activa, la herramienta pide abrir una planta y no continúa.</li>
+        <li>Si el contorno de la losa no se puede leer, revise que la losa tenga croquis cerrado o geometría sólida. En modo dibujo, un trazo que sale de la losa o entra en un hueco no se acepta.</li>
+        <li>Elementos ocultos en la vista no aparecen en el canvas.</li>
+        <li>Activar Malla inferior apaga Malla superior, y al revés. Si apaga la cara que estaba activa y deja las dos apagadas, Colocar malla no continúa.</li>
+        <li>Hace falta al menos un RebarBarType y un AreaReinforcementType en el proyecto.</li>
+        <li>En contorno completo y en dibujo, la pata en L se agrega en cada extremo de la barra. Si ese extremo queda dentro de un capitel rectangular con lados mayores de 1200 mm, no se agrega: ese lado empotra en el capitel.</li>
+        <li>En por paños la pata en L no es el caso general. Solo la lleva el extremo de la barra que cae en una arista del polígono coincidente con el boundary de la losa seleccionada.</li>
+        <li>En por paños la anotación MRA usa el tipo Recorrido Barras. Si no está en el proyecto, las barras se crean y la ventana avisa.</li>
+    </ul>
+
+    <p class="note">
+        Arainco: Malla en Losa — panel Losas. Malla inferior o superior vía Area Reinforcement.
+    </p>
+</body>
+</html>
