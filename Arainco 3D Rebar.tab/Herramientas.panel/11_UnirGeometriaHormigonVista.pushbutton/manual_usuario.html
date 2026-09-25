@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Arainco: Unir geometría hormigón (vista)</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #5BC0DE;
+            --accent-dim: #95B8CC;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: 920px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.75em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 32px;
+        }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            text-align: left;
+            color: var(--text-dim);
+            font-size: 0.95em;
+        }
+        th { color: var(--text); background: #0E1B32; }
+        .note {
+            color: var(--muted);
+            font-size: 0.95em;
+            border-top: 1px solid var(--border);
+            margin-top: 36px;
+            padding-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Arainco: Unir geometría hormigón (vista)</h1>
+
+    <div class="intro">
+        <p>
+            Une la geometría (Join Geometry) entre elementos con material estructural
+            de hormigón (Concrete) visibles en la vista activa. Antes de unir, desvincula
+            muros con attachment a losa. Tras unir, ajusta el orden de corte: capiteles
+            sobre otras losas, forjado recortado frente a otros elementos, y columna
+            sobre muro.
+        </p>
+    </div>
+
+    <h2>Requisitos</h2>
+    <ul>
+        <li>Documento de modelo abierto (no hoja ni cuadro de planificación).</li>
+        <li>Vista de modelo activa: planta, 3D, corte, alzado, etc.</li>
+        <li>Elementos con material estructural Concrete en la vista.</li>
+        <li>Revit 2024–2026.</li>
+    </ul>
+
+    <h2>Uso</h2>
+    <ol>
+        <li>Abra la vista donde desee unir el hormigón.</li>
+        <li>Ejecute <strong>Unir Geom. Hormigón</strong>.</li>
+        <li>Confirme en el diálogo de inicio (Aceptar / Cancelar).</li>
+        <li>Espere la barra de progreso (lectura, candidatos, detach y unión).</li>
+        <li>Revise el aviso final con el resumen.</li>
+    </ol>
+
+    <h2>Reglas de negocio</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Tema</th>
+                <th>Comportamiento</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Alcance</td>
+                <td>Solo ejemplares de hormigón en la vista activa (muros, forjados, pilares estructurales, vigas/framing y cimentación).</td>
+            </tr>
+            <tr>
+                <td>Candidatos</td>
+                <td>Pares por solape de cajas (bounding box inflado ~30 mm).</td>
+            </tr>
+            <tr>
+                <td>Antes de unir</td>
+                <td>Detach All en muros de hormigón con attachment a alguna losa.</td>
+            </tr>
+            <tr>
+                <td>Forjado + forjado (capitel)</td>
+                <td>Si un forjado lleva <strong>CAPITEL</strong> en el nombre de ejemplar o de tipo y el otro no, el capitel <strong>corta</strong> a la otra losa (mayor relevancia). Si ambos o ninguno son capitel, no se fuerza el orden.</td>
+            </tr>
+            <tr>
+                <td>Forjado + otro</td>
+                <td>El forjado queda <strong>recortado</strong>; el otro elemento corta al forjado. No aplica entre dos forjados (ver capitel).</td>
+            </tr>
+            <tr>
+                <td>Muro + pilar estructural</td>
+                <td>Prioridad a la <strong>columna</strong>: la columna corta al muro (el muro queda recortado).</td>
+            </tr>
+            <tr>
+                <td>Otros pares</td>
+                <td>Se unen sin forzar un orden de corte concreto.</td>
+            </tr>
+            <tr>
+                <td>Deshacer</td>
+                <td>Una sola transacción: «Arainco: Unir geometría hormigón (vista activa)».</td>
+            </tr>
+            <tr>
+                <td>Worksharing</td>
+                <td>Si hubo cambios, intenta sincronizar con el central y liberar propiedad (Relinquish All Mine).</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>Notas / avisos</h2>
+    <ul>
+        <li>Si no hay hormigón en la vista o no hay cajas solapadas, no se crean uniones.</li>
+        <li>Algunos pares pueden fallar si Revit no permite el Join; se cuentan como fallos en el resumen.</li>
+        <li>No modifica elementos que no sean de hormigón estructural según el criterio de la herramienta.</li>
+    </ul>
+
+    <p class="note">
+        Manual de usuario — Arainco Tools / BIMTools. El detalle de uso está aquí; el tooltip
+        del botón solo resume el alcance.
+    </p>
+</body>
+</html>
