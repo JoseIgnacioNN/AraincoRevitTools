@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Arainco: Armadura Capiteles</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #5BC0DE;
+            --accent-dim: #95B8CC;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: 920px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.75em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 32px;
+        }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            text-align: left;
+            color: var(--text-dim);
+            font-size: 0.95em;
+        }
+        th { color: var(--text); background: #0E1B32; }
+        .note {
+            color: var(--muted);
+            font-size: 0.95em;
+            border-top: 1px solid var(--border);
+            margin-top: 36px;
+            padding-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Manual — Arainco: Armadura Capiteles</h1>
+
+    <div class="intro">
+        <p>
+            Abre un canvas de planta con las losas de capitel seleccionadas.
+            Ahí se dibujan los polígonos de la armadura inferior: cada polígono
+            cerrado se convierte en armadura del capitel, con diámetro y
+            espaciamiento propios. La cara inferior arma luz menor y luz mayor.
+            La cara superior, si se activa, solo arma la luz menor.
+        </p>
+    </div>
+
+    <h2>Requisitos</h2>
+    <ul>
+        <li>Revit 2024 a 2026, en un proyecto (no en una familia).</li>
+        <li>Vista activa de planta o planta de cimentación. No sirve una vista 3D, un alzado, una sección ni una lámina.</li>
+        <li>Losas de categoría <strong>Floor</strong> cuyo nombre de ejemplar o de tipo contenga la palabra <strong>CAPITEL</strong>.</li>
+        <li>Tipos de barra (Rebar Bar Type) cargados en el proyecto.</li>
+        <li>Proyecto preparado con plantilla Arainco y acceso a las herramientas.</li>
+    </ul>
+
+    <h2>Uso</h2>
+    <ol>
+        <li>Abra la planta donde quiere revisar los capiteles.</li>
+        <li>En el panel <strong>3D Rebar</strong>, pulse <strong>Armadura Capiteles</strong>.</li>
+        <li>Si ya hay losas de capitel seleccionadas, la herramienta las usa. Si no, seleccione una o varias y pulse Finalizar.</li>
+        <li>Sobre las tarjetas de <strong>Armadura Inferior</strong> y <strong>Armadura Superior</strong> está la dosificación del hormigón: <strong>G25</strong>, <strong>G35</strong> o <strong>G45</strong>. Es una sola para el polígono y vale para las dos caras. Parte en G25. El interruptor de cada cara es excluyente: al encender una se apaga la otra. La inferior define Ø, paso e interruptor de la luz menor y la luz mayor. La superior solo define la luz menor. El valor inicial de paso es 150 mm y la cara activa al abrir es la inferior.</li>
+        <li>En la cabecera del canvas elija <strong>Dos puntos</strong> o <strong>Multipuntos</strong>. Dos puntos marca las esquinas opuestas de un rectángulo alineado a la planta. Multipuntos añade vértices; se cierra con clic en el primero, doble clic o Enter. Cambiar de modo cancela el trazo en curso.</li>
+        <li>La cruz sigue el cursor y el clic toma el snap: extremo, medio, intersección, centro, perpendicular, paralelo o el punto más cercano.</li>
+        <li>El polígono tiene que caer sobre un capitel seleccionado. En el centro se apilan el número del polígono y, debajo, las etiquetas de cada luz activa. En inferior, la luz menor es <strong>ø8@200i</strong> y la luz mayor <strong>ø8@200s</strong>. En superior solo aparece la luz menor, <strong>ø8@200s</strong>.</li>
+        <li>Clic sobre un polígono ya cerrado, o clic derecho, carga su configuración en el panel. Sobre un polígono cerrado el cursor pasa a flecha. Cada polígono guarda su propio Ø, paso e interruptor de luz menor y luz mayor. Supr elimina el elegido.</li>
+        <li><strong>Colocar</strong> crea la armadura de las caras activas. Por dentro, el contorno se desplaza 25 mm hacia el interior; ese desplazamiento no se dibuja en el canvas. Luego retira el Area System. La cara inferior recibe pata en L hacia arriba; el largo es el espesor del capitel menos 50 mm. La cara superior queda recta, sin pata. Cada extremo superior sale del borde del polígono dibujado la longitud de empotramiento de la dosificación y el diámetro; el recubrimiento de 25 mm no se descuenta de ese largo. En la vista activa quedan en Show Middle y en View Unobscured, con una etiqueta en el punto medio de la barra visible y una anotación MRA Recorrido Barras por conjunto, anclada al 30 % del segmento principal de la barra para no coincidir con el cruce de la otra luz. Si la colocación termina bien, la ventana se cierra sola.</li>
+        <li>La rueda hace zoom, el clic de la rueda desplaza la vista y <strong>Ctrl+0</strong> vuelve al encuadre. <strong>Manual</strong> abre este documento.</li>
+    </ol>
+
+    <h2>Reglas de negocio</h2>
+    <table>
+        <tr>
+            <th>Tema</th>
+            <th>Comportamiento</th>
+        </tr>
+        <tr>
+            <td>Selección</td>
+            <td>Solo categoría Floor. El texto CAPITEL se busca sin distinguir mayúsculas, en el nombre del ejemplar y en el del tipo.</td>
+        </tr>
+        <tr>
+            <td>Contorno</td>
+            <td>Se toma del croquis de la losa. Los anillos interiores se dibujan como huecos.</td>
+        </tr>
+        <tr>
+            <td>Orientación</td>
+            <td>El eje horizontal del canvas sigue la derecha de la vista activa y el vertical, su arriba.</td>
+        </tr>
+        <tr>
+            <td>Magnitudes</td>
+            <td>El dibujo está a escala real del modelo, en milímetros. El encuadre se ajusta al conjunto de capiteles.</td>
+        </tr>
+        <tr>
+            <td>Contexto</td>
+            <td>Las losas Floor visibles en la vista que no son capitel se dibujan en gris. Como contexto entran todos los muros y los shaft openings de la vista activa, más columnas, vigas y ejes asociados a los capiteles.</td>
+        </tr>
+        <tr>
+            <td>Armadura inferior</td>
+            <td>Cada polígono crea la armadura del capitel que lo contiene, en la cara que tenga activa. La superior solo modela barras paralelas a la luz menor del polígono. Tras retirar el Area System, la inferior lleva pata en L hacia arriba, con largo igual al espesor del capitel menos 50 mm. La superior queda recta. El empotramiento se mide desde el borde del polígono dibujado, no desde el contorno interno de 25 mm: fuera de ese borde queda el largo completo de la tabla según diámetro y dosificación. En G25, ø12 sale 860 mm por extremo. El canvas muestra el polígono dibujado. Al modelar, el área se desplaza 25 mm hacia adentro. En la vista activa la presentación es Show Middle y View Unobscured, cada conjunto lleva una etiqueta en el punto medio de la barra visible y una anotación MRA Recorrido Barras anclada al 30 % del segmento principal de la barra. La dirección principal sigue la luz menor del polígono dibujado. Cada barra lleva Armadura_Arainco, el mismo Armadura_Conjunto_GUID de la colocación, Armadura_Malla = No y Armadura_Nivel del capitel. Armadura_Ubicacion es F abajo y F' arriba. Armadura_Posicion es i/s abajo (luz menor/mayor). Arriba solo queda la luz menor, con posición s.</td>
+        </tr>
+        <tr>
+            <td>Diámetro y paso</td>
+            <td>Los interruptores de Armadura Inferior y Armadura Superior son excluyentes: una cara encendida apaga la otra. La dosificación G25, G35 o G45 está sobre las dos tarjetas y es una sola para el polígono. En inferior, Ø y paso se definen por separado para luz menor y luz mayor. En superior solo se define la luz menor. Cada luz tiene su propio interruptor. Al abrir, queda la inferior y la dosificación en G25. Cada polígono guarda su propia configuración: se elige en el canvas y el panel muestra la de ese polígono.</td>
+        </tr>
+    </table>
+
+    <h2>Notas</h2>
+    <ul>
+        <li>Si la herramienta ya está abierta, se recupera esa ventana y no se abre otra.</li>
+        <li>Cancelar la selección no modifica el modelo.</li>
+        <li>Una losa sin croquis cerrado no entra al canvas. Si ninguna de las elegidas tiene contorno, la herramienta avisa y no abre la ventana.</li>
+        <li>Losas de otro nombre, zapatas y muros de cimentación no se pueden seleccionar.</li>
+        <li>Si el polígono es demasiado chico para el desplazamiento interno de 25 mm, no se modela y la ventana avisa.</li>
+        <li>La anotación MRA usa el tipo Recorrido Barras. Si no está en el proyecto, las barras se crean y la ventana avisa.</li>
+    </ul>
+
+    <p class="note">Arainco · Armadura Capiteles · panel 3D Rebar</p>
+</body>
+</html>
