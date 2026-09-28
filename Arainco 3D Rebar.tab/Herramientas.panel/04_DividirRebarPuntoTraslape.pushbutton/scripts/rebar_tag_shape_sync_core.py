@@ -1,0 +1,145 @@
+# -*- coding: utf-8 -*-
+# === BIZARDS_OBFUSCATED_MODULE ===
+# Modulo de produccion ofuscado (no es codigo fuente legible).
+# Generado por prod_builder — no editar.
+# Decoder portable: CPython 3 + IronPython/pyRevit (str/bytes indexing).
+from __future__ import print_function
+import base64 as _b64
+import zlib as _zlib
+
+
+def _biz_ord(x):
+    # int (Py3 bytes) o char (Py2/IronPython str)
+    return x if isinstance(x, int) else ord(x)
+
+
+def _biz_xor_decode(payload, key):
+    klen = len(key)
+    n = len(payload)
+    out = bytearray(n)
+    for i in range(n):
+        out[i] = _biz_ord(payload[i]) ^ _biz_ord(key[i % klen])
+    return out
+
+
+def _biz_to_unicode_source(raw):
+    # CPython3: bytes. CPython2: str-bytes. IronPython: str==unicode y zlib
+    # mapea cada byte a un codepoint (p. ej. C3 A1 se ve como mojibake).
+    if not isinstance(raw, type(u"")):
+        return raw.decode("utf-8")
+    try:
+        return raw.encode("latin-1").decode("utf-8")
+    except Exception:
+        return raw
+
+
+_K = _b64.b64decode("Qml6YXJkcy5Ub29sLlByb2QuT2JmdXNjYXRpb24udjE=")
+_P = _b64.b64decode(
+"""
+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
+""".replace("\n", "").replace("\r", "")
+)
+_P = _biz_xor_decode(_P, _K)
+try:
+    _SRC = _zlib.decompress(_P)
+except Exception:
+    try:
+        _SRC = _zlib.decompress(bytes(_P))
+    except Exception:
+        _SRC = _zlib.decompress("".join(chr(b) for b in _P))
+_SRC = _biz_to_unicode_source(_SRC)
+exec(compile(_SRC, 'rebar_tag_shape_sync_core.py', "exec"), globals())

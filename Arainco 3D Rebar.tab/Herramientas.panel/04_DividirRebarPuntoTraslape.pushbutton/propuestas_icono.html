@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Propuestas de icono — Arainco: Dividir y Traslapar</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #339AF0;
+            --accent-ui: #5BC0DE;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+            --recommended: #2A5C3D;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.55;
+            margin: 0 auto;
+            padding: 28px 24px 48px;
+            max-width: 1100px;
+        }
+        h1 {
+            color: var(--accent-ui);
+            font-size: 1.85em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 14px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--text-dim);
+            font-size: 1.15em;
+            margin: 0 0 8px;
+        }
+        p, li { color: var(--text-dim); }
+        code {
+            background: #0E1B32;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 1px 6px;
+            font-size: 0.92em;
+            color: var(--text);
+        }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px 18px;
+            margin: 18px 0 28px;
+            border-left: 4px solid var(--accent);
+        }
+        .spec-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-top: 12px;
+        }
+        .spec-grid div {
+            background: #050E18;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 0.92em;
+        }
+        .spec-grid strong { color: var(--text); }
+        .rules-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0 32px;
+            font-size: 0.95em;
+        }
+        .rules-table th, .rules-table td {
+            border: 1px solid var(--border);
+            padding: 10px 12px;
+            text-align: left;
+            vertical-align: top;
+        }
+        .rules-table th {
+            background: #0E1B32;
+            color: var(--text);
+        }
+        .proposals {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .card.recommended {
+            border-color: var(--recommended);
+            box-shadow: 0 0 0 1px rgba(42, 92, 61, 0.35);
+        }
+        .card-header {
+            padding: 14px 16px 10px;
+            border-bottom: 1px solid var(--border);
+        }
+        .badge {
+            display: inline-block;
+            font-size: 0.72em;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            padding: 3px 8px;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+        .badge-rec { background: var(--recommended); color: #E8F4F8; }
+        .badge-alt { background: #1A3A4D; color: var(--text-dim); }
+        .card-header h2 { color: var(--text); font-size: 1.1em; }
+        .card-header .subtitle {
+            color: var(--muted);
+            font-size: 0.88em;
+            margin-top: 4px;
+        }
+        .preview-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+            padding: 24px 16px;
+            background:
+                linear-gradient(45deg, #0a1620 25%, transparent 25%),
+                linear-gradient(-45deg, #0a1620 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #0a1620 75%),
+                linear-gradient(-45deg, transparent 75%, #0a1620 75%);
+            background-size: 16px 16px;
+            background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+            background-color: #050E18;
+        }
+        .preview-box {
+            text-align: center;
+        }
+        .preview-box span {
+            display: block;
+            font-size: 0.75em;
+            color: var(--muted);
+            margin-top: 6px;
+        }
+        .icon-96, .icon-32 {
+            display: block;
+            margin: 0 auto;
+        }
+        .icon-32 {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        .card-body {
+            padding: 14px 16px 18px;
+            flex: 1;
+        }
+        .card-body ul {
+            margin: 8px 0 0;
+            padding-left: 20px;
+            font-size: 0.92em;
+        }
+        .card-body li { margin: 5px 0; }
+        .fit {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border);
+            font-size: 0.88em;
+            color: var(--muted);
+        }
+        .fit strong { color: var(--accent-ui); }
+        .variant-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            padding: 0 16px 16px;
+        }
+        .variant-box {
+            background: #050E18;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 8px 10px;
+            text-align: center;
+        }
+        .variant-box.pick {
+            border-color: var(--recommended);
+            box-shadow: 0 0 0 1px rgba(42, 92, 61, 0.4);
+        }
+        .variant-box span {
+            display: block;
+            font-size: 0.72em;
+            color: var(--muted);
+            margin-top: 6px;
+        }
+        .variant-box strong {
+            display: block;
+            font-size: 0.8em;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+        }
+        footer {
+            margin-top: 36px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+            font-size: 0.9em;
+            color: var(--muted);
+        }
+        svg { display: block; }
+    </style>
+</head>
+<body>
+    <h1>Propuestas de icono — Dividir y Traslapar</h1>
+
+    <div class="intro">
+        <p>
+            Iconos para <strong>Arainco: Dividir y Traslapar</strong> (panel <strong>3D Rebar</strong>).
+            La herramienta divide una <code>Structural Rebar</code> en varios tramos con
+            <strong>solape por diámetro</strong> (tabla G25 / G35 / G45), marcas de corte en vista
+            y largos fabricados editables. El motivo debe leerse como <em>empalme / traslape</em>
+            entre barras, no solo «cortar».
+        </p>
+        <div class="spec-grid">
+            <div><strong>Color</strong><br><code>#339AF0</code></div>
+            <div><strong>Formato</strong><br>PNG 96×96, RGBA</div>
+            <div><strong>Fondo</strong><br>Transparente</div>
+            <div><strong>Estilo</strong><br>Flat / vectorial, legible en cinta Revit</div>
+        </div>
+    </div>
+
+    <h2 style="color: var(--accent-ui); margin-bottom: 8px;">Reglas de negocio → señal visual</h2>
+    <table class="rules-table">
+        <thead>
+            <tr>
+                <th>Regla</th>
+                <th>Qué debe sugerir el icono</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>División en punto(s) sobre la barra</td>
+                <td>Marca de corte, tijeras o línea transversal al eje</td>
+            </tr>
+            <tr>
+                <td>Traslape según diámetro (L, ±L/2)</td>
+                <td>Zona de solape: doble trazo, paralelas o estirón visible</td>
+            </tr>
+            <tr>
+                <td>N+1 tramos fabricados</td>
+                <td>Dos o más segmentos de barra, no una sola línea</td>
+            </tr>
+            <tr>
+                <td>Empalme constructivo (no splice nativo)</td>
+                <td>Barras independientes que se cruzan / solapan, no unión fusionada</td>
+            </tr>
+            <tr>
+                <td>Panel 3D Rebar</td>
+                <td>Barra longitudinal (vista alzado/sección), grosor de trazo claro</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="proposals">
+
+        <!-- Propuesta 1 -->
+        <article class="card">
+            <div class="card-header">
+                <span class="badge badge-alt">Propuesta 1</span>
+                <h2>Solape central simétrico</h2>
+                <div class="subtitle">Dos tramos paralelos con zona L en el centro</div>
+            </div>
+            <div class="preview-row">
+                <div class="preview-box">
+                    <svg class="icon-96" width="96" height="96" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+                        <!-- tramo izquierdo -->
+                        <line x1="14" y1="44" x2="38" y2="44" stroke="#339AF0" stroke-width="5" stroke-linecap="round"/>
+                        <line x1="14" y1="52" x2="38" y2="52" stroke="#339AF0" stroke-width="5" stroke-linecap="round"/>
+                        <!-- tramo derecho -->
+                        <line x1="58" y1="44" x2="82" y2="44" stroke="#339AF0" stroke-width="5" stroke-linecap="round"/>
+                        <line x1="58" y1="52" x2="82" y2="52" stroke="#339AF0" stroke-width="5" stroke-linecap="round"/>
+                        <!-- zona solape (doble barra) -->
+                        <line x1="34" y1="44" x2="62" y2="44" stroke="#339AF0" stroke-width="5" stroke-linecap="round" stroke-opacity="0.55"/>
+                        <line x1="34" y1="52" x2="62" y2="52" stroke="#339AF0" stroke-width="5" stroke-linecap="round" stroke-opacity="0.55"/>
+                        <!-- corte -->
+                        <line x1="48" y1="30" x2="48" y2="66" stroke="#339AF0" stroke-width="3" stroke-linecap="round"/>
+                        <line x1="42" y1="36" x2="54" y2="48" stroke="#339AF0" stroke-width="2.5" stroke-linecap="round"/>
+                        <line x1="54" y1="36" x2="42" y2="48" stroke="#339AF0" stroke-width="2.5" stroke-linecap="round"/>
+                        <!-- bracket L -->
+                        <path d="M 36 68 L 36 74 L 60 74" fill="none" stroke="#339AF0" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="60" y1="68" x2="60" y2="74" stroke="#339AF0" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                    <span>96 × 96</span>
+                </div>
+                <div class="preview-box">
+                    <svg class="icon-32" width="32" height="32" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+                        <line x1="14" y1="44" x2="38" y2="44" stroke="#339AF0" stroke-width="6" stroke-linecap="round"/>
+                        <line x1="14" y1="52" x2="38" y2="52" stroke="#339AF0" stroke-width="6" stroke-linecap="round"/>
+                        <line x1="58" y1="44" x2="82" y2="44" stroke="#339AF0" stroke-width="6" stroke-linecap="round"/>
+                        <line x1="58" y1="52" x2="82" y2="52" stroke="#339AF0" stroke-width="6" stroke-linecap="round"/>
+                        <line x1="34" y1="44" x2="62" y2="44" stroke="#339AF0" stroke-width="6" stroke-opacity="0.5"/>
+                        <line x1="34" y1="52" x2="62" y2="52" stroke="#339AF0" stroke-width="6" stroke-opacity="0.5"/>
+                        <line x1="48" y1="28" x2="48" y2="68" stroke="#339AF0" stroke-width="4"/>
+                    </svg>
+                    <span>32 × 32 (cinta)</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>Dos líneas paralelas = barra en planta/alzado (convención armadura).</li>
+                    <li>Segmentos desplazados con solape visible en el centro.</li>
+                    <li>Marca de corte + bracket sugieren longitud L del empalme.</li>
+                </ul>
+                <p class="fit"><strong>Encaja porque</strong> es el dibujo técnico clásico de traslape longitudinal.</p>
+            </div>
+        </article>
+
+        <!-- Propuesta 2 -->
+        <article class="card">
+            <div class="card-header">
+                <span class="badge badge-alt">Alternativa</span>
+                <h2>Propuesta 2 — Corte + estirón (±L/2)</h2>
+                <div class="subtitle">Una barra partida con prolongación en la zona de empalme</div>
+            </div>
+            <div class="preview-row">
+                <div class="preview-box">
+                    <svg class="icon-96" width="96" height="96" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+                        <!-- barra base izquierda -->
+                        <line x1="12" y1="48" x2="46" y2="48" stroke="#339AF0" stroke-width="5" stroke-linecap="round"/>
+                        <!-- barra base derecha -->
+                        <line x1="50" y1="48" x2="84" y2="48" stroke="#339AF0" stroke-width="5" stroke-linecap="round"/>
+                        <!-- estirones (solape) -->
+                        <line x1="40" y1="48" x2="58" y2="48" stroke="#339AF0" stroke-width="5" stroke-linecap="round" stroke-opacity="0.4"/>
+                        <line x1="40" y1="40" x2="58" y2="40" stroke="#339AF0" stroke-width="4" stroke-linecap="round"/>
+                        <line x1="40" y1="56" x2="58" y2="56" stroke="#339AF0" stroke-width="4" stroke-linecap="round"/>
+                        <!-- corte vertical -->
+                        <line x1="48" y1="26" x2="48" y2="70" stroke="#339AF0" stroke-width="3" stroke-linecap="round"/>
+                        <!-- tijeras minimal -->
+                        <circle cx="48" cy="32" r="3" fill="#339AF0"/>
+                        <line x1="44" y1="36" x2="52" y2="44" stroke="#339AF0" stroke-width="2.5" stroke-linecap="round"/>
+                        <line x1="52" y1="36" x2="44" y2="44" stroke="#339AF0" stroke-width="2.5" stroke-linecap="round"/>
+                    </svg>
+                    <span>96 × 96</span>
+                </div>
+                <div class="preview-box">
+                    <svg class="icon-32" width="32" height="32" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+                        <line x1="12" y1="48" x2="46" y2="48" stroke="#339AF0" stroke-width="6" stroke-linecap="round"/>
+                        <line x1="50" y1="48" x2="84" y2="48" stroke="#339AF0" stroke-width="6" stroke-linecap="round"/>
+                        <line x1="40" y1="40" x2="58" y2="40" stroke="#339AF0" stroke-width="5"/>
+                        <line x1="40" y1="56" x2="58" y2="56" stroke="#339AF0" stroke-width="5"/>
+                        <line x1="48" y1="24" x2="48" y2="72" stroke="#339AF0" stroke-width="4"/>
+                    </svg>
+                    <span>32 × 32 (cinta)</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>Lectura inmediata: «dividir aquí» + «los tramos se prolongan».</li>
+                    <li>Doble trazo en la zona central = solape simétrico ±L/2.</li>
+                    <li>Icono compacto; buena legibilidad a 32 px.</li>
+                </ul>
+                <p class="fit"><strong>Encaja porque</strong> une corte multipunto y estirón por traslape sin saturar el canvas.</p>
+            </div>
+        </article>
+
+        <!-- Propuesta 3 -->
+        <article class="card recommended">
+            <div class="card-header">
+                <span class="badge badge-rec">Elegida · icon.png</span>
+                <h2>Empalme escalonado — solo 2 líneas en solape</h2>
+                <div class="subtitle">Sin recuadro ni parejas paralelas: el traslape es únicamente el cruce de dos tramos</div>
+            </div>
+            <div class="preview-row">
+                <div class="preview-box">
+                    <svg class="icon-96" width="96" height="96" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+                        <!-- Variante A (principal): escalonado, 2 líneas -->
+                        <line x1="10" y1="40" x2="58" y2="40" stroke="#339AF0" stroke-width="5.5" stroke-linecap="round"/>
+                        <line x1="38" y1="56" x2="86" y2="56" stroke="#339AF0" stroke-width="5.5" stroke-linecap="round"/>
+                    </svg>
+                    <span>96 × 96 · variante A</span>
+                </div>
+                <div class="preview-box">
+                    <svg class="icon-32" width="32" height="32" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+                        <line x1="10" y1="40" x2="58" y2="40" stroke="#339AF0" stroke-width="7" stroke-linecap="round"/>
+                        <line x1="38" y1="56" x2="86" y2="56" stroke="#339AF0" stroke-width="7" stroke-linecap="round"/>
+                    </svg>
+                    <span>32 × 32 (cinta)</span>
+                </div>
+            </div>
+            <div class="variant-grid">
+                <div class="variant-box pick">
+                    <strong>A — Escalonado (propuesta base)</strong>
+                    <svg width="72" height="72" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+                        <line x1="10" y1="40" x2="58" y2="40" stroke="#339AF0" stroke-width="5.5" stroke-linecap="round"/>
+                        <line x1="38" y1="56" x2="86" y2="56" stroke="#339AF0" stroke-width="5.5" stroke-linecap="round"/>
+                    </svg>
+                    <span>Solape ≈ 20 mm en dibujo</span>
+                </div>
+                <div class="variant-box">
+                    <strong>B — Escalonado amplio</strong>
+                    <svg width="72" height="72" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+                        <line x1="8" y1="38" x2="62" y2="38" stroke="#339AF0" stroke-width="5.5" stroke-linecap="round"/>
+                        <line x1="34" y1="58" x2="88" y2="58" stroke="#339AF0" stroke-width="5.5" stroke-linecap="round"/>
+                    </svg>
+                    <span>Más largo el tramo común</span>
+                </div>
+                <div class="variant-box">
+                    <strong>C — Escalonado compacto</strong>
+                    <svg width="72" height="72" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+                        <line x1="14" y1="42" x2="52" y2="42" stroke="#339AF0" stroke-width="5.5" stroke-linecap="round"/>
+                        <line x1="44" y1="54" x2="82" y2="54" stroke="#339AF0" stroke-width="5.5" stroke-linecap="round"/>
+                    </svg>
+                    <span>Solape más corto, más aire lateral</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li><strong>Solo dos trazos</strong> <code>#339AF0</code>: cada uno es un tramo de barra; la zona común en X es el traslape.</li>
+                    <li>Desfase vertical = lectura de empalme escalonado (detalle constructivo), sin marcas auxiliares.</li>
+                    <li>Variante A es la referencia para exportar <code>icon.png</code> si confirmas.</li>
+                </ul>
+                <p class="fit"><strong>Encaja porque</strong> minimalista: el solape se entiende solo por la superposición de dos líneas.</p>
+            </div>
+        </article>
+
+        <!-- Propuesta 4 -->
+        <article class="card">
+            <div class="card-header">
+                <span class="badge badge-alt">Propuesta 4</span>
+                <h2>Tres tramos + dos cortes</h2>
+                <div class="subtitle">División multipunto con dos zonas de solape</div>
+            </div>
+            <div class="preview-row">
+                <div class="preview-box">
+                    <svg class="icon-96" width="96" height="96" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+                        <!-- T1 -->
+                        <line x1="8" y1="46" x2="30" y2="46" stroke="#339AF0" stroke-width="5" stroke-linecap="round"/>
+                        <!-- T2 -->
+                        <line x1="34" y1="46" x2="62" y2="46" stroke="#339AF0" stroke-width="5" stroke-linecap="round"/>
+                        <!-- T3 -->
+                        <line x1="66" y1="46" x2="88" y2="46" stroke="#339AF0" stroke-width="5" stroke-linecap="round"/>
+                        <!-- solapes -->
+                        <line x1="26" y1="40" x2="38" y2="40" stroke="#339AF0" stroke-width="4" stroke-linecap="round"/>
+                        <line x1="26" y1="52" x2="38" y2="52" stroke="#339AF0" stroke-width="4" stroke-linecap="round"/>
+                        <line x1="58" y1="40" x2="70" y2="40" stroke="#339AF0" stroke-width="4" stroke-linecap="round"/>
+                        <line x1="58" y1="52" x2="70" y2="52" stroke="#339AF0" stroke-width="4" stroke-linecap="round"/>
+                        <!-- cortes C1 C2 -->
+                        <line x1="32" y1="28" x2="32" y2="68" stroke="#339AF0" stroke-width="2.5" stroke-linecap="round"/>
+                        <line x1="64" y1="28" x2="64" y2="68" stroke="#339AF0" stroke-width="2.5" stroke-linecap="round"/>
+                        <text x="28" y="24" fill="#339AF0" font-family="Segoe UI, sans-serif" font-size="9" font-weight="600">C</text>
+                        <text x="60" y="24" fill="#339AF0" font-family="Segoe UI, sans-serif" font-size="9" font-weight="600">C</text>
+                    </svg>
+                    <span>96 × 96</span>
+                </div>
+                <div class="preview-box">
+                    <svg class="icon-32" width="32" height="32" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+                        <line x1="8" y1="46" x2="30" y2="46" stroke="#339AF0" stroke-width="6"/>
+                        <line x1="34" y1="46" x2="62" y2="46" stroke="#339AF0" stroke-width="6"/>
+                        <line x1="66" y1="46" x2="88" y2="46" stroke="#339AF0" stroke-width="6"/>
+                        <line x1="26" y1="40" x2="38" y2="40" stroke="#339AF0" stroke-width="5"/>
+                        <line x1="26" y1="52" x2="38" y2="52" stroke="#339AF0" stroke-width="5"/>
+                        <line x1="58" y1="40" x2="70" y2="40" stroke="#339AF0" stroke-width="5"/>
+                        <line x1="58" y1="52" x2="70" y2="52" stroke="#339AF0" stroke-width="5"/>
+                        <line x1="32" y1="26" x2="32" y2="70" stroke="#339AF0" stroke-width="3"/>
+                        <line x1="64" y1="26" x2="64" y2="70" stroke="#339AF0" stroke-width="3"/>
+                    </svg>
+                    <span>32 × 32 (cinta)</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>Tres segmentos = N+1 tramos tras dos cortes.</li>
+                    <li>Doble zona de paralelas = dos empalmes con traslape.</li>
+                    <li>Refleja el flujo multipunto de la herramienta.</li>
+                </ul>
+                <p class="fit"><strong>Encaja porque</strong> diferencia esta herramienta del «dividir en un solo punto».</p>
+            </div>
+        </article>
+
+        <!-- Propuesta 5 -->
+        <article class="card">
+            <div class="card-header">
+                <span class="badge badge-alt">Propuesta 5</span>
+                <h2>Splice clásico (X en solape)</h2>
+                <div class="subtitle">Convención de planos: cruce en zona de empalme</div>
+            </div>
+            <div class="preview-row">
+                <div class="preview-box">
+                    <svg class="icon-96" width="96" height="96" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+                        <line x1="10" y1="48" x2="40" y2="48" stroke="#339AF0" stroke-width="5" stroke-linecap="round"/>
+                        <line x1="56" y1="48" x2="86" y2="48" stroke="#339AF0" stroke-width="5" stroke-linecap="round"/>
+                        <!-- prolongaciones al solape -->
+                        <line x1="36" y1="48" x2="60" y2="48" stroke="#339AF0" stroke-width="5" stroke-linecap="round" stroke-opacity="0.35"/>
+                        <!-- marcas splice -->
+                        <line x1="38" y1="36" x2="58" y2="60" stroke="#339AF0" stroke-width="3.5" stroke-linecap="round"/>
+                        <line x1="58" y1="36" x2="38" y2="60" stroke="#339AF0" stroke-width="3.5" stroke-linecap="round"/>
+                        <!-- extremos barra -->
+                        <circle cx="10" cy="48" r="3.5" fill="#339AF0"/>
+                        <circle cx="86" cy="48" r="3.5" fill="#339AF0"/>
+                        <!-- flechas L -->
+                        <line x1="36" y1="72" x2="60" y2="72" stroke="#339AF0" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="36" y1="68" x2="36" y2="76" stroke="#339AF0" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="60" y1="68" x2="60" y2="76" stroke="#339AF0" stroke-width="2" stroke-linecap="round"/>
+                        <text x="44" y="84" fill="#339AF0" font-family="Segoe UI, sans-serif" font-size="10" font-weight="600">L</text>
+                    </svg>
+                    <span>96 × 96</span>
+                </div>
+                <div class="preview-box">
+                    <svg class="icon-32" width="32" height="32" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+                        <line x1="10" y1="48" x2="40" y2="48" stroke="#339AF0" stroke-width="6"/>
+                        <line x1="56" y1="48" x2="86" y2="48" stroke="#339AF0" stroke-width="6"/>
+                        <line x1="38" y1="36" x2="58" y2="60" stroke="#339AF0" stroke-width="4"/>
+                        <line x1="58" y1="36" x2="38" y2="60" stroke="#339AF0" stroke-width="4"/>
+                        <circle cx="10" cy="48" r="4" fill="#339AF0"/>
+                        <circle cx="86" cy="48" r="4" fill="#339AF0"/>
+                    </svg>
+                    <span>32 × 32 (cinta)</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>Cruce diagonal = símbolo habitual de empalme en detalles.</li>
+                    <li>Cotas «L» remiten a la tabla de traslape por diámetro.</li>
+                    <li>Puntos en extremos = barra cortada en dos piezas.</li>
+                </ul>
+                <p class="fit"><strong>Encaja porque</strong> es reconocible para usuarios acostumbrados a planos de armadura.</p>
+            </div>
+        </article>
+
+    </div>
+
+    <footer>
+        <p>
+            Abrir este archivo en el navegador para comparar. Al elegir una propuesta,
+            exportar como <code>icon.png</code> 96×96 RGBA, fondo transparente, motivo
+            <code>#339AF0</code>, en la carpeta del pushbutton.
+        </p>
+        <p>
+            Ruta:
+            <code>BIMTools.tab/3D Rebar.panel/04_DividirRebarPuntoTraslape.pushbutton/propuestas_icono.html</code>
+        </p>
+    </footer>
+</body>
+</html>

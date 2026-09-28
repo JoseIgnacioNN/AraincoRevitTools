@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Arainco: Dividir y Traslapar</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #5BC0DE;
+            --accent-dim: #95B8CC;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: 920px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.75em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 32px;
+        }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        code {
+            background: #0E1B32;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 1px 6px;
+            font-size: 0.92em;
+            color: var(--text);
+        }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        .note {
+            color: var(--muted);
+            font-size: 0.95em;
+            border-top: 1px solid var(--border);
+            margin-top: 36px;
+            padding-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Arainco: Dividir y Traslapar</h1>
+
+    <div class="intro">
+        <p>
+            Divide una <strong>Structural Rebar</strong> en varios tramos con traslape
+            según el diámetro y el grado de hormigón. Tras aplicar, cada tramo modelado
+            queda etiquetado y con anotación multi-barra de recorrido.
+        </p>
+    </div>
+
+    <h2>Requisitos</h2>
+    <ul>
+        <li>Revit 2024–2026 y proyecto / plantilla Arainco.</li>
+        <li>Vista de planta, alzado o sección (no plantilla ni 3D) para etiquetas y MRA.</li>
+        <li>Familia de etiqueta <code>EST_A_STRUCTURAL REBAR TAG</code> (o variante FLOOR) cargada.</li>
+        <li>Tipo de Multi-Rebar Annotation <code>Recorrido Barras</code> en el proyecto.</li>
+        <li>Barra elegible: layout Single, Fixed Number o Maximum Spacing con tramos rectos.</li>
+    </ul>
+
+    <h2>Uso</h2>
+    <ol>
+        <li>Ejecute la herramienta y seleccione una Structural Rebar.</li>
+        <li>En el <strong>esquema de alzado</strong>, haga clic sobre la barra para añadir cortes; clic cerca de un <code>C#</code> para quitarlo. Use la <strong>rueda del ratón</strong> para acercar o alejar (el zoom se centra en el cursor) y el <strong>botón medio</strong> arrastrando para desplazar el dibujo. Los botones <code>−</code> / <code>+</code> / <code>100%</code> encima del esquema hacen lo mismo.</li>
+        <li>Afine los largos fabricados (mm) de cada tramo, el grado de hormigón y el modo de traslape.</li>
+        <li>Pulse <strong>Aplicar</strong>.</li>
+    </ol>
+
+    <h2>Reglas de negocio</h2>
+    <ul>
+        <li>Los puntos de corte se definen solo en el canvas del esquema (ya no se marcan en la vista de Revit). El zoom y el desplazamiento del esquema no alteran los cortes; solo cambian la vista del dibujo.</li>
+        <li>Se generan N+1 tramos con solape según tabla (Base / G25 / G35 / G45).</li>
+        <li>Se heredan parámetros Armadura_*, presentación (Show Middle / FirstLast / …) y Unobscured en la vista activa.</li>
+        <li><strong>Etiquetas:</strong> si la barra original tenía IndependentTag, se recrean en esas vistas con tipo según RebarShape. Si no, se crea etiqueta EST_A en la vista activa.</li>
+        <li><strong>MRA:</strong> se crea una Multi-Rebar Annotation «Recorrido Barras» por cada tramo nuevo en la vista activa, para indicar el recorrido del conjunto.</li>
+        <li>Se pueden colocar detalles de empalme (y cotas) según la vista.</li>
+    </ul>
+
+    <h2>Notas / avisos</h2>
+    <ul>
+        <li>En vista 3D no se crean etiquetas ni MRA; use planta, alzado o sección.</li>
+        <li>Si falta la familia de etiqueta o el tipo «Recorrido Barras», la división sí se aplica y el resumen avisará lo omitido.</li>
+        <li>Free-form / NumberWithSpacing no son elegibles.</li>
+    </ul>
+
+    <p class="note">Arainco BIMTools — Dividir y Traslapar</p>
+</body>
+</html>
