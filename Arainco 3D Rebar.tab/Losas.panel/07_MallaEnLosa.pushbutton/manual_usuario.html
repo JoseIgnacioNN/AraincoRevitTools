@@ -78,14 +78,15 @@
             de una losa como <strong>Area Reinforcement</strong>. El contorno puede ser
             el perímetro completo de la losa, uno dibujado, o varios paños.
             La etiqueta es una sola nota: la primera línea lleva <strong>MALLA:</strong> delante de la luz menor
-            y la segunda línea la luz mayor. En contorno completo y en dibujo, cada barra lleva pata en L
-            en los extremos que no empotran en un capitel. En por paños la barra queda recta, y la pata en L
-            solo va en el extremo del polígono que coincide con el boundary de la losa. Pulse Colocar malla.
+            y la segunda línea la luz mayor. En contorno completo, cada barra lleva pata en L
+            en los extremos que no empotran en un capitel. En dibujar y en por paños la barra queda recta:
+            la pata en L solo va en el extremo cuya arista del polígono coincide con el boundary de la losa seleccionada. Pulse Colocar malla.
         </p>
         <p>
             Cada cara tiene Ø y espaciamiento independientes en luz menor y luz mayor.
             Si hay capiteles rectangulares con todos los lados mayores de 1200 mm que solapan el contorno, se crea un Opening by Face
-            en la losa host (núcleo inset 600 mm) para el solape.
+            temporal en la losa host para recortar las barras en el empotramiento. El canvas muestra el núcleo a 600 mm.
+            En Dibujar, el opening se abre 600 mm más el recubrimiento de la losa (inferior o superior, según la cara), porque Revit descuenta ese recubrimiento al generar las barras. Al eliminar el hueco, el empotramiento queda en 600 mm.
         </p>
     </div>
 
@@ -101,16 +102,16 @@
     <ol>
         <li>Abra la planta donde quiere armar.</li>
         <li>Pulse <strong>Malla en Losa</strong>. Si ya hay una losa válida seleccionada, se usa; si no, elija una en el modelo. Los elementos con <strong>CAPITEL</strong> en el nombre no se pueden elegir.</li>
-        <li>Se abre la ventana <strong>maximizada</strong>. El canvas mantiene el aspecto de la losa y se centra en el área de planta.</li>
+        <li>Se abre la ventana <strong>maximizada</strong>. El canvas ocupa toda el área de planta y, al abrir, muestra la misma porción que la vista activa: otras losas, capiteles, muros, vigas, columnas, pasadas y ejes que estén en esa ventana.</li>
         <li>En <strong>Contorno</strong> elija el modo:
             <ul>
                 <li><strong>Contorno completo</strong>: el polígono de malla es el perímetro del elemento seleccionado.</li>
-                <li><strong>Dibujar</strong>: un solo contorno en el canvas, dentro de la losa. El cursor es una cruz y se engancha a extremo, medio, intersección, centro y perpendicular de losas, muros, vigas, columnas, ejes y del trazo en curso. <strong>Rectángulo</strong> son dos clics en esquinas opuestas. <strong>Polígono</strong> añade un vértice por clic; se cierra al pulsar el primer vértice (verde), con Enter o con doble clic. Retroceso deshace el último vértice; Esc cancela el trazo; <strong>Borrar contorno</strong> quita el polígono cerrado.</li>
-                <li><strong>Por paños</strong>: varios rectángulos o polígonos. Cada paño cerrado es una malla. Un clic dentro de un paño lo selecciona (trazo blanco); Supr lo elimina; <strong>Borrar paños</strong> quita todos. El Ø y el espaciamiento del rail valen para todos los paños.</li>
+                <li><strong>Dibujar</strong>: un solo contorno en el canvas, dentro de la losa. El cursor es una cruz y se engancha a extremo, medio, intersección, centro y perpendicular de losas, muros, vigas, columnas, ejes y del trazo en curso. <strong>Rectángulo</strong> son dos clics en esquinas opuestas. <strong>Polígono</strong> añade un vértice por clic; se cierra al pulsar el primer vértice (verde), con Enter o con doble clic. <strong>Línea</strong> crea un tramo con dos clics. <strong>Pick line</strong> copia la arista de contexto que está bajo el clic (losa, muro, viga, columna o eje). <strong>Esquina</strong> pide dos trazos y los alarga o recorta hasta que se cortan. En <strong>Dibujar</strong>, si ese conjunto de líneas y pick lines cierra, es un área de enfierrado válida. La malla se crea con <strong>25 mm</strong> de recubrimiento respecto a ese perímetro. Si el contorno solapa un capitel, ese recubrimiento no se aplica a todo el polígono: solo a las aristas que coinciden con el boundary de la losa. Retroceso deshace el último punto o trazo; Esc cancela el trazo en curso; <strong>Borrar contorno</strong> quita el polígono y los trazos.</li>
+                <li><strong>Por paños</strong>: las mismas herramientas (rectángulo, polígono, línea, pick line y esquina). Cada polígono cerrado es una malla. Un clic dentro de un paño lo selecciona (trazo blanco) salvo que esté activa Línea, Pick line o Esquina; Supr lo elimina; <strong>Borrar paños</strong> quita todos. El Ø y el espaciamiento del rail valen para todos los paños.</li>
             </ul>
         </li>
-        <li>En planta se ve el contorno activo, las direcciones de luz menor/mayor (con Ø y espaciamiento) y, si hay capiteles rectangulares con lados mayores de 1200 mm, el hueco de solape inset 600 mm.</li>
-        <li>En <strong>Dibujar</strong> y <strong>Por paños</strong> la cruz sigue el cursor y el punto se engancha a la geometría visible. Rueda = zoom; clic rueda = pan; Ctrl+0 = encuadre inicial.</li>
+        <li>En planta se ve el contexto (losa, huecos, pasadas, vigas, columnas, muros y ejes), el contorno activo, las direcciones de luz menor/mayor (con Ø y espaciamiento) y, si hay capiteles rectangulares con lados mayores de 1200 mm, el hueco de solape inset 600 mm.</li>
+        <li>En <strong>Dibujar</strong> y <strong>Por paños</strong> la cruz sigue el cursor y el punto se engancha a la geometría visible. Rueda = zoom; clic rueda = pan; Ctrl+0 vuelve a la porción de la vista activa.</li>
         <li>En el rail: bloque <strong>Host</strong> y las tarjetas <strong>Malla inferior</strong> y <strong>Malla superior</strong>. Al abrir, la inferior está activa y la superior apagada. Activar una apaga la otra. Configure Ø y espaciamiento por luz en la cara activa.</li>
         <li>Pulse <strong>Colocar malla</strong> con al menos una cara activa. Si la malla se crea, la ventana se cierra sola.</li>
         <li><strong>Cerrar</strong> cancela sin colocar. Lo ya colocado se deshace con el historial de Revit (<code>Arainco: Malla en Losa</code>).</li>
@@ -132,19 +133,19 @@
         </tr>
         <tr>
             <td>Capitel</td>
-            <td>Un Floor cuyo nombre de <strong>ejemplar o tipo</strong> contiene <strong>CAPITEL</strong> (sin distinguir mayúsculas) no se puede seleccionar como host. En el contexto de planta se dibuja con un trazo cálido suave, del mismo peso que el resto del contexto. Solo un capitel de contorno <strong>totalmente rectangular</strong> (cuatro lados y ángulos rectos, incluido el cuadrado o el rectángulo girado en planta) cuyos <strong>cuatro lados superan 1200 mm</strong> y que solapa el host genera un Opening by Face: el hueco es el núcleo inset <strong>600 mm</strong> (anillo de empotramiento). Un capitel en L, con chaflán, de más de cuatro lados, o rectangular con algún lado de 1200 mm o menos, se muestra en el canvas y no abre hueco de malla.</td>
+            <td>Un Floor cuyo nombre de <strong>ejemplar o tipo</strong> contiene <strong>CAPITEL</strong> (sin distinguir mayúsculas) no se puede seleccionar como host. En el contexto de planta se dibuja con un trazo cálido suave, del mismo peso que el resto del contexto. Solo un capitel de contorno <strong>totalmente rectangular</strong> (cuatro lados y ángulos rectos, incluido el cuadrado o el rectángulo girado en planta) cuyos <strong>cuatro lados superan 1200 mm</strong> y que solapa el host genera un Opening by Face temporal. El empotramiento buscado es <strong>600 mm</strong>. En Dibujar el hueco se recorta esa distancia más el recubrimiento de la losa en la cara activa, para compensar el recubrimiento que Revit aplica solo al borde del opening. Al terminar el armado el Floor Opening se elimina y las barras quedan a 600 mm del contorno del capitel. Un capitel en L, con chaflán, de más de cuatro lados, o rectangular con algún lado de 1200 mm o menos, se muestra en el canvas y no abre hueco de malla.</td>
         </tr>
         <tr>
             <td>Contexto</td>
-            <td>Se dibujan elementos visibles en la vista activa. La leyenda solo muestra categorías presentes. El encuadre inicial se centra en el Floor elegido.</td>
+            <td>Se dibujan elementos visibles en la vista activa. La leyenda solo muestra categorías presentes. El encuadre inicial es la ventana de esa planta (lo que se ve al ejecutar la herramienta). Ctrl+0 lo restablece. Si no se puede leer esa ventana, el encuadre pasa al host y al contexto.</td>
         </tr>
         <tr>
             <td>Contorno</td>
             <td>
                 Tres modos. <strong>Contorno completo</strong> toma el perímetro exterior del croquis (o de la cara horizontal si no hay croquis).
-                <strong>Dibujar</strong> usa un rectángulo o un polígono trazado en el canvas.
+                <strong>Dibujar</strong> usa un rectángulo, un polígono por vértices, o trazos de <strong>Línea</strong> y <strong>Pick line</strong> unidos con <strong>Esquina</strong>. Si ese conjunto de trazos cierra, es un área de enfierrado válida. Al colocar, el Area Reinforcement queda a <strong>25 mm</strong> hacia adentro de esas líneas perimetrales. En el canvas, ese recubrimiento se ve como un contorno punteado. Si el contorno solapa un capitel, el resto del perímetro sigue el trazo dibujado, pero las aristas que coinciden con el boundary de la losa quedan a <strong>25 mm</strong> hacia adentro. En Dibujar las barras quedan rectas: la pata en L solo se agrega en el extremo cuya arista coincide con el boundary de la losa seleccionada.
                 <strong>Por paños</strong> admite varios de esos trazos; cada uno es un Area Reinforcement. En ese modo no se crea la nota de texto: las barras libres quedan en la vista activa con <strong>View Unobscured</strong> y presentación <strong>Show Middle</strong>, cada una recibe una etiqueta de barra en el punto medio visible y una anotación MRA <strong>Recorrido Barras</strong> anclada al 30 % del segmento principal.
-                Todo contorno dibujado tiene que quedar dentro de la losa y no puede cruzar sus huecos.
+                El rectángulo y el polígono por vértices tienen que quedar dentro de la losa y no pueden cruzar sus huecos. En Dibujar, un conjunto cerrado de líneas y pick lines es área válida aunque siga el borde o el contexto.
                 <strong>Colocar malla</strong> crea la malla de cada contorno activo, con su nota de texto centrada.
             </td>
         </tr>
@@ -174,15 +175,16 @@
 
     <h2>Notas</h2>
     <ul>
-        <li>No se puede elegir un elemento si el nombre de ejemplar o de tipo incluye CAPITEL (por ejemplo <code>CAPITEL 25</code> o un tipo <code>Losa CAPITEL</code>). Esos Floor siguen apareciendo en el canvas como contexto. El hueco de solape solo se crea si el contorno del capitel es totalmente rectangular y todos sus lados superan 1200 mm.</li>
+        <li>No se puede elegir un elemento si el nombre de ejemplar o de tipo incluye CAPITEL (por ejemplo <code>CAPITEL 25</code> o un tipo <code>Losa CAPITEL</code>). Esos Floor siguen apareciendo en el canvas como contexto. El hueco de solape solo se crea si el contorno del capitel es totalmente rectangular y todos sus lados superan 1200 mm. Es temporal: al terminar el armado se elimina y la losa queda sin ese Floor Opening.</li>
         <li>Si no hay planta activa, la herramienta pide abrir una planta y no continúa.</li>
         <li>Si el contorno de la losa no se puede leer, revise que la losa tenga croquis cerrado o geometría sólida. En modo dibujo, un trazo que sale de la losa o entra en un hueco no se acepta.</li>
         <li>Elementos ocultos en la vista no aparecen en el canvas.</li>
         <li>Activar Malla inferior apaga Malla superior, y al revés. Si apaga la cara que estaba activa y deja las dos apagadas, Colocar malla no continúa.</li>
         <li>Hace falta al menos un RebarBarType y un AreaReinforcementType en el proyecto.</li>
-        <li>En contorno completo y en dibujo, la pata en L se agrega en cada extremo de la barra. Si ese extremo queda dentro de un capitel rectangular con lados mayores de 1200 mm, no se agrega: ese lado empotra en el capitel.</li>
-        <li>En por paños la pata en L no es el caso general. Solo la lleva el extremo de la barra que cae en una arista del polígono coincidente con el boundary de la losa seleccionada.</li>
+        <li>En contorno completo, la pata en L se agrega en cada extremo de la barra. Si ese extremo queda dentro de un capitel rectangular con lados mayores de 1200 mm, no se agrega: ese lado empotra en el capitel.</li>
+        <li>En dibujar y en por paños la pata en L no es el caso general. La barra queda recta. Solo la lleva el extremo que cae en una arista del polígono coincidente con el boundary de la losa seleccionada al inicio.</li>
         <li>En por paños la anotación MRA usa el tipo Recorrido Barras. Si no está en el proyecto, las barras se crean y la ventana avisa.</li>
+        <li>Cada ejecución escribe un diagnóstico en la carpeta temporal de Windows: <code>Arainco_MallaEnLosa_diag.log</code> (censo de la losa y tiempos) y <code>Arainco_MallaEnLosa_fase.txt</code> (última operación iniciada). Si Revit se congela, el archivo de fase indica en qué llamada se quedó. La barra de estado de la ventana también muestra la ruta del log.</li>
     </ul>
 
     <p class="note">
