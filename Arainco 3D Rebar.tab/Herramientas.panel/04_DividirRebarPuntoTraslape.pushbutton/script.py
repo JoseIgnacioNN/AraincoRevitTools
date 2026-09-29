@@ -59,39 +59,17 @@ except Exception:
     pass
 
 # Acceso corporativo: walk-up hasta cualquier *.tab
+# --- Validacion acceso corporativo (prod: bootstrap junto al boton) ---
+# === BEGIN BIZARDS_PROD_PORTABLE_BOOTSTRAP (prod_builder) ===
 import os as _os_ac
 import sys as _sys_ac
 
-_tab_ac = _os_ac.path.dirname(_os_ac.path.abspath(__file__))
-for _iac in range(16):
-    if _os_ac.path.basename(_tab_ac).endswith(u".tab"):
-        break
-    _parent_ac = _os_ac.path.dirname(_tab_ac)
-    if _parent_ac == _tab_ac:
-        _tab_ac = None
-        break
-    _tab_ac = _parent_ac
-if _tab_ac and _tab_ac not in _sys_ac.path:
-    _sys_ac.path.insert(0, _tab_ac)
-
-try:
-    # === BEGIN BIZARDS_PROD_PORTABLE_BOOTSTRAP (prod_builder) ===
-import os as _os_ac
-import sys as _sys_ac
 _pb_ac = _os_ac.path.dirname(_os_ac.path.abspath(__file__))
 if _pb_ac and _pb_ac not in _sys_ac.path:
     _sys_ac.path.insert(0, _pb_ac)
 import bimtools_access_bootstrap as _bimtools_access
 # === END BIZARDS_PROD_PORTABLE_BOOTSTRAP (prod_builder) ===
-except Exception:
-    _bimtools_access = None
-
-if _bimtools_access is None:
-    TaskDialog.Show(
-        _DIALOG_TITLE,
-        u"No se encontró bimtools_access_bootstrap en la pestaña.",
-    )
-elif _bimtools_access.require_tool_access(__file__, __revit__, __title__):
+if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
     try:
         from dividir_rebar_punto import run
 
