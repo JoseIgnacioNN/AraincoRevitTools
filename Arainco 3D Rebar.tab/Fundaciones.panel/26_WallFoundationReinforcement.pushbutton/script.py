@@ -46,9 +46,16 @@ import bimtools_paths
 
 bimtools_paths.set_pushbutton_dir(_pushbutton_dir)
 
-if _pushbutton_dir not in sys.path:
-    sys.path.insert(0, _pushbutton_dir)
+# --- Validacion acceso corporativo (prod: bootstrap junto al boton) ---
+# === BEGIN BIZARDS_PROD_PORTABLE_BOOTSTRAP (prod_builder) ===
+import os as _os_ac
+import sys as _sys_ac
+
+_pb_ac = _os_ac.path.dirname(_os_ac.path.abspath(__file__))
+if _pb_ac and _pb_ac not in _sys_ac.path:
+    _sys_ac.path.insert(0, _pb_ac)
 import bimtools_access_bootstrap as _bimtools_access
+# === END BIZARDS_PROD_PORTABLE_BOOTSTRAP (prod_builder) ===
 if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
     try:
         _mod = imp.load_source("enfierrado_wall_foundation", _module_path)

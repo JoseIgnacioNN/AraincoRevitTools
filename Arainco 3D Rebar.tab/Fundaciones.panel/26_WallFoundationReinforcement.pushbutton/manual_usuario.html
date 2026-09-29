@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Arainco: Armadura Fundación Corrida</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #5BC0DE;
+            --accent-dim: #95B8CC;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: 920px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.75em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 32px;
+        }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            text-align: left;
+            color: var(--text-dim);
+            font-size: 0.95em;
+        }
+        th { color: var(--text); background: #0E1B32; }
+        .note {
+            color: var(--muted);
+            font-size: 0.95em;
+            border-top: 1px solid var(--border);
+            margin-top: 36px;
+            padding-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Manual — Arainco: Armadura Fundación Corrida</h1>
+
+    <div class="intro">
+        <p>
+            Coloca armadura en zapatas de muro (<strong>Wall Foundation</strong>):
+            transversales en U y longitudinales como conjuntos Rebar Set
+            (Maximum Spacing). Si el eje supera 12&nbsp;m, aplica troceo con empalme.
+        </p>
+        <p>
+            La ventana muestra un <strong>esquema en planta</strong> a la izquierda y un
+            <strong>corte por el ancho</strong> de la zapata en el panel derecho (rail),
+            junto a los parámetros de diámetro y separación.
+        </p>
+    </div>
+
+    <h2>Requisitos</h2>
+    <ul>
+        <li>Proyecto / plantilla Arainco con tipos de barra cargados.</li>
+        <li>Revit 2024–2026.</li>
+        <li>Documento de proyecto (no family document).</li>
+        <li>Al menos una zapata de muro (Wall Foundation) en el modelo.</li>
+    </ul>
+
+    <h2>Uso</h2>
+    <ol>
+        <li>Abra la herramienta desde la cinta.</li>
+        <li>Pulse <strong>Seleccionar fundación</strong> y elija la Wall Foundation en el modelo.</li>
+        <li>Revise el esquema: planta (izquierda) y sección por el ancho (rail).</li>
+        <li>Configure transversales (U) y longitudinales (ø y separación), y la dosificación si aplica.</li>
+        <li>Si el eje supera 12&nbsp;m, complete largo máximo de tramo y empalme.</li>
+        <li>Pulse <strong>Colocar armadura</strong>.</li>
+    </ol>
+    <p>
+        En planta: rueda del ratón = zoom; arrastre = desplazamiento (pan).
+        La sección del rail orienta el corte según el <strong>ancho</strong> de la zapata
+        (dirección transversal), no según el eje largo.
+    </p>
+
+    <h2>Reglas de negocio</h2>
+    <table>
+        <tr>
+            <th>Tema</th>
+            <th>Comportamiento</th>
+        </tr>
+        <tr>
+            <td>Transversales</td>
+            <td>Barras en U adaptadas al ancho y peralte; conjunto con Maximum Spacing.</td>
+        </tr>
+        <tr>
+            <td>Longitudinales</td>
+            <td>Polilínea con patas; troceo y empalme si el eje &gt; 12&nbsp;m.</td>
+        </tr>
+        <tr>
+            <td>Etiquetas</td>
+            <td>IndependentTag por conjunto (tipo = nombre del RebarShape) y Multi-Rebar Annotation «Recorrido Barras» si está en el proyecto.</td>
+        </tr>
+        <tr>
+            <td>Vista en planta</td>
+            <td>Cada conjunto muestra solo la barra central (presentación Middle).</td>
+        </tr>
+        <tr>
+            <td>Visibilidad</td>
+            <td>View Unobscured (+ sólido) en la vista activa.</td>
+        </tr>
+        <tr>
+            <td>Parámetros de las barras</td>
+            <td>
+                En cada Rebar creado:
+                <strong>Armadura_Arainco</strong> = Yes;
+                <strong>Armadura_Malla</strong> = No;
+                un <strong>Armadura_Conjunto_GUID</strong> común a toda la colocación;
+                <strong>Armadura_Nivel</strong> = nivel de la zapata (o de la base del muro);
+                <strong>Armadura_Ubicacion</strong> = F (cara inferior);
+                <strong>Armadura_Posicion</strong> = i en transversales (luz menor)
+                y s en longitudinales (luz mayor).
+            </td>
+        </tr>
+    </table>
+
+    <h2>Notas</h2>
+    <ul>
+        <li>El preview de planta/sección es esquemático: ayuda a configurar ø/@; no modifica el modelo.</li>
+        <li>La colocación desune y vuelve a unir geometría de la zapata dentro de la misma operación.</li>
+        <li>No trocea curvas con estiramiento por empotramiento: solo el eje recto de la zapata.</li>
+        <li>Si la herramienta ya está abierta, se enfoca la ventana existente.</li>
+    </ul>
+
+    <p class="note">Arainco · BIMTools · Armadura Fundación Corrida</p>
+</body>
+</html>
