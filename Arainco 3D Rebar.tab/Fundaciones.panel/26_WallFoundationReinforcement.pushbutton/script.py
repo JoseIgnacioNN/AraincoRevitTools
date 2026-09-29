@@ -12,12 +12,15 @@ clr.AddReference("RevitAPIUI")
 from Autodesk.Revit.UI import TaskDialog
 
 _TOOL_DIALOG_TITLE = u"Wall Foundation Reinforcement"
+# Marcador que lee el prod builder para empaquetar la inteligencia.
+_MAIN_MODULE = u"enfierrado_wall_foundation.py"
+_MAIN_MODULE_ID = u"enfierrado_wall_foundation"
 
 
 def _find_module(start_dir):
     cursor = start_dir
     for _ in range(10):
-        candidate = os.path.join(cursor, "scripts", "enfierrado_wall_foundation.py")
+        candidate = os.path.join(cursor, "scripts", _MAIN_MODULE)
         if os.path.isfile(candidate):
             return candidate
         parent = os.path.dirname(cursor)
@@ -33,9 +36,9 @@ _module_path = _find_module(_pushbutton_dir)
 if not _module_path:
     TaskDialog.Show(
         _TOOL_DIALOG_TITLE,
-        u"No se encontró scripts/enfierrado_wall_foundation.py",
+        u"No se encontró scripts/{0}".format(_MAIN_MODULE),
     )
-    raise Exception(u"No se encontró scripts/enfierrado_wall_foundation.py")
+    raise Exception(u"No se encontró scripts/{0}".format(_MAIN_MODULE))
 
 import sys
 
@@ -58,7 +61,7 @@ import bimtools_access_bootstrap as _bimtools_access
 # === END BIZARDS_PROD_PORTABLE_BOOTSTRAP (prod_builder) ===
 if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
     try:
-        _mod = imp.load_source("enfierrado_wall_foundation", _module_path)
+        _mod = imp.load_source(_MAIN_MODULE_ID, _module_path)
         _mod.run_pyrevit(__revit__)
     except Exception as ex:
         TaskDialog.Show(
