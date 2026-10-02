@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Arainco: Rotación columnas</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #5BC0DE;
+            --accent-dim: #95B8CC;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: 920px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.75em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 32px;
+        }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        code {
+            background: #0E1B32;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 1px 6px;
+            font-size: 0.92em;
+            color: var(--text);
+        }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            text-align: left;
+            color: var(--text-dim);
+            font-size: 0.95em;
+        }
+        th { color: var(--text); background: #0E1B32; }
+        .note {
+            color: var(--muted);
+            font-size: 0.95em;
+            border-top: 1px solid var(--border);
+            margin-top: 36px;
+            padding-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Arainco: Rotación columnas</h1>
+    <div class="intro">
+        <p>Comprueba si las columnas de hormigón apiladas comparten la misma rotación. La herramienta lee el ángulo de cada columna seleccionada, la pinta en la vista activa según ese ángulo y deja una leyenda con el color y los grados.</p>
+        <p>El mismo color significa la misma rotación. Si una pila muestra más de un color, sus tramos no están alineados.</p>
+    </div>
+
+    <h2>Requisitos</h2>
+    <ul>
+        <li>Revit 2024, 2025 o 2026, con un proyecto abierto.</li>
+        <li>Vista activa de planta, sección, alzado, detalle o 3D. No funciona sobre una lámina ni sobre un cuadro.</li>
+        <li>Columnas estructurales de hormigón. Las columnas de acero y las arquitectónicas no entran en la selección.</li>
+    </ul>
+
+    <h2>Uso</h2>
+    <ol>
+        <li>Abra la vista donde quiere ver el color y la leyenda. En planta, sección o alzado la leyenda se dibuja en la vista. En 3D solo se aplican los colores.</li>
+        <li>Opcional: seleccione antes las columnas de la pila. Si no hay selección válida, la herramienta pide elegirlas en la vista y terminar con Finalizar.</li>
+        <li>En el panel Columnas, abra <strong>Toolkit</strong> y pulse <strong>Rotación columnas</strong>. La ventana se abre en la esquina superior izquierda de la vista activa.</li>
+        <li>Use la selección actual o elija las columnas en la vista y pulse Finalizar. La herramienta pinta el lote y deja la ventana abierta.</li>
+        <li>Para corregir: en la vista, seleccione las columnas del lote que deben cambiar, escriba el ángulo en grados (0° es el eje X del proyecto) y pulse <strong>Aplicar rotación</strong>.</li>
+        <li>Al aplicar, o si gira esas columnas con el comando Rotar de Revit, el lote se vuelve a colorear solo. Se actualiza la leyenda original, en el mismo lugar; no se crea otra.</li>
+        <li>La ventana muestra si cada pila es uniforme y lista los grados de cada color.</li>
+        <li>En la vista, cada columna queda pintada y, a la izquierda de la selección, aparece el grupo de leyenda con una muestra de color, los grados y la cantidad de columnas. El campo de ángulo se rellena con la rotación más repetida del lote.</li>
+    </ol>
+
+    <h2>Reglas de negocio</h2>
+    <ul>
+        <li>La rotación es la de la instancia respecto al eje X del proyecto, en sentido antihorario, expresada de 0° a 360°. Es el mismo ángulo con el que Revit gira la columna en planta.</li>
+        <li>Dos ángulos se consideran iguales si caen en la misma décima de grado (tolerancia de 0,1°). 359,9° se trata como 0°.</li>
+        <li>Una pila son dos o más columnas cuyo punto de inserción en planta está a 50 mm o menos. Cada pila se revisa por separado: pilas distintas pueden tener rotaciones distintas y seguir siendo uniformes cada una.</li>
+        <li>El color identifica la rotación dentro de la selección actual. La leyenda traduce cada color a grados y a la cantidad de columnas. Si todas las columnas del lote quedan en el mismo ángulo, el título de la leyenda dice <strong>Rotaciones igualadas con éxito</strong>.</li>
+        <li>Una sección cuadrada girada 90° se marca como rotación distinta, aunque a simple vista la geometría parezca la misma. La herramienta compara el ángulo, no la simetría de la sección.</li>
+        <li>El color es un reemplazo gráfico solo de la vista donde se evaluó el lote. No cambia el material ni otros parámetros. <strong>Aplicar rotación</strong> sí gira la columna al ángulo escrito.</li>
+        <li>La leyenda es un grupo de detalle llamado <code>Arainco: Leyenda rotación columnas</code>. Se puede mover. Al corregir la rotación, esa misma leyenda se reemplaza con los grados y colores nuevos. Si hubiera quedado más de una, se dejan en una sola. No se agrega una leyenda distinta junto a las columnas.</li>
+        <li>Todo el primer pintado queda en un paso de deshacer: <strong>Arainco: Rotación columnas apiladas</strong>. Cada corrección es otro paso: <strong>Arainco: Corregir rotación columnas</strong> (giro y nueva evaluación juntos).</li>
+        <li>Al cerrar la ventana se quitan los colores y la leyenda de esa vista. Las rotaciones ya aplicadas con <strong>Aplicar rotación</strong> se conservan.</li>
+        <li>La ventana solo gira columnas del lote ya evaluado. El ángulo es absoluto, no un incremento. Una columna fijada con el pin de Revit no se gira.</li>
+    </ul>
+
+    <h2>Notas</h2>
+    <ul>
+        <li>En vista 3D se pintan las columnas y el aviso muestra el esquema de color. El rectángulo de leyenda no se puede dibujar en 3D; use una planta, sección o alzado si necesita la leyenda en la vista.</li>
+        <li>En planta el relleno de color se aprecia mejor en nivel de detalle Medio o Alto. El contorno coloreado se ve también en detalle Bajo.</li>
+        <li>Si la plantilla de vista impide los reemplazos gráficos por elemento, el color no se verá.</li>
+        <li>Quite el grupo solo si cerró la herramienta y la leyenda siguiera visible. Al cerrar, colores y leyenda se retiran solos. Deshaga <strong>Arainco: Quitar colores rotación columnas</strong> si necesita verlos otra vez.</li>
+        <li>Cancelar la selección con Escape cierra la herramienta sin modificar la vista.</li>
+    </ul>
+    <p class="note">Arainco · Rotación columnas</p>
+</body>
+</html>

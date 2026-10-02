@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Arainco: Toolkit Columnas</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #5BC0DE;
+            --accent-dim: #95B8CC;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: 920px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.75em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 32px;
+        }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        .note {
+            color: var(--muted);
+            font-size: 0.95em;
+            border-top: 1px solid var(--border);
+            margin-top: 36px;
+            padding-top: 12px;
+        }
+        code { color: var(--text); }
+    </style>
+</head>
+<body>
+    <h1>Manual — Arainco: Toolkit Columnas</h1>
+
+    <div class="intro">
+        <p>
+            El botón <strong>Toolkit</strong> del panel Columnas agrupa herramientas
+            auxiliares. Hoy contiene <strong>Rotación columnas</strong>: comprueba si
+            las columnas de hormigón apiladas comparten la misma rotación, las pinta
+            en la vista activa y deja una leyenda con los grados.
+        </p>
+    </div>
+
+    <h2>Requisitos</h2>
+    <ul>
+        <li>Revit 2024, 2025 o 2026, con un proyecto abierto.</li>
+        <li>Vista de planta, sección, alzado, detalle o 3D.</li>
+        <li>Columnas estructurales de hormigón.</li>
+    </ul>
+
+    <h2>Uso</h2>
+    <ol>
+        <li>En el panel Columnas, abra <strong>Toolkit</strong>.</li>
+        <li>Pulse <strong>Rotación columnas</strong>.</li>
+        <li>Tras la evaluación, corrija en la vista: seleccione columnas del lote, escriba el ángulo y pulse Aplicar, o gírelas con Rotar. Los colores y la leyenda se actualizan solos.</li>
+    </ol>
+
+    <h2>Reglas de negocio</h2>
+    <ul>
+        <li>El mismo color es la misma rotación (tolerancia 0,1°). 0° es el eje X del proyecto, en sentido antihorario.</li>
+        <li>Una pila son dos o más columnas cuyo punto de inserción en planta está a 50 mm o menos. Solo se marca la pila que mezcla ángulos.</li>
+        <li>El color es un reemplazo gráfico de la vista. Aplicar rotación además gira las columnas seleccionadas del lote.</li>
+        <li>La leyenda es un grupo de detalle. Si todas las columnas quedan en el mismo ángulo, su título indica que las rotaciones se igualaron con éxito. En vista 3D se aplican los colores y el esquema queda en el aviso; el dibujo de la leyenda no se crea en 3D.</li>
+        <li>Al cerrar la ventana se quitan los colores y la leyenda. El giro hecho con Aplicar se mantiene.</li>
+    </ul>
+
+    <h2>Notas</h2>
+    <ul>
+        <li>El detalle de la herramienta está en el manual de <strong>Rotación columnas</strong>.</li>
+        <li>Armado de columnas sigue como botón propio del panel, fuera de este menú.</li>
+    </ul>
+
+    <p class="note">Arainco: Toolkit — panel Columnas.</p>
+</body>
+</html>
