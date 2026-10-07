@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Arainco: Fundación corrida (franja)</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #5BC0DE;
+            --accent-dim: #95B8CC;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: 920px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.75em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 32px;
+        }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            text-align: left;
+            color: var(--text-dim);
+            font-size: 0.95em;
+        }
+        th { color: var(--text); background: #0E1B32; }
+        .note {
+            color: var(--muted);
+            font-size: 0.95em;
+            border-top: 1px solid var(--border);
+            margin-top: 36px;
+            padding-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Manual — Arainco: Fundación corrida (franja)</h1>
+
+    <div class="intro">
+        <p>
+            Dibuja en el canvas <strong>todas las fundaciones</strong> visibles en la
+            planta activa (zapatas de muro, zapatas aisladas, losas de fundación y el
+            resto de fundaciones estructurales) y, como <strong>contexto</strong>,
+            los muros, vigas y columnas de esa misma vista. Sobre esa planta se
+            dibujan <strong>franjas</strong> y se coloca la armadura con la misma
+            lógica que Fundación Corrida.
+        </p>
+    </div>
+
+    <h2>Requisitos</h2>
+    <ul>
+        <li>Vista de <strong>planta</strong> activa.</li>
+        <li>Al menos una fundación estructural visible en esa vista.</li>
+        <li>Revit 2024–2026 · plantilla / proyecto Arainco.</li>
+    </ul>
+
+    <h2>Uso</h2>
+    <ol>
+        <li>Abra la herramienta desde <strong>3D Rebar</strong>.</li>
+        <li>Se cargan y dibujan las fundaciones de la vista con su
+            <strong>huella real</strong> (orientación Right/Up de la planta activa).
+            Muros, vigas y columnas se dibujan detrás, solo como referencia.</li>
+        <li>Herramientas de dibujo, iguales que Malla en losa: <strong>Rectángulo</strong>
+            (2 clics, esquinas opuestas) y <strong>Polígono</strong> (clic = vértice;
+            cierre en el primero, Enter o doble clic). <strong>Borrar franja</strong>
+            quita el trazo en curso o la franja seleccionada.</li>
+        <li>Cruz de dibujo y snaps de extremo, medio, intersección y perpendicular
+            sobre fundaciones, muros, vigas, columnas y franjas ya cerradas.
+            Si no hay snap, el clic usa el punto del cursor.</li>
+        <li>En modo <strong>polígono</strong>: <strong>clic</strong> = vértice;
+            <strong>cierre</strong> en el 1.er vértice (verde), <strong>Enter</strong> o
+            doble clic con ≥3 vértices; <strong>Retroceso</strong> deshace el último vértice;
+            <strong>Esc</strong> cancela el borrador; <strong>Supr</strong> elimina la franja
+            seleccionada (o la última si no hay selección).</li>
+        <li>En modo <strong>rectángulo</strong>: 2 clics en esquinas opuestas.</li>
+        <li><strong>Seleccionar franja:</strong> con el trazo en curso vacío, haga
+            <strong>clic</strong> (izquierdo o derecho) dentro del polígono.
+            Queda resaltada y el panel muestra la configuración de esa franja.
+            Un clic fuera empieza una franja nueva. <strong>Supr</strong> elimina
+            solo la franja seleccionada.</li>
+        <li>Configure ø y <strong>separación (mm)</strong> escribiendo el valor en el
+            rail (campos @ junto a cada diámetro; también ▲/▼ de 10&nbsp;mm), más
+            dosificación y troceo: los valores se guardan solo en la franja
+            seleccionada. Una franja nueva hereda los valores actuales del rail.</li>
+        <li>Pulse <strong>Colocar armadura</strong>: la ventana se cierra de inmediato
+            y comienza el modelado con barra de progreso por franja.</li>
+    </ol>
+    <p>Rueda = zoom hacia el cursor · clic rueda (botón medio) = pan · Ctrl+0 = reset vista ·
+       mínimo 25 mm entre vértices consecutivos.
+       Debug canvas: Ctrl+Shift+D (overlay) · Ctrl+Shift+L (log).</p>
+
+    <h2>Reglas de negocio</h2>
+    <table>
+        <tr><th>Tema</th><th>Comportamiento</th></tr>
+        <tr>
+            <td>Recubrimientos</td>
+            <td>50 mm libres hasta la <strong>tangente</strong> de cada barra respecto al
+                borde de la franja y a la cara inferior. El eje queda a 50 mm más la
+                mitad del diámetro con el que Revit modela la barra (no el ø nominal
+                redondeado). La U usa su diámetro de modelo; las longitudinales apoyan
+                sobre esa capa. El reparto deja la barra extrema con la misma tangente
+                a 50 mm.</td>
+        </tr>
+        <tr>
+            <td>Canvas</td>
+            <td>Contorno real de cada fundación de la vista, proyectado con Right/Up
+                (incluye giro y, si aplica, recorte). Detrás, en otro color, la huella
+                en planta de muros, vigas y columnas visibles. El contexto no recibe
+                armadura.</td>
+        </tr>
+        <tr>
+            <td>Dibujo</td>
+            <td>Igual que Malla en losa: rectángulo (2 clics) o polígono (por defecto).
+                Cruz de dibujo y snaps de extremo, medio, intersección y perpendicular.
+                ≥3 puntos, mín. 25 mm, cierre en el 1.er vértice, Enter o doble clic.
+                Con borrador activo el clic solo dibuja.</td>
+        </tr>
+        <tr>
+            <td>Selección</td>
+            <td>Sin trazo en curso, clic izquierdo o derecho dentro del polígono lo selecciona
+                y el panel carga su configuración. Si se solapan, queda la última dibujada.
+                El cursor pasa a flecha sobre una franja. <strong>Supr</strong> elimina
+                solo la seleccionada.</td>
+        </tr>
+        <tr>
+            <td>Config por franja</td>
+            <td>ø y separación (mm, valor numérico en el rail) transversales y
+                longitudinales, dosificación y troceo se guardan por franja.
+                Al colocar, cada franja usa su propia config. Franja nueva hereda
+                el rail actual. Separación admitida: 50–2000&nbsp;mm.</td>
+        </tr>
+        <tr>
+            <td>Borrar franja</td>
+            <td><strong>Supr</strong> elimina la franja seleccionada. Si no hay selección,
+                no borra ninguna. <strong>Borrar franja</strong> quita el trazo en curso
+                o, si no hay trazo, la seleccionada (o la última). Cerrar polígono:
+                clic en el 1.er vértice, <strong>Enter</strong> o doble clic.</td>
+        </tr>
+        <tr>
+            <td>OSNAP</td>
+            <td>Los de Malla en losa: extremo, medio, intersección y perpendicular,
+                con cruz de dibujo, sobre fundaciones, contexto, franjas y borrador.</td>
+        </tr>
+        <tr>
+            <td>Polígono</td>
+            <td>≥3 vértices distintos (mín. 25 mm); cierre en 1.er punto, Enter o doble clic;
+                orientación CCW al cerrar (como Losa Sketch).</td>
+        </tr>
+        <tr>
+            <td>Franja</td>
+            <td>El lado más largo define el eje longitudinal; el ancho del polígono
+                define la luz transversal (U).</td>
+        </tr>
+        <tr>
+            <td>Host</td>
+            <td>Cada franja se asocia a la zapata de muro (Wall Foundation) que contiene
+                su centro, o a la más cercana. El resto de fundaciones y el contexto
+                solo se dibujan.</td>
+        </tr>
+        <tr>
+            <td>Parámetros</td>
+            <td>En cada Rebar creado: <em>Armadura_Conjunto_GUID</em> (corrida),
+                <em>Armadura_Malla</em> = No, <em>Armadura_Arainco</em> = Yes,
+                <em>Armadura_Nivel</em> (nivel de la zapata/muro),
+                <em>Armadura_En Lamina</em> (Sheet Number de la vista),
+                <em>Armadura_Ubicacion</em> = F (cara inferior),
+                <em>Armadura_Posicion</em> = i (U / luz menor) o s (longitudinal / luz mayor).</td>
+        </tr>
+        <tr>
+            <td>Armadura</td>
+            <td>U transversales + longitudinales (Rebar Set / Maximum Spacing);
+                troceo si el eje &gt; 12&nbsp;m; parámetros leídos por franja.</td>
+        </tr>
+        <tr>
+            <td>Etiquetas</td>
+            <td>Una etiqueta de armadura por conjunto
+                (familia <em>EST_A_STRUCTURAL REBAR TAG</em>; tipo = nombre del
+                RebarShape de la barra), en la vista activa.</td>
+        </tr>
+        <tr>
+            <td>MRA</td>
+            <td>Una Multi-Rebar Annotation «Recorrido Barras» por conjunto,
+                para marcar el recorrido en planta/alzado/sección.</td>
+        </tr>
+        <tr>
+            <td>Visibilidad</td>
+            <td>View Unobscured (+ sólido) en la vista activa y, si aplica, en la
+                planta de dibujo; en planta cada conjunto muestra la barra central
+                (después de etiquetar y crear MRA).</td>
+        </tr>
+    </table>
+
+    <h2>Notas</h2>
+    <ul>
+        <li>La herramienta clásica <em>Fundación Corrida</em> (panel Armadura) sigue disponible
+            para colocación por una sola zapata con pick.</li>
+        <li>No crea vistas de sección de revisión en el modelo.</li>
+    </ul>
+
+    <p class="note">Arainco · BIMTools · 3D Rebar · Fundación corrida (franja)</p>
+</body>
+</html>
