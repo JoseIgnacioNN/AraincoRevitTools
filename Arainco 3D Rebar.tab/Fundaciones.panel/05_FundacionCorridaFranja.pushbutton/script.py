@@ -5,7 +5,7 @@ __title__ = u"Fundacion\nFranja"
 __author__ = u"BIMTools"
 __doc__ = (
     u"Carga Wall Foundations de la vista, dibuja franjas en planta y coloca "
-    u"armadura múltiple (U + longitudinales)."
+    u"armadura inferior o superior (U + longitudinales)."
 )
 
 import os

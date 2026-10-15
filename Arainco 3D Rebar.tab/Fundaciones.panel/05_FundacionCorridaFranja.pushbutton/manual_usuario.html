@@ -114,10 +114,12 @@
             Queda resaltada y el panel muestra la configuración de esa franja.
             Un clic fuera empieza una franja nueva. <strong>Supr</strong> elimina
             solo la franja seleccionada.</li>
-        <li>Configure ø y <strong>separación (mm)</strong> escribiendo el valor en el
-            rail (campos @ junto a cada diámetro; también ▲/▼ de 10&nbsp;mm), más
-            dosificación y troceo: los valores se guardan solo en la franja
-            seleccionada. Una franja nueva hereda los valores actuales del rail.</li>
+        <li>Configure <strong>Ø</strong> y <strong>paso (mm)</strong> de la luz menor
+            y de la luz mayor. El interruptor de <strong>Armadura inferior</strong>
+            y el de <strong>Armadura superior</strong> son excluyentes: al encender
+            una cara se apaga la otra. Por defecto queda la inferior.
+            Dosificación y troceo se guardan en la franja seleccionada.
+            Una franja nueva hereda el rail actual.</li>
         <li>Pulse <strong>Colocar armadura</strong>: la ventana se cierra de inmediato
             y comienza el modelado con barra de progreso por franja.</li>
     </ol>
@@ -131,11 +133,11 @@
         <tr>
             <td>Recubrimientos</td>
             <td>50 mm libres hasta la <strong>tangente</strong> de cada barra respecto al
-                borde de la franja y a la cara inferior. El eje queda a 50 mm más la
-                mitad del diámetro con el que Revit modela la barra (no el ø nominal
-                redondeado). La U usa su diámetro de modelo; las longitudinales apoyan
-                sobre esa capa. El reparto deja la barra extrema con la misma tangente
-                a 50 mm.</td>
+                borde de la franja y a la cara de apoyo (inferior o superior). El eje
+                queda a 50 mm más la mitad del diámetro con el que Revit modela la barra.
+                La U usa su diámetro; las longitudinales quedan hacia el interior,
+                apoyadas sobre esa capa. El reparto deja la barra extrema con la misma
+                tangente a 50 mm. Las patas de la capa superior entran en el hormigón.</td>
         </tr>
         <tr>
             <td>Canvas</td>
@@ -160,10 +162,10 @@
         </tr>
         <tr>
             <td>Config por franja</td>
-            <td>ø y separación (mm, valor numérico en el rail) transversales y
-                longitudinales, dosificación y troceo se guardan por franja.
-                Al colocar, cada franja usa su propia config. Franja nueva hereda
-                el rail actual. Separación admitida: 50–2000&nbsp;mm.</td>
+            <td>Cada cara (inferior / superior) tiene Ø y paso de luz menor y luz mayor.
+                El interruptor de una cara apaga la otra. Dosificación y troceo se
+                comparten. Al colocar, cada franja usa su config.
+                Paso admitido: 50–2000&nbsp;mm.</td>
         </tr>
         <tr>
             <td>Borrar franja</td>
@@ -199,13 +201,15 @@
                 <em>Armadura_Malla</em> = No, <em>Armadura_Arainco</em> = Yes,
                 <em>Armadura_Nivel</em> (nivel de la zapata/muro),
                 <em>Armadura_En Lamina</em> (Sheet Number de la vista),
-                <em>Armadura_Ubicacion</em> = F (cara inferior),
-                <em>Armadura_Posicion</em> = i (U / luz menor) o s (longitudinal / luz mayor).</td>
+                <em>Armadura_Ubicacion</em> = F (cara inferior) o F' (cara superior).
+                <em>Armadura_Posicion</em> en la inferior: i (U / luz menor) y s (longitudinal / luz mayor).
+                En la superior se invierte: s (luz menor) e i (luz mayor).</td>
         </tr>
         <tr>
             <td>Armadura</td>
-            <td>U transversales + longitudinales (Rebar Set / Maximum Spacing);
-                troceo si el eje &gt; 12&nbsp;m; parámetros leídos por franja.</td>
+            <td>Solo la capa activa: U transversales + longitudinales en la cara
+                inferior o en la superior (Rebar Set / Maximum Spacing).
+                Troceo si el eje &gt; 12&nbsp;m; parámetros leídos por franja.</td>
         </tr>
         <tr>
             <td>Etiquetas</td>
