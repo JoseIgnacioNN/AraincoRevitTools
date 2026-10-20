@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual de Usuario — Seleccionar Rebars (Forma 03) · Arainco</title>
+    <style>
+        :root {
+            --bg-app: #071018;
+            --bg-header: #0F2535;
+            --bg-panel: #0A1620;
+            --bg-card: #0E1B32;
+            --bg-input: #050E18;
+            --border: #21465C;
+            --border-light: #2B5A78;
+            --accent-primary: #5DB9EA;
+            --accent-hover: #74CEE8;
+            --accent-taupe: #B8B0AD;
+            --fg-title: #E8F4F8;
+            --fg-body: #C8E4EF;
+            --fg-label: #95B8CC;
+            --fg-muted: #64889E;
+            --status-success: #4ECDC4;
+            --status-warning: #F3C65F;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+            background-color: var(--bg-app);
+            color: var(--fg-body);
+            line-height: 1.6;
+            padding: 30px 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        /* Encabezado Corporativo */
+        header {
+            background: var(--bg-header);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px 25px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .logo-box {
+            background: var(--bg-app);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .header-title h1 {
+            color: var(--fg-title);
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        .header-title p {
+            color: var(--fg-label);
+            font-size: 13px;
+        }
+
+        .header-brand {
+            text-align: right;
+        }
+
+        .brand-name {
+            font-weight: 800;
+            font-size: 14px;
+            color: var(--fg-title);
+            letter-spacing: 1px;
+        }
+
+        .brand-sub {
+            font-size: 9px;
+            color: var(--accent-primary);
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        /* Secciones */
+        section {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 22px 25px;
+            margin-bottom: 20px;
+        }
+
+        h2 {
+            color: var(--fg-title);
+            font-size: 16px;
+            font-weight: 600;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        h2::before {
+            content: "";
+            display: inline-block;
+            width: 4px;
+            height: 16px;
+            background: var(--accent-primary);
+            border-radius: 2px;
+        }
+
+        h3 {
+            color: var(--accent-primary);
+            font-size: 14px;
+            margin: 16px 0 8px 0;
+        }
+
+        p {
+            margin-bottom: 12px;
+            font-size: 13.5px;
+            color: var(--fg-body);
+        }
+
+        ul, ol {
+            margin-left: 20px;
+            margin-bottom: 14px;
+            font-size: 13.5px;
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        strong {
+            color: var(--fg-title);
+        }
+
+        /* Tarjetas de Indicadores (KPIs) */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 14px;
+            margin: 16px 0;
+        }
+
+        .kpi-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 14px 16px;
+            border-left: 4px solid var(--accent-primary);
+        }
+
+        .kpi-card.highlight {
+            border-left-color: var(--status-success);
+        }
+
+        .kpi-card.info {
+            border-left-color: var(--accent-taupe);
+        }
+
+        .kpi-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: var(--fg-label);
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        .kpi-desc {
+            font-size: 12.5px;
+            color: var(--fg-body);
+            margin-top: 6px;
+        }
+
+        /* Callouts */
+        .callout {
+            background: var(--bg-card);
+            border-left: 4px solid var(--accent-primary);
+            border-radius: 0 6px 6px 0;
+            padding: 12px 16px;
+            margin: 14px 0;
+            font-size: 13px;
+        }
+
+        .callout.tip {
+            border-left-color: var(--status-success);
+        }
+
+        .callout.warning {
+            border-left-color: var(--status-warning);
+        }
+
+        .tag {
+            display: inline-block;
+            background: var(--bg-input);
+            border: 1px solid var(--border-light);
+            border-radius: 4px;
+            padding: 2px 7px;
+            font-size: 11px;
+            font-family: monospace;
+            color: var(--accent-primary);
+        }
+
+        footer {
+            text-align: center;
+            font-size: 12px;
+            color: var(--fg-muted);
+            margin-top: 25px;
+            padding: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Encabezado Corporativo -->
+        <header>
+            <div class="header-left">
+                <div class="logo-box">
+                    <svg width="36" height="27" viewBox="0 0 100 75" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M 2.6,71.2 L 38.6,8.8 Q 46.4,3.5 53.9,3.8 Q 58.4,5.0 61.1,8.6 L 25.4,70.9 Z" fill="#5DB9EA"/>
+                        <path d="M 62.9,11.2 L 52.7,29.2 L 58.4,41.0 L 81.2,43.4 Z" fill="#1F435B"/>
+                        <path d="M 66.8,57.1 L 74.0,71.2 L 97.1,71.2 L 84.5,49.4 Z" fill="#1F435B"/>
+                        <path d="M 82.7,46.6 L 59.3,44.2 L 40.1,52.0 L 29.9,69.4 Z" fill="#B8B0AD"/>
+                    </svg>
+                </div>
+                <div class="header-title">
+                    <h1>Seleccionar Rebars (Forma 03)</h1>
+                    <p>Filtro analítico y selección interactiva de Structural Rebars por Rebar Shape</p>
+                </div>
+            </div>
+            <div class="header-brand">
+                <div class="brand-name">ARAINCO</div>
+                <div class="brand-sub">Ingeniería Estructural</div>
+            </div>
+        </header>
+
+        <!-- 1. Propósito -->
+        <section>
+            <h2>1. Propósito de la Herramienta</h2>
+            <p>
+                La herramienta <strong>Seleccionar Rebars (Forma 03)</strong> ha sido diseñada para optimizar y agilizar los flujos de modelado, cuantificación y revisión estructural en <strong>Autodesk Revit 2025+</strong>. Permite escanear la vista activa, identificar todas las armaduras estructurales (<span class="tag">OST_Rebar</span>), catalogar sus formas (<span class="tag">Rebar Shape</span>) y seleccionar de manera instantánea aquellas que corresponden a la <strong>Forma 03</strong> (estribos cerrados, trabas o ganchos estándar según el catálogo de formas de Arainco).
+            </p>
+            <div class="kpi-grid">
+                <div class="kpi-card highlight">
+                    <div class="kpi-title">Selección Instantánea</div>
+                    <div class="kpi-desc">Actualiza la selección interactiva de Revit con los elementos coincidentes sin deseleccionar involuntariamente.</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-title">Inspección Multi-Propiedad</div>
+                    <div class="kpi-desc">Evalúa parámetros nativos, métodos GetShapeId() y tipos de familia garantizando compatibilidad con armaduras estándar y en sistema.</div>
+                </div>
+                <div class="kpi-card info">
+                    <div class="kpi-title">Métricas en Tiempo Real</div>
+                    <div class="kpi-desc">Visualiza en vivo el total de armaduras en vista, cantidad coincidentes y variedad de formas detectadas.</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. Requisitos y Compatibilidad -->
+        <section>
+            <h2>2. Requisitos Previos y Compatibilidad Revit API 2025+</h2>
+            <ul>
+                <li><strong>Versión de Revit:</strong> Autodesk Revit 2025 o superior (.NET 8).</li>
+                <li><strong>Vista Activa:</strong> Debe ser una vista de modelo donde las armaduras sean visibles:
+                    <ul>
+                        <li>Vistas de Planta Estructural (Structural Plans)</li>
+                        <li>Secciones y Cortes Estructurales (Sections)</li>
+                        <li>Detalles Estructurales (Callouts / Detail Views)</li>
+                        <li>Vistas 3D Estructurales</li>
+                    </ul>
+                </li>
+                <li><strong>Láminas (Sheets):</strong> La herramienta no debe ejecutarse directamente en una Lámina sin viewport activo; en caso de intentarlo, se presentará un diálogo informativo solicitando ingresar a la vista de modelo correspondiente.</li>
+            </ul>
+            <div class="callout tip">
+                <strong>Compatibilidad Revit 2025+:</strong> La herramienta emplea identificadores <span class="tag">ElementId.Value</span> de 64 bits y no genera bloqueos de transacciones innecesarios al aplicar la selección en Revit.
+            </div>
+        </section>
+
+        <!-- 3. Controles de la Interfaz -->
+        <section>
+            <h2>3. Explicación de los Controles de la Ventana</h2>
+            <p>La ventana gráfica ofrece un diseño modular con los siguientes componentes:</p>
+            
+            <h3>A. Encabezado e Información de la Vista</h3>
+            <p>
+                Muestra el nombre de la vista activa, su escala de trabajo y tres tarjetas KPI que resumen cuántos rebars se encuentran visibles, cuántos coinciden con el criterio objetivo y cuántas formas diferentes existen.
+            </p>
+
+            <h3>B. Ámbito de Selección</h3>
+            <ul>
+                <li><strong>Toda la vista activa:</strong> Analiza todos los Structural Rebars que cruzan o son visibles en el corte/planta actual.</li>
+                <li><strong>Solo dentro de selección previa:</strong> Si antes de pulsar el botón seleccionaste un conjunto de vigas, columnas o armaduras, esta opción te permite aislar únicamente los rebars de forma 03 dentro de dicho subconjunto.</li>
+            </ul>
+
+            <h3>C. Criterio de Forma (Rebar Shape)</h3>
+            <ul>
+                <li><strong>Nombre / Código:</strong> Campo de texto preconfigurado con el valor <span class="tag">03</span>. Puedes modificarlo libremente para buscar cualquier otra forma (por ejemplo: <span class="tag">00</span>, <span class="tag">T1</span>, etc.).</li>
+                <li><strong>Formas detectadas en la vista:</strong> Menú desplegable inteligente que lista todas las formas presentes en la vista junto con la cantidad de armaduras que la componen. Al hacer clic sobre cualquier ítem, se carga automáticamente en el filtro.</li>
+                <li><strong>Modo Contiene:</strong> (Recomendado) Detecta cualquier forma cuyo nombre contenga el texto (ej. <span class="tag">03</span>, <span class="tag">Shape 03</span>, <span class="tag">M_03</span>).</li>
+                <li><strong>Modo Coincidencia Exacta:</strong> Exige que el nombre de la forma sea exactamente igual a la cadena ingresada.</li>
+            </ul>
+
+            <h3>D. Acciones Complementarias en la Vista</h3>
+            <ul>
+                <li><strong>Aislar temporalmente (Temporary Isolate):</strong> Si está marcado, activa el modo de aislamiento temporal de Revit (<span class="tag">Isolate Elements</span>) para ocultar todo lo demás y permitir una inspección visual limpia.</li>
+                <li><strong>Ajustar encuadre (Zoom to Fit):</strong> Enfoca y centra la vista en las armaduras seleccionadas.</li>
+            </ul>
+        </section>
+
+        <!-- 4. Paso a Paso -->
+        <section>
+            <h2>4. Flujo de Trabajo Paso a Paso</h2>
+            <ol>
+                <li>Abre o activa la vista de Revit que contenga los elementos armados que deseas revisar.</li>
+                <li>(Opcional) Si solo deseas evaluar un sector específico, selecciona previamente los elementos con la ventana de cruce de Revit.</li>
+                <li>En la pestaña <strong>AntigravityDev</strong>, panel <strong>General</strong>, haz clic en el botón <strong>Seleccionar Rebar 03</strong>.</li>
+                <li>Revisa los KPIs en el encabezado. Por defecto, el filtro buscará la forma <span class="tag">03</span>.</li>
+                <li>Verifica o ajusta el ámbito de búsqueda y las opciones de aislamiento o zoom según tu preferencia.</li>
+                <li>Haz clic en el botón primario <strong>Seleccionar en Revit</strong>.</li>
+                <li>La barra de progreso se actualizará en tiempo real y, al finalizar, los rebars quedarán seleccionados en la ventana de Revit y se mostrará un diálogo de resumen con el desglose numérico e IDs.</li>
+            </ol>
+            <div class="callout warning">
+                <strong>Aviso:</strong> Si no existe ninguna armadura con forma 03 en la vista, se desplegará una alerta corporativa con la lista de las formas que sí se encuentran presentes para que puedas elegir rápidamente la correcta.
+            </div>
+        </section>
+
+        <!-- 5. Casos de Uso Típicos -->
+        <section>
+            <h2>5. Casos de Uso en Arainco</h2>
+            <ul>
+                <li><strong>Revisión de Estribos de Vigas y Pilares:</strong> Seleccionar rápidamente todos los estribos cerrados forma 03 para verificar sus diámetros (<span class="tag">Bar Diameter</span>) y espaciamientos (<span class="tag">Spacing</span>).</li>
+                <li><strong>Ajuste de Parámetros por Lote:</strong> Cambiar simultáneamente parámetros de visibilidad, comentarios o subcategorías a todos los estribos de la vista.</li>
+                <li><strong>Auditoría de Modelado:</strong> Confirmar que no se hayan modelado barras longitudinales con formas asignadas incorrectamente.</li>
+            </ul>
+        </section>
+
+        <!-- Pie de página -->
+        <footer>
+            <p>AntigravityDev Extension · Autodesk Revit 2025+ · Arainco Ingeniería Estructural</p>
+        </footer>
+    </div>
+</body>
+</html>

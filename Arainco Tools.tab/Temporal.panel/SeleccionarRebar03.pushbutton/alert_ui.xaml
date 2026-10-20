@@ -1,0 +1,127 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Arainco — Aviso"
+        SizeToContent="Height" Width="450"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="#071018"
+        Foreground="#C8E4EF"
+        FontFamily="Segoe UI">
+
+    <Window.Resources>
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#5DB9EA"/>
+            <Setter Property="Foreground" Value="#071018"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Padding" Value="22,7"/>
+            <Setter Property="BorderBrush" Value="#87D9EE"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="5"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#74CEE8"/>
+                                <Setter TargetName="Root" Property="BorderBrush" Value="#A5E6F5"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#49B1D0"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border Background="#071018" BorderBrush="#21465C" BorderThickness="1" Padding="18">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Encabezado Corporativo Modal -->
+            <Border Grid.Row="0"
+                    Background="#0F2535"
+                    BorderBrush="#21465C"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="12,10"
+                    Margin="0,0,0,14">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0"
+                            x:Name="bd_badge"
+                            Width="32" Height="32"
+                            CornerRadius="16"
+                            Background="#071018"
+                            BorderBrush="#5DB9EA"
+                            BorderThickness="1.5"
+                            Margin="0,0,12,0">
+                        <TextBlock x:Name="lbl_icon"
+                                   Text="i"
+                                   FontSize="16"
+                                   FontWeight="Bold"
+                                   Foreground="#5DB9EA"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock x:Name="lbl_header"
+                                   Text="Aviso del Sistema"
+                                   FontSize="13.5"
+                                   FontWeight="Bold"
+                                   Foreground="#E8F4F8"/>
+                        <TextBlock Text="ARAINCO INGENIERÍA ESTRUCTURAL"
+                                   FontSize="9.5"
+                                   FontWeight="SemiBold"
+                                   Foreground="#5DB9EA"
+                                   Margin="0,1,0,0"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Mensaje -->
+            <Border Grid.Row="1"
+                    Background="#0A1620"
+                    BorderBrush="#21465C"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="14"
+                    Margin="0,0,0,16">
+                <TextBlock x:Name="lbl_message"
+                           Text="Mensaje informativo de la herramienta."
+                           FontSize="12"
+                           Foreground="#C8E4EF"
+                           TextWrapping="Wrap"
+                           LineHeight="18"/>
+            </Border>
+
+            <!-- Botón Aceptar -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="btn_ok"
+                        Content="Aceptar"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        Click="on_ok_click"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>
