@@ -9,8 +9,8 @@ __author__ = "BIMTools"
 __doc__ = (
     u"Plantas Cielo y Piso 01_ENTREGABLE por categoría y zona "
     u"(en LO: Cielo/Piso × inferior/superior, 4 por nivel), "
-    u"con plantillas y tipos Detail/Sección. No regenera un "
-    u"par categoría-zona que ya exista."
+    u"con plantillas y tipos Detail/Sección. Permite categorías "
+    u"propias del proyecto. No regenera un par categoría-zona que ya exista."
 )
 
 import os
@@ -61,6 +61,7 @@ if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
             _key == "vistas_por_categoria_ui"
             or _key == "vistas_por_categoria"
             or _key.startswith("vistas_por_categoria.")
+            or _key == "shared_project_categories"
             or _key == "crear_vistas_revision_estructural"
         ):
             try:

@@ -163,6 +163,8 @@
         <strong>Marcar categorías</strong> — Puede ser más de una. El filtro
         busca por código o nombre. Seleccionar todo / Ninguna aplica solo a
         las filas visibles. Todas las marcadas usan la misma zona, niveles y escala.
+        Si el proyecto necesita una categoría que no está en la lista, pulse
+        <strong>Nueva</strong>.
     </div>
     <div class="step">
         <span class="step-num">3</span>
@@ -184,7 +186,35 @@
         un resumen lista vistas, plantillas, tipos y lo omitido.
     </div>
 
-    <h2>3. Qué se crea por categoría</h2>
+    <h2>3. Categorías del proyecto</h2>
+    <p>
+        Las categorías predeterminadas (<code>00_PG</code>, <code>01_LO</code>,
+        <code>02_MA</code>…) están siempre disponibles.
+        <strong>Nueva</strong> pide un código y un nombre
+        (por ejemplo <code>17_FD</code> y <code>FUNDACIONES</code>).
+        El código es dos dígitos, guion bajo y dos letras, el mismo formato
+        que <code>Subclasificacion</code> y que el prefijo del nombre de vista.
+    </p>
+    <p>
+        Quedan guardadas en el proyecto: al volver a abrir el modelo aparecen
+        en la lista, debajo de las predeterminadas, y también en
+        <strong>Láminas por categoría</strong>.
+        <code>17_FD</code> en vistas corresponde a <code>FD</code> en láminas
+        (las dos letras). Si la categoría se creó en láminas, aquí aparece con
+        el número que se le asignó (<code>17_FD</code>, <code>18_FD</code>…).
+        El código no puede repetir uno ya usado, ni las dos letras de una
+        categoría que ya exista en láminas o en vistas, ni uno que ya figure en
+        <code>Subclasificacion</code> de alguna vista.
+    </p>
+    <p>
+        Si el proyecto ya tiene vistas con una subclasificación que no está en
+        la lista, ese código aparece al final para poder volver a usarlo.
+        Una categoría agregada así se crea como el resto (dos plantas por nivel).
+        Las cuatro plantas de armadura inferior y superior siguen siendo solo
+        de <code>01_LO</code>.
+    </p>
+
+    <h2>4. Qué se crea por categoría</h2>
     <p>
         Ejemplo con categoría <code>01_LO</code>, zona <code>GENERAL</code> y
         nivel <code>NIVEL 01</code>. En <strong>LO</strong> se generan
@@ -254,7 +284,7 @@
         (p. ej. <code>00_PG_CIELO_NIVEL 01_GENERAL</code>).
     </p>
 
-    <h2>4. Parámetros que escribe</h2>
+    <h2>5. Parámetros que escribe</h2>
     <table>
         <thead>
             <tr>
@@ -296,7 +326,7 @@
         La escala del formulario se aplica a cada planta creada.
     </p>
 
-    <h2>5. Rango de vista</h2>
+    <h2>6. Rango de vista</h2>
     <ul>
         <li><strong>Piso:</strong> corte a +1500 mm del nivel. En el nivel más bajo
             del proyecto, fondo y profundidad ilimitados; en el resto, −1500 mm.</li>
@@ -304,7 +334,7 @@
             (+300 mm) o, si no hay, un respaldo de 4000 mm.</li>
     </ul>
 
-    <h2>6. No vuelve a generar el mismo par</h2>
+    <h2>7. No vuelve a generar el mismo par</h2>
     <p>
         Si ya hay una vista de proyecto (no plantilla) con
         <code>Section Filter = {categoría}_{zona}</code>, o con la misma
@@ -321,13 +351,16 @@
         frente a <code>01_LO_GENERAL</code>).
     </div>
 
-    <h2>7. Deshacer</h2>
+    <h2>8. Deshacer</h2>
     <p>
         Un solo comando (<code>Arainco: Vistas por categoría</code>) revierte
         plantas, plantillas, tipos y filtros de esa ejecución.
+        Agregar una categoría es otro paso de deshacer
+        (<code>Arainco: Nueva categoría de vista</code>). Ese paso también
+        la quita de Láminas por categoría, porque es la misma categoría del proyecto.
     </p>
 
-    <h2>8. Si algo no sale como esperas</h2>
+    <h2>9. Si algo no sale como esperas</h2>
     <table>
         <thead>
             <tr>
@@ -348,6 +381,12 @@
             <tr>
                 <td>Categoría-zona ya generada</td>
                 <td>Use otra zona, o duplique vistas a mano; la herramienta no pisa el juego existente</td>
+            </tr>
+            <tr>
+                <td>No se puede agregar la categoría</td>
+                <td>El código debe ser <code>17_FD</code> (dos dígitos, <code>_</code>, dos letras)
+                    y no puede repetir uno de la lista ni uno ya escrito en
+                    <code>Subclasificacion</code>. El proyecto no puede ser de solo lectura.</td>
             </tr>
             <tr>
                 <td>Sin tipos Detail/Sección</td>
