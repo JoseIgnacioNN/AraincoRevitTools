@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -89,12 +89,33 @@
     <h2>Uso</h2>
     <ol>
         <li>Elija el tipo de formato (cajetín).</li>
-        <li>Elija la categoría (el código corto, p. ej. <code>PG</code>, se escribe en Clasificacion y en el número).</li>
+        <li>Elija la categoría (el código corto, p. ej. <code>PG</code>, se escribe en Clasificacion y en el número). Si el proyecto necesita otra, pulse <strong>Nueva</strong>.</li>
         <li>Indique cuántas láminas crear (máximo 40 por ejecución).</li>
-        <li>A la izquierda: formato, categoría, cantidad, firmas y fecha (comunes al lote).</li>
+        <li>A la izquierda: formato, categoría, cantidad, firmas y fecha (comunes al lote). <strong>Personas</strong> abre el directorio para agregar, editar o quitar firmas.</li>
         <li>A la derecha: cada fila muestra el correlativo y el nombre. El valor inicial es <code>CONTENIDO LAMINA</code>; cámbielo solo en las láminas que lo necesiten. Un nombre vacío se sustituye por <code>CONTENIDO LAMINA</code>.</li>
         <li>Pulse <strong>Crear láminas</strong>.</li>
     </ol>
+
+    <h2>Categorías del proyecto</h2>
+    <p>
+        Las categorías predeterminadas (PG, LO, MA, …) están siempre disponibles.
+        <strong>Nueva</strong> pide un código de dos letras y un nombre
+        (por ejemplo <code>FD</code> y <code>FUNDACIONES</code>).
+        Quedan guardadas en el proyecto: al volver a abrir el modelo aparecen en la lista,
+        y también en <strong>Vistas por categoría</strong>.
+        <code>FD</code> en láminas corresponde a un código de vista como
+        <code>17_FD</code> (el número siguiente que esté libre).
+        Si esas letras ya son una vista predeterminada, por ejemplo <code>EX</code>,
+        la lámina usa <code>EX</code> y las vistas siguen con <code>16_EX</code>.
+        Crearla desde Vistas por categoría hace lo mismo al revés:
+        <code>17_FD</code> aparece aquí como <code>FD</code>.
+        El código no puede repetir uno ya usado, ni uno que ya figure en
+        <code>Clasificacion</code> de alguna lámina.
+    </p>
+    <p>
+        Si el proyecto ya tiene láminas con una clasificación que no está en la lista,
+        ese código aparece al final del combo para poder continuar su correlativo.
+    </p>
 
     <h2>Numeración</h2>
     <p>
@@ -113,12 +134,17 @@
 
     <h2>Personas</h2>
     <p>
-        Las listas se editan en
-        <code>BIMTools.extension/scripts/laminas_por_categoria/personas.json</code>.
-        Cada rol (<code>calculo</code>, <code>revision</code>, <code>aprobacion</code>,
-        <code>dibujo</code>) tiene <code>items</code> y <code>default_index</code>
-        (índice sobre la lista ya ordenada alfabéticamente, como en Dynamo).
+        <strong>Personas</strong>, junto a Firmas y fecha, abre el directorio compartido
+        (<code>Y:\00_SERVIDOR DE INCIDENCIAS\personas.json</code>), el mismo de
+        Incidencias y Vistas por usuario. Al cerrarlo, los combos se actualizan
+        y se mantiene la firma elegida si esa persona sigue en la lista.
     </p>
+    <ul>
+        <li><strong>Calculó</strong>, <strong>Revisó</strong> y <strong>Aprobó</strong> listan ingenieros.</li>
+        <li><strong>Dibujó</strong> lista modeladores.</li>
+        <li>En la lámina se escribe el nombre del directorio (Approved By, Designed By, Checked By, Drawn By).</li>
+        <li>Si el directorio no está disponible, se usa una lista de respaldo.</li>
+    </ul>
 
     <h2>Parámetros escritos</h2>
     <table>

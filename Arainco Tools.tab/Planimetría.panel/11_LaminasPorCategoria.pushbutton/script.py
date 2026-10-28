@@ -8,7 +8,7 @@ __title__ = u"Arainco: Láminas por categoría"
 __author__ = "BIMTools"
 __doc__ = (
     u"Crea láminas CONTENIDO LAMINA por categoría, con correlativo "
-    u"CAT-NNN, cajetín y datos de firma/fecha."
+    u"CAT-NNN, cajetín, firmas y categorías propias del proyecto."
 )
 
 import os
@@ -58,6 +58,7 @@ if _bimtools_access.require_tool_access(__file__, __revit__, __title__):
             _key == "laminas_por_categoria_ui"
             or _key == "laminas_por_categoria"
             or _key.startswith("laminas_por_categoria.")
+            or _key == "shared_project_categories"
         ):
             try:
                 del sys.modules[_key]
