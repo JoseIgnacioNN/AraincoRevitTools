@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual — Arainco: Numerar Fundaciones</title>
+    <style>
+        :root {
+            --bg-dark: #071018;
+            --bg-panel: #0a1620;
+            --accent: #5BC0DE;
+            --accent-dim: #95B8CC;
+            --text: #E8F4F8;
+            --text-dim: #95B8CC;
+            --muted: #64748b;
+            --border: #21465C;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: 920px;
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 1.75em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-top: 0;
+        }
+        h2 {
+            color: var(--accent-dim);
+            font-size: 1.2em;
+            margin-top: 32px;
+        }
+        p { margin: 0.8em 0; color: var(--text-dim); }
+        ul, ol { margin: 0.8em 0; padding-left: 24px; color: var(--text-dim); }
+        li { margin: 0.4em 0; }
+        .intro {
+            background: var(--bg-panel);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            border-left: 4px solid var(--accent);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            text-align: left;
+            color: var(--text-dim);
+            font-size: 0.95em;
+        }
+        th { color: var(--text); background: #0E1B32; }
+        .note {
+            color: var(--muted);
+            font-size: 0.95em;
+            border-top: 1px solid var(--border);
+            margin-top: 36px;
+            padding-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Manual — Arainco: Numerar Fundaciones</h1>
+
+    <div class="intro">
+        <p>
+            Agrupa las fundaciones aisladas del proyecto por sus dimensiones
+            y las muestra en un canvas de la planta activa. Lo visible en esa
+            vista (ejes, muros, vigas, columnas, corridas y losas) queda de
+            contexto. El rail lista solo las aisladas, por tipo.
+        </p>
+        <p>
+            Al confirmar, escribe el parámetro <strong>Numeracion Fundacion</strong>
+            solo en las instancias que todavía no tienen número.
+        </p>
+    </div>
+
+    <h2>Requisitos</h2>
+    <ul>
+        <li>Revit 2024 a 2026, con un proyecto abierto.</li>
+        <li>Una vista de planta activa (planta de piso o estructural). Si la vista activa no es de planta, el canvas igual muestra las fundaciones, sin el encuadre ni el contexto de la vista.</li>
+        <li>Fundaciones aisladas (familias) en la categoría Structural Foundations.</li>
+        <li>El tipo debe llamarse con las medidas en milímetros (por ejemplo 1200x1200x400) o exponer largo y ancho (Length / Width, o Largo / Ancho).</li>
+        <li>La altura se lee del parámetro <strong>Foundation Thickness</strong> del tipo o del ejemplar.</li>
+        <li>La instancia debe tener el parámetro <strong>Numeracion Fundacion</strong> editable.</li>
+    </ul>
+
+    <h2>Uso</h2>
+    <ol>
+        <li>Ejecute <strong>Numerar Fundaciones</strong> desde el toolkit de fundaciones, con la planta que quiere revisar en pantalla.</li>
+        <li>El canvas abre con el mismo encuadre que esa planta. Dibuja lo visible en la vista: ejes, muros, vigas, columnas, fundaciones corridas y losas de fundación. El color distingue solo las aisladas, una por tipo.</li>
+        <li>En el rail de la derecha compruebe marca, medidas, familia y cuántas instancias se numerarán. Un clic en la ficha encuadra ese tipo. Un clic en la planta solo lo resalta.</li>
+        <li>Use la rueda para zoom y el botón central para mover el encuadre. <strong>Vista</strong> vuelve a la planta activa. <strong>Todas</strong> encaja todas las fundaciones aisladas del proyecto.</li>
+        <li>Pulse <strong>Numerar fundaciones</strong>. La planta se actualiza con el resultado.</li>
+    </ol>
+
+    <h2>Reglas de negocio</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Tema</th>
+                <th>Comportamiento</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Qué se numera</td>
+                <td>Solo fundaciones aisladas (FamilyInstance).</td>
+            </tr>
+            <tr>
+                <td>Qué se excluye</td>
+                <td>Wall foundations (fundaciones corridas), losas de fundación y cualquier otro tipo que no sea aislada. En el canvas se dibujan si están visibles en la planta activa. No entran al rail ni se numeran.</td>
+            </tr>
+            <tr>
+                <td>Agrupación</td>
+                <td>Mismo largo, ancho y alto = mismo número. Las medidas se muestran en milímetros. Largo y ancho salen del nombre del tipo o de Length / Width. La altura sale solo de Foundation Thickness. Si ese parámetro no tiene valor, la ficha indica «sin altura».</td>
+            </tr>
+            <tr>
+                <td>Orden</td>
+                <td>Los tipos aún sin número se ordenan por volumen (L × W × H) y reciben el entero siguiente al mayor ya usado en el proyecto.</td>
+            </tr>
+            <tr>
+                <td>No se sobrescribe</td>
+                <td>Si una instancia ya tiene Numeracion Fundacion, se conserva. Las vacías del mismo tipo copian ese número.</td>
+            </tr>
+            <tr>
+                <td>Marca en pantalla</td>
+                <td>El canvas y el listado muestran F más el número (F1, F2…). El parámetro guarda solo el número.</td>
+            </tr>
+            <tr>
+                <td>Huella en planta</td>
+                <td>En la planta activa, las aisladas usan el contorno real. Si la vista no aporta sólido, el canvas dibuja el rectángulo del largo y el ancho del tipo, centrado en el punto de inserción y girado con la instancia. Corridas, losas, muros, vigas, columnas y ejes se dibujan solo si la vista activa los muestra. La derecha y el arriba del canvas coinciden con los de la vista.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>Notas</h2>
+    <ul>
+        <li>Si no aparece ninguna fundación, el proyecto no tiene aisladas: las corridas y las losas no entran en esta herramienta.</li>
+        <li>Un tipo sin largo y ancho, y sin las tres medidas en el nombre, queda agrupado como «Sin dimensiones de tipo».</li>
+        <li>Si Foundation Thickness no existe o está vacío, la ficha indica «sin altura» y no se le asigna un valor inventado.</li>
+        <li>Si alguna instancia no tiene el parámetro editable, el aviso final indica cuántas no se pudieron escribir. El resto sí queda numerado.</li>
+        <li>La herramienta no crea fundaciones, no mueve elementos y no modifica las que ya tenían número.</li>
+    </ul>
+
+    <p class="note">Arainco · Numerar Fundaciones</p>
+</body>
+</html>

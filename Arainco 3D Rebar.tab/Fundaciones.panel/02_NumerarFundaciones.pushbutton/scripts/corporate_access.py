@@ -36,6 +36,12 @@ DEFAULT_DIALOG_TITLE = u"Arainco: BIMTools"
 _APPDOMAIN_CACHE_KEY = u"BIMTools.CorporateAccess.Cache"
 _DEFAULT_CACHE_TTL_SECONDS = 300
 
+# Mantenedor de la extensión: acceso sin red (máquina + usuario Windows).
+# No ampliar a equipos de usuarios finales; es la excepción de gestión de herramientas.
+_MAINTAINER_ALLOWLIST = (
+    (u"DESKTOP-7A9HBIC", u"jinun"),
+)
+
 
 def _read_text_file(path):
     if _USE_SYSTEM_IO:
@@ -161,9 +167,60 @@ def clear_access_cache():
         pass
 
 
+def _current_machine_name():
+    try:
+        if _USE_SYSTEM_IO:
+            name = System.Environment.MachineName
+            if name:
+                return unicode(name).strip().upper()
+    except Exception:
+        pass
+    try:
+        name = os.environ.get("COMPUTERNAME") or os.environ.get("HOSTNAME")
+        if name:
+            return unicode(name).strip().upper()
+    except Exception:
+        pass
+    return u""
+
+
+def _current_user_name():
+    try:
+        if _USE_SYSTEM_IO:
+            name = System.Environment.UserName
+            if name:
+                return unicode(name).strip().lower()
+    except Exception:
+        pass
+    try:
+        name = os.environ.get("USERNAME") or os.environ.get("USER")
+        if name:
+            return unicode(name).strip().lower()
+    except Exception:
+        pass
+    return u""
+
+
+def _is_maintainer_machine():
+    """True solo si máquina y usuario coinciden con el allowlist de mantenedor."""
+    machine = _current_machine_name()
+    user = _current_user_name()
+    if not machine or not user:
+        return False
+    for allowed_machine, allowed_user in _MAINTAINER_ALLOWLIST:
+        if machine == unicode(allowed_machine).strip().upper() and user == unicode(
+            allowed_user
+        ).strip().lower():
+            return True
+    return False
+
+
 def check_corporate_access(use_cache=True, cache_ttl_seconds=_DEFAULT_CACHE_TTL_SECONDS):
     """
     Evalúa si el equipo puede usar herramientas BIMTools.
+
+    El mantenedor de la extensión (allowlist máquina+usuario) omite la
+    comprobación de red para no quedar bloqueado sin acceso al servidor.
 
     Siempre comprueba rutas y existencia del archivo antes de usar caché,
     para que quitar el JSON del servidor bloquee de inmediato.
@@ -171,6 +228,9 @@ def check_corporate_access(use_cache=True, cache_ttl_seconds=_DEFAULT_CACHE_TTL_
     Returns:
         tuple(bool ok, unicode reason_code)
     """
+    if _is_maintainer_machine():
+        return True, u"maintainer_bypass"
+
     if not _path_exists(ISSUES_DIR):
         _set_cached_entry(False, None, u"missing_server")
         return False, u"missing_server"
