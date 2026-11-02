@@ -349,12 +349,20 @@ while True:
 # AUTODETECCIÓN DE LA LOSA O FUNDACIÓN
 # ===================================================================================
         
+        # Desfase para la detección de la losa host (evita host erróneo en el centro del recorrido si es que la viga o muro le gana a la losa)
+        mid_point = (p1 + p2) / 2 # Punto matemático central del recorrido
+        v_recorrido_2D = (p2 - p1).Normalize() # Vector del recorrido 2D
+        v_izq_2D = DB.XYZ(-v_recorrido_2D.Y, v_recorrido_2D.X, 0) # Vector perpendicular hacia la izquierda (Rotación de 90° en 2D)
+        if estado.Lext_izq == True:
+            pt_busqueda = mid_point + v_izq_2D * (L1+Lext)
+        else:
+            pt_busqueda = mid_point + v_izq_2D * L1
+        
         # Intersección del recorrido con la losa
         filtro_combinado = DB.LogicalOrFilter(DB.ElementCategoryFilter(DB.BuiltInCategory.OST_Floors), 
                                               DB.ElementCategoryFilter(DB.BuiltInCategory.OST_StructuralFoundation))
-        mid_point = (p1 + p2) / 2 # Punto matemático central del recorrido
-        pt_min = DB.XYZ(mid_point.X - 0.0164, mid_point.Y - 0.0164, Z_elev - 6.562) # Esquina inferior izquierda del pilar
-        pt_max = DB.XYZ(mid_point.X + 0.0164, mid_point.Y + 0.0164, Z_elev + 6.562) # Esquina superior derecha del pilar
+        pt_min = DB.XYZ(pt_busqueda.X - 0.0164, pt_busqueda.Y - 0.0164, Z_elev - 6.562) # Esquina inferior izquierda del pilar
+        pt_max = DB.XYZ(pt_busqueda.X + 0.0164, pt_busqueda.Y + 0.0164, Z_elev + 6.562) # Esquina superior derecha del pilar
         filtro_pilar = DB.BoundingBoxIntersectsFilter(DB.Outline(pt_min, pt_max)) # Pilar rectangular 1x1x400 cm, que que se utiliza para intersectar con la losa
         
         # Intersección inicial y rápida
@@ -370,7 +378,7 @@ while True:
         # Intersección final y detallada. Analiza la geometría de cada losa candidata
         opt = DB.Options()
         opt.DetailLevel = DB.ViewDetailLevel.Coarse # Usa la geometría más simple y rápida posible
-        p_test = DB.XYZ(mid_point.X, mid_point.Y, Z_elev) # Punto usado para generar láser de proyección hacia la cara de la losa candidata
+        p_test = DB.XYZ(pt_busqueda.X, pt_busqueda.Y, Z_elev) # Punto usado para generar láser de proyección hacia la cara de la losa candidata
         dist_min = float('inf')
         slab = None
         host_validos = set() # Servirá para contar los host validos
@@ -411,8 +419,8 @@ while True:
         if not slab:
             t_group.RollBack()
             mensaje = """No se pudo detectar un host válido, por alguna de las siguientes razones:
-• La armadura se encuentra sobre un shaft.
-• La losa no tiene prioridad de unión por sobre la viga, columna o muro.
+• El punto de detección se encuentra sobre un shaft.
+• El punto de detección se encuentra sobre una viga o muro que tiene prioridad de unión por sobre la losa.
 • La losa no tiene caras superiores válidas."""
             forms.alert(mensaje, title="Host no encontrado")
             continue

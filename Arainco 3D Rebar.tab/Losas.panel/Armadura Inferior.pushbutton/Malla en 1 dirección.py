@@ -308,8 +308,8 @@ while True:
         if not slab:
             t_group.RollBack()
             mensaje = """No se pudo detectar un host válido, por alguna de las siguientes razones:
-• La armadura se encuentra sobre un shaft.
-• La losa no tiene prioridad de unión por sobre la viga, columna o muro.
+• El punto de detección se encuentra sobre un shaft.
+• El punto de detección se encuentra sobre una viga o muro que tiene prioridad de unión por sobre la losa.
 • La losa no tiene caras superiores válidas."""
             forms.alert(mensaje, title="Host no encontrado")
             continue
