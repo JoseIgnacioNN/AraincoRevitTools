@@ -438,11 +438,11 @@ while True:
         v_bar_3D = -plane_normal.CrossProduct(v_recorrido_3D).Normalize() # # Vector director de la barra (en la dirección longitudinal)
 
         if estado.barra_izq == True:
-            start = p1_3D + v_bar_3D * (L + Lext) # Extremo inicial de la barra
+            start = p1_3D + v_bar_3D * (L + Lext + rec_other) # Extremo inicial de la barra
             end = p1_3D + v_bar_3D * offset_lateral # Extremo final de la barra (con gancho)
         else:
             start = p1_3D - v_bar_3D * offset_lateral # Extremo inicial de la barra (con gancho)
-            end = p1_3D - v_bar_3D * (L + Lext) # Extremo final de la barra
+            end = p1_3D - v_bar_3D * (L + Lext + rec_other) # Extremo final de la barra
             
         curves = [DB.Line.CreateBound(start, end)]
         L_barra = (end - start).GetLength()
@@ -451,22 +451,29 @@ while True:
 # ===================================================================================
 # CREAR LA BARRA
 # ===================================================================================
+        shape_name = "01"
+        tipos_shape = DB.FilteredElementCollector(doc).OfClass(DB.Structure.RebarShape).ToElements() # Lista de Rebar Shapes
+        shape = next((t for t in tipos_shape if DB.Element.Name.GetValue(t) == shape_name), None) # Se encuentra el Rebar Shape indicado
+        if not shape:
+            t_group.RollBack()
+            forms.alert("No se encontró el Rebar Shape '{}' en el proyecto.".format(shape_name), title="Rebar Shape no encontrado")
+            continue
+        
         t = DB.Transaction(doc, "ARAINCO - Crear Rebar Set")
         t.Start()
         try:
 
     # Barra individual
-            rebar = DB.Structure.Rebar.CreateFromCurves(
+            rebar = DB.Structure.Rebar.CreateFromCurvesAndShape(
                 doc,
-                DB.Structure.RebarStyle.Standard, # Estilo de barra (Standard o StirrupTie)
+                shape, # Rebar Shape
                 rebar_selected, # Tipo de barra
                 None, None, # Gancho inicial y final
                 slab, # Anfitrión
                 v_recorrido_3D, # Vector director
                 curves,
                 DB.Structure.RebarHookOrientation.Left, # Orientación de gancho inicial
-                DB.Structure.RebarHookOrientation.Left, # Orientación de gancho final
-                True, True) # Usar Rebar Shape existente. Si no existe Rebar Shape que coincida, Revit creará un Rebar Shape personalizado
+                DB.Structure.RebarHookOrientation.Left) # Orientación de gancho final
             
     # Transformar a Rebar Set
             rebar.GetShapeDrivenAccessor().SetLayoutAsMaximumSpacing(

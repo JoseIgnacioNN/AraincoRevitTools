@@ -378,7 +378,7 @@ while True:
             t2 = 4.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5, UnitTypeId.Centimeters)) 
         else:
             t1 = max(11*rebar_fi, espesor - rec_top - rec_bottom - rebar_fi)
-            t2 = 5.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5), UnitTypeId.Centimeters) 
+            t2 = 5.5*rebar_fi + max(4*rebar_fi, UnitUtils.ConvertToInternalUnits(6.5, UnitTypeId.Centimeters)) 
 
         pt1_1 = start - plane_normal * t1 # Tramo 1 del gancho 1
         pt2_1 = pt1_1 - v_bar_3D * t2 # Tramo 2 del gancho 1
@@ -396,23 +396,30 @@ while True:
 # ===================================================================================
 # CREAR LA BARRA
 # ===================================================================================
+        shape_name = "18"
+        tipos_shape = DB.FilteredElementCollector(doc).OfClass(DB.Structure.RebarShape).ToElements() # Lista de Rebar Shapes
+        shape = next((t for t in tipos_shape if DB.Element.Name.GetValue(t) == shape_name), None) # Se encuentra el Rebar Shape indicado
+        if not shape:
+            t_group.RollBack()
+            forms.alert("No se encontró el Rebar Shape '{}' en el proyecto.".format(shape_name), title="Rebar Shape no encontrado")
+            continue
+        
         t = DB.Transaction(doc, "ARAINCO - Crear Rebar Set")
         t.Start()
         try:
 
     # Barra individual
-            rebar = DB.Structure.Rebar.CreateFromCurves(
+            rebar = DB.Structure.Rebar.CreateFromCurvesAndShape(
                 doc,
-                DB.Structure.RebarStyle.Standard, # Estilo de barra (Standard o StirrupTie)
+                shape, # Rebar Shape
                 rebar_selected, # Tipo de barra
                 None, None, # Gancho inicial y final
                 slab, # Anfitrión
                 v_recorrido_3D, # Vector director
                 curves,
                 DB.Structure.RebarHookOrientation.Right, # Orientación de gancho inicial
-                DB.Structure.RebarHookOrientation.Right, # Orientación de gancho final
-                True, True) # Usar Rebar Shape existente. Si no existe Rebar Shape que coincida, Revit creará un Rebar Shape personalizado
-            
+                DB.Structure.RebarHookOrientation.Right) # Orientación de gancho final
+                
     # Transformar a Rebar Set
             rebar.GetShapeDrivenAccessor().SetLayoutAsMaximumSpacing(
                 esp,
